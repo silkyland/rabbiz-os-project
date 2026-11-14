@@ -52,9 +52,8 @@ CONFIG_XPAD=m            (optional, USB-OTG pads)
 
 `pipewire-audio` (ships `/usr/lib/spa-0.2/bluez5/`: SBC/AAC/aptX/LDAC/HFP codecs), `pipewire-pulse`, `wireplumber` installed; `wireplumber.service` + `pipewire-pulse.socket` started in the `gamer` user manager (`systemctl --user -M gamer@`). A2DP/HFP sink nodes will appear when an audio device connects.
 
-## 6. Not solved / open
+## 6. Status / Open items
 
-- [ ] Kernel rebuild with §4 config (build tree lives on another machine).
-- [ ] Rumble via output Report ID 3 (`char0021`) — trivial to add to the bridge if wanted before the kernel lands.
-- [ ] Controller dropouts observed during pairing-mode transitions; stable since bonded. Watch `journalctl -u xbox-ble-uinput`.
-- [ ] Classic (BR/EDR) pads need `modprobe hidp` (`CONFIG_BT_HIDP=m` present, module not loaded).
+- [x] Kernel rebuilt & flashed (`7.3.0-g14a425b3a7dc-dirty` `#4`) with `CONFIG_UHID=y`, `CONFIG_HIDRAW=y`, `CONFIG_INPUT_JOYDEV=y`, `CONFIG_BT_HIDP=m`, `CONFIG_HID_{MICROSOFT,PLAYSTATION,NINTENDO,STEAM}=m`, `CONFIG_JOYSTICK_XPAD=m`; `/dev/uhid` present and `xbox-ble-uinput.service` stopgap removed.
+- [ ] Verify multi-controller BLE pairing (Xbox / DualSense / Switch) natively via BlueZ `input-hog` + Steam UI.
+- [ ] Classic (BR/EDR) pads need `modprobe hidp` (`CONFIG_BT_HIDP=m` present).
