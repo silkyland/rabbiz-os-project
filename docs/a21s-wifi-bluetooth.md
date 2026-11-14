@@ -138,3 +138,36 @@ scsc_bt
 - **Modules:** `scsc_platform_mif`, `scsc_mx`, `scsc_wlan`, `scsc_bt` all auto-load cleanly on boot.
 - **Wi-Fi (`wlan0`):** Connected to `Goodhome_5G` (5 GHz, `freq: 5745.0`, `tx bitrate: 325.0 MBit/s`), `ping 1.1.1.1` succeeded with 0% packet loss (~12.7 ms).
 - **Bluetooth (`hci0`):** `/sys/class/bluetooth/hci0` registered, `rfkill list` shows `scsc-bluez-rfkill`, `hci0`, and `phy0` all unblocked (`Soft blocked: no`, `Hard blocked: no`), and `SM_MSG_START_CFM` / `SM_MSG_STOP_CFM` for `service: 2` complete cleanly without oopses.
+
+---
+
+## 6. Bluetooth Userspace (BlueZ) for `steam -gamepadui`
+
+Steam's gamepad UI pairs devices by talking to `org.bluez` on the **system D-Bus**, so `bluetoothd` must be running — the kernel `hci0` alone is not enough.
+
+- Installed `bluez`, `bluez-utils` (`bluetoothctl`), `bluez-deprecated-tools` (`hciconfig`, `btmgmt`) — enabled `bluetooth.service`.
+- Adapter `a21s-steamos` (`F0:00:01:00:A2:17`): `Powered/Discoverable/Pairable: yes`, `hci0` `UP RUNNING PSCAN ISCAN`, LE scan finds game controllers (e.g. Xbox Wireless Controller, HID-over-GATT `0x1812`).
+- BT audio: installed `pipewire-audio` (ships `/usr/lib/spa-0.2/bluez5/` — SBC/AAC/aptX/LDAC/HFP codecs), `pipewire-pulse`, `wireplumber`; started `wireplumber.service` + `pipewire-pulse.socket` in the `gamer` user manager (`systemctl --user -M gamer@`).
+- **usb0 default route:** `10-usb0.network` now uses `[Route] Gateway=172.16.42.2 Metric=700` instead of `Gateway=` (metric 0). The old config made the dead USB host route shadow `wlan0`'s DHCP route (metric 600), killing all internet whenever the host wasn't NATing; now `wlan0` wins and USB NAT is a fallback.
+
+---
+
+## 7. STOPGAP: `xbox-ble-uinput` bridge — remove after kernel rebuild
+
+The current kernel `7.3.0-g14a425b3a7dc` lacks `CONFIG_UHID`/`CONFIG_HIDRAW`, so BlueZ `input-hog` cannot create evdev nodes for BLE HID devices (`src/service.c:service_accept() input-hog profile accept failed` in `bluetoothd` logs). As a stopgap, `xbox-ble-uinput.service` runs `/usr/local/bin/xbox-ble-uinput.py`: it reads the HID-over-GATT input report of the paired Xbox controller (`A8:8C:3E:74:0A:95`, Report ID 1 on `char001d` under HID service `service0016`) via BlueZ D-Bus and re-emits through `/dev/uinput` (`CONFIG_INPUT_UINPUT=y`) as a `BUS_BLUETOOTH` `045E:0B13` "Xbox Wireless Controller" evdev device. Works, but: single hardcoded MAC, Xbox report layout only (no DS4/DS5/Switch), no rumble (output Report ID 3 on `char0021` unused), no battery node.
+
+### Kernel fix (build machine): enable then rebuild `Image` + modules
+```
+CONFIG_UHID=y              # BlueZ input-hog creates evdev for every BLE HID pad
+CONFIG_HIDRAW=y            # hidraw for Steam/xpadneo per-controller drivers
+CONFIG_INPUT_JOYDEV=y      # /dev/input/js*
+CONFIG_BT_HIDP=m           # classic HID (DS3/Wii Remote), already =m
+CONFIG_HID_MICROSOFT=m     # Xbox: FF quirks
+CONFIG_HID_PLAYSTATION=m   # DS4/DS5: rumble, LED, battery, touchpad
+CONFIG_HID_NINTENDO=m      # Switch Joy-Con/Pro
+CONFIG_HID_STEAM=m         # Steam Deck/controller accessories
+CONFIG_XPAD=m              # wired Xbox over USB-OTG (optional)
+```
+- Kernel build env is on a **different machine** (not this Mac — `src/` + `build/` are empty here). `kexec` is available on-device (`CONFIG_KEXEC=y`) for testing a new `Image` before flashing `boot-avb.img`.
+- **Cleanup once a `CONFIG_UHID` kernel is running:** `systemctl disable --now xbox-ble-uinput.service && rm /etc/systemd/system/xbox-ble-uinput.service /usr/local/bin/xbox-ble-uinput.py && systemctl daemon-reload`. The existing bond survives; `input-hog` will then create `/dev/input/event*` natively.
+- Verified data path (kept for reference): `bluetoothctl pair/trust/connect` bonds fine; report notifications arrive on `/org/bluez/hci0/dev_A8_8C_3E_74_0A_95/service0016/char001d` — 16-byte payload, no ID prefix: `u16 LX,LY,RX,RY | u10 LT | u10 RT | lo-nibble hat | 15-bit buttons | consumer bit0 (Share)`.

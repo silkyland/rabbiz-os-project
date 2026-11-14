@@ -28,7 +28,8 @@
   - [x] Fix `SM_MSG_START_REQ` SoC reset (`clk_ignore_unused` + `wifibt_if` at `0xb0000000` in `exynos850-a217f.dts`).
   - [x] Port `drivers/scsc/bt/` (`scsc_bt.ko`) to Mainline 7.3 (`h4_recv_skb`, `scsc_bt_copy_{to,from}_buf`, `mxman_stop` guard) — commit `cc6eb14`.
   - [x] Configure `NetworkManager` (`unmanaged` `usb0`, `wifi.scan-rand-mac-address=no`) and verify Steam `client_networkmanager.txt` `Activated/Connected`.
-- **Notes (2026-11-14):** `p2p0` still appears as `disconnected` in `nmcli`; harmless so far, can be marked `unmanaged` if needed.
+  - [ ] Enable kernel HID stack (`CONFIG_UHID`, `CONFIG_HIDRAW`, `CONFIG_INPUT_JOYDEV`, `CONFIG_HID_{MICROSOFT,PLAYSTATION,NINTENDO,STEAM}`) so BlueZ `input-hog` creates evdev nodes for any BLE gamepad; then remove `xbox-ble-uinput` stopgap — [docs/a21s-ble-gamepad.md](docs/a21s-ble-gamepad.md).
+- **Notes (2026-11-14):** `p2p0` still appears as `disconnected` in `nmcli`; harmless so far, can be marked `unmanaged` if needed. BlueZ `5.88` + PipeWire/WirePlumber userspace installed; Xbox Wireless Controller bonded and works through the `uinput` bridge stopgap.
 
 ### M4 (R1): Xiaomi Pad 7 Pro (`muyu` / `SM8635`) — todo
 - **Objective:** Unlock HyperOS bootloader on `muyu` (`ac9c8ddc`) and port Native SteamOS ARM64 (`Zaviya`).

@@ -1,0 +1,12 @@
+[Unit]
+Description=BLE HID to uinput bridge (Xbox Wireless Controller)
+After=bluetooth.service
+BindsTo=bluetooth.service
+
+[Service]
+ExecStart=/usr/local/bin/xbox-ble-uinput.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
