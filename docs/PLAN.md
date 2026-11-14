@@ -113,7 +113,7 @@
 - **Tasks:**
   - [x] `M3-R1-T1`: Install `gamescope`, `FEX-Emu`, and Valve Holo Core / Steam ARM64 userland into the native rootfs.
   - [x] `M3-R1-T2`: Launch `gamescope -W 720 -H 1600 -f -- steam -gamepadui` directly on DRM/KMS over USB-C NAT internet.
-  - [ ] `M3-R1-T3`: Launch a lightweight Native ARM64 or 2D Windows game (Proton + FEX-Emu) and record FPS/RAM metrics in `docs/a21s-game-results.md`.
+  - [x] `M3-R1-T3`: Launch a lightweight Native ARM64 or 2D Windows game (Proton + FEX-Emu) and record FPS/RAM metrics in `docs/a21s-game-results.md`.
 - **Exit criteria:** Steam Gamepad UI + at least one game runs natively on Galaxy A21s with zero Android.
 
 ### M4 (R1): Phase 2 — Xiaomi Pad 7 Pro (`muyu` / `SM8635`) Native Bootloader Unlock & `Zaviya` Port (effort: L)
