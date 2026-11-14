@@ -232,6 +232,7 @@ void exynos_iommu_sync_for_device(struct device *dev, dma_addr_t iova,
 void exynos_iommu_sync_for_cpu(struct device *dev, dma_addr_t iova, size_t len,
 				enum dma_data_direction dir);
 
+#ifdef CONFIG_EXYNOS_IOVMM
 /**
  * TODO: description
  */
@@ -241,6 +242,7 @@ dma_addr_t exynos_iovmm_map_userptr(struct device *dev, unsigned long vaddr,
  * TODO: description
  */
 void exynos_iovmm_unmap_userptr(struct device *dev, dma_addr_t iova);
+#endif
 
 int iovmm_map_oto(struct device *dev, phys_addr_t phys, size_t size);
 void iovmm_unmap_oto(struct device *dev, phys_addr_t phys);

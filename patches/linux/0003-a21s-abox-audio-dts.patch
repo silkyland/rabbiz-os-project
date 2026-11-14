@@ -1,6 +1,6 @@
 --- a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts	2026-11-14 21:11:11
 +++ b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts	2026-11-14 21:11:11
-@@ -588,5 +588,639 @@
+@@ -588,5 +588,638 @@
  		samsung,boot_cfg-syscon-phandle = <&boot_cfg>;
  		memory-region = <&wifibt_if>;
  		status = "okay";
@@ -639,4 +639,3 @@
 +		platform { sound-dai = <&abox 0>; };
 +	};
 +};
-+	};

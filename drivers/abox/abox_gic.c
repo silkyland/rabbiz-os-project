@@ -186,7 +186,10 @@ EXPORT_SYMBOL(abox_gic_generate_interrupt);
 int abox_gic_register_irq_handler(struct device *dev, unsigned int irq,
 		irq_handler_t handler, void *dev_id)
 {
-	struct abox_gic_data *data = dev_get_drvdata(dev);
+	struct abox_gic_data *data = dev ? dev_get_drvdata(dev) : NULL;
+
+	if (!data)
+		return -EPROBE_DEFER;
 
 	dev_dbg(dev, "%s(%u, %ps)\n", __func__, irq, handler);
 

@@ -3170,7 +3170,7 @@ static int samsung_abox_probe(struct platform_device *pdev)
 #endif
 
 	abox_iommu_map(dev, 0x10000000, 0x10000000, PAGE_SIZE, 0);
-	iovmm_set_fault_handler(dev, abox_iommu_fault_handler, data);
+	iommu_set_fault_handler(data->iommu_domain, abox_iommu_fault_handler, data);
 
 	data->clk_pll = devm_clk_get_and_prepare(pdev, "pll");
 	if (IS_ERR(data->clk_pll))
@@ -3231,11 +3231,16 @@ static int samsung_abox_probe(struct platform_device *pdev)
 	}
 	data->dev_gic = &pdev_tmp->dev;
 
-	abox_gic_register_irq_handler(data->dev_gic, IRQ_WDT, abox_wdt_handler,
-			data);
-	for (i = 0; i < SGI_ABOX_MSG; i++)
-		abox_gic_register_irq_handler(data->dev_gic, i,
+	ret = abox_gic_register_irq_handler(data->dev_gic, IRQ_WDT,
+			abox_wdt_handler, data);
+	if (ret < 0)
+		return ret;
+	for (i = 0; i < SGI_ABOX_MSG; i++) {
+		ret = abox_gic_register_irq_handler(data->dev_gic, i,
 				abox_irq_handler, dev);
+		if (ret < 0)
+			return ret;
+	}
 
 	abox_of_get_addr(data, np, "samsung,ipc-tx-area", &data->ipc_tx_addr,
 			&data->ipc_tx_size);
