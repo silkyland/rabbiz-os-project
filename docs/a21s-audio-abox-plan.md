@@ -142,3 +142,33 @@ not return (kexec hang; `CONFIG_EXYNOS_IOMMU` not built so sysmmu
 node is inert — suspect kexec instability, not DTB). Flash untouched;
 force-reboot restores previous system. Next: retry kexec w/ stock
 DTB to isolate, else `boot-avb.img` + dd path per BUILD.md §C.
+
+## Codec bus architecture (Phase B discovery)
+
+`aud3004x` is NOT on a normal AP I2C bus. Vendor DT puts it on
+`acpm_mfd_bus@11A50000` ("samsung,exynos-acpm-mfd-bus"):
+
+```
+aud3004x (i2c_driver)
+  → acpm-mfd-bus.c i2c_adapter (139 lines, drivers/i2c/busses/)
+    → acpm_mfd.c exynos_acpm_{read,write,bulk}_reg
+      → acpm_ipc.c IPC protocol over APM mailbox
+        → APM coprocessor firmware (RTOS, in APM SRAM)
+          → SPEEDY serial → aud3004x codec
+```
+
+Vendor source (already in repo `drivers/acpm/`):
+- `acpm.c` (449 ln) — loads APM "plugin" firmware blobs into APM SRAM
+  (plugins table at `initdata-base 0x7000`, firmware names read from
+  SRAM after base fw boot)
+- `acpm_ipc.c` (866 ln) — IPC channels, mailbox @0x11900000,
+  SRAM @0x02039000, irq SPI 49
+- `acpm_mfd.c` (243 ln) — register accessors (above)
+- `acpm-mfd-bus.c` (139 ln) — i2c adapter over the above
+- DT: `acpm@11830000` (timer_apm), `acpm_ipc` node,
+  `acpm_mfd_bus@11A50000` (disabled in base, enabled per-model)
+
+**Open question:** does uniLoader/s-boot load the base APM firmware?
+If not, APM must be brought up from scratch (extract `apm*.bin`
+plugins from Android vendor part + port the full chain). Same class
+of work as SCSC — codec audio output is gated on this.
