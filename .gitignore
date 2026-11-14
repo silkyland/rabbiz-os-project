@@ -9,3 +9,14 @@ docs/.deep-plan/
 # Editor / OS
 .DS_Store
 *.swp
+
+# Out-of-tree kernel module build artifacts
+*.o
+*.ko
+*.mod
+*.mod.c
+.*.cmd
+Module.symvers
+modules.order
+.tmp_versions/
+

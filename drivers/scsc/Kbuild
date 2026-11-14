@@ -1,0 +1,81 @@
+# Out-of-tree Kbuild for Exynos 850 (S5E3830) SCSC / WLBT Wi-Fi on Mainline 7.3.0
+ccflags-y += -I$(src)/include -I$(src)/include/scsc -I$(src)/misc -I$(srctree)/drivers/bluetooth
+ccflags-y += -include $(src)/include/compat_mainline.h
+ccflags-y += -DCONFIG_SOC_EXYNOS3830=1
+ccflags-y += -DCONFIG_SCSC_CORE=1 -DCONFIG_SCSC_CORE_CM=1
+ccflags-y += -DCONFIG_SCSC_PLATFORM=1 -DCONFIG_SCSC_WLAN=1
+ccflags-y += -DCONFIG_SCSC_BT=1 -DCONFIG_SCSC_BT_BLUEZ=1
+ccflags-y += -DCONFIG_OF=1 -DCONFIG_OF_RESERVED_MEM=1
+
+obj-m += scsc_platform_mif.o
+scsc_platform_mif-y := \
+	misc/platform_mif_module.o \
+	misc/platform_mif_3830.o
+
+obj-m += scsc_mx.o
+scsc_mx-y := \
+	misc/mxlog_transport.o \
+	misc/fw_panic_record.o \
+	misc/panicmon.o \
+	misc/suspendmon.o \
+	misc/mxlog.o \
+	misc/mxproc.o \
+	misc/scsc_service.o \
+	misc/scsc_mx_module.o \
+	misc/scsc_mx_impl.o \
+	misc/mxman.o \
+	misc/miframman.o \
+	misc/mifmboxman.o \
+	misc/mifproc.o \
+	misc/mifintrbit.o \
+	misc/fwhdr.o \
+	misc/fwimage.o \
+	misc/cpacket_buffer.o \
+	misc/mifstream.o \
+	misc/mxmgmt_transport.o \
+	misc/gdb_transport.o \
+	misc/scsc_lerna.o \
+	misc/mxsyserr.o \
+	misc/mxfwconfig.o \
+	misc/mx140_file.o
+
+obj-m += scsc_wlan.o
+scsc_wlan-y := \
+	wlan/hip.o \
+	wlan/hip4.o \
+	wlan/mbulk.o \
+	wlan/dev.o \
+	wlan/cfg80211_ops.o \
+	wlan/netif.o \
+	wlan/rx.o \
+	wlan/tx.o \
+	wlan/ba.o \
+	wlan/sap_mlme.o \
+	wlan/sap_ma.o \
+	wlan/sap_dbg.o \
+	wlan/sap_test.o \
+	wlan/mib.o \
+	wlan/mib_text_convert.o \
+	wlan/debug.o \
+	wlan/debug_frame.o \
+	wlan/procfs.o \
+	wlan/mgt.o \
+	wlan/mlme.o \
+	wlan/udi.o \
+	wlan/log_clients.o \
+	wlan/src_sink.o \
+	wlan/fw_test.o \
+	wlan/cac.o \
+	wlan/scsc_wifi_fcq.o \
+	wlan/ioctl.o \
+	wlan/traffic_monitor.o \
+	wlan/reg_info.o \
+	wlan/cm_if.o \
+	wlan/scsc_wlan_mmap.o
+
+obj-m += scsc_bt.o
+scsc_bt-y := \
+	bt/scsc_bt_module.o \
+	bt/scsc_shm.o \
+	bt/scsc_avdtp_detect.o \
+	bt/scsc_bluez.o
