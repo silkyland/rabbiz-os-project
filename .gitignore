@@ -1,0 +1,11 @@
+# Build & cloned upstream trees
+build/
+src/
+vendor/
+
+# deep-plan working memory
+docs/.deep-plan/
+
+# Editor / OS
+.DS_Store
+*.swp

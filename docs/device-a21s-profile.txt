@@ -1,0 +1,161 @@
+# Device Profile (2026-11-14T14:35:53+07:00)
+
+=== ro.product.model ===
+SM-A217F
+
+=== ro.hardware ===
+exynos850
+
+=== ro.soc.model / ro.board.platform ===
+Exynos 850
+universal3830
+
+=== ro.build.version.release ===
+12
+
+=== ro.build.version.sdk ===
+31
+
+=== ro.product.cpu.abilist ===
+arm64-v8a,armeabi-v7a,armeabi
+
+=== MemTotal / MemAvailable ===
+MemTotal:        2767544 kB
+MemAvailable:    1051032 kB
+
+=== uname -a ===
+Linux localhost 4.19.132-24202344 #1 SMP PREEMPT Tue May 14 14:47:01 +07 2024 aarch64
+
+=== getenforce ===
+Enforcing
+
+=== ls -lZ /dev/mali0 ===
+crw-rw-rw- 1 system system u:object_r:gpu_device:s0  10, 109 2021-01-01 19:07 /dev/mali0
+
+=== mali_kbase version ===
+no /sys/module/mali_kbase/version
+
+=== ro.boot.flash.locked ===
+1
+
+=== ro.boot.verifiedbootstate ===
+green
+
+=== dumpsys deviceidle whitelist ===
+system-excidle,com.sec.vsim.ericssonnsds.webapp,10068
+system-excidle,com.samsung.android.app.galaxyfinder,10081
+system-excidle,com.samsung.android.app.cocktailbarservice,10052
+system-excidle,com.android.providers.calendar,10065
+system-excidle,com.osp.app.signin,10106
+system-excidle,com.sec.android.app.safetyassurance,5003
+system-excidle,com.samsung.android.easysetup,10061
+system-excidle,com.samsung.android.aware.service,10114
+system-excidle,com.sec.android.easyonehand,10167
+system-excidle,com.samsung.android.rubin.app,5010
+system-excidle,com.android.providers.downloads,10034
+system-excidle,com.sec.android.app.samsungapps,10053
+system-excidle,com.sec.android.daemonapp,10162
+system-excidle,com.android.vending,10180
+system-excidle,com.samsung.android.secsoundpicker,10034
+system-excidle,com.samsung.android.privateshare,10126
+system-excidle,com.samsung.android.sm.devicesecurity,5012
+system-excidle,com.samsung.android.messaging,10041
+system-excidle,com.samsung.klmsagent,10073
+system-excidle,com.sec.imsservice,1000
+system-excidle,com.facebook.services,10086
+system-excidle,com.samsung.android.mobileservice,10035
+system-excidle,com.samsung.android.mdx.kit,5025
+system-excidle,com.samsung.android.kgclient,10074
+system-excidle,com.samsung.android.game.gametools,10101
+system-excidle,com.samsung.android.app.contacts,10060
+system-excidle,com.samsung.android.service.peoplestripe,10067
+system-excidle,com.samsung.android.app.smartcapture,10133
+system-excidle,com.sec.android.app.clockpackage,10171
+system-excidle,com.samsung.android.server.wifi.mobilewips,10099
+system-excidle,com.google.android.gms,10181
+system-excidle,com.sec.spp.push,10048
+system-excidle,com.android.proxyhandler,10059
+system-excidle,com.samsung.android.allshare.service.fileshare,10148
+system-excidle,com.samsung.adaptivebrightnessgo,5021
+system-excidle,com.android.managedprovisioning,10055
+system-excidle,com.samsung.android.dialer,10105
+system-excidle,com.samsung.android.game.gos,10090
+system-excidle,com.samsung.android.forest,1000
+system-excidle,com.samsung.android.beaconmanager,5006
+system-excidle,com.samsung.android.scs,10057
+system-excidle,com.sec.unifiedwfc,10153
+system-excidle,com.samsung.android.app.updatecenter,10062
+system-excidle,com.aura.oobe.samsung.gl,10199
+system-excidle,com.samsung.android.knox.analytics.uploader,10042
+system-excidle,com.google.android.apps.turbo,10175
+system-excidle,com.samsung.android.bluelightfilter,1000
+system-excidle,com.samsung.android.providers.contacts,10039
+system-excidle,com.android.shell,2000
+system-excidle,com.sec.enterprise.knox.cloudmdm.smdms,10118
+system-excidle,com.google.android.apps.carrier.carrierwifi,10179
+system-excidle,com.samsung.android.app.appsedge,10080
+system-excidle,com.samsung.android.sdk.handwriting,10160
+system-excidle,com.facebook.appmanager,10124
+system-excidle,com.google.android.cellbroadcastreceiver,10207
+system-excidle,com.samsung.android.allshare.service.mediashare,10169
+system-excidle,com.samsung.android.cidmanager,1001
+system-excidle,com.samsung.sec.android.application.csc,1001
+system-excidle,com.samsung.android.sdm.config,10051
+system-excidle,com.samsung.android.video,10036
+system,com.sec.vsim.ericssonnsds.webapp,10068
+system,com.samsung.android.app.galaxyfinder,10081
+system,com.samsung.android.app.cocktailbarservice,10052
+system,com.android.providers.calendar,10065
+system,com.osp.app.signin,10106
+system,com.sec.android.app.safetyassurance,5003
+system,com.samsung.android.easysetup,10061
+system,com.samsung.android.aware.service,10114
+system,com.sec.android.easyonehand,10167
+system,com.samsung.android.rubin.app,5010
+system,com.android.providers.downloads,10034
+system,com.sec.android.app.samsungapps,10053
+system,com.sec.android.daemonapp,10162
+system,com.samsung.android.secsoundpicker,10034
+system,com.samsung.android.privateshare,10126
+system,com.samsung.android.sm.devicesecurity,5012
+system,com.samsung.android.messaging,10041
+system,com.samsung.klmsagent,10073
+system,com.sec.imsservice,1000
+system,com.facebook.services,10086
+system,com.samsung.android.mobileservice,10035
+system,com.samsung.android.mdx.kit,5025
+system,com.samsung.android.kgclient,10074
+system,com.samsung.android.game.gametools,10101
+system,com.samsung.android.app.contacts,10060
+system,com.samsung.android.service.peoplestripe,10067
+system,com.samsung.android.app.smartcapture,10133
+system,com.sec.android.app.clockpackage,10171
+system,com.samsung.android.server.wifi.mobilewips,10099
+system,com.google.android.gms,10181
+system,com.sec.spp.push,10048
+system,com.samsung.android.allshare.service.fileshare,10148
+system,com.samsung.adaptivebrightnessgo,5021
+system,com.android.managedprovisioning,10055
+system,com.samsung.android.dialer,10105
+system,com.samsung.android.game.gos,10090
+system,com.samsung.android.forest,1000
+system,com.samsung.android.beaconmanager,5006
+system,com.samsung.android.scs,10057
+system,com.sec.unifiedwfc,10153
+system,com.samsung.android.app.updatecenter,10062
+system,com.aura.oobe.samsung.gl,10199
+system,com.samsung.android.knox.analytics.uploader,10042
+system,com.samsung.android.bluelightfilter,1000
+system,com.android.shell,2000
+system,com.sec.enterprise.knox.cloudmdm.smdms,10118
+system,com.samsung.android.app.appsedge,10080
+system,com.samsung.android.sdk.handwriting,10160
+system,com.google.android.cellbroadcastreceiver,10207
+system,com.samsung.android.allshare.service.mediashare,10169
+system,com.samsung.android.cidmanager,1001
+system,com.samsung.sec.android.application.csc,1001
+system,com.samsung.android.sdm.config,10051
+system,com.samsung.android.video,10036
+user,com.sec.android.daemonapp,10162
+user,com.samsung.android.app.appsedge,10080
+
