@@ -116,12 +116,12 @@ static void abox_log_file_save(struct device *dev,
 
 
 	if (log_buffer->index_reader > index_writer) {
-		vfs_write(filp, log_buffer->buffer + log_buffer->index_reader,
+		kernel_write(filp, log_buffer->buffer + log_buffer->index_reader,
 			log_buffer->size - log_buffer->index_reader,
 			&filp->f_pos);
-		vfs_write(filp, log_buffer->buffer, index_writer, &filp->f_pos);
+		kernel_write(filp, log_buffer->buffer, index_writer, &filp->f_pos);
 	} else {
-		vfs_write(filp, log_buffer->buffer + log_buffer->index_reader,
+		kernel_write(filp, log_buffer->buffer + log_buffer->index_reader,
 			index_writer - log_buffer->index_reader, &filp->f_pos);
 	}
 

@@ -7,3 +7,10 @@ abox-snd-y := smc_compat.o abox_util.o abox_dbg.o abox_dump.o abox_log.o abox_gi
 	abox_soc.o abox_core.o abox_rdma.o abox_wdma.o abox_if.o abox_effect.o \
 	abox_vss.o abox_failsafe.o abox_vdma.o abox_msg.o abox_ipc.o abox_qos.o \
 	abox_ion.o abox_cmpnt.o abox_tplg.o abox_dma.o abox_pci.o abox_shm.o
+ccflags-y += -DCONFIG_SND_SOC_AUD3004X=1 -DCONFIG_SND_SOC_AUD3004X_5PIN=1
+
+obj-m += aud3004x-codec.o
+aud3004x-codec-y := aud3004x.o aud3004x-5pin.o aud3004x-dump.o
+
+obj-m += exynos3830-aud3004x.o
+exynos3830-aud3004x-y := exynos3830_aud3004x.o exynos3830_aud3004x_sysfs_cb.o

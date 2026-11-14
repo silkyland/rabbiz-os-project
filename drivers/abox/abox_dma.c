@@ -546,7 +546,7 @@ static int abox_dma_pcm_new(struct snd_soc_component *component, struct snd_soc_
 	ret = abox_iommu_map(dev_abox, abox_dma_iova(data), dmab->addr,
 			dmab->bytes, dmab->area);
 	if (ret < 0)
-		snd_pcm_lib_preallocate_free(substream);
+		snd_pcm_lib_free_pages(substream);
 
 	data->dmab = *dmab;
 
@@ -568,7 +568,7 @@ static void abox_dma_pcm_free(struct snd_soc_component *component, struct snd_pc
 	dev_dbg(dev, "%s\n", __func__);
 
 	abox_iommu_unmap(dev_abox, abox_dma_iova(data));
-	snd_pcm_lib_preallocate_free(substream);
+	snd_pcm_lib_free_pages(substream);
 }
 
 static int abox_dma_probe(struct snd_soc_component *cmpnt)

@@ -451,7 +451,7 @@ static void abox_vdma_pcm_free(struct snd_soc_component *component, struct snd_p
 		if (info->rtd[i].buffer.addr)
 			substream->dma_buffer.area = NULL;
 		else
-			snd_pcm_lib_preallocate_free(substream);
+			snd_pcm_lib_free_pages(substream);
 	}
 }
 

@@ -246,18 +246,18 @@ static void abox_dump_auto_dump_work_func(struct work_struct *work)
 					&info->buffer.addr, area, bytes,
 					info->auto_pointer);
 			if (pointer < info->auto_pointer) {
-				vfs_write(filp, area + info->auto_pointer,
+				kernel_write(filp, area + info->auto_pointer,
 						bytes - info->auto_pointer,
 						&filp->f_pos);
-				dev_dbg(dev, "vfs_write(%pK, %zx)\n",
+				dev_dbg(dev, "kernel_write(%pK, %zx)\n",
 						area + info->auto_pointer,
 						bytes - info->auto_pointer);
 				info->auto_pointer = 0;
 			}
-			vfs_write(filp, area + info->auto_pointer,
+			kernel_write(filp, area + info->auto_pointer,
 					pointer - info->auto_pointer,
 					&filp->f_pos);
-			dev_dbg(dev, "vfs_write(%pK, %zx)\n",
+			dev_dbg(dev, "kernel_write(%pK, %zx)\n",
 					area + info->auto_pointer,
 					pointer - info->auto_pointer);
 			info->auto_pointer = pointer;

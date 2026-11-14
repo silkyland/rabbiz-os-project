@@ -3464,3 +3464,4 @@ MODULE_AUTHOR("Gyeongtaek Lee, <gt82.lee@samsung.com>");
 MODULE_DESCRIPTION("Samsung ASoC A-Box Driver");
 MODULE_ALIAS("platform:samsung-abox");
 MODULE_LICENSE("GPL");
+MODULE_IMPORT_NS("DMA_BUF");

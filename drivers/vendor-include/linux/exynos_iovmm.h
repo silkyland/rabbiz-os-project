@@ -163,7 +163,8 @@ void iovmm_unmap(struct device *dev, dma_addr_t iova);
 #define iovmm_deactivate(dev)		do { } while (0)
 #define iovmm_map(dev, sg, offset, size, direction, prot) (-ENOSYS)
 #define iovmm_unmap(dev, iova)		do { } while (0)
-#define get_domain_from_dev(dev)	NULL
+#include <linux/iommu.h>
+#define get_domain_from_dev(dev)	iommu_get_domain_for_dev(dev)
 static inline dma_addr_t exynos_iovmm_map_userptr(struct device *dev,
 			unsigned long vaddr, size_t size, int prot)
 {

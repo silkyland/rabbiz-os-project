@@ -60,5 +60,67 @@ int exynos_smc_readsfr(unsigned long addr, unsigned long *val)
 	return x0;
 }
 EXPORT_SYMBOL(exynos_smc_readsfr);
+
+/* exynos-pmu compat: vendor uses a regmap over the PMU syscon at
+ * 0x11860000. For the out-of-tree ABOX port, ioremap the window and
+ * provide the read/write/update helpers directly. */
+#define EXYNOS_PMU_PHYS	0x11860000
+#define EXYNOS_PMU_SIZE	0x10000
+
+static void __iomem *pmu_base;
+
+static void __iomem *pmu_reg(unsigned int offset)
+{
+	if (!pmu_base)
+		pmu_base = ioremap(EXYNOS_PMU_PHYS, EXYNOS_PMU_SIZE);
+	if (!pmu_base)
+		return NULL;
+	return pmu_base + offset;
+}
+
+int exynos_pmu_read(unsigned int offset, unsigned int *val)
+{
+	void __iomem *reg = pmu_reg(offset);
+
+	if (!reg)
+		return -ENOMEM;
+	*val = readl(reg);
+	return 0;
+}
+EXPORT_SYMBOL(exynos_pmu_read);
+
+int exynos_pmu_write(unsigned int offset, unsigned int val)
+{
+	void __iomem *reg = pmu_reg(offset);
+
+	if (!reg)
+		return -ENOMEM;
+	writel(val, reg);
+	return 0;
+}
+EXPORT_SYMBOL(exynos_pmu_write);
+
+int exynos_pmu_update(unsigned int offset, unsigned int mask,
+		     unsigned int val)
+{
+	void __iomem *reg = pmu_reg(offset);
+	u32 old;
+
+	if (!reg)
+		return -ENOMEM;
+	old = readl(reg);
+	writel((old & ~mask) | (val & mask), reg);
+	return 0;
+}
+EXPORT_SYMBOL(exynos_pmu_update);
+
 /* iovmm_set_fault_handler: stubbed via vendor header when
  * CONFIG_EXYNOS_IOMMU is unset (no-op for bring-up). */
+
+/* set_codec_notifier_flag lives in the vendor S2MPU12 MFD driver.
+ * Weak stub for bring-up: codec jack-detection IRQ notification is
+ * inert without the PMIC MFD stack. */
+__weak void set_codec_notifier_flag(bool on)
+{
+}
+EXPORT_SYMBOL(set_codec_notifier_flag);

@@ -98,3 +98,47 @@ as separate built-in initcalls). Config defines:
 `exynos850-a217f.dts`), sysmmu_abox + cmu_aud + pd-aud deps, ABOX
 firmware extraction (`calliope_*.bin` from super.img), AUD3004X codec
 + exynos3830_sound machine driver, runtime probe.
+
+## Progress update (continued)
+
+**Modules all build:** `abox-snd.ko`, `aud3004x-codec.ko`,
+`exynos3830-aud3004x.ko` — modpost clean (added
+`MODULE_IMPORT_NS(DMA_BUF/IIO_CONSUMER)`, `kernel_write` for
+`vfs_write`, prealloc fix, exynos_pmu_update stub).
+
+**Machine driver ported** (`exynos3830_aud3004x.c`): static legacy
+dai-link fields → `.cpus/.platforms/.codecs` component arrays,
+`be_hw_params_fixup` split into per-direction wrappers
+(`exynos3830_fixup_pb/cap` → `abox_hw_params_fixup_helper`),
+obsolete DPCM trigger constants dropped, `of_gpio.h` → gpiod compat,
+`codec_conf/aux_dev` `.of_node`→`.dlc.of_node`,
+`snd_soc_of_parse_daifmt`→`snd_soc_daifmt_parse_format`,
+`snd_soc_of_get_dai_name` 3-arg, `.remove` int→void,
+`snd-soc-dummy` codec fallback kept (codec-less links still bind).
+
+**DTS fragment done** (`patches/linux/0003-a21s-abox-audio-dts.patch`):
+`abox-gic` (GIC_SPI 64), `abox@14a50000` full vendor subtree — 2×
+abox-core w/ firmware descriptors, 12× rdma, 5× wdma, 5× dual,
+6× ddma, 3× uaif, spdy, debug/tplg/vss, 9× ext-bin. Vendor clock
+cells → mainline `cmu_aud` IDs (`FOUT_AUD_PLL`, `DOUT_AUD_AUDIF`,
+`BUSD`, `CNT`, `DOUT_AUD_UAIF*`, `GOUT_AUD_UAIF*_BCLK`,
+`DOUT_AUD_MCLK`, `GOUT_AUD_SPDY_BCLK`), `iommus=<&sysmmu_aud>`,
+uaif pinctrl → `aud_i2s{0,1}`/`aud_codec_mclk` pins.
+`sound {}` card wired w/ all links; codec phandles omitted →
+`snd-soc-dummy` until aud3004x bus is ported.
+
+**Firmware on device:** `calliope_sram{,_2}.bin`,
+`calliope_dram{,_2}.bin`, `abox_tplg.bin` extracted from Android
+`super` (vendor part) → `/usr/lib/firmware/`. No userspace daemon
+needed (driver loads firmware itself).
+
+**Codec dependency found:** `aud3004x@07` sits on `acpm_mfd_bus` —
+registers go through Samsung `i2c-speedy` + `acpm` IPC framework
+(~1.3k lines + deps). Ported codec compiles but cannot bind without
+that bus → **speaker output requires acpm/speedy port** (Phase B).
+
+**Deploy attempt #1:** `kexec -l Image --dtb=new.dtb` → device did
+not return (kexec hang; `CONFIG_EXYNOS_IOMMU` not built so sysmmu
+node is inert — suspect kexec instability, not DTB). Flash untouched;
+force-reboot restores previous system. Next: retry kexec w/ stock
+DTB to isolate, else `boot-avb.img` + dd path per BUILD.md §C.
