@@ -102,17 +102,17 @@
 - **Objective:** Boot full ARM64 Linux rootfs from eMMC (`&mmc_0`) with working display, touch (`ovt,td4150`), and Mesa `Panfrost`/`PanVK`.
 - **Depends on:** M1 (R1)
 - **Tasks:**
-  - [ ] `M2-R1-T1`: Build/flash an ARM64 Linux rootfs (postmarketOS / Arch Linux ARM64) onto `USERDATA` (`mmcblk0p...` from `docs/a21s-pit.txt`) and enable 3GB ZRAM + 4GB eMMC swapfile.
-  - [ ] `M2-R1-T2`: Verify DRM/KMS display (`decon` + `dsi` `syna,td4150-panel`), touchscreen (`ovt,td4150`), and `/dev/dri/renderD128` (`panfrost`).
-  - [ ] `M2-R1-T3`: Run `kmscube` and `vulkaninfo --summary` (Mesa `panvk`) natively on DRM/KMS; log results in `docs/a21s-native-gpu.md`.
+  - [x] `M2-R1-T1`: Build/flash an ARM64 Linux rootfs (postmarketOS / Arch Linux ARM64) onto `USERDATA` (`mmcblk0p...` from `docs/a21s-pit.txt`) and enable 3GB ZRAM + 4GB eMMC swapfile.
+  - [x] `M2-R1-T2`: Verify DRM/KMS display (`decon` + `dsi` `syna,td4150-panel`), touchscreen (`ovt,td4150`), and `/dev/dri/renderD128` (`panfrost`).
+  - [x] `M2-R1-T3`: Run `kmscube` and `vulkaninfo --summary` (Mesa `panvk`) natively on DRM/KMS; log results in `docs/a21s-native-gpu.md`.
 - **Exit criteria:** `kmscube` / `vkcube` renders directly on the A21s screen via DRM/KMS + Panfrost/PanVK.
 
 ### M3 (R1): Native SteamOS ARM64 (`Gamescope` + `Steam` + `FEX-Emu`) on A21s (effort: L)
 - **Objective:** Run Gamescope + Steam ARM64 Client natively on DRM/KMS and launch a lightweight game.
 - **Depends on:** M2 (R1)
 - **Tasks:**
-  - [ ] `M3-R1-T1`: Install `gamescope`, `FEX-Emu`, and Valve Holo Core / Steam ARM64 userland into the native rootfs.
-  - [ ] `M3-R1-T2`: Launch `gamescope -W 720 -H 1600 -f -- steam -gamepadui` directly on DRM/KMS over USB-C NAT internet.
+  - [x] `M3-R1-T1`: Install `gamescope`, `FEX-Emu`, and Valve Holo Core / Steam ARM64 userland into the native rootfs.
+  - [x] `M3-R1-T2`: Launch `gamescope -W 720 -H 1600 -f -- steam -gamepadui` directly on DRM/KMS over USB-C NAT internet.
   - [ ] `M3-R1-T3`: Launch a lightweight Native ARM64 or 2D Windows game (Proton + FEX-Emu) and record FPS/RAM metrics in `docs/a21s-game-results.md`.
 - **Exit criteria:** Steam Gamepad UI + at least one game runs natively on Galaxy A21s with zero Android.
 
