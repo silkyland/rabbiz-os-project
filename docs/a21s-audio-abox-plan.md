@@ -44,3 +44,57 @@ This is the same class of task as the SCSC WLBT port: extract the vendor driver,
 
 - **Bluetooth speaker/headphones**: pair like the gamepad/keyboard → bluez5 SPA creates the sink automatically.
 - **USB-C audio dongle/hub**: `snd-usb-audio.ko` is in the modules tree → plug and it registers.
+
+## Port progress (in-flight, not yet runtime-verified)
+
+**Status:** `drivers/abox/` (76 files, ported from
+`src/exynos850-vendor-kernel/sound/soc/samsung/abox/`) compiles as
+out-of-tree `abox-snd.ko` against mainline 7.3 — all 23 vendor objects
++ `smc_compat.c` link cleanly. `modpost` still pending on the first
+full in-tree `modules` build (Module.symvers).
+
+**Build:** `drivers/abox/Kbuild` — single module with merged
+`module_init` registering all 14 platform drivers (vendor built them
+as separate built-in initcalls). Config defines:
+`SND_SOC_SAMSUNG_ABOX_VERSION=0x23000`, `ABOX_V3`,
+`DRAM_SIZE=0x1200000`, `SOC_EXYNOS3830`.
+
+**Mainline API fixes applied (mechanical):**
+- `module_platform_driver` x14 → shared init/exit table in abox.c
+- `.remove` int→void (14 files); `set_fs`/`get_fs` removed (dump/log)
+- `dai_link` string fields → `cpus[]`/`codecs[]`/`platforms[]`
+- `snd_pcm_ops`/`snd_compr_ops` → flattened component ops +
+  `struct snd_compress_ops` (leading `component` arg)
+- `rtd->cpu_dai` → `snd_soc_rtd_to_cpu(rtd, 0)`;
+  `snd_soc_component_read(3-arg)` → `snd_soc_component_read_v` shim
+  (abox.h); `snd_soc_kcontrol_component` shim (private_data)
+- `digital_mute`→`mute_stream`, `symmetric_*` renames,
+  `SND_SOC_DAIFMT_CBS_CFS`→`CBC_CFC`, `CBM_CFM`→`CBP_CFP`
+- `wakeup_source_init/trash` → `wakeup_source_register/unregister`
+- `strncpy/strlcpy` → `strscpy`; `memblock_free`→`memblock_phys_free`
+- `FW_ACTION_HOTPLUG`→`true`; `iommu_map_sg` +GFP arg
+- `w->dapm->dev/component` → `snd_soc_dapm_to_dev/component()`
+- `dai->rate/channels/sample_width` → `abox_if_data` fields
+- `devm_pinctrl_get`/`linux/compat.h`/`linux/memblock.h`/`linux/vmalloc.h` includes
+
+**Vendor-only deps resolved via `drivers/vendor-include/` + stubs:**
+- `exynos_smc`/`exynos_smc_readsfr` implemented in `smc_compat.c`
+  (inline `smc #0`, mirrors vendor .S)
+- `PM_QOS_*` / `pm_qos` → tracking-only `abox_qos` (real DVFS hints
+  dropped for bring-up — revisit later)
+- `linux/shm_ipc.h`, `modem_notifier.h`, `exynos-pmu.h`,
+  `exynos-itmon.h`, `exynos_iovmm.h` → vendor headers with built-in
+  stubs when CONFIG_* unset
+- `linux/smc.h` renamed `exynos_smc.h` (collides w/ uapi AF_SMC hdr)
+- `ion_alloc_dmabuf` → `dma_alloc_coherent` + `dma_buf_export` shim
+  in abox_ion.c
+- `IRQF_GIC_MULTI_TARGET` define in exynos_smc.h (0x10000000)
+
+**Kernel-side changes needed:** `patches/linux/0002-...` makes
+`SND_SOC_TOPOLOGY` user-visible (select-only upstream) + config:
+`SND_SOC_TOPOLOGY=y`, `SND_SOC_COMPRESS`, `SND_SOC_SAMSUNG`.
+
+**Still TODO:** DTS fragment (vendor `exynos3830.dts` abox subtree →
+`exynos850-a217f.dts`), sysmmu_abox + cmu_aud + pd-aud deps, ABOX
+firmware extraction (`calliope_*.bin` from super.img), AUD3004X codec
++ exynos3830_sound machine driver, runtime probe.

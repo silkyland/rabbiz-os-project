@@ -1,0 +1,13 @@
+diff --git a/sound/soc/Kconfig b/sound/soc/Kconfig
+index 0000000..0000000 100644
+--- a/sound/soc/Kconfig
++++ b/sound/soc/Kconfig
+@@ -37,7 +37,7 @@ config SND_SOC_COMPRESS
+ 	select SND_COMPRESS_OFFLOAD
+ 
+ config SND_SOC_TOPOLOGY
+-	bool
++	bool "ASoC Topology support"
+ 	select SND_DYNAMIC_MINORS
+ 
+ config SND_SOC_TOPOLOGY_BUILD
