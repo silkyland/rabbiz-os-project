@@ -1,0 +1,75 @@
+diff --git a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
+index 56cf845ea..a34207856 100644
+--- a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
++++ b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
+@@ -19,7 +19,7 @@ chosen {
+ 		#address-cells = <2>;
+ 		#size-cells = <1>;
+ 
+-		bootargs = "androidboot.hardware=exynos850 androidboot.boot_devices=soc@0/12100000.mmc androidboot.selinux=permissive androidboot.verifiedbootstate=orange androidboot.init_fatal_reboot_target=recovery firmware_class.path=/vendor/firmware/ log_buf_len=4M loop.max_part=7 rw";
++		bootargs = "androidboot.hardware=exynos850 androidboot.boot_devices=soc@0/12100000.mmc androidboot.selinux=permissive androidboot.verifiedbootstate=orange androidboot.init_fatal_reboot_target=recovery firmware_class.path=/vendor/firmware/ log_buf_len=4M loop.max_part=7 clk_ignore_unused rw";
+ 
+ 		framebuffer0: framebuffer@fa000000 {
+ 			compatible = "simple-framebuffer";
+@@ -117,6 +117,12 @@ cont_splash_mem: framebuffer@fa000000 {
+ 			reg = <0x0 0xfa000000 (720 * 1600 * 4)>;
+ 			no-map;
+ 		};
++
++		wifibt_if: wifibt_if@b0000000 {
++			compatible = "exynos,wifibt_if";
++			reg = <0x0 0xb0000000 0xc00000>;
++			no-map;
++		};
+ 	};
+ };
+ 
+@@ -539,3 +545,48 @@ &watchdog_cl0 {
+ &watchdog_cl1 {
+ 	status = "okay";
+ };
++
++&soc {
++	i3c_apm_pmic: syscon@11a50000 {
++		compatible = "syscon";
++		reg = <0x11a50000 0x1800>;
++	};
++
++	dbus_baaw: syscon@14c20000 {
++		compatible = "syscon";
++		reg = <0x14c20000 0x300>;
++	};
++
++	pbus_baaw: syscon@14c30000 {
++		compatible = "syscon";
++		reg = <0x14c30000 0x300>;
++	};
++
++	wlbt_remap: syscon@14c50000 {
++		compatible = "syscon";
++		reg = <0x14c50000 0x500>;
++	};
++
++	boot_cfg: syscon@14c60000 {
++		compatible = "syscon";
++		reg = <0x14c60000 0x1200>;
++	};
++
++	scsc_wifibt@119c0000 {
++		compatible = "samsung,scsc_wifibt";
++		reg = <0x119c0000 0x180>;
++		interrupts = <GIC_SPI 54 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 38 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 230 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 231 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "MBOX", "ALIVE", "CFG_REQ", "WDOG";
++		samsung,syscon-phandle = <&pmu_system_controller>;
++		samsung,i3c_apm_pmic-syscon-phandle = <&i3c_apm_pmic>;
++		samsung,dbus_baaw-syscon-phandle = <&dbus_baaw>;
++		samsung,pbus_baaw-syscon-phandle = <&pbus_baaw>;
++		samsung,wlbt_remap-syscon-phandle = <&wlbt_remap>;
++		samsung,boot_cfg-syscon-phandle = <&boot_cfg>;
++		memory-region = <&wifibt_if>;
++		status = "okay";
++	};
++};

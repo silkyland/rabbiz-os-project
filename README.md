@@ -48,8 +48,23 @@ Porting **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -
 
 ---
 
+## Quick Build (Fresh Machine)
+
+`src/` and `build/` are gitignored, so bootstrap the upstream trees, DTS patches, and kernel defconfig first:
+
+```bash
+./scripts/bootstrap_build_env.sh
+make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) Image dtbs modules
+make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/drivers/scsc modules
+```
+
+See **[docs/BUILD.md](docs/BUILD.md)** for full details (patches applied, `CONFIG_UHID` BLE gamepad rebuild, `kexec` testing, and `uniLoader` packing).
+
+---
+
 ## Quick Links
 
+- **Build & Patch Guide:** [docs/BUILD.md](docs/BUILD.md)
 - **Architecture & System Map:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Roadmap & Next Milestones:** [ROADMAP.md](ROADMAP.md)
 - **Wi-Fi & Bluetooth Bring-up Guide:** [docs/a21s-wifi-bluetooth.md](docs/a21s-wifi-bluetooth.md)

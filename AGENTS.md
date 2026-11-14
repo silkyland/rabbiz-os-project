@@ -21,15 +21,18 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 
 ## Commands
 
+- Bootstrap `src/` + `build/` on a fresh machine:
+  `./scripts/bootstrap_build_env.sh` (clones `samsungexynos850/linux` @ `14a425b3a` + `uniLoader` @ `06a1bba`, applies `patches/linux/*.patch`, prepares `build/linux` from `configs/a21s_linux_defconfig`)
 - Build SCSC modules (`drivers/scsc/`):
-  `make -C src/linux O=../../build/linux ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- M=$PWD/drivers/scsc modules`
+  `make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/drivers/scsc modules`
 - Build kernel (`Image` + DTBs):
-  `make -C src/linux O=../../build/linux ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc) Image dtbs`
+  `make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) Image dtbs`
 - Verify device over USB or Wi-Fi:
   `ssh root@172.16.42.1 "uname -a && nmcli device status && hciconfig -a"` (or `ssh root@192.168.1.142`)
 
 ## Where knowledge lives
 
+- Build & patch guide: [docs/BUILD.md](docs/BUILD.md)
 - Architecture and data flow: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Current milestone and what's next: [ROADMAP.md](ROADMAP.md)
 - Full research and decisions record: [docs/PLAN.md](docs/PLAN.md)
