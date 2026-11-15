@@ -13,6 +13,7 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 - **`src/` and `build/` are gitignored** (`.gitignore:2-3`) — tracked driver code lives in `drivers/scsc/`.
 - **Keep boot-on S2MPU12 rails `always_on`** in `drivers/abox/s2mpu12-regulator.c` until panel supplies are wired in DTS — otherwise `regulator_late_cleanup()` disables `vdd_ldo28` (lcd_vddi) at ~31 s and the screen goes black (`docs/a21s-mainline-boot.md`).
 - **Never `rmmod exynos3830_aud3004x`** — `aud3004x_jack_remove` oopses; reboot instead (`docs/a21s-audio-abox-plan.md` §0).
+- **Never let a client request ≥768 KiB on a `calliope_*` PCM** — the Calliope buffer heap is 768 KiB (`786432` B) while ALSA advertises `BUFFER_BYTES_MAX = SZ_1M` (`drivers/abox/abox.h:41`). The oversized request is refused *inside* the DSP (`Not enough memory: 1048576 of 786432`) and wedges it. WirePlumber does exactly this when it probes calliope PCMs with ALSA defaults (`docs/HANDOFF.md` §0.1).
 
 ## Common wrong assumptions
 
@@ -21,6 +22,7 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 - **"Vendor `scsc_bt` compiles directly on Mainline 7.3"** is wrong: Mainline removed `hdev->dev_type = HCI_BREDR` and uses `<net/bluetooth/hci_h4.h>` `h4_recv_skb(hdev, NULL, NULL, ...)` (`drivers/scsc/bt/scsc_bluez.c`).
 - **"Vendor `mxman.c` unregisters cleanly without `recovery_disabled_unreg` check"** is wrong: `mxman_stop()` must guard `if (mif->recovery_disabled_unreg)` (`drivers/scsc/misc/mxman.c:2667`).
 - **"ABOX noise means wrong I2S format/clock"** can be wrong: cicada/mosquito noise on *both* speakers was a broken `sg_table` (no `struct page`) in the `drivers/abox/abox_ion.c` ION shim — build it with `dma_get_sgtable()` (`docs/a21s-audio-abox-plan.md` §0).
+- **"The 18 MiB `ABOX_DRAM_SIZE=0x1200000` is the DSP's audio buffer space"** is wrong: that is the **host-side** DRAM window (`DRAM_FIRMWARE_SIZE`). The firmware's PCM buffer heap is only **768 KiB** — and hitting it does not return a clean error, it data-aborts the DSP.
 
 ## Commands
 

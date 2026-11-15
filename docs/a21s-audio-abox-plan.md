@@ -26,6 +26,7 @@ aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 song.wav
 | 2 | Clicking ("ติ๊กๆ") | `UAIF1`/`UAIF2` in `exynos3830_dai[]` had no `.dai_fmt`. `exynos3830_audio_probe()` only rewrites DT-listed links (`[0..13]`), so `abox_uaif_hw_params()` hit `default:` → `ABOX_UAIF1_CTRL1 (0x0514)` got `VALID_STR=VALID_END=15`, keeping 1 of 16 bits | `exynos3830_aud3004x.c`: `.dai_fmt = I2S \| NB_NF \| CBC_CFC` on `UAIF0..2`. Check: `0514` reads `00800000` |
 | 3 | `ABOX RDMA3 Width` = 8 | Default kcontrol value | `scripts/abox_speaker.sh` sets it to `16` |
 | 4 | **Cicada/mosquito noise on *both* speakers** (the real bug) | `abox_ion.c` mainline shim (replaces ION) built its `sg_table` with `sg_alloc_table()` + `sg_dma_address()` only, leaving **no `struct page`**. `abox_iommu_map_sg()` → `iommu_map_sg()` uses `sg_phys()` = `page_to_phys(NULL)`, so the Calliope IOVA for the PCM buffer pointed at **random RAM**. The DSP pipeline timing was perfect (log-00 clean), but the samples were garbage | Build the table with `dma_get_sgtable(dev, &sgt, vaddr, dma_addr, size)` |
+| 5 | **Playback returns `EIO` ~1 s after trigger; DSP dumps registers** (`data abort(0x1, 0xab0cab0c, 0x8000bd24, 0x805)`, `r01: dead0002`, `pc : 0000b454`) | **OPEN.** Reproduces on a clean boot with PipeWire/WirePlumber masked (zero probe lines), `calliope_version=nEB0`, 0 boot retries, and a 15 KiB S16 buffer at the documented params above. So it is *not* the 768 KiB DSP ceiling, not S32 width, not capture probing. After the abort the DSP never recovers (later plays get `EIO` with no new abort) | Not fixed. See `docs/HANDOFF.md` §0.1 for the full evidence |
 
 > [!NOTE]
 > Debug lesson: if `log-00` shows `PCMOUT0 → BD_SRCCOM0 → BD_MIXER → RDMA3` running cleanly, the registers look right, and **both** codecs make the same kind of noise, suspect the shared DMA/IOMMU buffer mapping before the codec or I2S format.
@@ -35,7 +36,10 @@ aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 song.wav
 - SMA1303 regs `01..04`, PLL `8b..8f` (`1.536MHz` entry `07 e0 8b 03`), `fb: 08` without `CLK_MON` fault were all fine.
 
 ### Known caveats
-- On some boots Calliope never signals `BOOT_DONE` (`calliope boot retry 1/8..8/8`), so audio needs another reboot.
+- **DSP buffer ceiling:** the Calliope buffer heap is 768 KiB but ALSA advertises `BUFFER_BYTES_MAX = SZ_1M` (`abox.h:41`), so a legal 1 MiB request is refused *inside* the DSP (`Not enough memory: 1048576 of 786432`) instead of failing in `hw_params`. WirePlumber hits this by opening calliope PCMs with defaults (8 ch, S32, 1 MiB). `0x1200000` in `Kbuild` is the host DRAM window, not this heap.
+- **`abox_speaker.sh` runs under `set -e`** and `audio-up.sh` discards its output, so one `cset` that times out at boot silently skips the rest of the routing. It also sets `ABOX SPUS ASRC3 1`, while the working recipe above uses `ASRC3 0` — contradiction still unresolved.
+- **Playback currently `EIO`s on a clean boot** (bug #5) — the recipe above was verified on an earlier build/boot and does not reproduce today.
+- On some boots Calliope never signals `BOOT_DONE` (`calliope boot retry 1/8..8/8`), so audio needs another reboot. After a DSP runtime `data abort` every later boot also failed — recovery needed a manual power cycle, not a software reboot.
 - **Never `rmmod exynos3830_aud3004x`.** `aud3004x_jack_remove` oopses on unload. Reboot instead.
 - Loading `s2mpu12-regulator.ko` caused a black screen ~31 s after boot. See [a21s-mainline-boot.md](a21s-mainline-boot.md) § "Black screen ~30 s after boot".
 

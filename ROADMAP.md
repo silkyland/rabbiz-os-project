@@ -1,6 +1,6 @@
 # Roadmap
 
-> Source of truth for sequencing. Detail lives in [docs/PLAN.md](docs/PLAN.md) and [docs/a21s-power-battery-modem-plan.md](docs/a21s-power-battery-modem-plan.md); architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Last updated: 2026-11-14.
+> Source of truth for sequencing. Detail lives in [docs/PLAN.md](docs/PLAN.md) and [docs/a21s-power-battery-modem-plan.md](docs/a21s-power-battery-modem-plan.md); architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Last updated: 2026-11-15.
 
 ## Status
 
@@ -11,6 +11,7 @@
 | M2 (R1) | Native Rootfs, `decon`/`dsi` Display & `Panfrost`/`PanVK` | done | L | M1 (R1) |
 | M3 (R1) | Native SteamOS ARM64 (`steam -gamepadui` + Box64/Weston) | done | L | M2 (R1) |
 | M3.5 | SCSC Wi-Fi (`wlan0`), Bluetooth (`hci0`) & NetworkManager | done | L | M3 (R1) |
+| M3.6 | Internal Speaker Audio (`abox` Calliope DSP, `sma1303`/`aud3004x`, PipeWire/UCM) | wip | L | M3.5 |
 | M4 (R1) | Phase 2 — Xiaomi Pad 7 Pro (`muyu` / `SM8635`) `Zaviya` Port | todo | L | M3 (R1) |
 | M5 | Power, Battery (`s2mu106`), Thermal (`TMU`) & Suspend | todo | M | M3.5 |
 | M6 | Cellular Modem (`cpif` + `pmu-cp`) & Voice Call (`oFono`) | todo | L | M5 |
@@ -31,6 +32,20 @@
   - [x] Configure `NetworkManager` (`unmanaged` `usb0`, `wifi.scan-rand-mac-address=no`) and verify Steam `client_networkmanager.txt` `Activated/Connected`.
   - [x] Enable kernel HID stack (`CONFIG_UHID`, `CONFIG_HIDRAW`, `CONFIG_INPUT_JOYDEV`, `CONFIG_HID_{MICROSOFT,PLAYSTATION,NINTENDO,STEAM}`, `CONFIG_JOYSTICK_XPAD`), rebuild/flash `boot-avb.img`, and remove `xbox-ble-uinput` stopgap — [docs/a21s-ble-gamepad.md](docs/a21s-ble-gamepad.md).
 - **Notes (2026-11-14):** `p2p0` still appears as `disconnected` in `nmcli`; harmless so far, can be marked `unmanaged` if needed. BlueZ `5.88` + PipeWire/WirePlumber userspace installed; Xbox Wireless Controller bonded and works through the `uinput` bridge stopgap.
+
+### M3.6: Internal Speaker Audio — wip
+- **Objective:** Play music/Steam audio through the built-in speaker via the ABOX Calliope DSP, exposed to PipeWire as the default sink.
+- **Exit criteria:** `aplay -D plughw:1,100` and PipeWire/Steam both produce clean audio on a good boot, repeatably, without wedging the DSP.
+- **Detail:** [docs/a21s-audio-abox-plan.md](docs/a21s-audio-abox-plan.md); current handoff in [docs/HANDOFF.md](docs/HANDOFF.md) §0–§0.1.
+- **Tasks:**
+  - [x] Port ABOX to Mainline 7.3 (`drivers/abox/`), DT fragment, `calliope_*` firmware, topology (`RC#1–#11`).
+  - [x] Speaker + earpiece playback verified once (music heard) — `abox_ion.c` `dma_get_sgtable()` fix.
+  - [x] `s2mpu12` PMIC rails → `sma1303` amp powered and responding.
+  - [x] UCM2 for `Exynos3830-Madera`, default sink persisted, `abox-audio.service`.
+  - [ ] **Fix bug #5: playback `EIO` ~1 s after trigger, DSP `data abort` on a clean boot** (blocks everything else).
+  - [ ] Resolve `BUFFER_BYTES_MAX` (1 MiB) vs 768 KiB DSP heap mismatch; keep PipeWire from probing calliope PCMs with defaults.
+  - [ ] Resolve `ASRC3` contradiction between `abox_speaker.sh` and the documented recipe; stop `audio-up.sh` hiding `set -e` failures.
+  - [ ] Make Calliope boot reliable (flaky `BOOT_DONE`; software reboot sometimes leaves the host offline → manual power cycle).
 
 ### M4 (R1): Xiaomi Pad 7 Pro (`muyu` / `SM8635`) — todo
 - **Objective:** Unlock HyperOS bootloader on `muyu` (`ac9c8ddc`) and port Native SteamOS ARM64 (`Zaviya`).

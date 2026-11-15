@@ -1,6 +1,108 @@
 # Engineering Handoff — Galaxy A21s (`SM-A217F` / Exynos 850)
 
-Last updated: 2026-11-15 (post Calliope breakthrough)
+Last updated: 2026-11-15 (PipeWire integration paused — DSP playback data-aborts on a clean boot)
+
+---
+
+## 0. Latest session — PipeWire/Steam audio integration (in-flight)
+
+**Goal:** unmask PipeWire, expose the ABOX speaker as the default sink for Steam, then M5 (battery/power) + M6 (modem).
+
+### Done & verified on device
+
+- **Unmasked PipeWire at both layers.** Mask existed twice: `/etc/systemd/system/pipewire{,-pulse}.service`, `wireplumber.service → /dev/null` *and* `/home/gamer/.config/systemd/user/{pipewire.service,pipewire.socket,pipewire-pulse.service,pipewire-pulse.socket,wireplumber.service} → /dev/null`. Both removed. User-session enable links (`pipewire.socket`, `pipewire-pulse.socket` in `sockets.target.wants`, `wireplumber` in `pipewire.service.wants`) were already in `/etc/systemd/user/` → sockets auto-start in the `gamer` session.
+- **UCM2 written for `Exynos3830-Madera` — the card now produces a real ACP sink.** Deployed to repo `rootfs-overlay/usr/share/alsa/ucm2/`:
+  - `conf.d/Exynos3830-Made/Exynos3830-Madera.conf` — master (`Syntax 3`, `SectionUseCase."HiFi" → File "/Exynos3830-Madera/HiFi.conf"`).
+  - `Exynos3830-Madera/HiFi.conf` — verb: `SectionDevice."Speaker"`, `PlaybackPCM "hw:${CardId},100"`, Enable `cset "name='SPK SPK On' on"`.
+- **UCM lookup gotchas (hard-won, document before forgetting):**
+  - alsa-lib 1.2.16 probes `ucm2/conf.d/${CardDriver}/${CardLongName}.conf` then `…/${CardDriver}.conf`. `CardDriver` = `snd_ctl_card_info_get_driver()` = **`Exynos3830-Made`** (the driver field truncates `exynos3830-audio` to 15 chars!). NOT `exynos3830_aud3004x` (that's PipeWire's `alsa.driver_name` from sysfs) and NOT `exynos3830-audio` (kernel sysfs driver). Only `conf.d/Exynos3830-Made/` works.
+  - The `conf.d` master file only lists verbs (`Syntax 3` + `SectionUseCase`); `SectionVerb`/`SectionDevice` live in the referenced verb file. Putting `SectionVerb` directly in the conf.d file → `unknown master file field`.
+  - UCM `cset` takes exact name + value in one string: `cset "name='SPK SPK On' on"`. The `name=^X*` regex form is NOT valid UCM.
+- **Real codec controls:** `Speaker Mute Switch(1:muted_0:un)`/`Speaker Mode`/`Speaker Volume` in the old `audio-up.sh` were silent no-ops (names don't exist — amixer errors were hidden by `2>&1`). The aud3004x speaker switch is **`SPK SPK On`** (numid 593; also `EP EP On`, `HP HP On`, `LINEOUT LINEOUT On`, `MIC1..3`, `INP_SEL_L/R`).
+- **Default sink persisted:** `wpctl set-default` → wireplumber stores `alsa_output.platform-sound.HiFi__Speaker__sink` in Default Configured Devices; survives reboot. `pactl` reports PipeWire server + correct default; `pipewire-pulse` socket-activated.
+- **Boot integration:** `abox-audio.service` (oneshot → `/root/audio-up.sh`) created + enabled; repo copies in `rootfs-overlay/etc/systemd/system/` and `scripts/audio-up.sh` (updated: drops the bogus csets, writes `playback_init`, sets `SPK SPK On`).
+
+### Open problems
+
+1. **DSP data-aborts on playback ~1 s after trigger — with or without PipeWire (main blocker).** Not a buffer-size, format or probing problem: see §0.1. A 15 KiB S16 buffer at the documented known-good params still kills the DSP.
+2. **768 KiB DSP ceiling is real and is exceeded by ALSA's own maximum.** `BUFFER_BYTES_MAX = SZ_1M` while the firmware heap is 768 KiB → a legal request reaches the DSP and is refused there. Capture probing makes it worse but is not the trigger. See §0.1.
+3. **Calliope boot flake persists** — 2 of 4 boots today never signaled BOOT_DONE (all 8 `boot_retry` pulses failed). Recovery = reboot only. Pattern hints warm-reboot state dependence (a good boot followed by a wedged/rebooted DSP tends to fail).
+4. **Slow mixer enumeration** — `amixer scontrols`/`sget` "Timer expired"; wireplumber `spa.alsa: Unable to load mixer` + `Failed to find a working mixer device (_ucm0003.hw:Exynos3830Mader)`; ~60–90 s before `wpctl` responds post-start. Some of the 722 kcontrols' get path likely hits the DSP mailbox. Effect: **no hardware volume on the sink (soft volume only)** — acceptable for now.
+5. Pre-existing cosmetic: `abox_rdma close timeout`.
+
+### 0.1 Round 2 — DRAM ceiling characterised, playback blocker moved (2026-11-15 16:00)
+
+Goal was to isolate the `paplay` wedge (open problems #1/#2 from Round 1). Outcome: **the 768 KiB ceiling is real and now fully explained, but it is not what breaks playback.** Raw log: `/tmp/opencode/dsp-experiment-log.md`.
+
+**VERIFIED — where the 1 MiB request comes from**
+
+WirePlumber's ALSA monitor opens every calliope PCM with ALSA *defaults*; `dmesg` shows it verbatim:
+
+```
+abox-wdma 14a53100: ion_buffer abox_wdma_hw_params bytes(524288) size(524288)
+abox-wdma 14a53300: Capture:Total=1048576 PrdSz=1024(32768) #Prds=32 rate=48000, width=32, channels=8
+abox-vdma .103    : Playback:Total=1048576 PrdSz=1024(32768) #Prds=32 rate=48000, width=32, channels=8
+```
+
+`1048576` is exactly the number in the firmware refusal `Not enough memory: 1048576 of 786432`. The mismatch is in the source, not the DSP:
+
+- `BUFFER_BYTES_MAX = SZ_1M` (`drivers/abox/abox.h:41`; applied at `abox_dma.c:43`, `abox_rdma.c:1199`, `abox_wdma.c:59`) — ALSA will accept a 1 MiB buffer.
+- Firmware buffer heap = 768 KiB (`786432`). A legal request is therefore rejected *inside* the DSP instead of failing in `hw_params`.
+- `CONFIG_SND_SOC_SAMSUNG_ABOX_DRAM_SIZE=0x1200000` (18 MiB, `Kbuild:3` → `DRAM_FIRMWARE_SIZE`) is the **host-side DRAM window**, **not** the 768 KiB heap. Do not conflate the two.
+
+**VERIFIED — probing is not the cause of the playback failure**
+
+A/B test: masked the whole user audio stack (`/home/gamer/.config/systemd/user/{pipewire,pipewire-pulse}.{service,socket}` and `wireplumber.service` → `/dev/null`), rebooted → **zero** `Total=` probe lines at boot, no `pipewire`/`wireplumber` processes, `calliope_version=nEB0`, 0 boot retries. Playback still failed:
+
+```
+aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 /root/s16-48k.wav
+aplay: pcm_write:2191: write error: Input/output error
+```
+
+with exactly the documented known-good params (`Total=15360 PrdSz=960(3840) #Prds=4 width=16 channels=2`, `bclk=1529174`), then ~1 s after `abox_rdma_trigger[3](1)`:
+
+```
+data abort(0x1, 0xab0cab0c, 0x8000bd24, 0x805) is reported from calliope
+A-Box core register dump (nEB0)
+CORE: 0   r00: ab0cab0c  r01: dead0002  ...  pc : 0000b454
+```
+
+After that abort the DSP stops serving PCM IPC: a second attempt with `ASRC3=0` + `playback_init` returns `EIO` with **no** new abort line while `calliope_version` still reads `nEB0`. Re-confirms: **Calliope does not self-recover from a runtime data abort.**
+
+**VERIFIED — boot-window IPC timeouts plus a script bug**
+
+Before any playback on that boot: `abox_msg_send: timeout: 1, 193, 43788, 262/268/275/284, 0, …` (4×). Mixer IPC was healthy afterwards (`amixer -c 1 cset name='ABOX SPUS ASRC3' 0` → exit 0), so it is a boot-window race, not a dead mailbox.
+
+`scripts/abox_speaker.sh` runs under `set -e` and `audio-up.sh` swallows its output (`>/dev/null 2>&1`): one timed-out `cset` at boot silently skips the remainder of the routing. It also sets `ABOX SPUS ASRC3 1`, while the documented working recipe (`docs/a21s-audio-abox-plan.md` §0) uses `ASRC3 0`. **Unresolved contradiction.**
+
+**Boot reliability got worse.** 3 good boots in a row (0 retries) at 16:03/16:06/16:12; afterwards every boot failed `BOOT_DONE` (8/8 retries). A software `reboot` left the host unreachable on `usb0` **and** `wlan0` twice in a row — recovery needs a **manual power cycle**, not a reboot.
+
+**Not yet tested** (device went offline before these ran): `ASRC3=0` + `playback_init` applied *before the first* playback on a clean boot; S32-vs-S16 width isolation; a deliberate 1 MiB (`--buffer-size=262144` frames S16) request. Test WAVs are on the device: `/root/s16-48k.wav`, `/root/s32-48k.wav`.
+
+### Device state right now
+
+Last reboot: **host unreachable on both `usb0` and `wlan0`** after a software reboot — needs a manual power cycle. Before that, `Calliope` failed `BOOT_DONE` on every boot since the 16:12 DSP data abort (`calliope_version` empty, 8/8 retries).
+
+**⚠️ Left behind by Round 2 — must be undone for Steam audio:** the user audio stack is masked in
+`/home/gamer/.config/systemd/user/` (`pipewire.service`, `pipewire.socket`, `pipewire-pulse.service`, `pipewire-pulse.socket`, `wireplumber.service` → `/dev/null`). Remove those five symlinks (or reboot after deleting them) to restore PipeWire/WirePlumber. `abox-audio.service` was left untouched and enabled.
+
+### Resume recipe
+
+```bash
+# wait for a good Calliope boot
+ssh root@172.16.42.1 'tr -d "\0" < /sys/devices/platform/soc@0/14a50000.abox/calliope_version'   # want: nEB0
+# isolate the breaking param BEFORE starting PW streams
+aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 song.wav          # known-good (S16)
+aplay -D hw:1,100 s32.wav                                                   # suspect
+# PW session (gamer)
+runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 \
+  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus wpctl status
+# force S16 in PW if S32 is the breaker — ~/.config/wireplumber/wireplumber.conf.d/
+#   monitor.alsa.rules match on node.name ~alsa_output.platform-sound* :
+#   update-props { audio.format=S16LE audio.rate=48000 api.alsa.period-size=960 api.alsa.period-num=4 }
+```
+
+Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend per `docs/a21s-power-battery-modem-plan.md`), then M6.
 
 ---
 
