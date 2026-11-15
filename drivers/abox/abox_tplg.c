@@ -1171,6 +1171,12 @@ static int abox_tplg_link_load(struct snd_soc_component *cmpnt, int index,
 		}
 	}
 
+	if (link->num_platforms && !link->platforms[0].name && !link->platforms[0].of_node) {
+		dev_warn(dev, "abox_tplg_link_load(%s): empty platform, setting snd-soc-dummy\n",
+			 link->name ? link->name : "?");
+		link->platforms[0].name = "snd-soc-dummy";
+	}
+
 	return 0;
 }
 

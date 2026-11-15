@@ -1312,6 +1312,8 @@ static int abox_rdma_hw_params(struct snd_soc_component *component, struct snd_p
 	} else if (data->buf_type == BUFFER_TYPE_ION) {
 		dev_info(dev, "ion_buffer %s bytes(%zu) size(%zu)\n",
 				__func__, buffer_bytes, data->ion_buf->size);
+		if (buffer_bytes > data->ion_buf->size)
+			return -ENOMEM;
 	} else {
 		dev_err(dev, "buf_type is not defined\n");
 	}
@@ -1565,8 +1567,13 @@ static int abox_rdma_open(struct snd_soc_component *component, struct snd_pcm_su
 	abox_request_cpu_gear_dai(dev, abox_data, snd_soc_rtd_to_cpu(rtd, 0),
 			abox_data->cpu_gear_min);
 
-	if (substream->runtime)
+	if (substream->runtime) {
 		snd_soc_set_runtime_hwparams(substream, &abox_rdma_hardware);
+		if (data->buf_type == BUFFER_TYPE_ION)
+			snd_pcm_hw_constraint_minmax(substream->runtime,
+					SNDRV_PCM_HW_PARAM_BUFFER_BYTES,
+					0, BUFFER_ION_BYTES_MAX);
+	}
 
 	data->substream = substream;
 

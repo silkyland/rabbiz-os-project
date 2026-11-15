@@ -726,6 +726,11 @@ static int abox_if_cmpnt_probe(struct snd_soc_component *cmpnt)
 			!!data->dai_drv->playback.formats,
 			!!data->dai_drv->capture.formats);
 
+	if (data->dai_drv->playback.formats)
+		snd_soc_dapm_add_routes(dapm, &abox_if_routes[0], 1);
+	if (data->dai_drv->capture.formats)
+		snd_soc_dapm_add_routes(dapm, &abox_if_routes[1], 1);
+
 	switch (data->dai_drv->id) {
 	case ABOX_UAIF0 ... ABOX_UAIF6:
 		snd_soc_add_component_controls(cmpnt, abox_uaif_controls,
@@ -804,8 +809,6 @@ static const struct snd_soc_component_driver abox_if_cmpnt = {
 	.num_controls	= ARRAY_SIZE(abox_if_controls),
 	.dapm_widgets	= abox_if_widgets,
 	.num_dapm_widgets = ARRAY_SIZE(abox_if_widgets),
-	.dapm_routes	= abox_if_routes,
-	.num_dapm_routes = ARRAY_SIZE(abox_if_routes),
 	.probe		= abox_if_cmpnt_probe,
 	.remove		= abox_if_cmpnt_remove,
 	.read		= abox_if_read,

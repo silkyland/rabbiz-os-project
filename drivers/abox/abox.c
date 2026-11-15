@@ -1004,7 +1004,8 @@ int abox_iommu_map(struct device *dev, unsigned long iova,
 		goto out;
 	}
 
-	ret = iommu_map(data->iommu_domain, iova, addr, bytes, 0, GFP_KERNEL);
+	ret = iommu_map(data->iommu_domain, iova, addr, bytes,
+			IOMMU_READ | IOMMU_WRITE, GFP_KERNEL);
 	if (ret < 0) {
 		devm_kfree(dev, mapping);
 		dev_err(dev, "iommu_map(%#lx) fail: %d\n", iova, ret);
@@ -1044,7 +1045,8 @@ int abox_iommu_map_sg(struct device *dev, unsigned long iova,
 		goto out;
 	}
 
-	ret = iommu_map_sg(data->iommu_domain, iova, sg, nents, prot,
+	ret = iommu_map_sg(data->iommu_domain, iova, sg, nents,
+			prot ? prot : (IOMMU_READ | IOMMU_WRITE),
 			GFP_KERNEL);
 	if (ret < 0) {
 		devm_kfree(dev, mapping);
@@ -2011,11 +2013,11 @@ int abox_register_extra_sound_card(struct device *dev,
 	mutex_lock(&lock);
 	dev_dbg(dev, "%s(%s, %u)\n", __func__, card->name, idx);
 
-	cards[idx] = card;
-
 	for (i = ARRAY_SIZE(cards) - 1; i >= idx; i--)
 		if (cards[i])
 			snd_soc_unregister_card(cards[i]);
+
+	cards[idx] = card;
 
 	for (i = idx; i < ARRAY_SIZE(cards); i++)
 		if (cards[i])
@@ -2726,6 +2728,31 @@ static int abox_enable(struct device *dev)
 		}
 	}
 
+	{
+		static struct clk *clk_sysmmu;
+		if (!clk_sysmmu) {
+			struct device_node *smmu_np = of_parse_phandle(dev->of_node, "iommus", 0);
+			if (smmu_np) {
+				clk_sysmmu = of_clk_get_by_name(smmu_np, "sysmmu");
+				of_node_put(smmu_np);
+			}
+		}
+		if (!IS_ERR_OR_NULL(clk_sysmmu)) {
+			void __iomem *smmu = ioremap(0x14850000, 0x9000);
+			clk_prepare_enable(clk_sysmmu);
+			if (smmu) {
+				dev_info(dev, "DIAG SMMU: ctrl=%#x vm0=%#x pt0=%#x vm1=%#x pt1=%#x sysreg=%#x/%#x/%#x\n",
+					 readl(smmu + 0x0), readl(smmu + 0x8000),
+					 readl(smmu + 0x800c), readl(smmu + 0x8100),
+					 readl(smmu + 0x810c),
+					 readl(data->sysreg_base + 0x400),
+					 readl(data->sysreg_base + 0x404),
+					 readl(data->sysreg_base + 0x40c));
+				iounmap(smmu);
+			}
+		} else
+			dev_warn(dev, "sysmmu clk not found: %ld\n", PTR_ERR(clk_sysmmu));
+	}
 	abox_request_dram_on(dev, DEFAULT_SYS_POWER_ID, true);
 	data->calliope_state = CALLIOPE_ENABLING;
 	if (has_reset) {
@@ -3120,16 +3147,40 @@ static int samsung_abox_probe(struct platform_device *pdev)
 	if (IS_ERR(data->timer_base))
 		return PTR_ERR(data->timer_base);
 
+	np_tmp = of_parse_phandle(np, "samsung,abox-gic", 0);
+	if (!np_tmp) {
+		dev_err(dev, "Failed to get abox-gic device node\n");
+		return -EPROBE_DEFER;
+	}
+	pdev_tmp = of_find_device_by_node(np_tmp);
+	if (!pdev_tmp) {
+		dev_err(dev, "Failed to get abox-gic platform device\n");
+		return -EPROBE_DEFER;
+	}
+	data->dev_gic = &pdev_tmp->dev;
 
-	data->iommu_domain = get_domain_from_dev(dev);
-	if (IS_ERR(data->iommu_domain)) {
-		dev_err(dev, "Unable to get iommu domain\n");
-		return PTR_ERR(data->iommu_domain);
+	ret = abox_gic_register_irq_handler(data->dev_gic, IRQ_WDT,
+			abox_wdt_handler, data);
+	if (ret < 0)
+		return ret;
+	for (i = 0; i < SGI_ABOX_MSG; i++) {
+		ret = abox_gic_register_irq_handler(data->dev_gic, i,
+				abox_irq_handler, dev);
+		if (ret < 0)
+			return ret;
+	}
+
+	data->iommu_domain = iommu_paging_domain_alloc(dev);
+	if (IS_ERR_OR_NULL(data->iommu_domain)) {
+		dev_err(dev, "Unable to alloc iommu domain\n");
+		return data->iommu_domain ? PTR_ERR(data->iommu_domain) : -ENOMEM;
 	}
 
 	ret = iommu_attach_device(data->iommu_domain, dev);
 	if (ret < 0) {
 		dev_err(dev, "Unable to attach device to iommu (%d)\n", ret);
+		iommu_domain_free(data->iommu_domain);
+		data->iommu_domain = NULL;
 		return ret;
 	}
 
@@ -3219,29 +3270,6 @@ static int samsung_abox_probe(struct platform_device *pdev)
 		}
 	}
 
-	np_tmp = of_parse_phandle(np, "samsung,abox-gic", 0);
-	if (!np_tmp) {
-		dev_err(dev, "Failed to get abox-gic device node\n");
-		return -EPROBE_DEFER;
-	}
-	pdev_tmp = of_find_device_by_node(np_tmp);
-	if (!pdev_tmp) {
-		dev_err(dev, "Failed to get abox-gic platform device\n");
-		return -EPROBE_DEFER;
-	}
-	data->dev_gic = &pdev_tmp->dev;
-
-	ret = abox_gic_register_irq_handler(data->dev_gic, IRQ_WDT,
-			abox_wdt_handler, data);
-	if (ret < 0)
-		return ret;
-	for (i = 0; i < SGI_ABOX_MSG; i++) {
-		ret = abox_gic_register_irq_handler(data->dev_gic, i,
-				abox_irq_handler, dev);
-		if (ret < 0)
-			return ret;
-	}
-
 	abox_of_get_addr(data, np, "samsung,ipc-tx-area", &data->ipc_tx_addr,
 			&data->ipc_tx_size);
 	abox_of_get_addr(data, np, "samsung,ipc-rx-area", &data->ipc_rx_addr,
@@ -3268,11 +3296,6 @@ static int samsung_abox_probe(struct platform_device *pdev)
 			&abox_timer_regmap_config);
 
 	abox_qos_init(dev);
-
-	pm_runtime_enable(dev);
-	pm_runtime_set_autosuspend_delay(dev, 500);
-	pm_runtime_use_autosuspend(dev);
-	pm_runtime_get(dev);
 
 	data->qos_nb.notifier_call = abox_qos_notifier;
 
@@ -3312,6 +3335,11 @@ static int samsung_abox_probe(struct platform_device *pdev)
 
 	abox_vdma_init(dev);
 	of_platform_populate(np, NULL, NULL, dev);
+
+	pm_runtime_enable(dev);
+	pm_runtime_set_autosuspend_delay(dev, 500);
+	pm_runtime_use_autosuspend(dev);
+	pm_runtime_get(dev);
 
 	return 0;
 }

@@ -18,6 +18,7 @@
 #include <sound/soc-dapm.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 #include <linux/clk.h>
 #include <linux/slab.h>
 
@@ -685,11 +686,12 @@ static int exynos3830_late_probe(struct snd_soc_card *card)
 	struct snd_soc_dapm_context *dapm;
 	struct snd_soc_dai_link *link;
 	const char *name;
-	int ret, i;
+	int ret, i, j;
 
-	aif_dai = snd_soc_rtd_to_codec(get_rtd(card, MADERA_DAI_ID), 0);
+	rtd = get_rtd(card, MADERA_DAI_ID);
+	aif_dai = rtd ? snd_soc_rtd_to_codec(rtd, 0) : NULL;
 
-	if (drvdata->sysclk.valid) {
+	if (aif_dai && drvdata->sysclk.valid) {
 		ret = snd_soc_dai_set_sysclk(aif_dai, drvdata->sysclk.id, 0, 0);
 		if (ret != 0) {
 			dev_err(drvdata->dev, "Failed to set AIF1 clock: %d\n",
@@ -746,7 +748,7 @@ static int exynos3830_late_probe(struct snd_soc_card *card)
 	snd_soc_dapm_ignore_suspend(dapm, "VTS Virtual Output");
 	snd_soc_dapm_sync(dapm);
 
-	if (IS_ENABLED(CONFIG_SND_SOC_MADERA)) {
+	if (aif_dai && IS_ENABLED(CONFIG_SND_SOC_MADERA)) {
 		struct snd_soc_component *codec;
 
 		codec = aif_dai->component;
@@ -769,7 +771,7 @@ static int exynos3830_late_probe(struct snd_soc_card *card)
 		if (!rtd)
 			continue;
 
-		for (i = 0; i < rtd->dai_link->num_codecs; i++) {
+		for (j = 0; j < rtd->dai_link->num_codecs; j++) {
 			aif_dai = snd_soc_rtd_to_cpu(rtd, 0);
 			dapm = snd_soc_component_to_dapm(aif_dai->component);
 			if (NULL /* aif_dai->playback_widget */) {
@@ -787,7 +789,7 @@ static int exynos3830_late_probe(struct snd_soc_card *card)
 				snd_soc_dapm_sync(dapm);
 			}
 
-			aif_dai = &rtd->dais[rtd->dai_link->num_cpus][i];
+			aif_dai = snd_soc_rtd_to_codec(rtd, j);
 			dapm = snd_soc_component_to_dapm(aif_dai->component);
 			if (NULL /* aif_dai->playback_widget */) {
 				name = NULL;
@@ -1736,26 +1738,35 @@ out:
 static int read_cpu(struct device_node *np, struct device *dev,
 		struct snd_soc_dai_link *dai_link)
 {
+	struct snd_soc_dai_link_component *cpus;
 	int ret = 0;
 
 	np = of_get_child_by_name(np, "cpu");
 	if (!np)
 		return -ENOENT;
 
-	dai_link->cpus = devm_kzalloc(dev, sizeof(*dai_link->cpus), GFP_KERNEL);
-	dai_link->num_cpus = 1;
-	dai_link->cpus[0].of_node = of_parse_phandle(np, "sound-dai", 0);
-	if (!dai_link->cpus[0].of_node) {
+	cpus = devm_kzalloc(dev, sizeof(*cpus), GFP_KERNEL);
+	if (!cpus) {
+		ret = -ENOMEM;
+		goto out;
+	}
+	cpus[0].of_node = of_parse_phandle(np, "sound-dai", 0);
+	if (!cpus[0].of_node) {
+		devm_kfree(dev, cpus);
 		ret = -ENODEV;
 		goto out;
 	}
 
-	if (dai_link->cpus[0].dai_name == NULL) {
-		/* Ignoring the return as we don't register DAIs to the platform */
-		ret = snd_soc_of_get_dai_name(np, &dai_link->cpus[0].dai_name, 0);
-		if (ret)
-			goto out;
+	/* Ignoring the return as we don't register DAIs to the platform */
+	ret = snd_soc_of_get_dai_name(np, &cpus[0].dai_name, 0);
+	if (ret) {
+		of_node_put(cpus[0].of_node);
+		devm_kfree(dev, cpus);
+		goto out;
 	}
+
+	dai_link->cpus = cpus;
+	dai_link->num_cpus = 1;
 out:
 	of_node_put(np);
 
@@ -1776,11 +1787,51 @@ static void exynos3830_register_card_work_func(struct work_struct *work)
 {
 	struct snd_soc_card *card = &exynos3830_madera;
 //	struct snd_soc_dai *cpu_dai;
-	int ret;
+	int i, ret;
 
 	dev_info(card->dev, "%s\n", __func__);
 
+	for (i = 0; i < card->num_links; i++) {
+		struct snd_soc_dai_link *l = &card->dai_link[i];
+		int j;
+
+		if (l->playback_only && l->capture_only) {
+			l->playback_only = 0;
+			l->capture_only = 0;
+		}
+		if (!l->codecs || !l->num_codecs) {
+			l->codecs = devm_kzalloc(card->dev, sizeof(*l->codecs),
+						 GFP_KERNEL);
+			if (l->codecs) {
+				l->num_codecs = 1;
+				l->codecs[0].name = "snd-soc-dummy";
+				l->codecs[0].dai_name = "snd-soc-dummy-dai";
+			}
+		}
+		for (j = 0; j < l->num_platforms; j++) {
+			if (!l->platforms[j].name && !l->platforms[j].of_node) {
+				pr_warn("exynos3830: link[%d] %s empty platform[%d], using dummy\n",
+					i, l->name ? l->name : "?", j);
+				l->platforms[j].name = "snd-soc-dummy";
+			} else if (l->platforms[j].of_node && !l->platforms[j].name &&
+				   of_device_is_compatible(l->platforms[j].of_node, "samsung,abox")) {
+				struct platform_device *apdev =
+					of_find_device_by_node(l->platforms[j].of_node);
+				if (apdev) {
+					l->platforms[j].name = devm_kstrdup(card->dev,
+									    dev_name(&apdev->dev),
+									    GFP_KERNEL);
+					l->platforms[j].of_node = NULL;
+					put_device(&apdev->dev);
+				}
+			}
+		}
+	}
+
+	pr_info("exynos3830: calling devm_snd_soc_register_card num_links=%d\n",
+		card->num_links);
 	ret = devm_snd_soc_register_card(card->dev, card);
+	pr_info("exynos3830: devm_snd_soc_register_card ret=%d\n", ret);
 	if (ret)
 		dev_err(card->dev, "sound card register failed: %d\n", ret);
 
@@ -1994,8 +2045,14 @@ static int exynos3830_audio_probe(struct platform_device *pdev)
 static void exynos3830_audio_remove(struct platform_device *pdev)
 {
 	struct snd_soc_card *card = platform_get_drvdata(pdev);
-	struct madera_drvdata *drvdata = snd_soc_card_get_drvdata(card);
+	struct madera_drvdata *drvdata;
 	int i;
+
+	if (!card)
+		return;
+	drvdata = snd_soc_card_get_drvdata(card);
+	if (!drvdata)
+		return;
 
 	for (i = 0; i < MADERA_MAX_CLOCKS; ++i)
 		clk_disable_unprepare(drvdata->clk[i]);

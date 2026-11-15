@@ -1,0 +1,31 @@
+diff --git a/drivers/gpu/drm/exynos/exynos_drm_dma.c b/drivers/gpu/drm/exynos/exynos_drm_dma.c
+index 734741c80..ac6039f12 100644
+--- a/drivers/gpu/drm/exynos/exynos_drm_dma.c
++++ b/drivers/gpu/drm/exynos/exynos_drm_dma.c
+@@ -100,7 +100,7 @@ int exynos_drm_register_dma(struct drm_device *drm, struct device *dev,
+ 			 dev_name(dev));
+ 	}
+ 
+-	if (!IS_ENABLED(CONFIG_EXYNOS_IOMMU))
++	if (!IS_ENABLED(CONFIG_EXYNOS_IOMMU) || !device_iommu_mapped(dev))
+ 		return 0;
+ 
+ 	if (!priv->mapping) {
+@@ -123,7 +123,7 @@ int exynos_drm_register_dma(struct drm_device *drm, struct device *dev,
+ void exynos_drm_unregister_dma(struct drm_device *drm, struct device *dev,
+ 			       void **dma_priv)
+ {
+-	if (IS_ENABLED(CONFIG_EXYNOS_IOMMU))
++	if (IS_ENABLED(CONFIG_EXYNOS_IOMMU) && device_iommu_mapped(dev))
+ 		drm_iommu_detach_device(drm, dev, dma_priv);
+ }
+ 
+@@ -131,7 +131,7 @@ void exynos_drm_cleanup_dma(struct drm_device *drm)
+ {
+ 	struct exynos_drm_private *priv = drm->dev_private;
+ 
+-	if (!IS_ENABLED(CONFIG_EXYNOS_IOMMU))
++	if (!IS_ENABLED(CONFIG_EXYNOS_IOMMU) || !priv->mapping)
+ 		return;
+ 
+ 	arm_iommu_release_mapping(priv->mapping);
