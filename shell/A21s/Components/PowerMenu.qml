@@ -291,16 +291,26 @@ PanelWindow {
                         spacing: Theme.spaceS
 
                         MaterialIcon {
-                            name: SystemControl.airplaneMode ? "flight" : (Network.wifiConnected ? "wifi" : "wifi_off")
+                            name: SystemControl.airplaneMode ? "flight" : (Network.wifiConnected ? "wifi" : (SystemControl.cpifLoaded ? "signal_cellular_alt" : "wifi_off"))
                             size: 18
                             color: ShellPrefs.accentColor
                         }
                         Text {
                             text: SystemControl.airplaneMode ? "Airplane"
-                                : (Network.wifiConnected ? Network.activeSsid : "Offline")
+                                : (Network.wifiConnected ? Network.activeSsid : (Telephony.operatorName || "Offline"))
                             color: Theme.text
                             font.pixelSize: Theme.fontStatus - 1
                             font.family: Theme.fontFamily
+                        }
+                        Rectangle {
+                            visible: SystemControl.fingerprintSupported && ShellPrefs.fingerprintEnabled
+                            width: 1; height: 14; color: Qt.alpha(Theme.text, 0.18)
+                        }
+                        MaterialIcon {
+                            visible: SystemControl.fingerprintSupported && ShellPrefs.fingerprintEnabled
+                            name: "fingerprint"
+                            size: 16
+                            color: Theme.success
                         }
                         Rectangle { width: 1; height: 14; color: Qt.alpha(Theme.text, 0.18) }
                         Text {
@@ -627,11 +637,109 @@ PanelWindow {
                     }
                 }
 
-                // Bottom-Center: Sleep Pill + Swipe-Up Unlock Handle
+                // Bottom-Center: Sleep Pill + Interactive Fingerprint Pad + Swipe-Up Unlock
                 ColumnLayout {
                     Layout.fillWidth: true
                     Layout.alignment: Qt.AlignBottom
-                    spacing: Theme.spaceS
+                    spacing: Theme.spaceM
+
+                    // Biometric Fingerprint Scanner Pad (EgisTech ET520)
+                    Item {
+                        visible: ShellPrefs.fingerprintEnabled
+                        Layout.alignment: Qt.AlignHCenter
+                        width: 112
+                        height: 112
+
+                        Timer {
+                            id: fpScanHoldTimer
+                            interval: 180
+                            onTriggered: SystemControl.triggerFingerprintUnlock(true)
+                        }
+
+                        // Expanding sonar ripple ring while scanning or unlocking
+                        Rectangle {
+                            id: fpRipple
+                            anchors.centerIn: parent
+                            width: 84; height: 84; radius: 42
+                            color: "transparent"
+                            border.width: 2
+                            border.color: SystemControl.fpState === "success" ? Theme.success : ShellPrefs.accentColor
+                            scale: SystemControl.fpState === "scanning" ? 1.38
+                                 : (SystemControl.fpState === "success" ? 1.48 : 1.0)
+                            opacity: SystemControl.fpState === "scanning" ? 0.55
+                                   : (SystemControl.fpState === "success" ? 0.0 : 0.0)
+                            Behavior on scale { NumberAnimation { duration: 320; easing.type: Easing.OutCubic } }
+                            Behavior on opacity { NumberAnimation { duration: 280 } }
+                        }
+
+                        // Main capacitive sensor circle
+                        Rectangle {
+                            id: fpPad
+                            anchors.centerIn: parent
+                            width: 84; height: 84; radius: 42
+                            color: SystemControl.fpState === "success" ? Theme.success
+                                 : (SystemControl.fpState === "error" ? Theme.danger
+                                 : (SystemControl.fpState === "scanning"
+                                    ? Qt.alpha(ShellPrefs.accentColor, 0.28)
+                                    : Qt.alpha(Theme.surfaceHigh, 0.84)))
+                            border.width: 2
+                            border.color: SystemControl.fpState === "success" ? "#86EFAC"
+                                        : (SystemControl.fpState === "error" ? "#FCA5A5"
+                                        : (SystemControl.fpState === "scanning"
+                                           ? ShellPrefs.accentColor
+                                           : Qt.alpha(ShellPrefs.accentColor, 0.55)))
+                            scale: SystemControl.fpState === "success" ? 1.08
+                                 : (fpPadMouse.pressed ? 0.92 : 1.0)
+                            Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Easing.OutBack } }
+                            Behavior on color { ColorAnimation { duration: 180 } }
+                            Behavior on border.color { ColorAnimation { duration: 180 } }
+
+                            MaterialIcon {
+                                anchors.centerIn: parent
+                                name: SystemControl.fpState === "success" ? "check_circle"
+                                    : (SystemControl.fpState === "error" ? "error_outline" : "fingerprint")
+                                size: 42
+                                color: SystemControl.fpState === "success" || SystemControl.fpState === "error"
+                                    ? "#FFFFFF"
+                                    : (SystemControl.fpState === "scanning" ? ShellPrefs.accentColor : Theme.text)
+                            }
+                        }
+
+                        MouseArea {
+                            id: fpPadMouse
+                            anchors.fill: parent
+                            onPressed: {
+                                if (SystemControl.fpState !== "success") {
+                                    SystemControl.fpState = "scanning"
+                                    fpScanHoldTimer.restart()
+                                }
+                            }
+                            onReleased: {
+                                fpScanHoldTimer.stop()
+                                if (SystemControl.fpState === "scanning")
+                                    SystemControl.triggerFingerprintUnlock(true)
+                            }
+                            onCanceled: {
+                                fpScanHoldTimer.stop()
+                                if (SystemControl.fpState === "scanning")
+                                    SystemControl.fpState = "idle"
+                            }
+                        }
+                    }
+
+                    Text {
+                        visible: ShellPrefs.fingerprintEnabled
+                        Layout.alignment: Qt.AlignHCenter
+                        text: SystemControl.fpState === "success" ? "Unlocked · " + SystemControl.fingerprintChip
+                            : (SystemControl.fpState === "error" ? "Fingerprint not recognized"
+                            : (SystemControl.fpState === "scanning" ? "Verifying " + SystemControl.fingerprintChip + "..."
+                            : "Touch sensor or swipe up to unlock"))
+                        color: SystemControl.fpState === "success" ? Theme.success
+                             : (SystemControl.fpState === "error" ? Theme.danger : Theme.textDim)
+                        font.pixelSize: Theme.fontStatus - 1
+                        font.family: Theme.fontFamily
+                        font.weight: Font.Medium
+                    }
 
                     Rectangle {
                         Layout.alignment: Qt.AlignHCenter
@@ -673,12 +781,14 @@ PanelWindow {
                         spacing: 4
 
                         MaterialIcon {
+                            visible: !ShellPrefs.fingerprintEnabled
                             Layout.alignment: Qt.AlignHCenter
                             name: "keyboard_arrow_up"
                             size: 28
                             color: Theme.textDim
                         }
                         Text {
+                            visible: !ShellPrefs.fingerprintEnabled
                             Layout.alignment: Qt.AlignHCenter
                             text: "Swipe up or tap to unlock"
                             color: Theme.textDim
@@ -964,6 +1074,39 @@ PanelWindow {
                 }
             }
             onPressAndHold: SystemControl.wake()
+        }
+
+        // Subtle AOD Wake & Unlock Fingerprint Ring when Screen Off
+        Item {
+            visible: ShellPrefs.fingerprintEnabled && ShellPrefs.fingerprintWakeUnlock
+            anchors {
+                horizontalCenter: parent.horizontalCenter
+                bottom: parent.bottom
+                bottomMargin: Theme.navZoneHeight + 76
+            }
+            width: 108
+            height: 108
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: 76; height: 76; radius: 38
+                color: aodFpMouse.pressed ? Qt.alpha(ShellPrefs.accentColor, 0.25) : "transparent"
+                border.width: 1.5
+                border.color: Qt.alpha(ShellPrefs.accentColor, aodFpMouse.pressed ? 0.85 : 0.34)
+                MaterialIcon {
+                    anchors.centerIn: parent
+                    name: "fingerprint"
+                    size: 36
+                    color: Qt.alpha("#FFFFFF", aodFpMouse.pressed ? 0.90 : 0.38)
+                }
+            }
+
+            MouseArea {
+                id: aodFpMouse
+                anchors.fill: parent
+                onClicked: SystemControl.triggerFingerprintUnlock(true)
+                onPressAndHold: SystemControl.triggerFingerprintUnlock(true)
+            }
         }
     }
 }

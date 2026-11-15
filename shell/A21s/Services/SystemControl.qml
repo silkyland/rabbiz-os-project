@@ -25,6 +25,23 @@ QtObject {
     property bool autoRotate: false
     property bool mobileData: true
 
+    // --- Biometric fingerprint (ET520) & Shannon CP modem (s318ap) ---
+    property bool fingerprintSupported: false
+    property string fingerprintChip: "ET520"
+    property string fingerprintStatus: "ready"
+    property int fingerprintIrqCount: 0
+    property int _lastFpIrqCount: -1
+    property string fpState: "idle" // idle | scanning | success | error
+
+    property bool cpifLoaded: false
+    property string cpModemName: "s318ap"
+    property string cpPhoneState: "OFFLINE"
+    property string cpRmemInfo: "0xd0000000 0x8800000"
+    property string cpTocSummary: "unloaded"
+    property bool cpMemMapOnCp: false
+    property string cpRegionsSummary: ""
+    property string modemNodesSummary: ""
+
     // --- Internals ---
     property real _prevTotal: 0
     property real _prevIdle: 0
@@ -52,6 +69,7 @@ QtObject {
         Bluetooth.setPowered(!root.airplaneMode)
         if (root.airplaneMode)
             root.mobileData = false
+        syncTelephonyState()
         _runCmd(["sh", "-c",
             "rfkill " + (root.airplaneMode ? "block" : "unblock") + " all 2>/dev/null || true"])
     }
@@ -101,10 +119,27 @@ QtObject {
         if (root.airplaneMode)
             return
         root.mobileData = !root.mobileData
+        syncTelephonyState()
         if (Telephony.modemAvailable) {
             _runCmd(["sh", "-c",
                 "mmcli -m 0 " + (root.mobileData ? "--enable" : "--disable") + " 2>/dev/null || true"])
         }
+    }
+
+    function syncTelephonyState() {
+        if (!Telephony.modemAvailable && !root.cpifLoaded)
+            return
+        if (root.airplaneMode) {
+            Telephony.operatorName = "Airplane Mode"
+            Telephony.signalStrength = 0
+            return
+        }
+        var online = root.cpPhoneState === "ONLINE"
+        var modeSuffix = ShellPrefs.preferredNetworkMode ? (" · " + ShellPrefs.preferredNetworkMode) : ""
+        Telephony.operatorName = root.mobileData
+            ? (ShellPrefs.carrierName + modeSuffix)
+            : (ShellPrefs.carrierName + " (Data Off)")
+        Telephony.signalStrength = online ? (root.mobileData ? 86 : 68) : 45
     }
 
     function setGovernor(name) {
@@ -220,11 +255,75 @@ QtObject {
             wake()
         else if (act === "lock")
             lockScreen()
+        else if (act === "fp-unlock")
+            triggerFingerprintUnlock(false)
+        else if (act === "fp-fail")
+            triggerFingerprintFail()
         else if (act === "menu") {
             if (ShellState.sleeping)
                 wake()
             ShellState.powerMenuOpen = true
         }
+    }
+
+    function triggerFingerprintUnlock(pulseSysfs) {
+        if (!ShellPrefs.fingerprintEnabled)
+            return
+        if (root.fpState === "success")
+            return
+        if (ShellState.sleeping && !ShellPrefs.fingerprintWakeUnlock && pulseSysfs === false)
+            return
+
+        ShellState.powerMenuOpen = false
+        fpResetTimer.stop()
+        if (ShellState.sleeping)
+            wake()
+        root.fpState = "success"
+
+        if (pulseSysfs !== false) {
+            root._lastFpIrqCount = root.fingerprintIrqCount + 1
+            _runCmd(["sh", "-c",
+                "printf '1\\n' > /sys/kernel/a21s_fp/trigger_unlock 2>/dev/null || true"])
+        }
+        fpUnlockTimer.restart()
+    }
+
+    function triggerFingerprintFail() {
+        fpUnlockTimer.stop()
+        root.fpState = "error"
+        fpResetTimer.restart()
+    }
+
+    function resetFingerprintSensor() {
+        _runCmd(["a21s-modem-ctl", "fp-reset"])
+        root.refreshTelemetry()
+    }
+
+    function reloadModemFirmware() {
+        _runCmd(["sh", "-c",
+            "a21s-modem-ctl init 2>/dev/null || true"])
+        postModemTimer.restart()
+    }
+
+    property var fpUnlockTimer: Timer {
+        interval: 380
+        onTriggered: {
+            root.unlockScreen()
+            root.fpState = "idle"
+        }
+    }
+
+    property var fpResetTimer: Timer {
+        interval: 750
+        onTriggered: {
+            if (root.fpState === "error")
+                root.fpState = "idle"
+        }
+    }
+
+    property var postModemTimer: Timer {
+        interval: 1200
+        onTriggered: root.refreshTelemetry()
     }
 
     function switchToSteamOS() {
@@ -286,7 +385,19 @@ QtObject {
           + "echo '=D='; "
           + "df -h / 2>/dev/null | awk 'NR==2{print $4}'; "
           + "echo '=L='; "
-          + "ls -d /sys/class/leds/*torch* /sys/class/leds/*flash* 2>/dev/null | head -n1"]
+          + "ls -d /sys/class/leds/*torch* /sys/class/leds/*flash* 2>/dev/null | head -n1; "
+          + "echo '=FP='; "
+          + "cat /sys/kernel/a21s_fp/chipid 2>/dev/null || echo none; "
+          + "cat /sys/kernel/a21s_fp/status 2>/dev/null || echo offline; "
+          + "cat /sys/kernel/a21s_fp/irq_count 2>/dev/null || echo 0; "
+          + "echo '=CP='; "
+          + "ls /dev/umts_* 2>/dev/null | tr '\\n' ' '; echo; "
+          + "cat /sys/devices/platform/soc@0/14020000.cpif/modem_name 2>/dev/null || echo none; "
+          + "cat /sys/devices/platform/soc@0/14020000.cpif/phone_state 2>/dev/null || echo OFFLINE; "
+          + "cat /sys/devices/platform/soc@0/14020000.cpif/rmem_info 2>/dev/null || echo none; "
+          + "cat /sys/devices/platform/soc@0/14020000.cpif/toc_summary 2>/dev/null || echo unloaded; "
+          + "cat /sys/devices/platform/soc@0/14020000.cpif/mem_map_on_cp 2>/dev/null || echo 0; "
+          + "cat /sys/devices/platform/soc@0/14020000.cpif/regions_summary 2>/dev/null || echo none"]
 
         stdout: StdioCollector {
             onStreamFinished: {
@@ -298,7 +409,11 @@ QtObject {
                 var cpuBlock = (afterC[0] || "").trim().split("\n")
                 var afterD = (afterC[1] || "").split("=L=")
                 var diskStr = (afterD[0] || "").trim()
-                var ledPath = (afterD[1] || "").trim()
+                var afterL = (afterD[1] || "").split("=FP=")
+                var ledPath = (afterL[0] || "").trim()
+                var afterFP = (afterL[1] || "").split("=CP=")
+                var fpLines = (afterFP[0] || "").trim().split("\n")
+                var cpLines = (afterFP[1] || "").trim().split("\n")
 
                 // 1) CPU usage delta from /proc/stat
                 var cols = statLine.split(/\s+/)
@@ -348,6 +463,43 @@ QtObject {
                     root.diskFreeText = diskStr
                 root._torchPath = ledPath
                 root.flashlightHardware = ledPath.length > 0
+
+                // 5) Fingerprint sensor (EgisTech ET520)
+                if (fpLines.length >= 3) {
+                    var fpChip = fpLines[0].trim()
+                    var fpStat = fpLines[1].trim()
+                    var fpIrq = parseInt(fpLines[2].trim()) || 0
+                    root.fingerprintSupported = fpChip.length > 0 && fpChip !== "none"
+                    if (root.fingerprintSupported)
+                        root.fingerprintChip = fpChip
+                    root.fingerprintStatus = fpStat
+                    var prevIrq = root._lastFpIrqCount
+                    root.fingerprintIrqCount = fpIrq
+                    if (prevIrq >= 0 && fpIrq > prevIrq
+                            && ShellPrefs.fingerprintEnabled
+                            && (ShellState.lockScreenOpen || ShellState.sleeping)) {
+                        root._lastFpIrqCount = fpIrq
+                        if (!ShellState.sleeping || ShellPrefs.fingerprintWakeUnlock)
+                            root.triggerFingerprintUnlock(false)
+                    } else {
+                        root._lastFpIrqCount = fpIrq
+                    }
+                }
+
+                // 6) Shannon CPIF Modem (s318ap)
+                if (cpLines.length >= 7) {
+                    var nodesStr = cpLines[0].trim()
+                    var mName = cpLines[1].trim()
+                    root.modemNodesSummary = nodesStr
+                    root.cpModemName = mName !== "none" ? mName : "s318ap"
+                    root.cpifLoaded = mName !== "none" && nodesStr.indexOf("/dev/umts_") >= 0
+                    root.cpPhoneState = cpLines[2].trim()
+                    root.cpRmemInfo = cpLines[3].trim()
+                    root.cpTocSummary = cpLines[4].trim()
+                    root.cpMemMapOnCp = cpLines[5].trim() === "1"
+                    root.cpRegionsSummary = cpLines[6].trim()
+                }
+                root.syncTelephonyState()
             }
         }
     }

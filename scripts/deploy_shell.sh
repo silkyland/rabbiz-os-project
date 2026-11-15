@@ -98,12 +98,12 @@ ssh "${TARGET}" "
   set -e
   find /usr/share/a21s-shell /home/gamer/.config/labwc /home/gamer/.config/wireplumber \
     /usr/share/applications /usr/local/bin /etc/systemd/system \
-    /etc/udev/rules.d /etc/systemd/logind.conf.d -maxdepth 3 -name '._*' -delete 2>/dev/null || true
+    /etc/udev/rules.d /etc/modules-load.d /etc/systemd/logind.conf.d -maxdepth 3 -name '._*' -delete 2>/dev/null || true
   chown -R root:root /usr/share/a21s-shell
-  chown root:root /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/abox-audio.service
-  chmod 644 /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/abox-audio.service
-  chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf
-  chmod 644 /etc/udev/rules.d/90-a21s-backlight.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf
+  chown root:root /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/a21s-modem-init.service
+  chmod 644 /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/a21s-modem-init.service
+  chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
+  chmod 644 /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
   chown root:root /usr/local/bin/a21s-*
   chmod 755 /usr/local/bin/a21s-*
   chown root:root /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
@@ -113,8 +113,12 @@ ssh "${TARGET}" "
   chmod g+w /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true
   chgrp video /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
   chmod g+w /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
+  chmod 666 /sys/kernel/a21s_fp/trigger_unlock /sys/kernel/a21s_fp/sleep_pin /dev/esfp0 2>/dev/null || true
+  chgrp video /dev/umts_* 2>/dev/null || true
+  chmod 660 /dev/umts_* 2>/dev/null || true
   chown gamer:gamer /run/user/1001/a21s-power.cmd 2>/dev/null || true
   systemctl daemon-reload
+  systemctl enable a21s-modem-init.service 2>/dev/null || true
 "
 
 cat <<'EOF'

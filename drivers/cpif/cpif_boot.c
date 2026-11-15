@@ -25,7 +25,9 @@
  *    honours img.m_offset into the CP region directly.
  */
 #include <linux/fs.h>
+#include <linux/io.h>
 #include <linux/miscdevice.h>
+#include <linux/slab.h>
 #include <linux/uaccess.h>
 
 #include "cpif.h"
@@ -76,6 +78,8 @@ static long cpif_boot_ioctl(struct file *filp, unsigned int cmd,
 		struct cpif_image img;
 		void __iomem *dst;
 		void __user *src;
+		void *kbuf;
+		u32 done = 0;
 
 		if (copy_from_user(&img, (void __user *)arg, sizeof(img))) {
 			ret = -EFAULT;
@@ -83,26 +87,41 @@ static long cpif_boot_ioctl(struct file *filp, unsigned int cmd,
 		}
 		src = (void __user *)(unsigned long)img.binary;
 
-		/* vendor: valid_space = mode ? mld->size : mld->boot_size;
-		 * mode 0 = boot area, non-0 = main/dump area. Our CP region
-		 * is one contiguous block; treat m_offset as absolute
-		 * offset into it (matches vendor for mode 0). */
-		if (img.len > c->cp_size ||
+		if (!img.len || img.len > c->cp_size ||
 		    img.m_offset > c->cp_size - img.len) {
 			ret = -EINVAL;
 			break;
 		}
 
-		dst = c->shmem[CPIF_SHMEM_CP].map + img.m_offset;
+		dst = cpif_shmem_resolve(c, img.m_offset, img.len);
 		if (!dst) {
-			ret = -ENODEV;
+			dev_err(c->dev,
+				"cp image: off 0x%x len 0x%x outside mapped shmem\n",
+				img.m_offset, img.len);
+			ret = -EINVAL;
 			break;
 		}
 
-		if (copy_from_user(dst, src, img.len)) {
-			ret = -EFAULT;
+		kbuf = kmalloc(min_t(u32, img.len, 65536), GFP_KERNEL);
+		if (!kbuf) {
+			ret = -ENOMEM;
 			break;
 		}
+
+		while (done < img.len) {
+			u32 chunk = min_t(u32, img.len - done, 65536);
+
+			if (copy_from_user(kbuf, src + done, chunk)) {
+				ret = -EFAULT;
+				break;
+			}
+			memcpy_toio(dst + done, kbuf, chunk);
+			done += chunk;
+		}
+		kfree(kbuf);
+		if (ret)
+			break;
+
 		dev_info_ratelimited(c->dev,
 				     "cp image: off 0x%x len 0x%x mode %u\n",
 				     img.m_offset, img.len, img.mode);
@@ -137,6 +156,27 @@ static long cpif_boot_ioctl(struct file *filp, unsigned int cmd,
 	case CPIF_IOC_GET_CP_STATUS:
 		ret = c->phone_state;
 		break;
+
+	case CPIF_IOC_SET_CP_STATUS:
+	{
+		__u32 st;
+
+		if (copy_from_user(&st, (void __user *)arg, sizeof(st))) {
+			ret = -EFAULT;
+			break;
+		}
+		if (st >= CPIF_STATE_MAX) {
+			ret = -EINVAL;
+			break;
+		}
+		c->phone_state = (enum cpif_modem_state)st;
+		cpif_dump_toc(c);
+		wake_up_interruptible(&c->wq);
+		dev_info(c->dev, "CP state updated to %u (toc: %s)\n",
+			 st, c->toc_summary[0] ? c->toc_summary : "none");
+		ret = 0;
+		break;
+	}
 
 	case CPIF_IOC_START_CP_DUMP:
 	case CPIF_IOC_TRIGGER_CP_CRASH:

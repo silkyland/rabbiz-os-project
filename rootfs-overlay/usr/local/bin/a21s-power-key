@@ -1,18 +1,22 @@
 #!/bin/sh
-# Handle hardware Power key (XF86PowerOff) and CLI lock/sleep/wake requests
-# for a21s-shell. Sends atomic command triggers to SystemControl.qml via
-# /run/user/<uid>/a21s-power.cmd, with a direct backlight failsafe when
-# quickshell is not running.
+# Handle hardware Power key (XF86PowerOff), biometric fingerprint unlock events,
+# and CLI lock/sleep/wake requests for a21s-shell. Sends atomic command
+# triggers to SystemControl.qml via /run/user/<uid>/a21s-power.cmd, with a
+# direct backlight failsafe when quickshell is not running.
 set -eu
 
 ACTION="${1:-toggle}"
 case "$ACTION" in
-  toggle|sleep|wake|lock|menu) ;;
+  toggle|sleep|wake|lock|menu|fp-unlock|fp-fail) ;;
   *)
-    echo "Usage: $0 [toggle|sleep|wake|lock|menu]" >&2
+    echo "Usage: $0 [toggle|sleep|wake|lock|menu|fp-unlock|fp-fail]" >&2
     exit 1
     ;;
 esac
+
+if [ "$ACTION" = "fp-unlock" ] && [ -w /sys/kernel/a21s_fp/trigger_unlock ]; then
+  printf '1\n' > /sys/kernel/a21s_fp/trigger_unlock 2>/dev/null || true
+fi
 
 GAMER_UID="$(id -u gamer 2>/dev/null || echo 1001)"
 RUNTIME_DIR="/run/user/${GAMER_UID}"
@@ -38,7 +42,7 @@ if ! pgrep -x quickshell >/dev/null 2>&1; then
         echo 0 > "$bl/brightness" 2>/dev/null || true
         echo 4 > "$bl/bl_power" 2>/dev/null || true
         ;;
-      wake|toggle)
+      wake|toggle|fp-unlock)
         echo 0 > "$bl/bl_power" 2>/dev/null || true
         if [ -s "${RUNTIME_DIR}/a21s-saved-brightness" ]; then
           cat "${RUNTIME_DIR}/a21s-saved-brightness" > "$bl/brightness" 2>/dev/null || true

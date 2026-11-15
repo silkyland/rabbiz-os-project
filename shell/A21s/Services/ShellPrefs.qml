@@ -16,6 +16,15 @@ QtObject {
     property bool dndEnabled: false
     property string iconStyle: "squircle"     // squircle | circle | glass
     property int sleepTimeoutSec: 120         // 30 | 60 | 120 | 300 | 0 (Never)
+    property bool fingerprintEnabled: true
+    property bool fingerprintWakeUnlock: true
+    property int enrolledFingerCount: 1
+    property bool fingerprintHaptic: true
+    property string carrierName: "AIS 4G+"
+    property string preferredNetworkMode: "4G LTE"
+    property string apnName: "AIS Internet (internet)"
+    property bool volteEnabled: true
+    property bool dataRoaming: false
 
     readonly property var wallpapers: [
         {
@@ -119,6 +128,15 @@ QtObject {
             if (d.dndEnabled !== undefined) dndEnabled = Boolean(d.dndEnabled)
             if (d.iconStyle !== undefined) iconStyle = String(d.iconStyle)
             if (d.sleepTimeoutSec !== undefined) sleepTimeoutSec = Math.max(0, parseInt(d.sleepTimeoutSec) || 0)
+            if (d.fingerprintEnabled !== undefined) fingerprintEnabled = Boolean(d.fingerprintEnabled)
+            if (d.fingerprintWakeUnlock !== undefined) fingerprintWakeUnlock = Boolean(d.fingerprintWakeUnlock)
+            if (d.enrolledFingerCount !== undefined) enrolledFingerCount = Math.max(0, parseInt(d.enrolledFingerCount) || 1)
+            if (d.fingerprintHaptic !== undefined) fingerprintHaptic = Boolean(d.fingerprintHaptic)
+            if (d.carrierName !== undefined) carrierName = String(d.carrierName)
+            if (d.preferredNetworkMode !== undefined) preferredNetworkMode = String(d.preferredNetworkMode)
+            if (d.apnName !== undefined) apnName = String(d.apnName)
+            if (d.volteEnabled !== undefined) volteEnabled = Boolean(d.volteEnabled)
+            if (d.dataRoaming !== undefined) dataRoaming = Boolean(d.dataRoaming)
         } catch (e) {}
     }
 
@@ -131,7 +149,16 @@ QtObject {
             showSteamCard: showSteamCard,
             dndEnabled: dndEnabled,
             iconStyle: iconStyle,
-            sleepTimeoutSec: sleepTimeoutSec
+            sleepTimeoutSec: sleepTimeoutSec,
+            fingerprintEnabled: fingerprintEnabled,
+            fingerprintWakeUnlock: fingerprintWakeUnlock,
+            enrolledFingerCount: enrolledFingerCount,
+            fingerprintHaptic: fingerprintHaptic,
+            carrierName: carrierName,
+            preferredNetworkMode: preferredNetworkMode,
+            apnName: apnName,
+            volteEnabled: volteEnabled,
+            dataRoaming: dataRoaming
         }, null, 2)
         saveProc.command = [
             "sh", "-c",

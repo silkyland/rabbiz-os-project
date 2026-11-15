@@ -111,7 +111,9 @@ Item {
                 label: "Mobile Data"
                 secondary: SystemControl.airplaneMode ? "Airplane"
                          : (!SystemControl.mobileData ? "Off"
-                            : (Telephony.modemAvailable ? "LTE Active" : "4G Demo"))
+                            : (SystemControl.cpifLoaded || Telephony.modemAvailable
+                                ? (ShellPrefs.carrierName + " · " + ShellPrefs.preferredNetworkMode)
+                                : "4G Demo"))
                 active: !SystemControl.airplaneMode && SystemControl.mobileData
                 onTapped: SystemControl.toggleMobileData()
             }

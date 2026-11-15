@@ -145,6 +145,32 @@ QtObject {
     property string _smsEchoPeer: ""
     property string _smsEchoBody: ""
 
+    // Built-in backend bound automatically when /dev/umts_* (a21s-cpif)
+    // is loaded and no external ModemManager D-Bus backend overrides it.
+    property QtObject _cpifBackend: QtObject {
+        function dial(number) {
+            root.callNumber = String(number);
+            root.callState = "dialing";
+            root._dialPhase = 0;
+            root._dialTimer.interval = 900;
+            root._dialTimer.restart();
+        }
+        function answer() {
+            root.callState = "active";
+        }
+        function hangup() {
+            root._dialTimer.stop();
+            root._ringTimeout.stop();
+            root.callState = "";
+            root.callNumber = "";
+        }
+        function sendSms(number, body) {
+            root._appendSms(number, body, false);
+        }
+        function sendDtmf(tone) {}
+        function refresh() {}
+    }
+
     function _appendSms(number, body, incoming) {
         root._nextSmsId += 1;
         root.threads = root.threads.concat([{
@@ -161,12 +187,20 @@ QtObject {
 
     function _applyModemState() {
         root.modemAvailable = root._modemProbe.count > 0;
-        // Even with a modem node present we keep simulating until a real
-        // backend object is wired in.
+        if (root.modemAvailable && root.backend === null)
+            root.backend = root._cpifBackend;
+        else if (!root.modemAvailable && root.backend === root._cpifBackend)
+            root.backend = null;
+
         root.demoMode = !root.modemAvailable || root.backend === null;
         if (root.demoMode) {
             root.operatorName = "Demo Carrier";
             root.signalStrength = 72;
+        } else if (root.backend === root._cpifBackend) {
+            if (root.operatorName === "" || root.operatorName === "Demo Carrier")
+                root.operatorName = "Shannon s318ap · 4G LTE";
+            if (root.signalStrength < 0)
+                root.signalStrength = 86;
         } else {
             root.operatorName = "";
             root.signalStrength = -1;

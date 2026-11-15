@@ -221,12 +221,14 @@ ApplicationWindow {
     }
 
     function openPage(key) {
-        if (key === "appearance")  stack.push(appearancePage)
-        else if (key === "wifi")   stack.push(wifiPage)
-        else if (key === "bt")     stack.push(btPage)
-        else if (key === "vol")    stack.push(volPage)
-        else if (key === "bright") stack.push(brightPage)
-        else if (key === "about")  stack.push(aboutPage)
+        if (key === "appearance")       stack.push(appearancePage)
+        else if (key === "wifi")        stack.push(wifiPage)
+        else if (key === "bt")          stack.push(btPage)
+        else if (key === "cellular")    stack.push(cellularPage)
+        else if (key === "vol")         stack.push(volPage)
+        else if (key === "bright")      stack.push(brightPage)
+        else if (key === "biometrics")  stack.push(biometricsPage)
+        else if (key === "about")       stack.push(aboutPage)
     }
 
     // ------------------------------------------------------------------
@@ -319,7 +321,17 @@ ApplicationWindow {
                                     : Bluetooth.powered ? "On" : "Off"
                             glyph: "bluetooth"
                             badgeColor: "#38BDF8"
+                            showDivider: true
                             onClicked: win.openPage("bt")
+                        }
+
+                        SettingsRow {
+                            title: "Cellular & Modem"
+                            subtitle: (SystemControl.cpifLoaded ? ("Shannon " + SystemControl.cpModemName + " · " + SystemControl.cpPhoneState) : "Shannon s318ap · OFFLINE")
+                                    + " · " + (SystemControl.mobileData ? ShellPrefs.preferredNetworkMode : "Data Off")
+                            glyph: "cell_tower"
+                            badgeColor: "#10B981"
+                            onClicked: win.openPage("cellular")
                         }
                     }
                 }
@@ -364,7 +376,19 @@ ApplicationWindow {
                                             : ShellPrefs.sleepTimeoutSec + "s")))
                             glyph: "brightness_medium"
                             badgeColor: "#FFB547"
+                            showDivider: true
                             onClicked: win.openPage("bright")
+                        }
+
+                        SettingsRow {
+                            title: "Fingerprint & Security"
+                            subtitle: (SystemControl.fingerprintSupported ? SystemControl.fingerprintChip : "ET520")
+                                    + " · " + (ShellPrefs.fingerprintEnabled
+                                        ? (ShellPrefs.enrolledFingerCount + (ShellPrefs.enrolledFingerCount === 1 ? " finger enrolled" : " fingers enrolled"))
+                                        : "Disabled")
+                            glyph: "fingerprint"
+                            badgeColor: "#A855F7"
+                            onClicked: win.openPage("biometrics")
                         }
                     }
                 }
@@ -1168,6 +1192,538 @@ ApplicationWindow {
                 }
 
                 Item { Layout.fillHeight: true }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Cellular & Modem page (Shannon s318ap / a21s-cpif / a21s-cbd)
+    // ------------------------------------------------------------------
+    Component {
+        id: cellularPage
+        Flickable {
+            id: cellRoot
+            property string pageTitle: "Cellular & Modem"
+            contentWidth: width
+            contentHeight: cellCol.implicitHeight + Theme.spaceXL
+            clip: true
+
+            ColumnLayout {
+                id: cellCol
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    top: parent.top
+                    margins: Theme.spaceM
+                }
+                spacing: Theme.spaceM
+
+                // Live Shannon Hardware Card
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: modemBannerCol.implicitHeight + Theme.spaceL * 2
+                    radius: Theme.radiusL
+                    color: Theme.card
+                    border.width: 1
+                    border.color: SystemControl.cpPhoneState === "ONLINE"
+                        ? Qt.alpha(Theme.success, 0.45) : Qt.alpha(Theme.text, 0.10)
+
+                    ColumnLayout {
+                        id: modemBannerCol
+                        anchors {
+                            fill: parent
+                            margins: Theme.spaceL
+                        }
+                        spacing: Theme.spaceS
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spaceM
+
+                            Rectangle {
+                                width: 48; height: 48; radius: 24
+                                color: Qt.alpha(ShellPrefs.accentColor, 0.16)
+                                Components.MaterialIcon {
+                                    anchors.centerIn: parent
+                                    name: "cell_tower"
+                                    size: 26
+                                    color: ShellPrefs.accentColor
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: "Samsung Shannon " + SystemControl.cpModemName
+                                    color: Theme.text
+                                    font.pixelSize: Theme.fontTitle - 2
+                                    font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    text: "SIPC 5.0 · 14020000.cpif"
+                                    color: Theme.textDim
+                                    font.pixelSize: Theme.fontStatus
+                                }
+                            }
+
+                            Rectangle {
+                                implicitWidth: statePillTxt.implicitWidth + 20
+                                implicitHeight: 28
+                                radius: 14
+                                color: SystemControl.cpPhoneState === "ONLINE"
+                                    ? Qt.alpha(Theme.success, 0.22) : Qt.alpha(Theme.warn, 0.22)
+                                Text {
+                                    id: statePillTxt
+                                    anchors.centerIn: parent
+                                    text: SystemControl.cpPhoneState
+                                    color: SystemControl.cpPhoneState === "ONLINE" ? Theme.success : Theme.warn
+                                    font.pixelSize: Theme.fontStatus - 1
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+                        }
+
+                        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.separator }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Reserved RAM: " + SystemControl.cpRmemInfo
+                            color: Theme.textDim
+                            font.pixelSize: Theme.fontStatus
+                            wrapMode: Text.Wrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Loaded TOC: " + SystemControl.cpTocSummary
+                                  + (SystemControl.cpMemMapOnCp ? " · MEM map verified" : "")
+                            color: SystemControl.cpMemMapOnCp ? Theme.success : Theme.textDim
+                            font.pixelSize: Theme.fontStatus
+                            wrapMode: Text.Wrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Shmem: " + (SystemControl.cpRegionsSummary || "unmapped")
+                            color: Theme.textFaint
+                            font.pixelSize: Theme.fontStatus - 2
+                            wrapMode: Text.Wrap
+                        }
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Nodes: " + (SystemControl.modemNodesSummary || "none")
+                            color: Theme.textFaint
+                            font.pixelSize: Theme.fontStatus - 2
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                }
+
+                SectionTitle { text: "SIM & MOBILE NETWORK" }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: cellTogglesCol.implicitHeight
+                    radius: Theme.radiusL
+                    color: Theme.card
+                    border.width: 1
+                    border.color: Qt.alpha(Theme.text, 0.08)
+                    clip: true
+
+                    ColumnLayout {
+                        id: cellTogglesCol
+                        anchors.fill: parent
+                        spacing: 0
+
+                        SettingsRow {
+                            title: "Mobile Data"
+                            subtitle: SystemControl.mobileData ? (ShellPrefs.carrierName + " active") : "Disabled"
+                            glyph: "signal_cellular_alt"
+                            showDivider: true
+                            hasSwitch: true
+                            switchChecked: SystemControl.mobileData && !SystemControl.airplaneMode
+                            onSwitchToggled: function(on) {
+                                if (!SystemControl.airplaneMode) {
+                                    SystemControl.mobileData = on
+                                    SystemControl.syncTelephonyState()
+                                }
+                            }
+                            onClicked: SystemControl.toggleMobileData()
+                        }
+
+                        SettingsRow {
+                            title: "VoLTE Calls (IMS)"
+                            subtitle: "HD Voice over 4G LTE when SIPC IMS connects"
+                            glyph: "phone_in_talk"
+                            showDivider: true
+                            hasSwitch: true
+                            switchChecked: ShellPrefs.volteEnabled
+                            onSwitchToggled: function(on) {
+                                ShellPrefs.volteEnabled = on
+                                ShellPrefs.save()
+                            }
+                        }
+
+                        SettingsRow {
+                            title: "Data Roaming"
+                            subtitle: ShellPrefs.dataRoaming ? "Allowed" : "Domestic only"
+                            glyph: "public"
+                            hasSwitch: true
+                            switchChecked: ShellPrefs.dataRoaming
+                            onSwitchToggled: function(on) {
+                                ShellPrefs.dataRoaming = on
+                                ShellPrefs.save()
+                            }
+                        }
+                    }
+                }
+
+                SectionTitle { text: "PREFERRED NETWORK MODE" }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceXS
+                    Repeater {
+                        model: ["4G LTE", "3G WCDMA", "2G GSM"]
+                        delegate: Rectangle {
+                            required property string modelData
+                            Layout.fillWidth: true
+                            height: 46
+                            radius: Theme.radiusPill
+                            color: ShellPrefs.preferredNetworkMode === modelData
+                                ? ShellPrefs.accentColor : Theme.card
+                            border.width: 1
+                            border.color: ShellPrefs.preferredNetworkMode === modelData
+                                ? ShellPrefs.accentColor : Theme.separator
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData
+                                color: ShellPrefs.preferredNetworkMode === modelData
+                                    ? ShellPrefs.onAccentColor : Theme.text
+                                font.pixelSize: Theme.fontStatus
+                                font.weight: Font.Medium
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    ShellPrefs.preferredNetworkMode = modelData
+                                    ShellPrefs.save()
+                                    SystemControl.syncTelephonyState()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SectionTitle { text: "CARRIER & APN PROFILE" }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceXS
+                    Repeater {
+                        model: [
+                            { carrier: "AIS 4G+",   apn: "AIS Internet (internet)" },
+                            { carrier: "TRUE-H 4G+", apn: "TrueMove H (internet)" },
+                            { carrier: "dtac 4G+",  apn: "dtac TriNet (www.dtac.co.th)" }
+                        ]
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            height: 58
+                            radius: Theme.radiusM
+                            color: ShellPrefs.apnName === modelData.apn
+                                ? Qt.alpha(ShellPrefs.accentColor, 0.16) : Theme.card
+                            border.width: 1
+                            border.color: ShellPrefs.apnName === modelData.apn
+                                ? ShellPrefs.accentColor : Theme.separator
+                            RowLayout {
+                                anchors { fill: parent; leftMargin: Theme.spaceM; rightMargin: Theme.spaceM }
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 1
+                                    Text {
+                                        text: modelData.carrier
+                                        color: Theme.text
+                                        font.pixelSize: Theme.fontBody
+                                        font.weight: Font.Medium
+                                    }
+                                    Text {
+                                        text: modelData.apn
+                                        color: Theme.textDim
+                                        font.pixelSize: Theme.fontStatus - 1
+                                    }
+                                }
+                                Components.MaterialIcon {
+                                    visible: ShellPrefs.apnName === modelData.apn
+                                    name: "check_circle"
+                                    size: 22
+                                    color: ShellPrefs.accentColor
+                                }
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    ShellPrefs.carrierName = modelData.carrier
+                                    ShellPrefs.apnName = modelData.apn
+                                    ShellPrefs.save()
+                                    SystemControl.syncTelephonyState()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: Theme.spaceS
+                    spacing: Theme.spaceM
+                    AButton {
+                        Layout.fillWidth: true
+                        text: "Refresh Status"
+                        accent: false
+                        onClicked: SystemControl.refreshTelemetry()
+                    }
+                    AButton {
+                        Layout.fillWidth: true
+                        text: "Reload CP TOC"
+                        accent: true
+                        onClicked: SystemControl.reloadModemFirmware()
+                    }
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Fingerprint & Security page (EgisTech ET520 / /dev/esfp0)
+    // ------------------------------------------------------------------
+    Component {
+        id: biometricsPage
+        Flickable {
+            id: bioRoot
+            property string pageTitle: "Fingerprint & Security"
+            property int enrollProgress: 0
+            property string enrollMsg: "Tap sensor 3 times to add a fingerprint"
+            contentWidth: width
+            contentHeight: bioCol.implicitHeight + Theme.spaceXL
+            clip: true
+
+            Process { id: fpActionProc }
+
+            ColumnLayout {
+                id: bioCol
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    top: parent.top
+                    margins: Theme.spaceM
+                }
+                spacing: Theme.spaceM
+
+                // Sensor Hardware Status Banner
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: fpHwCol.implicitHeight + Theme.spaceL * 2
+                    radius: Theme.radiusL
+                    color: Theme.card
+                    border.width: 1
+                    border.color: SystemControl.fingerprintSupported
+                        ? Qt.alpha(ShellPrefs.accentColor, 0.45) : Theme.separator
+
+                    ColumnLayout {
+                        id: fpHwCol
+                        anchors { fill: parent; margins: Theme.spaceL }
+                        spacing: Theme.spaceS
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.spaceM
+                            Rectangle {
+                                width: 48; height: 48; radius: 24
+                                color: Qt.alpha(ShellPrefs.accentColor, 0.16)
+                                Components.MaterialIcon {
+                                    anchors.centerIn: parent
+                                    name: "fingerprint"
+                                    size: 28
+                                    color: ShellPrefs.accentColor
+                                }
+                            }
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: "EgisTech " + SystemControl.fingerprintChip + " Sensor"
+                                    color: Theme.text
+                                    font.pixelSize: Theme.fontTitle - 2
+                                    font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    text: "/dev/esfp0 · reset gpg1-1 · drdy gpa0-5"
+                                    color: Theme.textDim
+                                    font.pixelSize: Theme.fontStatus
+                                }
+                            }
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: "Driver status: " + SystemControl.fingerprintStatus
+                                  + " · Events recorded: " + SystemControl.fingerprintIrqCount
+                                  + " · Enrolled fingers: " + ShellPrefs.enrolledFingerCount
+                            color: Theme.textDim
+                            font.pixelSize: Theme.fontStatus - 1
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                }
+
+                // Interactive Enrollment & Test Scanner Pad
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: enrollCol.implicitHeight + Theme.spaceL * 2
+                    radius: Theme.radiusL
+                    color: Theme.card
+                    border.width: 1
+                    border.color: Qt.alpha(Theme.text, 0.08)
+
+                    ColumnLayout {
+                        id: enrollCol
+                        anchors { fill: parent; margins: Theme.spaceL }
+                        spacing: Theme.spaceM
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: "Sensor Enrollment & Test"
+                            color: Theme.text
+                            font.pixelSize: Theme.fontBody
+                            font.weight: Font.DemiBold
+                        }
+
+                        Rectangle {
+                            Layout.alignment: Qt.AlignHCenter
+                            width: 104; height: 104; radius: 52
+                            color: enrollMouse.pressed
+                                ? Qt.alpha(ShellPrefs.accentColor, 0.25)
+                                : Qt.alpha(Theme.surfaceHigh, 0.90)
+                            border.width: 3
+                            border.color: bioRoot.enrollProgress >= 3 ? Theme.success : ShellPrefs.accentColor
+                            scale: enrollMouse.pressed ? 0.92 : 1.0
+                            Behavior on scale { NumberAnimation { duration: 140; easing.type: Easing.OutBack } }
+
+                            Components.MaterialIcon {
+                                anchors.centerIn: parent
+                                name: bioRoot.enrollProgress >= 3 ? "check_circle" : "fingerprint"
+                                size: 52
+                                color: bioRoot.enrollProgress >= 3 ? Theme.success : ShellPrefs.accentColor
+                            }
+
+                            MouseArea {
+                                id: enrollMouse
+                                anchors.fill: parent
+                                onClicked: {
+                                    bioRoot.enrollProgress += 1
+                                    if (bioRoot.enrollProgress < 3) {
+                                        bioRoot.enrollMsg = "Scan " + bioRoot.enrollProgress + " / 3 captured — keep scanning"
+                                    } else {
+                                        ShellPrefs.enrolledFingerCount += 1
+                                        ShellPrefs.save()
+                                        bioRoot.enrollMsg = "Fingerprint #" + ShellPrefs.enrolledFingerCount + " saved!"
+                                        bioRoot.enrollProgress = 0
+                                    }
+                                    fpActionProc.command = ["sh", "-c",
+                                        "printf '1\\n' > /sys/kernel/a21s_fp/trigger_unlock 2>/dev/null || true"]
+                                    fpActionProc.running = true
+                                }
+                            }
+                        }
+
+                        Text {
+                            Layout.alignment: Qt.AlignHCenter
+                            text: bioRoot.enrollMsg
+                            color: Theme.textDim
+                            font.pixelSize: Theme.fontStatus
+                        }
+                    }
+                }
+
+                SectionTitle { text: "BIOMETRIC OPTIONS" }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    implicitHeight: fpSwitchesCol.implicitHeight
+                    radius: Theme.radiusL
+                    color: Theme.card
+                    border.width: 1
+                    border.color: Qt.alpha(Theme.text, 0.08)
+                    clip: true
+
+                    ColumnLayout {
+                        id: fpSwitchesCol
+                        anchors.fill: parent
+                        spacing: 0
+
+                        SettingsRow {
+                            title: "Fingerprint Unlock"
+                            subtitle: "Show biometric scanner on Lock Screen"
+                            glyph: "fingerprint"
+                            showDivider: true
+                            hasSwitch: true
+                            switchChecked: ShellPrefs.fingerprintEnabled
+                            onSwitchToggled: function(on) {
+                                ShellPrefs.fingerprintEnabled = on
+                                ShellPrefs.save()
+                            }
+                        }
+
+                        SettingsRow {
+                            title: "Wake & Unlock Screen Off"
+                            subtitle: "Allow fingerprint touch to wake from sleep"
+                            glyph: "bedtime"
+                            showDivider: true
+                            hasSwitch: true
+                            switchChecked: ShellPrefs.fingerprintWakeUnlock
+                            onSwitchToggled: function(on) {
+                                ShellPrefs.fingerprintWakeUnlock = on
+                                ShellPrefs.save()
+                            }
+                        }
+
+                        SettingsRow {
+                            title: "Biometric Haptic Feedback"
+                            subtitle: "Pulse confirmation on unlock match"
+                            glyph: "vibration"
+                            hasSwitch: true
+                            switchChecked: ShellPrefs.fingerprintHaptic
+                            onSwitchToggled: function(on) {
+                                ShellPrefs.fingerprintHaptic = on
+                                ShellPrefs.save()
+                            }
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.topMargin: Theme.spaceS
+                    spacing: Theme.spaceM
+                    AButton {
+                        Layout.fillWidth: true
+                        text: "Reset ET520"
+                        accent: false
+                        onClicked: {
+                            fpActionProc.command = ["a21s-modem-ctl", "fp-reset"]
+                            fpActionProc.running = true
+                        }
+                    }
+                    AButton {
+                        Layout.fillWidth: true
+                        text: "Test Unlock"
+                        accent: true
+                        onClicked: {
+                            fpActionProc.command = ["a21s-power-key", "fp-unlock"]
+                            fpActionProc.running = true
+                        }
+                    }
+                }
             }
         }
     }

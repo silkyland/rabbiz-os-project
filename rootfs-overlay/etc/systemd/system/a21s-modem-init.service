@@ -1,0 +1,12 @@
+[Unit]
+Description=Initialize A21s Shannon CP firmware (cp_rmem TOC) and ET520 fingerprint sensor
+After=local-fs.target systemd-udev-settle.service
+Before=a21s-phone-session.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/a21s-modem-ctl init
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

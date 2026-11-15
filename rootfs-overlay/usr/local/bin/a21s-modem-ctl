@@ -1,0 +1,88 @@
+#!/bin/sh
+# Helper for A21s Shannon s318ap cellular modem (a21s-cpif + a21s-cbd) and
+# EgisTech ET520 fingerprint sensor (a21s-et5xx).
+set -eu
+
+CPIF_SYS="/sys/devices/platform/soc@0/14020000.cpif"
+FP_SYS="/sys/kernel/a21s_fp"
+RADIO_DEV="/dev/disk/by-partlabel/radio"
+
+cmd="${1:-status}"
+
+fix_perms() {
+  chmod 666 "$FP_SYS/trigger_unlock" "$FP_SYS/sleep_pin" 2>/dev/null || true
+  chmod 666 /dev/esfp0 2>/dev/null || true
+  chgrp video /dev/umts_* 2>/dev/null || true
+  chmod 660 /dev/umts_* 2>/dev/null || true
+}
+
+case "$cmd" in
+  init)
+    modprobe a21s-cpif 2>/dev/null || true
+    modprobe a21s-et5xx 2>/dev/null || true
+    fix_perms
+    if [ -x /usr/local/bin/a21s-cbd ] && [ -e "$RADIO_DEV" ]; then
+      st="$(cat "$CPIF_SYS/phone_state" 2>/dev/null || echo OFFLINE)"
+      toc="$(cat "$CPIF_SYS/toc_summary" 2>/dev/null || echo unloaded)"
+      if [ "$st" != "ONLINE" ] || [ "$toc" = "unloaded" ]; then
+        /usr/local/bin/a21s-cbd --load-only --radio "$RADIO_DEV" >/dev/null 2>&1 || true
+      fi
+    fi
+    ;;
+
+  reload-fw)
+    if [ "$(id -u)" -eq 0 ]; then
+      [ -x /usr/local/bin/a21s-cbd ] || { echo "a21s-cbd missing" >&2; exit 1; }
+      /usr/local/bin/a21s-cbd --load-only --radio "$RADIO_DEV"
+    else
+      echo "reload-fw requires root (systemctl restart a21s-modem-init)" >&2
+      exit 1
+    fi
+    ;;
+
+  fp-reset)
+    if [ -w "$FP_SYS/sleep_pin" ]; then
+      printf '2\n' > "$FP_SYS/sleep_pin"
+      echo "ET520 reset pulsed"
+    else
+      echo "ET520 sleep_pin not writable" >&2
+      exit 1
+    fi
+    ;;
+
+  fp-unlock)
+    exec /usr/local/bin/a21s-power-key fp-unlock
+    ;;
+
+  status)
+    cpif_loaded=0
+    [ -d "$CPIF_SYS" ] && [ -e /dev/umts_boot0 ] && cpif_loaded=1
+    modem_name="$(cat "$CPIF_SYS/modem_name" 2>/dev/null || echo s318ap)"
+    phone_state="$(cat "$CPIF_SYS/phone_state" 2>/dev/null || echo OFFLINE)"
+    rmem_info="$(cat "$CPIF_SYS/rmem_info" 2>/dev/null || echo none)"
+    toc_summary="$(cat "$CPIF_SYS/toc_summary" 2>/dev/null || echo unloaded)"
+    mem_map="$(cat "$CPIF_SYS/mem_map_on_cp" 2>/dev/null || echo 0)"
+    regions="$(cat "$CPIF_SYS/regions_summary" 2>/dev/null || echo none)"
+    nodes="$(ls /dev/umts_* 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')"
+    fp_chip="$(cat "$FP_SYS/chipid" 2>/dev/null || echo unavailable)"
+    fp_status="$(cat "$FP_SYS/status" 2>/dev/null || echo offline)"
+    fp_irq="$(cat "$FP_SYS/irq_count" 2>/dev/null || echo 0)"
+
+    printf 'CPIF_LOADED=%s\n' "$cpif_loaded"
+    printf 'MODEM_NAME=%s\n' "$modem_name"
+    printf 'PHONE_STATE=%s\n' "$phone_state"
+    printf 'RMEM_INFO=%s\n' "$rmem_info"
+    printf 'TOC_SUMMARY=%s\n' "$toc_summary"
+    printf 'MEM_MAP=%s\n' "$mem_map"
+    printf 'REGIONS=%s\n' "$regions"
+    printf 'UMTS_NODES=%s\n' "${nodes:-none}"
+    printf 'FP_CHIP=%s\n' "$fp_chip"
+    printf 'FP_STATUS=%s\n' "$fp_status"
+    printf 'FP_IRQ_COUNT=%s\n' "$fp_irq"
+    ;;
+
+  *)
+    echo "Usage: $0 [init|status|reload-fw|fp-reset|fp-unlock]" >&2
+    exit 1
+    ;;
+esac

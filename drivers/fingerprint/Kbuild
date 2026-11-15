@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0
+# Out-of-tree Kbuild for the Samsung Galaxy A21s (SM-A217F) EgisTech ET520
+# fingerprint sensor driver.
+
+obj-m += a21s-et5xx.o
+a21s-et5xx-y := a21s_et5xx.o

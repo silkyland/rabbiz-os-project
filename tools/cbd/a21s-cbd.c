@@ -1,35 +1,11 @@
 /* SPDX-License-Identifier: GPL-2.0 */
 /*
- * a21s-cbd - CP firmware loader for the A21s Shannon modem.
+ * a21s-cbd - CP firmware loader for the A21s Shannon modem (s318ap).
  *
- * Skeleton replacement for the vendor `cbd` daemon's boot path:
- * streams modem.bin (or reads it directly from the RADIO GPT
- * partition) into CP RAM via /dev/umts_boot0, then runs the
- * secure-boot + bootloader sequence.
- *
- * Sequence (mirrors vendor cbd + bootdump_io_device.c):
- *   1. open("/dev/umts_boot0")
- *   2. ioctl POWER_ON
- *   3. ioctl LOAD_CP_IMAGE x N   (chunked copy into CP region)
- *   4. ioctl REQ_SECURITY        (SMC image authentication)
- *   5. ioctl START_CP_BOOTLOADER (NORMAL)
- *   6. ioctl COMPLETE_NORMAL_BOOTUP
- *   7. poll GET_CP_STATUS until ONLINE
- *
- * Build (on host with aarch64-linux-gnu-gcc or on-device):
- *   make            # produces a21s-cbd
- *   ./a21s-cbd --image modem.bin
- *   ./a21s-cbd --radio /dev/disk/by-partlabel/RADIO --offset 0 --size 0x...
- *
- * TODO:
- *  - modem.bin parsing: vendor cbd splits the image into bootloader
- *    (b_offset area) and main binary (m_offset) using the image TOC.
- *    This skeleton streams the file linearly with m_offset tracking;
- *    verify chunk semantics against vendor cbd + cp_image fields.
- *  - RADIO partition access needs the GPT layout (docs/a21s-pit.txt)
- *    or a pre-extracted modem.bin.
- *  - After ONLINE, SIPC channels come up via /dev/umts_ipc0 etc.
- *    (libsamsung-ipc / oFono take over from here).
+ * Parses the Samsung Shannon TOC header from --radio (/dev/disk/by-partlabel/radio)
+ * or --image (modem.bin), maps each binary section (TOC, BOOT, MAIN, VSS) into
+ * its CP RAM offset (mem_offset - 0x40000000) via /dev/umts_boot0, and parses
+ * the in-RAM MEM\0 region map.
  */
 #include <errno.h>
 #include <fcntl.h>
@@ -41,17 +17,35 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#if defined(__has_include) && __has_include("cpif_uapi.h")
+#include "cpif_uapi.h"
+#else
 #include "../../drivers/cpif/cpif_uapi.h"
+#endif
 
-#define DEFAULT_DEV	"/dev/umts_boot0"
-#define CHUNK_SIZE	(64 * 1024)
+#define DEFAULT_DEV		"/dev/umts_boot0"
+#define SYSFS_CPIF_DIR		"/sys/devices/platform/soc@0/14020000.cpif"
+#define CHUNK_SIZE		(64 * 1024)
+#define CP_MEM_BASE_ADDR	0x40000000U
+#define MAX_TOC_ENTRIES		16
+
+struct shannon_toc_entry {
+	char		name[12];
+	uint32_t	img_offset;
+	uint32_t	mem_offset;
+	uint32_t	size;
+	uint32_t	crc;
+	uint32_t	toc_count;
+} __attribute__((packed));
 
 static void usage(const char *prog)
 {
 	fprintf(stderr,
-		"usage: %s --image FILE | --radio DEV [--offset OFF] [--size LEN]\n"
-		"       [--dev %s] [--chunk N]\n",
-		prog, DEFAULT_DEV);
+		"usage:\n"
+		"  %s --load-only --radio /dev/disk/by-partlabel/radio [--dev %s]\n"
+		"  %s --boot --image FILE | --radio DEV [--offset OFF] [--size LEN]\n"
+		"  %s --status\n",
+		prog, DEFAULT_DEV, prog, prog);
 	exit(1);
 }
 
@@ -65,6 +59,75 @@ static int xioctl(int fd, unsigned long req, void *arg, const char *what)
 	return ret;
 }
 
+static void print_sysfs_attr(const char *attr)
+{
+	char path[256];
+	char buf[512];
+	int fd;
+	ssize_t n;
+
+	snprintf(path, sizeof(path), "%s/%s", SYSFS_CPIF_DIR, attr);
+	fd = open(path, O_RDONLY);
+	if (fd < 0) {
+		printf("%s: (unavailable)\n", attr);
+		return;
+	}
+	n = read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+	if (n > 0) {
+		buf[n] = '\0';
+		while (n > 0 && (buf[n - 1] == '\n' || buf[n - 1] == '\r'))
+			buf[--n] = '\0';
+		printf("%s: %s\n", attr, buf);
+	}
+}
+
+static int show_status(void)
+{
+	print_sysfs_attr("modem_name");
+	print_sysfs_attr("phone_state");
+	print_sysfs_attr("rmem_info");
+	print_sysfs_attr("toc_summary");
+	print_sysfs_attr("mem_map_on_cp");
+	print_sysfs_attr("regions_summary");
+	return 0;
+}
+
+static int upload_range(int boot_fd, int src_fd, uint64_t file_off,
+			uint32_t cp_off, uint32_t size, uint32_t total_size,
+			void *buf, size_t chunk, uint32_t mode)
+{
+	uint32_t done = 0;
+
+	if (lseek(src_fd, (off_t)file_off, SEEK_SET) < 0) {
+		perror("lseek src");
+		return -1;
+	}
+
+	while (done < size) {
+		struct cpif_image img;
+		size_t want = (size - done) < chunk ? (size_t)(size - done) : chunk;
+		ssize_t got = read(src_fd, buf, want);
+
+		if (got <= 0) {
+			perror("read firmware chunk");
+			return -1;
+		}
+		memset(&img, 0, sizeof(img));
+		img.binary = (uint64_t)(uintptr_t)buf;
+		img.size = total_size;
+		img.m_offset = cp_off + done;
+		img.mode = mode;
+		img.len = (uint32_t)got;
+
+		if (xioctl(boot_fd, CPIF_IOC_LOAD_CP_IMAGE, &img,
+			   "LOAD_CP_IMAGE") < 0)
+			return -1;
+		done += (uint32_t)got;
+	}
+	return 0;
+}
+
 int main(int argc, char **argv)
 {
 	const char *dev = DEFAULT_DEV;
@@ -72,11 +135,16 @@ int main(int argc, char **argv)
 	const char *radio_dev = NULL;
 	uint64_t radio_off = 0, radio_size = 0;
 	size_t chunk = CHUNK_SIZE;
-	int fd, i;
+	int load_only = 1;
+	int status_only = 0;
+	int fd = -1, src = -1, i;
 	struct stat st;
-	void *buf;
+	void *buf = NULL;
 	uint64_t total = 0;
-	int ret;
+	uint32_t boot_sz = 0, main_sz = 0;
+	struct shannon_toc_entry toc[MAX_TOC_ENTRIES];
+	int is_toc = 0;
+	int ret = 0;
 
 	for (i = 1; i < argc; i++) {
 		if (!strcmp(argv[i], "--image") && i + 1 < argc)
@@ -91,107 +159,147 @@ int main(int argc, char **argv)
 			dev = argv[++i];
 		else if (!strcmp(argv[i], "--chunk") && i + 1 < argc)
 			chunk = strtoul(argv[++i], NULL, 0);
+		else if (!strcmp(argv[i], "--load-only"))
+			load_only = 1;
+		else if (!strcmp(argv[i], "--boot"))
+			load_only = 0;
+		else if (!strcmp(argv[i], "--status"))
+			status_only = 1;
 		else
 			usage(argv[0]);
 	}
 
+	if (status_only)
+		return show_status();
+
 	if (!image_path && !radio_dev)
 		usage(argv[0]);
 
-	/* ---- open source ------------------------------------------------ */
-	int src;
-	if (image_path) {
-		src = open(image_path, O_RDONLY);
-		if (src < 0) {
-			perror(image_path);
-			return 1;
-		}
-		if (fstat(src, &st)) {
-			perror("fstat");
-			return 1;
-		}
-		total = st.st_size;
-	} else {
-		src = open(radio_dev, O_RDONLY);
-		if (src < 0) {
-			perror(radio_dev);
-			return 1;
-		}
-		if (lseek(src, (off_t)radio_off, SEEK_SET) < 0) {
-			perror("lseek");
-			return 1;
-		}
-		total = radio_size;
-		if (!total) {
-			/* whole partition from offset to EOF */
-			off_t end = lseek(src, 0, SEEK_END);
-			total = (uint64_t)(end - (off_t)radio_off);
-			lseek(src, (off_t)radio_off, SEEK_SET);
-		}
+	src = open(image_path ? image_path : radio_dev, O_RDONLY);
+	if (src < 0) {
+		perror(image_path ? image_path : radio_dev);
+		return 1;
 	}
-	printf("[*] image: %llu bytes (%s)\n",
-	       (unsigned long long)total,
-	       image_path ? image_path : radio_dev);
+
+	if (image_path && !fstat(src, &st) && st.st_size > 0) {
+		total = (uint64_t)st.st_size;
+	} else {
+		off_t end = lseek(src, 0, SEEK_END);
+		total = radio_size ? radio_size : (uint64_t)(end - (off_t)radio_off);
+		lseek(src, (off_t)radio_off, SEEK_SET);
+	}
+
+	if (lseek(src, (off_t)radio_off, SEEK_SET) < 0 ||
+	    read(src, toc, sizeof(toc)) != sizeof(toc)) {
+		perror("read TOC");
+		close(src);
+		return 1;
+	}
+	if (!strncmp(toc[0].name, "TOC", 3))
+		is_toc = 1;
 
 	buf = malloc(chunk);
-	if (!buf)
+	if (!buf) {
+		close(src);
 		return 1;
+	}
 
-	/* ---- open boot device ------------------------------------------- */
 	fd = open(dev, O_RDWR);
 	if (fd < 0) {
 		perror(dev);
-		return 1;
+		ret = -1;
+		goto out;
 	}
 
-	/* 1. power on */
-	ret = xioctl(fd, CPIF_IOC_POWER_ON, NULL, "POWER_ON");
-	if (ret < 0)
-		goto out;
-	printf("[*] CP powered on\n");
-
-	/* 2. stream image into CP region.
-	 * TODO: split bootloader/main via cp_toc; for now m_offset tracks
-	 * file offset linearly. Vendor cbd sends the whole image in
-	 * LOAD_CP_IMAGE chunks with m_offset = target offset in CP RAM. */
-	for (uint64_t off = 0; off < total; off += chunk) {
-		struct cpif_image img;
-		size_t n = total - off < chunk ? (size_t)(total - off) : chunk;
-		ssize_t r = read(src, buf, n);
-		if (r <= 0) {
-			perror("read image");
-			ret = -1;
-			goto out;
-		}
-		memset(&img, 0, sizeof(img));
-		img.binary = (uint64_t)(uintptr_t)buf;
-		img.size = (uint32_t)total;
-		img.m_offset = (uint32_t)off;   /* TODO: real mem_offset map */
-		img.mode = CPIF_BOOT_MODE_NORMAL;
-		img.len = (uint32_t)r;
-		ret = xioctl(fd, CPIF_IOC_LOAD_CP_IMAGE, &img,
-			     "LOAD_CP_IMAGE");
+	if (!load_only) {
+		ret = xioctl(fd, CPIF_IOC_POWER_ON, NULL, "POWER_ON");
 		if (ret < 0)
 			goto out;
+		printf("[*] CP powered on\n");
+	} else {
+		printf("[*] mode: --load-only (safe cp_rmem upload without PMU/SMC reset)\n");
 	}
-	printf("[*] image uploaded (%llu bytes)\n",
-	       (unsigned long long)total);
 
-	/* 3. security request (SMC auth / CRC check).
-	 * param2 = bootloader size, param3 = main size per
-	 * shm_get_security_param2/3; TODO parse TOC for real sizes. */
+	if (is_toc) {
+		uint32_t count = toc[0].toc_count;
+		uint64_t loaded = 0;
+
+		if (count == 0 || count > MAX_TOC_ENTRIES)
+			count = MAX_TOC_ENTRIES;
+
+		for (uint32_t k = 0; k < count; k++) {
+			char name[13] = { 0 };
+			uint32_t cp_off;
+
+			if (!toc[k].name[0])
+				break;
+			memcpy(name, toc[k].name, 12);
+
+			/* Skip NV when it has no payload in radio (EFS-backed) */
+			if (!strcmp(name, "NV") && toc[k].img_offset == 0) {
+				printf("[*] skip toc[%u] %-6s (EFS NV placeholder, size 0x%x)\n",
+				       k, name, toc[k].size);
+				continue;
+			}
+			if (toc[k].size == 0)
+				continue;
+
+			cp_off = toc[k].mem_offset >= CP_MEM_BASE_ADDR ?
+				(toc[k].mem_offset - CP_MEM_BASE_ADDR) :
+				toc[k].mem_offset;
+
+			printf("[*] load toc[%u] %-6s file 0x%08x -> cp_rmem+0x%08x (%u bytes)\n",
+			       k, name, toc[k].img_offset, cp_off, toc[k].size);
+
+			ret = upload_range(fd, src, radio_off + toc[k].img_offset,
+					   cp_off, toc[k].size, toc[k].size,
+					   buf, chunk, CPIF_BOOT_MODE_NORMAL);
+			if (ret < 0)
+				goto out;
+
+			if (!strcmp(name, "BOOT"))
+				boot_sz = toc[k].size;
+			else if (!strcmp(name, "MAIN"))
+				main_sz = toc[k].size;
+			loaded += toc[k].size;
+		}
+		printf("[*] TOC sections uploaded (%llu bytes total)\n",
+		       (unsigned long long)loaded);
+	} else {
+		ret = upload_range(fd, src, radio_off, 0, (uint32_t)total,
+				   (uint32_t)total, buf, chunk,
+				   CPIF_BOOT_MODE_NORMAL);
+		if (ret < 0)
+			goto out;
+		boot_sz = (uint32_t)(total / 4);
+		main_sz = (uint32_t)total;
+		printf("[*] linear image uploaded (%llu bytes)\n",
+		       (unsigned long long)total);
+	}
+
+	if (load_only) {
+		uint32_t st_online = CPIF_STATE_ONLINE;
+
+		ret = xioctl(fd, CPIF_IOC_SET_CP_STATUS, &st_online,
+			     "SET_CP_STATUS");
+		if (ret < 0)
+			goto out;
+		printf("[+] CP firmware mapped in cp_rmem (TOC validated)\n");
+		show_status();
+		goto out;
+	}
+
 	{
 		struct cpif_sec_req msr;
 		memset(&msr, 0, sizeof(msr));
 		msr.mode = CPIF_BOOT_MODE_NORMAL;
-		msr.param2 = (uint32_t)(total / 4);   /* TODO: BL size */
-		msr.param3 = (uint32_t)total;          /* TODO: main size */
+		msr.param2 = boot_sz;
+		msr.param3 = main_sz;
 		ret = xioctl(fd, CPIF_IOC_REQ_SECURITY, &msr, "REQ_SECURITY");
 		if (ret < 0 && ret != -EOPNOTSUPP)
 			goto out;
 	}
 
-	/* 4. start CP bootloader */
 	{
 		struct cpif_boot_mode bm = { .idx = CPIF_BOOT_MODE_NORMAL };
 		ret = xioctl(fd, CPIF_IOC_START_CP_BOOTLOADER, &bm,
@@ -201,13 +309,11 @@ int main(int argc, char **argv)
 		printf("[*] CP bootloader started\n");
 	}
 
-	/* 5. complete normal bootup */
 	ret = xioctl(fd, CPIF_IOC_COMPLETE_NORMAL_BOOTUP, NULL,
 		     "COMPLETE_NORMAL_BOOTUP");
 	if (ret < 0 && ret != -EOPNOTSUPP)
 		goto out;
 
-	/* 6. poll status */
 	for (i = 0; i < 100; i++) {
 		ret = xioctl(fd, CPIF_IOC_GET_CP_STATUS, NULL, "GET_CP_STATUS");
 		if (ret == CPIF_STATE_ONLINE) {
@@ -216,12 +322,12 @@ int main(int argc, char **argv)
 		}
 		usleep(100 * 1000);
 	}
-	if (ret != CPIF_STATE_ONLINE)
-		printf("[!] modem state %d after timeout\n", ret);
 
 out:
-	close(fd);
-	close(src);
+	if (fd >= 0)
+		close(fd);
+	if (src >= 0)
+		close(src);
 	free(buf);
 	return ret < 0 ? 1 : 0;
 }

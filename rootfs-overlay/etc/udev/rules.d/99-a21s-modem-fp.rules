@@ -1,0 +1,3 @@
+KERNEL=="esfp0", MODE="0666"
+KERNEL=="umts_*", GROUP="video", MODE="0660"
+ACTION=="add", SUBSYSTEM=="misc", KERNEL=="esfp0", RUN+="/bin/chmod 666 /sys/kernel/a21s_fp/trigger_unlock /sys/kernel/a21s_fp/sleep_pin"

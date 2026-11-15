@@ -92,9 +92,14 @@ static int cpif_map_regions(struct cpif_dev *c)
 		r = platform_get_resource(pdev, IORESOURCE_MEM, 1);
 		if (r) {
 			void __iomem *v = devm_ioremap_resource(c->dev, r);
-			if (IS_ERR(v))
-				return PTR_ERR(v);
-			c->vgpio = v + VGPIO_TX_MONITOR_OFF;
+			if (IS_ERR(v)) {
+				dev_warn(c->dev,
+					 "vgpio-monitor ioremap failed (%ld); continuing\n",
+					 PTR_ERR(v));
+				c->vgpio = NULL;
+			} else {
+				c->vgpio = v + VGPIO_TX_MONITOR_OFF;
+			}
 		} else {
 			dev_warn(c->dev,
 				 "no vgpio-monitor reg; CP init waits may fail\n");
@@ -102,15 +107,133 @@ static int cpif_map_regions(struct cpif_dev *c)
 		}
 	}
 
-	/* cp_mailbox child: keep phandle for future mailbox driver */
-	np = of_find_node_by_name(c->dev->of_node, "cp_mailbox");
+	/* cp-mailbox child: keep phandle for future mailbox driver */
+	np = of_find_node_by_name(c->dev->of_node, "cp-mailbox");
+	if (!np)
+		np = of_find_node_by_name(c->dev->of_node, "cp_mailbox");
 	if (np)
 		of_node_put(np);
 	else
-		dev_warn(c->dev, "no cp_mailbox child node\n");
+		dev_warn(c->dev, "no cp-mailbox child node\n");
 
 	return 0;
 }
+
+static const char *cpif_state_name(enum cpif_modem_state st)
+{
+	switch (st) {
+	case CPIF_STATE_OFFLINE:	return "OFFLINE";
+	case CPIF_STATE_ONLINE:		return "ONLINE";
+	case CPIF_STATE_NV_REBUILDING:	return "NV_REBUILDING";
+	case CPIF_STATE_CRASH_EXIT:	return "CRASH_EXIT";
+	case CPIF_STATE_SIM_ATTACH:	return "SIM_ATTACH";
+	case CPIF_STATE_SIM_DETACH:	return "SIM_DETACH";
+	case CPIF_STATE_DUMP_ACTIVE:	return "DUMP_ACTIVE";
+	case CPIF_STATE_URC_PENDING:	return "URC_PENDING";
+	default:			return "UNKNOWN";
+	}
+}
+
+static ssize_t modem_name_show(struct device *dev,
+			       struct device_attribute *attr, char *buf)
+{
+	const char *name = "s318ap";
+
+	of_property_read_string(dev->of_node, "mif,name", &name);
+	return sysfs_emit(buf, "%s\n", name);
+}
+static DEVICE_ATTR_RO(modem_name);
+
+static ssize_t phone_state_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct cpif_dev *c = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%s\n", cpif_state_name(c->phone_state));
+}
+
+static ssize_t phone_state_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct cpif_dev *c = dev_get_drvdata(dev);
+	unsigned int val;
+
+	if (sysfs_streq(buf, "ONLINE"))
+		val = CPIF_STATE_ONLINE;
+	else if (sysfs_streq(buf, "OFFLINE"))
+		val = CPIF_STATE_OFFLINE;
+	else if (kstrtouint(buf, 0, &val) || val >= CPIF_STATE_MAX)
+		return -EINVAL;
+
+	mutex_lock(&c->lock);
+	c->phone_state = (enum cpif_modem_state)val;
+	cpif_dump_toc(c);
+	wake_up_interruptible(&c->wq);
+	mutex_unlock(&c->lock);
+	return count;
+}
+static DEVICE_ATTR_RW(phone_state);
+
+static ssize_t rmem_info_show(struct device *dev,
+			      struct device_attribute *attr, char *buf)
+{
+	struct cpif_dev *c = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "0x%llx 0x%zx\n", (u64)c->cp_base, c->cp_size);
+}
+static DEVICE_ATTR_RO(rmem_info);
+
+static ssize_t toc_summary_show(struct device *dev,
+				struct device_attribute *attr, char *buf)
+{
+	struct cpif_dev *c = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%s\n",
+			  c->toc_summary[0] ? c->toc_summary : "unloaded");
+}
+static DEVICE_ATTR_RO(toc_summary);
+
+static ssize_t mem_map_on_cp_show(struct device *dev,
+				  struct device_attribute *attr, char *buf)
+{
+	struct cpif_dev *c = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%d\n", c->mem_map_on_cp ? 1 : 0);
+}
+static DEVICE_ATTR_RO(mem_map_on_cp);
+
+static ssize_t regions_summary_show(struct device *dev,
+				    struct device_attribute *attr, char *buf)
+{
+	struct cpif_dev *c = dev_get_drvdata(dev);
+	int i, pos = 0;
+
+	for (i = 0; i < CPIF_SHMEM_MAX; i++) {
+		struct cpif_shmem_region *r = &c->shmem[i];
+
+		if (!r->map || !r->size)
+			continue;
+		pos += sysfs_emit_at(buf, pos, "%s%s@0x%llx:0x%zx",
+				     pos ? "," : "",
+				     r->name ? r->name : "REG",
+				     (u64)r->phys, r->size);
+	}
+	pos += sysfs_emit_at(buf, pos, "\n");
+	return pos;
+}
+static DEVICE_ATTR_RO(regions_summary);
+
+static struct attribute *cpif_attrs[] = {
+	&dev_attr_modem_name.attr,
+	&dev_attr_phone_state.attr,
+	&dev_attr_rmem_info.attr,
+	&dev_attr_toc_summary.attr,
+	&dev_attr_mem_map_on_cp.attr,
+	&dev_attr_regions_summary.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(cpif);
 
 static int cpif_probe(struct platform_device *pdev)
 {
@@ -123,6 +246,7 @@ static int cpif_probe(struct platform_device *pdev)
 
 	c->dev = &pdev->dev;
 	mutex_init(&c->lock);
+	init_waitqueue_head(&c->wq);
 	c->phone_state = CPIF_STATE_OFFLINE;
 
 	platform_set_drvdata(pdev, c);
@@ -181,6 +305,7 @@ static struct platform_driver cpif_driver = {
 	.driver		= {
 		.name	= "a21s-cpif",
 		.of_match_table = cpif_of_match,
+		.dev_groups = cpif_groups,
 	},
 };
 module_platform_driver(cpif_driver);

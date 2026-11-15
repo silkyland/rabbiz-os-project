@@ -64,6 +64,9 @@ struct cpif_dev {
 
 	enum cpif_modem_state		phone_state;
 	bool				mem_map_on_cp;	/* TOC-described map */
+	char				toc_summary[256];
+	u32				toc_sections;
+	wait_queue_head_t		wq;
 
 	struct miscdevice		boot_dev;	/* /dev/umts_boot0 */
 	struct miscdevice		ipc_dev[2];	/* /dev/umts_ipc0/1 */
@@ -85,6 +88,7 @@ int cpif_cp_status(struct cpif_dev *c);
 int  cpif_shmem_init(struct cpif_dev *c);
 void cpif_shmem_exit(struct cpif_dev *c);
 void __iomem *cpif_shmem_map(struct cpif_dev *c, int idx);
+void __iomem *cpif_shmem_resolve(struct cpif_dev *c, u32 m_offset, u32 len);
 phys_addr_t cpif_shmem_base(struct cpif_dev *c, int idx);
 size_t cpif_shmem_size(struct cpif_dev *c, int idx);
 int  cpif_dump_toc(struct cpif_dev *c);
