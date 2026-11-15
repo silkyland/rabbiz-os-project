@@ -1,0 +1,6 @@
+#!/bin/sh
+# a21s-dialer — launch the a21s-shell Dialer app via quickshell (services need
+# Quickshell.Io / Quickshell.Services — plain qml6 cannot load them).
+# Deployed to /usr/local/bin/ by scripts/deploy_shell.sh, which sets +x.
+export QML_IMPORT_PATH=/usr/share/a21s-shell
+exec quickshell -p /usr/share/a21s-shell/apps/dialer/Dialer.qml "$@"

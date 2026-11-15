@@ -1,0 +1,174 @@
+<?xml version="1.0"?>
+<!--
+  labwc configuration for a21s-shell (Samsung Galaxy A21s phone session).
+
+  Design: Android-style single-tasking — every app toplevel is maximized
+  with no server-side decorations; the shell UI (status bar, home screen,
+  shade, nav bar) is provided by Quickshell layer-shell surfaces. Panel is
+  DSI-1, 720x1600 native portrait.
+
+  Deployed to ~gamer/.config/labwc/rc.xml by scripts/deploy_shell.sh.
+-->
+<labwc_config>
+
+  <core>
+    <!-- Server-side decorations by default; the window rule below strips
+         them from every toplevel anyway. gap 0: no wasted pixels. -->
+    <decoration>server</decoration>
+    <gap>0</gap>
+    <adaptiveSync>no</adaptiveSync>
+    <allowLockOut>no</allowLockOut>
+    <reuseOutputMode>no</reuseOutputMode>
+  </core>
+
+  <placement>
+    <policy>center</policy>
+  </placement>
+
+  <!-- Single workspace; the shell provides its own switcher via NavBar. -->
+  <desktops>
+    <names>
+      <name>1</name>
+    </names>
+  </desktops>
+
+  <theme>
+    <!-- No real theme needed: decorations are off for all toplevels.
+         Font only matters for labwc's OSD (e.g. window switcher). -->
+    <name></name>
+    <cornerRadius>0</cornerRadius>
+    <dropShadows>no</dropShadows>
+    <font place="ActiveWindow">
+      <name>Noto Sans</name>
+      <size>10</size>
+      <weight>bold</weight>
+      <slant>normal</slant>
+    </font>
+    <font place="InactiveWindow">
+      <name>Noto Sans</name>
+      <size>10</size>
+      <weight>bold</weight>
+      <slant>normal</slant>
+    </font>
+    <font place="OnScreenDisplay">
+      <name>Noto Sans</name>
+      <size>12</size>
+      <weight>normal</weight>
+      <slant>normal</slant>
+    </font>
+  </theme>
+
+  <focus>
+    <!-- Touch-driven: focus on activation only, raise focused window. -->
+    <followMouse>no</followMouse>
+    <followMouseRequiresMovement>no</followMouseRequiresMovement>
+    <raiseOnFocus>yes</raiseOnFocus>
+  </focus>
+
+  <resize>
+    <drawContents>yes</drawContents>
+  </resize>
+
+  <!-- Android single-tasking: EVERY toplevel (wayland + XWayland) maps
+       maximized with no decorations, and is hidden from labwc's own
+       switcher/taskbar (Quickshell's ToplevelManager drives the shell
+       switcher instead). -->
+  <windowRules>
+    <windowRule identifier="*" serverDecoration="no" skipTaskbar="yes" skipWindowSwitcher="yes">
+      <action name="Maximize"/>
+    </windowRule>
+  </windowRules>
+
+  <!-- Touchscreen: natural scroll off (Android-style direct-manipulation
+       scrolling = content follows finger). mapToOutput pins touch input
+       to the single internal panel. -->
+  <touch deviceName="*">
+    <mapToOutput>DSI-1</mapToOutput>
+    <naturalScroll>no</naturalScroll>
+  </touch>
+
+  <libinput>
+    <device category="default">
+      <naturalScroll>no</naturalScroll>
+      <left-handed>no</left-handed>
+      <pointerSpeed>0.0</pointerSpeed>
+      <accelProfile>flat</accelProfile>
+      <tap>yes</tap>
+      <tapButtonMap>lrm</tapButtonMap>
+      <middleEmulation>no</middleEmulation>
+      <disableWhileTyping>no</disableWhileTyping>
+    </device>
+  </libinput>
+
+  <!--
+    Keyboard: phone sessions have no desktop shortcuts. labwc merges its
+    compiled-in defaults, so explicitly neutralize the ones that could
+    confuse the single-tasking model when a keyboard is attached, and keep
+    a minimal set (window close + next-window for the shell switcher).
+  -->
+  <keyboard>
+    <repeatRate>40</repeatRate>
+    <repeatDelay>400</repeatDelay>
+    <numlock>off</numlock>
+
+    <!-- Neutralized defaults: no terminal/menu/workspace shortcuts. -->
+    <keybind key="W-Return"><action name="None"/></keybind>
+    <keybind key="W-Escape"><action name="None"/></keybind>
+    <keybind key="W-space"><action name="None"/></keybind>
+    <keybind key="W-A-Left"><action name="None"/></keybind>
+    <keybind key="W-A-Right"><action name="None"/></keybind>
+    <keybind key="A-Left"><action name="None"/></keybind>
+    <keybind key="A-Right"><action name="None"/></keybind>
+    <keybind key="A-Up"><action name="None"/></keybind>
+    <keybind key="A-Down"><action name="None"/></keybind>
+    <keybind key="W-d"><action name="None"/></keybind>
+
+    <!-- Minimal kept binds (hardware-debug convenience only). -->
+    <keybind key="A-Tab">
+      <action name="NextWindow"/>
+    </keybind>
+    <keybind key="A-F4">
+      <action name="Close"/>
+    </keybind>
+    <!-- XF86 keys the shell may also handle via its own binds. -->
+    <keybind key="XF86AudioRaiseVolume">
+      <action name="Execute" command="wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"/>
+    </keybind>
+    <keybind key="XF86AudioLowerVolume">
+      <action name="Execute" command="wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"/>
+    </keybind>
+    <keybind key="XF86AudioMute">
+      <action name="Execute" command="wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"/>
+    </keybind>
+    <keybind key="XF86MonBrightnessUp">
+      <action name="Execute" command="brightnessctl set +10%"/>
+    </keybind>
+    <keybind key="XF86MonBrightnessDown">
+      <action name="Execute" command="brightnessctl set 10%-"/>
+    </keybind>
+  </keyboard>
+
+  <!--
+    Mouse: no desktop menus on empty-desktop clicks — the HomeScreen layer
+    surface owns the wallpaper area. Unbind Root clicks and alt-drag
+    window move/resize so a pointer can't break single-tasking.
+  -->
+  <mouse>
+    <defaultScrollFactor>1.0</defaultScrollFactor>
+    <context name="Root">
+      <mousebind button="Left" action="Press"><action name="None"/></mousebind>
+      <mousebind button="Middle" action="Press"><action name="None"/></mousebind>
+      <mousebind button="Right" action="Press"><action name="None"/></mousebind>
+    </context>
+    <context name="Client">
+      <mousebind button="A-Left" action="Drag"><action name="None"/></mousebind>
+      <mousebind button="A-Right" action="Drag"><action name="None"/></mousebind>
+      <mousebind button="A-Middle" action="Drag"><action name="None"/></mousebind>
+    </context>
+    <context name="Frame">
+      <mousebind button="A-Left" action="Drag"><action name="None"/></mousebind>
+      <mousebind button="A-Right" action="Drag"><action name="None"/></mousebind>
+    </context>
+  </mouse>
+
+</labwc_config>

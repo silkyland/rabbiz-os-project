@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Steam
+GenericName=Game Launcher
+Comment=Steam Big Picture via nested gamescope
+Exec=a21s-steam
+Icon=steam
+Categories=Game;
+Terminal=false
+StartupNotify=true

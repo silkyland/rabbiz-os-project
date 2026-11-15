@@ -1,0 +1,6 @@
+module A21s.Services
+singleton ShellState 1.0 ShellState.qml
+singleton Network 1.0 Network.qml
+singleton Telephony 1.0 Telephony.qml
+singleton Brightness 1.0 Brightness.qml
+singleton Bluetooth 1.0 Bluetooth.qml

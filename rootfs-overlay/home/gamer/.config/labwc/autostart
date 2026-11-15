@@ -1,0 +1,15 @@
+# labwc autostart for the a21s-shell phone session.
+# Each line runs via /bin/sh -c after the Wayland display is up
+# (WAYLAND_DISPLAY is already set for these children).
+# Deployed to ~gamer/.config/labwc/autostart by scripts/deploy_shell.sh.
+
+# Export session env into the user systemd/D-Bus activation environment so
+# user services (pipewire, xdg-desktop-portal, notification clients) see
+# the Wayland display.
+dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP &
+
+# The shell itself: status bar, home screen, shade, nav bar (layer-shell).
+quickshell -p /usr/share/a21s-shell/shell.qml &
+
+# On-screen keyboard (optional — skip silently if not installed).
+command -v squeekboard >/dev/null 2>&1 && squeekboard &

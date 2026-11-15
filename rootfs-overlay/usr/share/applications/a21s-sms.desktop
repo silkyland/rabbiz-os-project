@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Messages
+GenericName=SMS
+Comment=Send and receive text messages (a21s-shell)
+Exec=a21s-sms
+Icon=mail-message-new
+Categories=Network;Telephony;
+Terminal=false
+StartupNotify=true

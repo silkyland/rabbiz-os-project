@@ -1,0 +1,17 @@
+#!/bin/sh
+# a21s-steam — Steam Big Picture nested inside labwc via gamescope.
+#
+# Runs gamescope fullscreen as a regular labwc toplevel (which the rc.xml
+# window rule maximizes/undecorates like every app). Internal gamescope
+# geometry matches the panel's native portrait mode 720x1600 (DSI-1).
+# Steam flags per docs/a21s-game-results.md: the CEF GPU-compositing
+# workarounds avoid a black steamwebhelper under Panfrost/XWayland.
+#
+# NOTE: Steam Big Picture was validated in *landscape* 1600x720 under
+# Weston. If portrait gamepadui renders badly, either rotate the labwc
+# output or change to: gamescope -W 1600 -H 720 -f ...
+#
+# Deployed to /usr/local/bin/ by scripts/deploy_shell.sh, which sets +x.
+
+exec gamescope -W 720 -H 1600 -f --steam -- \
+    steam -gamepadui -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing "$@"

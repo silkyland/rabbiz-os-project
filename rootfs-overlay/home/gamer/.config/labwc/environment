@@ -1,0 +1,23 @@
+# labwc environment file — KEY=VALUE pairs exported into labwc's own
+# environment (and inherited by everything labwc spawns: quickshell,
+# squeekboard, app windows). No shell expansion happens here.
+# Deployed to ~gamer/.config/labwc/environment by scripts/deploy_shell.sh.
+
+XDG_SESSION_TYPE=wayland
+XDG_SESSION_DESKTOP=a21s-shell
+XDG_CURRENT_DESKTOP=labwc
+
+LIBSEAT_BACKEND=seatd
+
+# Mali-G52 / Panfrost: GLES only.
+QT_QPA_PLATFORM=wayland
+QSG_RHI_BACKEND=opengl
+QT_SCALE_FACTOR=1
+QT_QPA_PLATFORMTHEME=
+
+# a21s-shell QML modules (A21s.Theme, A21s.Services, apps).
+QML_IMPORT_PATH=/usr/share/a21s-shell
+QML2_IMPORT_PATH=/usr/share/a21s-shell
+
+MOZ_ENABLE_WAYLAND=1
+SDL_VIDEODRIVER=wayland

@@ -14,6 +14,7 @@
 | M4 (R1) | Phase 2 — Xiaomi Pad 7 Pro (`muyu` / `SM8635`) `Zaviya` Port | todo | L | M3 (R1) |
 | M5 | Power, Battery (`s2mu106`), Thermal (`TMU`) & Suspend | todo | M | M3.5 |
 | M6 | Cellular Modem (`cpif` + `pmu-cp`) & Voice Call (`oFono`) | todo | L | M5 |
+| M7 | `a21s-shell` Android-style DE (`labwc` + `quickshell` QML: launcher, shade, dialer/SMS, settings) | wip | L | M3.5 |
 
 ## Milestone details
 
@@ -53,6 +54,21 @@
 - **Tasks:**
   - [ ] Port `drivers/soc/samsung/cpif/` + `pmu-cp.c` + reserve `cp_shmem` without colliding with `0xb0000000`.
   - [ ] Integrate `libsamsung-ipc` / `oFono` + ABOX/Bluetooth HFP voice audio routing.
+
+### M7: `a21s-shell` Android-style DE — wip
+- **Objective:** Replace the Steam-only session with an Android-like launcher: homescreen/app drawer, pull-down notification+quick-settings shade, dialer, SMS, settings — all QML on `labwc`+`quickshell`, Steam stays launchable via `gamescope`.
+- **Layout:** `shell/` (QML, modules `A21s.Theme`/`A21s.Services`/`A21s.Components`), `rootfs-overlay/` (systemd unit, labwc config, wrappers, .desktop), `scripts/deploy_shell.sh`. Details: `docs/a21s-phone-shell.md`, `shell/README.md`.
+- **Verified on host:** `quickshell 0.3.2` + sway-headless load of `shell.qml`, `apps/{dialer,sms,settings}` all reach `Configuration Loaded`. **Not yet on-device** — needs `deploy_shell.sh` + enable `a21s-phone-session.service`.
+- **Tasks:**
+  - [x] Skeleton + design tokens + service contracts (lead)
+  - [x] Session/compositor/deploy infra + labwc config (W1)
+  - [x] HomeScreen + AppDrawer + TaskSwitcher + NavBar gestures (W2)
+  - [x] Shade + QuickSettings + Network/Bluetooth/Brightness services + Settings app (W3)
+  - [x] Dialer app + Telephony facade (demo mode) (W4)
+  - [x] SMS app (W5)
+  - [x] StatusBar + notification daemon/shade list (W6)
+  - [ ] On-device smoke test: install packages, enable session, verify touch/shade/launch
+  - [ ] Real telephony backend when M6 lands (`Telephony.backend` hook / `mm-backend.sh` reference)
 
 ## Open questions
 

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+GenericName=System Settings
+Comment=Configure Wi-Fi, Bluetooth, display and more (a21s-shell)
+Exec=a21s-settings
+Icon=preferences-system
+Categories=Settings;
+Terminal=false
+StartupNotify=true

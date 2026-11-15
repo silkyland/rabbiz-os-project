@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# a21s-phone-session — session entrypoint for the a21s-shell phone DE.
+#
+# Started by a21s-phone-session.service as user `gamer`. Sets the Wayland
+# session environment, creates XDG dirs, then exec()s labwc as the session
+# leader (labwc claims DRM + input through seatd — no VT/TTY needed).
+#
+# Deployed to /usr/local/bin/ by scripts/deploy_shell.sh, which sets +x.
+
+set -euo pipefail
+
+# --- XDG base dirs -------------------------------------------------------
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
+
+# --- Session identity ----------------------------------------------------
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=a21s-shell
+export XDG_CURRENT_DESKTOP=labwc
+
+# --- Compositor/seat -----------------------------------------------------
+export LIBSEAT_BACKEND=seatd
+export WLR_RENDERER="${WLR_RENDERER:-gles2}"   # Mali-G52/Panfrost: GLES only
+
+# --- Toolkit env (inherited by quickshell, qml6 apps, gamescope) -----------
+export QT_QPA_PLATFORM=wayland
+export QSG_RHI_BACKEND=opengl
+export QT_SCALE_FACTOR=1
+export QT_QPA_PLATFORMTHEME=                   # no qt platformtheme plugins
+export QML_IMPORT_PATH="${QML_IMPORT_PATH:-/usr/share/a21s-shell}"
+export QML2_IMPORT_PATH="${QML2_IMPORT_PATH:-/usr/share/a21s-shell}"
+export MOZ_ENABLE_WAYLAND=1
+export SDL_VIDEODRIVER=wayland
+
+# --- Start compositor (session leader) -----------------------------------
+exec /usr/bin/labwc

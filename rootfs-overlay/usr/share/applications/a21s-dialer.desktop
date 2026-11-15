@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Phone
+GenericName=Dialer
+Comment=Make phone calls (a21s-shell)
+Exec=a21s-dialer
+Icon=call-start
+Categories=Network;Telephony;
+Terminal=false
+StartupNotify=true
