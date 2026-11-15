@@ -73,7 +73,7 @@
        switcher/taskbar (Quickshell's ToplevelManager drives the shell
        switcher instead). -->
   <windowRules>
-    <windowRule identifier="*" serverDecoration="no" skipTaskbar="yes" skipWindowSwitcher="yes">
+    <windowRule identifier="*" serverDecoration="no" skipTaskbar="no" skipWindowSwitcher="no">
       <action name="Maximize"/>
     </windowRule>
   </windowRules>

@@ -28,10 +28,25 @@ PanelWindow {
     // Activate a toplevel, remember it in ShellState, hide the switcher.
     function activateToplevel(t) {
         if (t) {
+            t.minimized = false;
             t.activate();
             ShellState.activeAppId = t.appId || "";
         }
         open = false;
+    }
+
+    // Map a toplevel appId or title to a MaterialIconsRound name.
+    function materialIconFor(appId, title) {
+        var s = (String(appId || "") + " " + String(title || "")).toLowerCase();
+        if (s.indexOf("dialer") >= 0 || s.indexOf("phone") >= 0) return "call";
+        if (s.indexOf("sms") >= 0 || s.indexOf("message") >= 0) return "sms";
+        if (s.indexOf("setting") >= 0) return "settings";
+        if (s.indexOf("calc") >= 0) return "calculate";
+        if (s.indexOf("clock") >= 0) return "schedule";
+        if (s.indexOf("note") >= 0) return "edit_note";
+        if (s.indexOf("dolphin") >= 0 || s.indexOf("files") >= 0) return "folder";
+        if (s.indexOf("steam") >= 0) return "sports_esports";
+        return "";
     }
 
     anchors {
@@ -105,12 +120,14 @@ PanelWindow {
                     readonly property var appEntry: modelData && modelData.appId
                         ? DesktopEntries.heuristicLookup(modelData.appId)
                         : null
-                    readonly property url appIconUrl: appEntry && appEntry.icon
-                        ? Quickshell.iconPath(String(appEntry.icon), true)
-                        : ""
                     readonly property string appTitle: modelData && modelData.title
                         ? String(modelData.title)
                         : (modelData && modelData.appId ? String(modelData.appId) : "")
+                    readonly property string resolvedMaterialIcon: switcher.materialIconFor(
+                        modelData ? modelData.appId : "", appTitle)
+                    readonly property url appIconUrl: (appEntry && appEntry.icon && resolvedMaterialIcon.length === 0)
+                        ? Quickshell.iconPath(String(appEntry.icon), true)
+                        : ""
 
                     Rectangle {
                         id: card
@@ -164,9 +181,16 @@ PanelWindow {
                                     asynchronous: true
                                     visible: status === Image.Ready
                                 }
+                                MaterialIcon {
+                                    anchors.centerIn: parent
+                                    visible: headerIcon.status !== Image.Ready && cardDelegate.resolvedMaterialIcon.length > 0
+                                    name: cardDelegate.resolvedMaterialIcon
+                                    size: Theme.iconS * 0.65
+                                    color: ShellPrefs.accentColor
+                                }
                                 Text {
                                     anchors.centerIn: parent
-                                    visible: headerIcon.status !== Image.Ready
+                                    visible: headerIcon.status !== Image.Ready && cardDelegate.resolvedMaterialIcon.length === 0
                                     text: cardDelegate.appTitle.length > 0
                                         ? cardDelegate.appTitle.charAt(0).toUpperCase()
                                         : "?"
@@ -189,17 +213,15 @@ PanelWindow {
                             }
                         }
 
-                        // Large centered app icon (or first-letter fallback).
+                        // Large centered app icon (MaterialIcon / image / first-letter fallback).
                         Rectangle {
-                            anchors {
-                                horizontalCenter: card.horizontalCenter
-                                top: headerRow.bottom
-                                topMargin: Theme.spaceM
-                            }
-                            width: Theme.iconApp * 0.6
-                            height: Theme.iconApp * 0.6
-                            radius: Theme.radiusM
+                            anchors.centerIn: card
+                            width: Theme.iconApp * 1.15
+                            height: Theme.iconApp * 1.15
+                            radius: Theme.radiusL
                             color: Theme.surfaceHigh
+                            border.width: 1
+                            border.color: Qt.alpha(Theme.text, 0.08)
 
                             Image {
                                 id: bodyIcon
@@ -211,9 +233,16 @@ PanelWindow {
                                 asynchronous: true
                                 visible: status === Image.Ready
                             }
+                            MaterialIcon {
+                                anchors.centerIn: parent
+                                visible: bodyIcon.status !== Image.Ready && cardDelegate.resolvedMaterialIcon.length > 0
+                                name: cardDelegate.resolvedMaterialIcon
+                                size: Theme.iconApp * 0.58
+                                color: ShellPrefs.accentColor
+                            }
                             Text {
                                 anchors.centerIn: parent
-                                visible: bodyIcon.status !== Image.Ready
+                                visible: bodyIcon.status !== Image.Ready && cardDelegate.resolvedMaterialIcon.length === 0
                                 text: cardDelegate.appTitle.length > 0
                                     ? cardDelegate.appTitle.charAt(0).toUpperCase()
                                     : "?"
@@ -277,16 +306,54 @@ PanelWindow {
                 font.family: Theme.fontFamily
             }
 
-            Text {
+            Rectangle {
                 anchors {
                     horizontalCenter: parent.horizontalCenter
                     bottom: parent.bottom
                     bottomMargin: Theme.navZoneHeight + Theme.spaceL
                 }
-                text: "recent apps"
-                color: Theme.textFaint
-                font.pixelSize: Theme.fontCaption
-                font.family: Theme.fontFamily
+                visible: cards.count > 0
+                implicitWidth: clearRow.implicitWidth + Theme.spaceL * 1.4
+                implicitHeight: 52
+                radius: Theme.radiusPill
+                color: Theme.surfaceHigh
+                border.width: 1
+                border.color: Qt.alpha(Theme.text, 0.14)
+                scale: clearTap.pressed ? 0.94 : 1.0
+                Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+
+                Row {
+                    id: clearRow
+                    anchors.centerIn: parent
+                    spacing: 8
+
+                    MaterialIcon {
+                        anchors.verticalCenter: parent.verticalCenter
+                        name: "clear_all"
+                        size: 24
+                        color: Theme.text
+                    }
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: "Clear all"
+                        color: Theme.text
+                        font.pixelSize: Theme.fontCaption
+                        font.family: Theme.fontFamily
+                        font.weight: Font.DemiBold
+                    }
+                }
+
+                TapHandler {
+                    id: clearTap
+                    onTapped: {
+                        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
+                        for (var i = 0; i < tops.length; ++i) {
+                            if (tops[i])
+                                tops[i].close();
+                        }
+                        switcher.close();
+                    }
+                }
             }
         }
     }

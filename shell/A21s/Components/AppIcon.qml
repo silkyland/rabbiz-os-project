@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell
+import Quickshell.Wayland
 import A21s.Theme
 import A21s.Services
 
@@ -169,6 +170,25 @@ Item {
     TapHandler {
         id: tap
         onTapped: {
+            var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
+            var idLow = appIcon.entryId.toLowerCase();
+            var nameLow = appIcon.entryName.toLowerCase();
+            for (var i = 0; i < tops.length; ++i) {
+                var t = tops[i];
+                if (!t)
+                    continue;
+                var tid = String(t.appId || "").toLowerCase();
+                var ttitle = String(t.title || "").toLowerCase();
+                if ((idLow.length > 0 && (tid === idLow || tid.indexOf(idLow) >= 0))
+                        || (nameLow.length > 0 && (ttitle === nameLow || ttitle.indexOf(nameLow) >= 0))
+                        || (idLow === "a21s-files" && (tid.indexOf("dolphin") >= 0 || ttitle.indexOf("dolphin") >= 0))) {
+                    t.minimized = false;
+                    t.activate();
+                    ShellState.activeAppId = t.appId || appIcon.entryId;
+                    appIcon.launched();
+                    return;
+                }
+            }
             if (appIcon.entry && typeof appIcon.entry.execute === "function")
                 appIcon.entry.execute();
             else if (appIcon.entry && typeof appIcon.entry.onActivate === "function")
