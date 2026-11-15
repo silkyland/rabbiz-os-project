@@ -13,8 +13,8 @@ ApplicationWindow {
     id: root
 
     visible: true
-    width: 720
-    height: 1600
+    width: Screen.width > 0 ? Screen.width : 720
+    height: Screen.height > 0 ? Screen.height : 1600
     title: "Messages"
     color: Theme.bg
 

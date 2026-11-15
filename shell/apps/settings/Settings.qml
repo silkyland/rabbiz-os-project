@@ -12,8 +12,8 @@ import A21s.Components as Components
 ApplicationWindow {
     id: win
     visible: true
-    width: 720
-    height: 1600
+    width: Screen.width > 0 ? Screen.width : 720
+    height: Screen.height > 0 ? Screen.height : 1600
     title: "Settings"
     color: Theme.bg
     font.family: Theme.fontFamily

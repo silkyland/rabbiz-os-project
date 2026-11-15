@@ -23,8 +23,8 @@ import A21s.Services
 ApplicationWindow {
     id: root
     visible: true
-    width: 720
-    height: 1600
+    width: Screen.width > 0 ? Screen.width : 720
+    height: Screen.height > 0 ? Screen.height : 1600
     title: "Phone"
     color: Theme.bg
 
@@ -252,6 +252,7 @@ ApplicationWindow {
 
                     PadGrid {
                         Layout.fillWidth: true
+                        Layout.fillHeight: true
                         keys: root.padKeys
                         onKeyPressed: function(digit) { root.appendDigit(digit); }
                         onKeyLongPressed: function(digit) {
@@ -446,6 +447,7 @@ ApplicationWindow {
                     }
                     PadGrid {
                         Layout.fillWidth: true
+                        Layout.fillHeight: true
                         keys: root.padKeys
                         onKeyPressed: function(digit) {
                             root.dtmfBuffer += digit;
@@ -768,9 +770,14 @@ ApplicationWindow {
         columnSpacing: Theme.spaceM
         rowSpacing: Theme.spaceS
 
-        readonly property int keyD: Math.min(
+        readonly property int rows: Math.max(1, Math.ceil(keys.length / columns))
+        // Key size fits BOTH the grid width and the height the parent
+        // ColumnLayout actually allocated — otherwise rows overlap when the
+        // window is shorter than the design size (e.g. 1280x720 preview).
+        readonly property int keyD: Math.max(Theme.iconM, Math.min(
             Theme.iconApp + Theme.iconL,
-            Math.floor((width - columnSpacing * (columns - 1)) / columns))
+            Math.floor((width - columnSpacing * (columns - 1)) / columns),
+            Math.floor((height - rowSpacing * (rows - 1)) / rows)))
 
         Repeater {
             model: padGrid.keys
