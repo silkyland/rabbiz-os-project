@@ -264,7 +264,7 @@ PanelWindow {
 
     function buildApps() {
         homeApps = [
-            DesktopEntries.byId("a21s-files")      || ({ name: "Files",      materialIcon: "folder" }),
+            DesktopEntries.byId("a21s-files")      || DesktopEntries.byId("org.kde.dolphin") || ({ name: "Files",      materialIcon: "folder" }),
             DesktopEntries.byId("a21s-calculator") || ({ name: "Calculator", materialIcon: "calculate" }),
             DesktopEntries.byId("a21s-clock")      || ({ name: "Clock",      materialIcon: "schedule" }),
             DesktopEntries.byId("a21s-notes")      || ({ name: "Notes",      materialIcon: "edit_note" })

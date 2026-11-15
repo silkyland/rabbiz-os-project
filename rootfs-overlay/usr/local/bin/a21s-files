@@ -1,4 +1,9 @@
 #!/bin/sh
+# a21s-files — launch KDE Dolphin when installed, else fall back to Files.qml.
+if command -v dolphin >/dev/null 2>&1; then
+    export QT_QPA_PLATFORM=wayland
+    exec dolphin "$@"
+fi
 export QML_IMPORT_PATH=/usr/share/a21s-shell
 export QT_QUICK_BACKEND=software
 exec quickshell -p /usr/share/a21s-shell/apps/files/Files.qml "$@"

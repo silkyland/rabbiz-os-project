@@ -24,6 +24,7 @@ PACKAGES=(
   qt6-declarative        # Qt/QML runtime (quickshell pulls qt6-declarative)
   qt6-svg
   qt6-wayland
+  dolphin                # KDE file manager (launched by a21s-files)
   xorg-xwayland          # XWayland for gamescope/steam and X11 clients
   gamescope              # nested Steam session
   squeekboard            # on-screen keyboard (optional but recommended)
@@ -111,7 +112,7 @@ cat <<'EOF'
 
   1. Install packages (or run './scripts/deploy_shell.sh --packages'):
        pacman -Sy --needed labwc quickshell qt6-declarative qt6-svg \
-         qt6-wayland xorg-xwayland gamescope squeekboard noto-fonts \
+         qt6-wayland dolphin xorg-xwayland gamescope squeekboard noto-fonts \
          ttf-nerd-fonts-symbols upower brightnessctl
 
   2. Ensure seat access (once):

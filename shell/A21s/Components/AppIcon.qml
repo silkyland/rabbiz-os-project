@@ -24,6 +24,7 @@ Item {
         var iconMap = {
             "system-file-manager":    "folder",
             "a21s-files":             "folder",
+            "org.kde.dolphin":        "folder",
             "accessories-calculator": "calculate",
             "a21s-calculator":        "calculate",
             "preferences-system-time": "schedule",

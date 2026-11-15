@@ -37,6 +37,8 @@ Item {
             var entry = source[i];
             if (!entry || entry.noDisplay)
                 continue;
+            if (entry.id === "org.kde.dolphin" && DesktopEntries.byId("a21s-files"))
+                continue;
             if (query.length > 0 && entry.name.toLowerCase().indexOf(query) === -1)
                 continue;
             result.push(entry);
