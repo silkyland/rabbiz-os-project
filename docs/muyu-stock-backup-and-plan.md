@@ -58,3 +58,19 @@ References: [ROADMAP.md](../ROADMAP.md#L34-L39), [docs/PLAN.md](PLAN.md#L119-L12
 5. **Step 4 — Stock Recovery / Unbrick Path**
    - Extract `backups/xiaomi-pad-7-pro/stock-rom/muyu_global_images_OS3.0.303.0.WOYMIXM_20260625.0000.00_16.0_global_59ef5e03ea.tgz` and flash via `flash_all.sh` (or `flash_all_except_storage.sh`) in Fastboot mode (`Vol- + Power`).
    - Do **not** run `flash_all_lock.sh` while custom images are present (re-locking on non-stock images bricks the device).
+
+---
+
+## 4. Community Findings & Existing Shortcuts (Researched 2026-11-15)
+
+1. **Official Kernel & LineageOS Trees for `muyu`:**
+   - `MiCode/Xiaomi_Kernel_OpenSource` (branch `muyu-v-oss`) — official Xiaomi OSS kernel drop for `muyu`.
+   - `Xiaomi-Pad-7-Pro-Resources` (`https://github.com/Xiaomi-Pad-7-Pro-Resources`) — maintained LineageOS `23.2` / `24.0` trees and GKI `6.1` LTS kernel manifest (`android_device_xiaomi_muyu`, `android_device_xiaomi_sm8635-common`, `android_vendor_xiaomi_muyu`, `android_vendor_xiaomi_sm8635-common`, `android_kernel_xiaomi_sm8635`, `kernel_manifest` `common-android14-6.1-lts`, `auto`).
+2. **Kexec / Multi-OS Boot Menu on `SM8635`:**
+   - `dimivelev/peridot-multiboot` (`https://github.com/dimivelev/peridot-multiboot`) implements a pre-init ramdisk boot menu + KEXEC-enabled GKI kernel for `peridot` (`SM8635`), allowing internal multi-OS boot (Android + Linux) without writing a custom ABL bootloader.
+3. **Mainline Linux / Nura (formerly postmarketOS) Status:**
+   - Nura Wiki (`nura.eco`) tracks `muyu` under the `palawan` (`SM8635` / `SM7675`) platform. Although `SM8635` shares CPU traits with `SM8650`, its PMIC (`PM7550` / `PMXR2230`), GPU, and LLCC differ — `SM8650` DTBs cannot be reused directly.
+4. **`hashtagbasit/Zaviya` Coverage Gap:**
+   - `Zaviya` (`https://github.com/hashtagbasit/Zaviya`) currently ships prebuilt images only for `SM8750`, `SM8650`, `SM8550`, and `SM8250` (via `OpenABL` + microSD). There is no prebuilt `SM8635` / `muyu` image yet, and Pad 7 Pro has no microSD slot — adapt `Zaviya`'s ARM64 SteamOS/FEX/Proton userspace onto an internal `SM8635` Kexec/multi-boot setup instead.
+5. **HyperOS Global Bootloader Unlock Notes:**
+   - `muyu_global` qualifies for official Xiaomi Community unlock (account >= 30 days, OEM Unlocking + Mi Unlock Status binding, quota resets at `00:00 GMT+8`). Unlocking wipes userdata.
