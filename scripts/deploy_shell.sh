@@ -109,8 +109,11 @@ ssh "${TARGET}" "
   chown root:root /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
   chmod 644 /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
   chown -R gamer:gamer /home/gamer/.config
-  chgrp video /sys/class/backlight/*/brightness 2>/dev/null || true
-  chmod g+w /sys/class/backlight/*/brightness 2>/dev/null || true
+  chgrp video /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true
+  chmod g+w /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true
+  chgrp video /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
+  chmod g+w /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
+  chown gamer:gamer /run/user/1001/a21s-power.cmd 2>/dev/null || true
   systemctl daemon-reload
 "
 

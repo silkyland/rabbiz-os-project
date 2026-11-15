@@ -354,10 +354,14 @@ ApplicationWindow {
                         }
 
                         SettingsRow {
-                            title: "Display & Brightness"
-                            subtitle: Brightness.available
-                                    ? (Brightness.level + "%")
-                                    : "Unavailable (M5 pending)"
+                            title: "Display & Sleep"
+                            subtitle: (Brightness.available ? (Brightness.level + "%") : "Backlight unavailable")
+                                    + " · "
+                                    + (ShellPrefs.sleepTimeoutSec === 0
+                                        ? "Never sleep"
+                                        : ("Sleep " + (ShellPrefs.sleepTimeoutSec >= 60
+                                            ? Math.round(ShellPrefs.sleepTimeoutSec / 60) + "m"
+                                            : ShellPrefs.sleepTimeoutSec + "s")))
                             glyph: "brightness_medium"
                             badgeColor: "#FFB547"
                             onClicked: win.openPage("bright")
@@ -1041,12 +1045,15 @@ ApplicationWindow {
     }
 
     // ------------------------------------------------------------------
-    // Brightness page
+    // Brightness & Sleep page
     // ------------------------------------------------------------------
     Component {
         id: brightPage
         Item {
-            property string pageTitle: "Brightness"
+            property string pageTitle: "Display & Sleep"
+
+            Process { id: powerKeyProc }
+
             ColumnLayout {
                 anchors {
                     fill: parent
@@ -1054,11 +1061,11 @@ ApplicationWindow {
                 }
                 spacing: Theme.spaceM
 
-                SectionTitle { text: "Display brightness" }
+                SectionTitle { text: "DISPLAY BRIGHTNESS" }
 
                 Components.QSSlider {
                     Layout.fillWidth: true
-                    glyph: "🔆"
+                    materialIcon: "brightness_medium"
                     interactive: Brightness.available
                     disabledHint: "no backlight device"
                     value: Brightness.level / 100
@@ -1072,6 +1079,92 @@ ApplicationWindow {
                     font.pixelSize: Theme.fontCaption
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
+                }
+
+                SectionTitle {
+                    Layout.topMargin: Theme.spaceS
+                    text: "SCREEN TIMEOUT (AUTO-SLEEP)"
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceXS
+                    Repeater {
+                        model: [
+                            { sec: 30,  label: "30s" },
+                            { sec: 60,  label: "1m" },
+                            { sec: 120, label: "2m" },
+                            { sec: 300, label: "5m" },
+                            { sec: 0,   label: "Never" }
+                        ]
+                        delegate: Rectangle {
+                            required property var modelData
+                            Layout.fillWidth: true
+                            height: 46
+                            radius: Theme.radiusPill
+                            color: ShellPrefs.sleepTimeoutSec === modelData.sec
+                                ? ShellPrefs.accentColor
+                                : Theme.card
+                            border.width: 1
+                            border.color: ShellPrefs.sleepTimeoutSec === modelData.sec
+                                ? ShellPrefs.accentColor
+                                : Theme.separator
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: ShellPrefs.sleepTimeoutSec === modelData.sec
+                                    ? ShellPrefs.onAccentColor
+                                    : Theme.text
+                                font.pixelSize: Theme.fontCaption
+                                font.weight: Font.Medium
+                            }
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    ShellPrefs.sleepTimeoutSec = modelData.sec
+                                    ShellPrefs.save()
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SectionTitle {
+                    Layout.topMargin: Theme.spaceS
+                    text: "QUICK ACTIONS"
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Theme.spaceM
+
+                    AButton {
+                        Layout.fillWidth: true
+                        text: "Lock Screen"
+                        accent: false
+                        onClicked: {
+                            powerKeyProc.command = ["a21s-power-key", "lock"]
+                            powerKeyProc.running = true
+                        }
+                    }
+
+                    AButton {
+                        Layout.fillWidth: true
+                        text: "Sleep · Screen Off"
+                        accent: true
+                        onClicked: {
+                            powerKeyProc.command = ["a21s-power-key", "sleep"]
+                            powerKeyProc.running = true
+                        }
+                    }
+                }
+
+                Text {
+                    Layout.fillWidth: true
+                    text: "Press the physical Power button or double-tap the screen while asleep to wake onto the Lock Screen."
+                    color: Theme.textDim
+                    font.pixelSize: Theme.fontStatus
+                    wrapMode: Text.Wrap
                 }
 
                 Item { Layout.fillHeight: true }

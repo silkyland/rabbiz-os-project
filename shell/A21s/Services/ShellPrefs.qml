@@ -15,6 +15,7 @@ QtObject {
     property bool showSteamCard: true
     property bool dndEnabled: false
     property string iconStyle: "squircle"     // squircle | circle | glass
+    property int sleepTimeoutSec: 120         // 30 | 60 | 120 | 300 | 0 (Never)
 
     readonly property var wallpapers: [
         {
@@ -117,6 +118,7 @@ QtObject {
             if (d.showSteamCard !== undefined) showSteamCard = Boolean(d.showSteamCard)
             if (d.dndEnabled !== undefined) dndEnabled = Boolean(d.dndEnabled)
             if (d.iconStyle !== undefined) iconStyle = String(d.iconStyle)
+            if (d.sleepTimeoutSec !== undefined) sleepTimeoutSec = Math.max(0, parseInt(d.sleepTimeoutSec) || 0)
         } catch (e) {}
     }
 
@@ -128,7 +130,8 @@ QtObject {
             use24h: use24h,
             showSteamCard: showSteamCard,
             dndEnabled: dndEnabled,
-            iconStyle: iconStyle
+            iconStyle: iconStyle,
+            sleepTimeoutSec: sleepTimeoutSec
         }, null, 2)
         saveProc.command = [
             "sh", "-c",

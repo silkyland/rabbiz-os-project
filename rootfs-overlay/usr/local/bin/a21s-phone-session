@@ -21,6 +21,9 @@ mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
 if [ ! -f "$XDG_CONFIG_HOME/a21s-shell/prefs.json" ]; then
     printf '{}\n' > "$XDG_CONFIG_HOME/a21s-shell/prefs.json"
 fi
+if [ ! -f "$XDG_RUNTIME_DIR/a21s-power.cmd" ]; then
+    printf 'idle:0\n' > "$XDG_RUNTIME_DIR/a21s-power.cmd"
+fi
 
 # --- Session identity ----------------------------------------------------
 export XDG_SESSION_TYPE=wayland

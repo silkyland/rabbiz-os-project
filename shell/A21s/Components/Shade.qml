@@ -179,7 +179,21 @@ PanelWindow {
                               : ""
                     }
 
-                    // Lock & Power Menu pills in shade header
+                    // Sleep, Lock & Power Menu pills in shade header
+                    Rectangle {
+                        width: 40; height: 40; radius: 20
+                        color: Theme.surfaceHigh
+                        border.width: 1; border.color: Qt.alpha(Theme.text, 0.10)
+                        MaterialIcon {
+                            anchors.centerIn: parent
+                            name: "bedtime"
+                            size: 20; color: ShellPrefs.accentColor
+                        }
+                        TapHandler {
+                            onTapped: SystemControl.sleep()
+                        }
+                    }
+
                     Rectangle {
                         width: 40; height: 40; radius: 20
                         color: Theme.surfaceHigh

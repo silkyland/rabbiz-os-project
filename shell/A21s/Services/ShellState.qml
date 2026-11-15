@@ -16,6 +16,7 @@ QtObject {
     property bool powerMenuOpen: false
     property bool lockScreenOpen: false
     property bool torchOverlayOpen: false
+    property bool sleeping: false
 
     // app launch / close container morph origin state
     property bool morphActive: false
