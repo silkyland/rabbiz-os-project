@@ -11,11 +11,29 @@ Last updated: 2026-11-15 (post Calliope breakthrough)
 - **Boot & Display:** `uniLoader` (`06a1bba`) + `decon850` + `dsi` (`td4150`) + `panfrost`/`panvk` + `steamos-session.service`.
 - **Networking:** `usb0` (`172.16.42.1/24`, systemd-networkd, unmanaged in NM) + `wlan0` (`scsc_wlan`, NetworkManager, `192.168.1.142`).
 - **Bluetooth & Gamepads:** `scsc_bt.ko` (`hci0`) + BlueZ 5.88 + PipeWire + HID/UHID.
-- **Audio (`abox` — Phase A DONE, Phase B next):**
+- **Audio (`abox` — Phase A DONE, Phase B = codec):**
   - `Calliope is ready to sing (version:nEB0)` — DSP boots + handshake completes reliably on clean boots with pristine firmware.
   - `loaded abox_tplg.bin` — topology loads; card 1 `Exynos3830-Madera` registers **10 playback PCMs (`calliope_0`–`calliope_9`, `hw:1,100`–`hw:1,109`)** + ~29 capture PCMs + 9 WDMA capture.
-  - Still missing: physical speaker output (AUD3004X codec path — Phase B); `speaker-test -D plughw:1,100` currently returns `-EINVAL` on open (FE PCM open path under investigation).
-  - `/etc/modprobe.d/blacklist-abox.conf` may still blacklist the modules — load manually with `modprobe exynos3830-aud3004x`.
+  - **`calliope_0` playback now OPENS and STREAMS** — `dpcm_fe_dai_open` succeeds, DPCM resolves `RDMA3 BE`+`UAIF1 BE`, `abox_rdma_open`/`abox_uaif_hw_params`/`abox_vdma` all run, `abox_rdma_trigger[3](1)` fires. Stream plays ~1 buffer then `write error: EIO` — DSP-side output path needs the codec (Phase B).
+  - Still missing: physical speaker output — AUD3004X codec is on the **SPEEDY/ACPM bus (not yet ported)**; machine links intentionally use `snd-soc-dummy` for codec. The codec component (`aud3004x_codec`/`codec_speedy`) registers but has **no bound I2C/device** and is **not in card 1's component list**.
+  - `/etc/modprobe.d/blacklist-abox.conf` may still blacklist the modules — load manually with `modprobe exynos3830-aud3004x aud3004x-codec`.
+
+### ⚠️ Module deploy paths (cost a full debug cycle — DO NOT get wrong)
+
+`modprobe`/`modinfo` resolve modules from **subdirectories**, not the top level of `/usr/lib/modules/$(uname -r)/`:
+
+| Module | Correct deploy path |
+|---|---|
+| `snd_soc_core` | `…/kernel/sound/soc/snd-soc-core.ko.zst` (**zstd-compressed**) |
+| `exynos3830_aud3004x` | `…/extra/exynos3830-aud3004x.ko` (uncompressed ELF) |
+| `abox_snd` | `…/extra/abox-snd.ko` (+ `.ko.zst`) |
+| `aud3004x_codec` | `…/extra/aud3004x-codec.ko` |
+
+Deploying a rebuilt `.ko` to `…/KVER/` top-level is **silently ignored** — the running module stays the old build. Always `modinfo <mod>` to confirm the real `filename:` before assuming a deploy took effect. To replace `snd-soc-core.ko.zst`: `zstd -q -f -o snd-soc-core.ko.zst snd-soc-core.ko` then scp to `kernel/sound/soc/`.
+
+### DSP memory ceiling
+
+Calliope DRAM workspace is ~**768 KiB** (`786432` B). A 1 MiB WDMA capture buffer request → `CALLIOPE2:ERROR Not enough memory: 1048576 of 786432` → `ipc_send_debug_info(0xdead0001, 0x8000b538)` data abort. Keep PipeWire/WirePlumber **masked** during bring-up; they open capture streams that exhaust DSP memory and crash it.
 
 ---
 
@@ -100,9 +118,11 @@ Topology links whose cpu DAI resolves to `snd-soc-dummy` call `abox_dma_hw_param
 
 ## 5. Immediate Next Steps
 
-1. **Fix FE PCM open `-EINVAL`** — calliope_0..9 exist but `hw:1,100` open fails; likely FE link cpu=snd-soc-dummy needing a real platform/CPU or a missing `dynamic`/`no_pcm` route to the RDMA BE links. Trace `soc_pcm_open` on `hw:1,100`.
-2. **Phase B — AUD3004X codec:** `aud3004x-codec.ko` + ACPM (`devm_acpm_get_by_node`) + SPEEDY + `uaif`/`spdy` codec link in the sound node → physical speaker output (`speaker-test -D plughw:1,100`).
-3. **Finalize:** remove `/etc/modprobe.d/blacklist-abox.conf`; sync `configs/a21s_linux_defconfig` (already has `CONFIG_EXYNOS_IOMMU=y`); keep `clk_ignore_unused` + `wifibt_if@b0000000`; evaluate abox-slog (`0xe6c00000/0x2800000`) + abox-dbg reserved-mem if DSP logs are needed.
+1. ~~**Fix FE PCM open `-EINVAL`**~~ — **DONE.** Root cause was twofold: (a) BE links (`RDMA0-11 BE`, `WDMA0-4 BE`, `UAIF0-2`) had no `.cpus` because DT `sound` children bind `exynos3830_dai[]` **positionally** and only 21 children exist → fixed by binding `.cpus={{.dai_name=…}}` by name (commit `d8315e1`); (b) rebuilt modules were deployed to the wrong path (see table above). `calliope_0` now opens + streams.
+2. **Phase B — AUD3004X codec (the only thing left for speaker):** codec is on the **SPEEDY/ACPM bus**, not I2C — needs the `acpm`/`speedy` bus path ported + codec register init (power, DAC, speaker-amp, unmute) so the DSP's UAIF→codec→speaker output actually drives the speaker. Machine `sound` node codec links stay `snd-soc-dummy` until then. Reference: `drivers/abox/aud3004x.c` (codec driver, DAPM `SPK`/`SPKDRV`, DAC soft-mute), stock `mixer_paths.xml` codec controls (`Speaker Mute`, `DAC`, `HP`/`EP`).
+3. **DSP boot flakiness:** `BOOT_DONE` is an edge-triggered IPC — if missed, Calliope parks in `CALLIOPE_ENABLING` forever (no timeout-retry in `abox_enable`). Add a delayed-work retry (disable→enable) or investigate the SGI/IPC race. ~50% of cold boots.
+4. **Unregister crash:** `snd_soc_unregister_card`→`soc_cleanup_card_resources` oops on `rmmod`/unbind (mutex leak). Guard exists for `is_instantiated` but cleanup path still crashes — avoid module reload; reboot instead.
+5. **Finalize:** remove `/etc/modprobe.d/blacklist-abox.conf`; sync `configs/a21s_linux_defconfig`; keep `clk_ignore_unused` + `wifibt_if@b0000000`; evaluate abox-slog + abox-dbg reserved-mem if DSP logs are needed.
 
 ---
 
