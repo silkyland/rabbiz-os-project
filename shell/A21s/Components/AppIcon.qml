@@ -26,12 +26,29 @@ Item {
             "system-file-manager":    "folder",
             "a21s-files":             "folder",
             "org.kde.dolphin":        "folder",
+            "org.kde.calindori":      "calendar_month",
+            "calindori":              "calendar_month",
             "accessories-calculator": "calculate",
             "a21s-calculator":        "calculate",
+            "org.kde.kalk":           "calculate",
+            "kalk":                   "calculate",
             "preferences-system-time": "schedule",
             "a21s-clock":             "schedule",
+            "org.kde.kclock":         "schedule",
+            "kclock":                 "schedule",
+            "org.kde.kweather":       "wb_sunny",
+            "kweather":               "wb_sunny",
+            "org.kde.krecorder":      "graphic_eq",
+            "krecorder":              "graphic_eq",
             "accessories-text-editor": "edit_note",
             "a21s-notes":             "edit_note",
+            "org.kde.marknote":       "edit_note",
+            "marknote":               "edit_note",
+            "org.kde.qmlkonsole":     "terminal",
+            "qmlkonsole":             "terminal",
+            "utilities-terminal":     "terminal",
+            "org.kde.elisa":          "music_note",
+            "elisa":                  "music_note",
             "call-start":             "call",
             "a21s-dialer":            "call",
             "mail-message-new":       "sms",
@@ -181,7 +198,10 @@ Item {
                 var ttitle = String(t.title || "").toLowerCase();
                 if ((idLow.length > 0 && (tid === idLow || tid.indexOf(idLow) >= 0))
                         || (nameLow.length > 0 && (ttitle === nameLow || ttitle.indexOf(nameLow) >= 0))
-                        || (idLow === "a21s-files" && (tid.indexOf("dolphin") >= 0 || ttitle.indexOf("dolphin") >= 0))) {
+                        || (idLow === "a21s-files" && (tid.indexOf("dolphin") >= 0 || ttitle.indexOf("dolphin") >= 0))
+                        || (idLow === "a21s-calculator" && (tid.indexOf("kalk") >= 0 || ttitle.indexOf("kalk") >= 0))
+                        || (idLow === "a21s-clock" && (tid.indexOf("kclock") >= 0 || ttitle.indexOf("clock") >= 0))
+                        || (idLow === "a21s-notes" && (tid.indexOf("marknote") >= 0 || ttitle.indexOf("marknote") >= 0))) {
                     t.minimized = false;
                     t.activate();
                     ShellState.activeAppId = t.appId || appIcon.entryId;

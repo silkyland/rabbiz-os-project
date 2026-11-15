@@ -16,6 +16,7 @@ LIBSEAT_BACKEND=seatd
 # import error while keeping labwc/games GLES2 on Panfrost.
 QT_QPA_PLATFORM=wayland
 QT_QUICK_BACKEND=software
+QT_QUICK_CONTROLS_MOBILE=1
 QT_SCALE_FACTOR=1
 QT_QPA_PLATFORMTHEME=
 

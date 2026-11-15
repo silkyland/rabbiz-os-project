@@ -37,7 +37,18 @@ Item {
             var entry = source[i];
             if (!entry || entry.noDisplay)
                 continue;
-            if (entry.id === "org.kde.dolphin" && DesktopEntries.byId("a21s-files"))
+            var eid = String(entry.id || "");
+            if ((eid === "org.kde.dolphin" && DesktopEntries.byId("a21s-files"))
+                    || (eid === "org.kde.kalk" && DesktopEntries.byId("a21s-calculator"))
+                    || (eid === "org.kde.kclock" && DesktopEntries.byId("a21s-clock"))
+                    || (eid === "org.kde.marknote" && DesktopEntries.byId("a21s-notes")))
+                continue;
+            if (eid.indexOf("kcm_") === 0 || eid.indexOf("-geo-handler") >= 0
+                    || eid === "org.kde.kiod6" || eid === "ktelnetservice6"
+                    || eid === "org.kde.knewstuff-dialog6" || eid === "org.kde.ksecretd"
+                    || eid === "org.kde.kwalletd" || eid === "cmake-gui"
+                    || eid === "qv4l2" || eid === "qvidcap"
+                    || eid === "org.gnupg.pinentry-qt")
                 continue;
             if (query.length > 0 && entry.name.toLowerCase().indexOf(query) === -1)
                 continue;

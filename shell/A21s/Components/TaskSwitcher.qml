@@ -41,9 +41,14 @@ PanelWindow {
         if (s.indexOf("dialer") >= 0 || s.indexOf("phone") >= 0) return "call";
         if (s.indexOf("sms") >= 0 || s.indexOf("message") >= 0) return "sms";
         if (s.indexOf("setting") >= 0) return "settings";
-        if (s.indexOf("calc") >= 0) return "calculate";
-        if (s.indexOf("clock") >= 0) return "schedule";
-        if (s.indexOf("note") >= 0) return "edit_note";
+        if (s.indexOf("calindori") >= 0 || s.indexOf("calendar") >= 0) return "calendar_month";
+        if (s.indexOf("calc") >= 0 || s.indexOf("kalk") >= 0) return "calculate";
+        if (s.indexOf("clock") >= 0 || s.indexOf("kclock") >= 0) return "schedule";
+        if (s.indexOf("weather") >= 0 || s.indexOf("kweather") >= 0) return "wb_sunny";
+        if (s.indexOf("note") >= 0 || s.indexOf("marknote") >= 0) return "edit_note";
+        if (s.indexOf("recorder") >= 0 || s.indexOf("krecorder") >= 0) return "graphic_eq";
+        if (s.indexOf("terminal") >= 0 || s.indexOf("konsole") >= 0) return "terminal";
+        if (s.indexOf("elisa") >= 0 || s.indexOf("music") >= 0) return "music_note";
         if (s.indexOf("dolphin") >= 0 || s.indexOf("files") >= 0) return "folder";
         if (s.indexOf("steam") >= 0) return "sports_esports";
         return "";

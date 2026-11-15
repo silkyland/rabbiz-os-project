@@ -40,6 +40,7 @@ fi
 # --- Toolkit env (inherited by quickshell, qml6 apps, gamescope) -----------
 export QT_QPA_PLATFORM=wayland
 export QT_QUICK_BACKEND=software
+export QT_QUICK_CONTROLS_MOBILE=1
 export QT_SCALE_FACTOR=1
 export QT_QPA_PLATFORMTHEME=                   # no qt platformtheme plugins
 export QML_IMPORT_PATH="${QML_IMPORT_PATH:-/usr/share/a21s-shell}"

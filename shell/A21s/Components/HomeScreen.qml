@@ -265,9 +265,13 @@ PanelWindow {
     function buildApps() {
         homeApps = [
             DesktopEntries.byId("a21s-files")      || DesktopEntries.byId("org.kde.dolphin") || ({ name: "Files",      materialIcon: "folder" }),
-            DesktopEntries.byId("a21s-calculator") || ({ name: "Calculator", materialIcon: "calculate" }),
-            DesktopEntries.byId("a21s-clock")      || ({ name: "Clock",      materialIcon: "schedule" }),
-            DesktopEntries.byId("a21s-notes")      || ({ name: "Notes",      materialIcon: "edit_note" })
+            DesktopEntries.byId("org.kde.calindori") || ({ name: "Calendar", materialIcon: "calendar_month" }),
+            DesktopEntries.byId("a21s-clock")      || DesktopEntries.byId("org.kde.kclock") || ({ name: "Clock",      materialIcon: "schedule" }),
+            DesktopEntries.byId("a21s-calculator") || DesktopEntries.byId("org.kde.kalk") || ({ name: "Calculator", materialIcon: "calculate" }),
+            DesktopEntries.byId("org.kde.kweather") || ({ name: "Weather", materialIcon: "wb_sunny" }),
+            DesktopEntries.byId("a21s-notes")      || DesktopEntries.byId("org.kde.marknote") || ({ name: "Notes",      materialIcon: "edit_note" }),
+            DesktopEntries.byId("org.kde.krecorder") || ({ name: "Recorder", materialIcon: "graphic_eq" }),
+            DesktopEntries.byId("org.kde.qmlkonsole") || ({ name: "Terminal", materialIcon: "terminal" })
         ];
         dockApps = [
             DesktopEntries.byId("a21s-dialer")   || ({ name: "Phone",    materialIcon: "call" }),
@@ -286,14 +290,16 @@ PanelWindow {
         function onApplicationsChanged() { home.buildApps(); }
     }
 
-    Row {
+    Grid {
         id: homeGridRow
         anchors {
             horizontalCenter: parent.horizontalCenter
             top: clockBlock.bottom
             topMargin: Theme.spaceL
         }
-        spacing: Theme.spaceM + 4
+        columns: 4
+        columnSpacing: Theme.spaceM + 4
+        rowSpacing: Theme.spaceM
 
         Repeater {
             model: home.homeApps
