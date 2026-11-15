@@ -55,6 +55,10 @@ Item {
                          : Network.wifiEnabled ? "On" : "Off"
                 active: Network.wifiEnabled
                 onTapped: Network.setWifiEnabled(!Network.wifiEnabled)
+                onLongPressed: {
+                    ShellState.connPanelTab = 0
+                    ShellState.connPanelOpen = true
+                }
             }
 
             QSTile {
@@ -65,6 +69,10 @@ Item {
                          : Bluetooth.powered ? "On" : "Off"
                 active: Bluetooth.powered
                 onTapped: Bluetooth.setPowered(!Bluetooth.powered)
+                onLongPressed: {
+                    ShellState.connPanelTab = 1
+                    ShellState.connPanelOpen = true
+                }
             }
 
             QSTile {

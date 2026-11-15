@@ -136,6 +136,17 @@ swaymsg / labwc --version; ls /usr/share/a21s-shell
   → `/opt/google/chrome`, wrapper `/usr/local/bin/a21s-browser`) —
   needs `--disable-gpu` (exynos dmabuf), `--force-device-scale-factor=1.5`;
   no Widevine on aarch64 Linux.
+- **Connectivity panel** (`ConnectivityPanel.qml`, layer `Overlay`):
+  Android-style "Connected devices" sheet — Wi-Fi tab (rescan, network
+  list with security/signal/saved marks, password sheet →
+  `nmcli device wifi connect`, Disconnect/Forget) and Bluetooth tab
+  (toggle, `bluetoothctl` discovery loop, paired+available lists,
+  pair→trust→connect/disconnect/remove). Open by **long-pressing the
+  Wi-Fi/BT QS tiles** (`QSTile.longPressed`) or
+  `ShellState.connPanelOpen/connPanelTab`; closes on X, swipe-down,
+  Escape, back or goHome. Services only scan while
+  `wifiPanelActive`/`btPanelActive` — no idle polling. PIN-confirm
+  pairings may still fail (default agent) — errors surface via toast.
 - **OSK**: squeekboard autostarts; `screen-keyboard-enabled=true` +
   `input-sources=[us,th]` set in labwc `autostart` — Thai Kedmanee
   layout + emoji pane built in. Custom layouts in

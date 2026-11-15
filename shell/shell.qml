@@ -8,6 +8,7 @@ ShellRoot {
     HomeScreen {}
     Shade {}
     NavBar {}
+    ConnectivityPanel {}
     PowerMenu {}
     HudOverlay {}
 }

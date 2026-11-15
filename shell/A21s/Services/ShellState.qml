@@ -27,6 +27,9 @@ QtObject {
     property bool lockScreenOpen: false
     property bool torchOverlayOpen: false
     property bool sleeping: false
+    // connectivity panel (Wi-Fi / Bluetooth); tab: 0=Wi-Fi, 1=Bluetooth
+    property bool connPanelOpen: false
+    property int connPanelTab: 0
 
     // app launch / close container morph origin state
     property bool morphActive: false

@@ -18,6 +18,9 @@ Rectangle {
     property Component glyphDelegate: null  // optional custom icon
 
     signal tapped()
+    signal longPressed()
+
+    property bool _lp: false              // set by pressAndHold; suppresses tapped
 
     radius: active ? (height / 2) : Theme.radiusM
     color: active ? ShellPrefs.accentColor : Theme.surfaceHigh
@@ -128,10 +131,19 @@ Rectangle {
     MouseArea {
         id: pressArea
         anchors.fill: parent
+        onPressed: root._lp = false
         onClicked: {
+            if (root._lp)
+                return
             if (root.stub)
                 pulse.restart()
             root.tapped()
+        }
+        onPressAndHold: {
+            root._lp = true
+            if (root.stub)
+                pulse.restart()
+            root.longPressed()
         }
     }
 }

@@ -14,9 +14,20 @@ QtObject {
     property int signalStrength: -1        // 0-100, -1 = unknown
     property var networks: []              // [{ssid, signal, security, inUse}]
 
+    // --- Connectivity panel extensions (additive) ------------------------
+    readonly property var wifiNetworks: networks   // alias kept for panel API
+    property bool wifiScanning: false
+    property bool wifiPanelActive: false   // gates the ~8s rescan timer
+    property bool wifiConnecting: false
+    property string wifiLastError: ""      // "" = no error; else last connect failure
+    property string wifiConnectingSsid: ""
+    property var savedSsids: []            // NM profile names (saved networks)
+
     // --- internals -------------------------------------------------------
     property string _wifiDevice: ""
     property var _pendingArgv: null
+    property var _pendingConn: null
+    property string _connOut: ""
 
     // Split an nmcli -t line on ':' honoring backslash escapes (\: and \\).
     function _splitNm(line) {
@@ -38,6 +49,7 @@ QtObject {
     }
 
     function scan() {                        // rescan; refresh picks up results
+        root.wifiScanning = true
         _run(["nmcli", "device", "wifi", "rescan"])
     }
 
@@ -45,12 +57,29 @@ QtObject {
         _run(["nmcli", "radio", "wifi", on ? "on" : "off"])
     }
 
-    function connectTo(ssid, password) {
-        var argv = ["nmcli", "device", "wifi", "connect", ssid]
+    // 'arg' -> 'arg' with embedded quotes escaped for sh -c use.
+    function _shq(s) {
+        return "'" + String(s).replace(/'/g, "'\\''") + "'"
+    }
+
+    function wifiConnect(ssid, password) {
+        var cmd = "timeout 40 nmcli device wifi connect " + _shq(ssid)
         if (password && password.length > 0)
-            argv = argv.concat(["password", password])
-        _run(argv)
-        retryTimer.kick(4)                   // association can take a while
+            cmd += " password " + _shq(password)
+        root._connOut = ""
+        root.wifiConnecting = true
+        root.wifiConnectingSsid = ssid
+        root.wifiLastError = ""
+        _runConn(["sh", "-c", cmd])
+    }
+
+    // Back-compat alias (Settings app uses connectTo).
+    function connectTo(ssid, password) {
+        wifiConnect(ssid, password)
+    }
+
+    function wifiForget(ssid) {
+        _run(["sh", "-c", "nmcli connection delete id " + _shq(ssid)])
     }
 
     function disconnect() {
@@ -77,7 +106,9 @@ QtObject {
           + "echo '=D='; "
           + "nmcli -t -f DEVICE,TYPE,STATE dev 2>/dev/null; "
           + "echo '=A='; "
-          + "nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY dev wifi list 2>/dev/null"]
+          + "nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY dev wifi list 2>/dev/null; "
+          + "echo '=S='; "
+          + "nmcli -t -f NAME,TYPE con show 2>/dev/null"]
 
         stdout: StdioCollector {
             onStreamFinished: {
@@ -85,7 +116,9 @@ QtObject {
                 var radio = parts[0]
                 var rest = parts.length > 1 ? parts[1].split("=A=") : ["", ""]
                 var devLines = rest[0]
-                var apLines = rest.length > 1 ? rest[1] : ""
+                var tail = rest.length > 1 ? rest[1].split("=S=") : ["", ""]
+                var apLines = tail[0]
+                var savLines = tail.length > 1 ? tail[1] : ""
 
                 // 1) radio on/off
                 root.wifiEnabled = radio.trim() === "enabled"
@@ -150,6 +183,17 @@ QtObject {
                     return b.signal - a.signal
                 })
                 root.networks = list
+                root.wifiScanning = false
+
+                // 3b) saved wifi profiles (for "Saved" + passwordless reconnect)
+                var saved = []
+                var sl = savLines.split("\n")
+                for (var s = 0; s < sl.length; ++s) {
+                    var sf = root._splitNm(sl[s].trim())
+                    if (sf.length >= 2 && sf[1].indexOf("wireless") !== -1)
+                        saved.push(sf[0])
+                }
+                root.savedSsids = saved
 
                 // 4) connected state
                 if (conn !== null) {
@@ -183,6 +227,66 @@ QtObject {
         stderr: StdioCollector {
             onStreamFinished: cmdProc._dispatch()
         }
+    }
+
+    // --- connect process (captures stdout+stderr+exit for error UI) ------
+    function _runConn(argv) {
+        if (connProc.running) {
+            root._pendingConn = argv
+            return
+        }
+        connProc.command = argv
+        connProc.running = true
+    }
+
+    property var connProc: Process {
+        function _dispatch() {
+            if (root._pendingConn !== null && !connProc.running) {
+                var argv = root._pendingConn
+                root._pendingConn = null
+                connProc.command = argv
+                connProc.running = true
+            }
+        }
+        function _evaluate(code) {
+            var out = root._connOut
+            root._connOut = ""
+            if (code === 0) {
+                root.wifiLastError = ""
+            } else {
+                var m = /Error:\s*(.+)/.exec(out)
+                root.wifiLastError = (code === 124 || code === 143)
+                    ? "Connection timed out"
+                    : (m !== null ? m[1].trim() : "Connection failed")
+            }
+            root.wifiConnecting = false
+            retryTimer.kick(4)
+            connProc._dispatch()
+        }
+        onExited: function(code, status) {
+            var c = code          // let StdioCollectors flush before scoring
+            Qt.callLater(function() { connProc._evaluate(c) })
+        }
+        stdout: StdioCollector { onStreamFinished: root._connOut += this.text }
+        stderr: StdioCollector { onStreamFinished: root._connOut += this.text }
+    }
+
+    // ~8s rescan loop, only while the connectivity panel is open.
+    property var scanTimer: Timer {
+        interval: 8000
+        repeat: true
+        running: root.wifiPanelActive && root.wifiEnabled
+        onTriggered: root.scan()
+    }
+
+    onWifiPanelActiveChanged: {
+        if (wifiPanelActive && wifiEnabled)
+            root.scan()
+    }
+
+    onWifiEnabledChanged: {
+        if (wifiPanelActive && wifiEnabled)
+            root.scan()
     }
 
     // A few delayed refreshes after each command so the UI settles

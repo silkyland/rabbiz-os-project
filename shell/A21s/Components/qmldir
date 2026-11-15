@@ -12,6 +12,7 @@ StatusBar 1.0 StatusBar.qml
 HomeScreen 1.0 HomeScreen.qml
 Shade 1.0 Shade.qml
 QuickSettings 1.0 QuickSettings.qml
+ConnectivityPanel 1.0 ConnectivityPanel.qml
 NavBar 1.0 NavBar.qml
 PowerMenu 1.0 PowerMenu.qml
 HudOverlay 1.0 HudOverlay.qml

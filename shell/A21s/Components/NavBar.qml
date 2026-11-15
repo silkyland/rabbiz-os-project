@@ -36,6 +36,7 @@ PanelWindow {
         ShellState.drawerOpen = false;
         ShellState.shadeProgress = 0;
         ShellState.powerMenuOpen = false;
+        ShellState.connPanelOpen = false;
         ShellState.activeAppId = "";
         if (hadOpenApp)
             ShellState.triggerCloseMorph();
@@ -48,6 +49,10 @@ PanelWindow {
     function goBack() {
         if (bar.switcherOpen) {
             bar.switcherOpen = false;
+            return;
+        }
+        if (ShellState.connPanelOpen) {
+            ShellState.connPanelOpen = false;
             return;
         }
         if (ShellState.shadeProgress > 0) {
