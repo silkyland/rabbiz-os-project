@@ -5,7 +5,7 @@
 CARD="${1:-1}"
 C="amixer -c $CARD"
 
-set -e
+# Do not exit on single cset timeout during early Calliope boot window.
 
 # --- Initial defaults (mixer_paths.xml header) ---
 $C cset name='ABOX SIFS0 Width' 16
@@ -34,7 +34,7 @@ $C cset name='ABOX SPDY Rate' 40000
 $C cset name='ABOX SPUS ASRC0' 0
 $C cset name='ABOX SPUS ASRC1' 0
 $C cset name='ABOX SPUS ASRC2' 0
-$C cset name='ABOX SPUS ASRC3' 1
+$C cset name='ABOX SPUS ASRC3' 0
 $C cset name='ABOX SPUS ASRC4' 0
 $C cset name='ABOX SPUS ASRC5' 0
 $C cset name='ABOX SPUS ASRC6' 0
@@ -47,7 +47,7 @@ $C cset name='ABOX SPUS ASRC11' 0
 $C cset name='ABOX SPUS OUT0' SIFS0
 $C cset name='ABOX SPUS OUT1' SIFS0
 $C cset name='ABOX SPUS OUT2' RESERVED
-$C cset name='ABOX SPUS OUT3' RESERVED
+$C cset name='ABOX SPUS OUT3' SIFS0
 $C cset name='ABOX SPUS OUT4' RESERVED
 $C cset name='ABOX SPUS OUT5' RESERVED
 $C cset name='ABOX SPUS OUT6' SIFS2
@@ -58,7 +58,7 @@ $C cset name='ABOX SPUS OUT10' RESERVED
 $C cset name='ABOX SPUS OUT11' RESERVED
 
 $C cset name='ABOX UAIF0 SPK' RESERVED
-$C cset name='ABOX UAIF1 SPK' RESERVED
+$C cset name='ABOX UAIF1 SPK' SIFS0
 $C cset name='ABOX UAIF2 SPK' RESERVED
 
 $C cset name='ABOX SPUM ASRC0' 0
@@ -90,7 +90,7 @@ $C cset name='ABOX SIFS5' RESERVED
 # registers, NOT ALSA kcontrols on this card — handled separately in Phase B.
 $C cset name='ABOX UAIF1 SPK' SIFS0
 $C cset name='ABOX SPUS OUT3' SIFS0
-$C cset name='ABOX SPUS ASRC3' 1
+$C cset name='ABOX SPUS ASRC3' 0
 $C cset name='ABOX RDMA3 Width' 16
 $C cset name='ABOX RDMA3_A' BD_MIXER
 $C cset name='ABOX BD_SRCCOM0_A' VPCMOUT_DAI0

@@ -1,0 +1,22 @@
+--- a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
++++ b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
+@@ -1448,5 +1448,19 @@
+ /* ---- cellular modem: Shannon s318ap CPIF ---------------------------
+  * Node lives under &soc above (see cpif@14020000). Mirrors vendor
+  * fragment@modemif; modem.bin is loaded from userspace by
+  * tools/cbd via /dev/umts_boot0.
+  */
++
++/* ---- speaker smart-PA: Silicon Mitus SMA1303 on i2c_3 (0x1e) ------- */
++&i2c_3 {
++	clock-frequency = <400000>;
++	status = "okay";
++
++	sma1303@1e {
++		compatible = "siliconmitus,sma1303";
++		reg = <0x1e>;
++		init-vol = <0x31>;
++		sys-clk-id = <0x03>;
++		#sound-dai-cells = <0>;
++	};
++};

@@ -1,10 +1,10 @@
 # Engineering Handoff — Galaxy A21s (`SM-A217F` / Exynos 850)
 
-Last updated: 2026-11-15 (PipeWire integration paused — DSP playback data-aborts on a clean boot)
+Last updated: 2026-11-15 (`exynos-drm` `DSI-1` display + PipeWire/Steam/`paplay` speaker playback **BOTH WORKING** on `#5` with `CONFIG_EXYNOS_IOMMU=y` and zero Calliope aborts; next up is M5 power/battery)
 
 ---
 
-## 0. Latest session — PipeWire/Steam audio integration (in-flight)
+## 0. Latest session — PipeWire/Steam audio integration (DONE)
 
 **Goal:** unmask PipeWire, expose the ABOX speaker as the default sink for Steam, then M5 (battery/power) + M6 (modem).
 
@@ -22,12 +22,12 @@ Last updated: 2026-11-15 (PipeWire integration paused — DSP playback data-abor
 - **Default sink persisted:** `wpctl set-default` → wireplumber stores `alsa_output.platform-sound.HiFi__Speaker__sink` in Default Configured Devices; survives reboot. `pactl` reports PipeWire server + correct default; `pipewire-pulse` socket-activated.
 - **Boot integration:** `abox-audio.service` (oneshot → `/root/audio-up.sh`) created + enabled; repo copies in `rootfs-overlay/etc/systemd/system/` and `scripts/audio-up.sh` (updated: drops the bogus csets, writes `playback_init`, sets `SPK SPK On`).
 
-### Open problems
+### Open problems (Round 1 — resolved in §0.3 unless noted)
 
-1. **DSP data-aborts on playback ~1 s after trigger — with or without PipeWire (main blocker).** Not a buffer-size, format or probing problem: see §0.1. A 15 KiB S16 buffer at the documented known-good params still kills the DSP.
-2. **768 KiB DSP ceiling is real and is exceeded by ALSA's own maximum.** `BUFFER_BYTES_MAX = SZ_1M` while the firmware heap is 768 KiB → a legal request reaches the DSP and is refused there. Capture probing makes it worse but is not the trigger. See §0.1.
-3. **Calliope boot flake persists** — 2 of 4 boots today never signaled BOOT_DONE (all 8 `boot_retry` pulses failed). Recovery = reboot only. Pattern hints warm-reboot state dependence (a good boot followed by a wedged/rebooted DSP tends to fail).
-4. **Slow mixer enumeration** — `amixer scontrols`/`sget` "Timer expired"; wireplumber `spa.alsa: Unable to load mixer` + `Failed to find a working mixer device (_ucm0003.hw:Exynos3830Mader)`; ~60–90 s before `wpctl` responds post-start. Some of the 722 kcontrols' get path likely hits the DSP mailbox. Effect: **no hardware volume on the sink (soft volume only)** — acceptable for now.
+1. ~~**DSP data-aborts on playback ~1 s after trigger**~~ — **Resolved in §0.3**: `ABOX SPUS ASRC3 0` (plus updated `/var/lib/alsa/asound.state`), idempotent `scripts/abox_speaker.sh`, `api.alsa.disable-mmap = true` + `SNDRV_PCM_INFO_SYNC_APPLPTR`.
+2. ~~**768 KiB DSP ceiling is real and is exceeded by ALSA's own maximum**~~ — **Resolved in §0.3**: `BUFFER_BYTES_MAX = SZ_256K` (`drivers/abox/abox.h:41`) + `api.acp.disable-pro-audio = true` in `50-a21s-abox.conf`.
+3. ~~**Calliope boot flake persists**~~ — **Root-caused & fixed in §0.3**: `dma_get_sgtable()` + `abox_iommu_map_sg()` in `drivers/abox/abox.c`.
+4. ~~**Slow mixer enumeration**~~ — **Mitigated in §0.3**: `api.alsa.soft-mixer = true` in `50-a21s-abox.conf` eliminates the 60–90 s startup delay (soft volume control only).
 5. Pre-existing cosmetic: `abox_rdma close timeout`.
 
 ### 0.1 Round 2 — DRAM ceiling characterised, playback blocker moved (2026-11-15 16:00)
@@ -101,22 +101,48 @@ When recovering from the 16:18 hang, the phone screen continuously scrolled text
    - Set `dmesg -n 1` and persisted `/etc/sysctl.d/20-quiet-printk.conf` (`kernel.printk = 1 4 1 3`) + cleared `/dev/tty1` so kernel log messages no longer spam the display.
    - Added `[output] name=Unknown-1` (`transform=rotate-270`) to `/home/gamer/.config/weston.ini`.
 
-### Device state right now (2026-11-15 16:42)
+### 0.3 Round 4 — All Audio / PipeWire / Boot-Flake Root Causes Resolved & Verified (2026-11-15 17:33)
 
-- **ONLINE** via USB (`ssh root@172.16.42.1`).
-- **Calliope DSP is LIVE (`calliope_version = nEB0`, 0 boot retries)** and **untouched** (no playback triggered yet on this boot — ready for immediate clean-boot playback testing!).
-- **⚠️ Still masked from Round 2:** `/home/gamer/.config/systemd/user/{pipewire.service,pipewire.socket,pipewire-pulse.service,pipewire-pulse.socket,wireplumber.service} → /dev/null`. Remove those 5 symlinks when ready to re-enable PipeWire/WirePlumber.
+All 5 underlying bugs behind the open problems in §0 / §0.1 were isolated and fixed:
 
-### Immediate next steps for the incoming Agent
+1. **`ABOX SPUS ASRC3 = 0` & idempotent routing (`scripts/abox_speaker.sh`, `/var/lib/alsa/asound.state`):**
+   - `scripts/abox_speaker.sh` previously had `set -e` and set `ABOX SPUS ASRC3 1` (causing Calliope `0x8000bd24` data aborts ~1 s after playback trigger), plus it temporarily reset `ABOX SPUS OUT3` and `ABOX UAIF1 SPK` to `RESERVED` mid-script (which tore down active playback paths if re-run while PipeWire was streaming).
+   - Removed `set -e`, set `ABOX SPUS ASRC3 0` in both places, kept `ABOX SPUS OUT3` and `ABOX UAIF1 SPK` at `SIFS0`, and updated `/var/lib/alsa/asound.state` (`'ABOX SPUS ASRC3' = false`) so `alsa-restore.service` never flips `ASRC3` back to `true`.
+2. **Prevent >768 KiB Calliope heap OOM at ALSA level (`drivers/abox/abox.h:41`):**
+   - Capped `BUFFER_BYTES_MAX` from `SZ_1M` to `SZ_256K` so ALSA `hw_params` rejects oversized buffers before reaching Calliope's 768 KiB (`786432` B) workspace.
+3. **WirePlumber / SPA-ALSA config (`rootfs-overlay/home/gamer/.config/wireplumber/wireplumber.conf.d/50-a21s-abox.conf`):**
+   - Unmasked all 5 PipeWire/WirePlumber user units in `/home/gamer/.config/systemd/user/`.
+   - Added `50-a21s-abox.conf` setting `api.acp.disable-pro-audio = true`, `api.acp.auto-profile = false`, `api.acp.auto-port = false`, `api.alsa.use-ucm = true`, and `api.alsa.soft-mixer = true` on `Exynos3830-Madera` (stopping ACP's `add_pro_profile` probe of `WDMA0` at `1048576` B that previously caused `0xdead0001` at `0x8000b538`, and eliminating the 60–90 s mixer timeout).
+   - Disabled `abox_vdma` and `abox_dump` cards (`device.disabled = true`) in WirePlumber.
+   - Forced `audio.format = "S16LE"`, `audio.rate = 48000`, `audio.channels = 2`, `api.alsa.period-size = 960`, `api.alsa.period-num = 4`, `api.alsa.disable-mmap = true`, `api.alsa.disable-tsched = true` on `alsa_output.platform-sound.*` / `alsa_input.platform-sound.*`.
+4. **`abox_vdma` mmap appl_ptr sync (`drivers/abox/abox_vdma.c`):**
+   - Added `SNDRV_PCM_INFO_SYNC_APPLPTR` to `abox_vdma_register()` and `abox_vdma_register_component()` so ALSA always invokes `abox_vdma_ack()` (`PCM_PLTDAI_ACK` IPC + shared-memory `appl_ptr` update) even if a client mmaps the PCM buffer.
+5. **Calliope `BOOT_DONE` boot-flake root cause (`drivers/abox/abox.c` `samsung_abox_probe`):**
+   - On an IOMMU-attached device (`14a50000.abox`), `dmam_alloc_coherent()` allocates 18 MiB (`DRAM_FIRMWARE_SIZE`) via `__iommu_dma_alloc_noncontiguous` as multiple physical page chunks (`vmap`ped at `data->dram_base`). The previous `page_to_phys(vmalloc_to_page(data->dram_base))` + single `abox_iommu_map()` only mapped the first physical chunk continuously, mapping wrong RAM pages for later segments when buddy chunks weren't 18 MiB contiguous.
+   - Replaced both `IOVA_DRAM_FIRMWARE` and fake `IOVA_VSS_FIRMWARE` mappings with `dma_get_sgtable()` + `abox_iommu_map_sg()`, logging `nents=%u`.
 
-1. **Run the clean-boot playback test on the live `nEB0` session** (before touching PipeWire or rebooting):
-   - Test `/tmp/opencode/dsp-test.sh` (which sets `ABOX SPUS ASRC3 0` + `playback_init` *before* playing `/root/s16-48k.wav` with `--period-size=960 --buffer-size=3840`).
-   - Fix `scripts/abox_speaker.sh` (deployed at `/root/abox_speaker.sh`): remove `set -e` so a boot-window `abox_msg_send: timeout` on one `cset` does not abort the remaining routing controls, and reconcile `ABOX SPUS ASRC3 0` vs `1`.
-   - Cap `BUFFER_BYTES_MAX` in `drivers/abox/abox.h:41` below the 768 KiB firmware heap (e.g., `SZ_256K` or `SZ_512K`) and rebuild/deploy `abox-snd.ko` so WirePlumber's default probe cannot request 1 MiB (`1048576 of 786432`) and wedge Calliope.
-   - Unmask the 5 user PipeWire/WirePlumber units in `/home/gamer/.config/systemd/user/` and verify Steam audio.
-2. **Restore `exynos-drm` (`DSI-1`) in the flashed kernel:**
-   - Apply `patches/linux/0004-exynos-drm-dma-iommu-optional.patch` to `src/linux/drivers/gpu/drm/exynos/exynos_drm_dma.c`.
-   - Rebuild `Image`, copy to `src/uniLoader/blob/Image`, rebuild `src/uniLoader/uniLoader`, repack `build/images/boot-avb.img`, and flash `/dev/mmcblk0p18` so `exynos-drm` (`decon850` + `DSI-1`) binds properly while keeping `CONFIG_EXYNOS_IOMMU=y` enabled for ABOX.
+**Verified on clean reboot (rebuilt `abox-snd.ko` deployed to `/usr/lib/modules/7.3.0-g14a425b3a7dc-dirty/extra/`):**
+- First-try Calliope boot: `dram firmware: va=... dma_addr=0x00000000fe000000 nents=1` → `Calliope is ready to sing (version:nEB0)` (0 retries).
+- `wpctl status` lists `alsa_output.platform-sound.HiFi__Speaker__sink` (`Internal speaker (SMA1303)`) as the active default sink.
+- `paplay /tmp/s16-48k.wav` (tested 2× back-to-back as `gamer`) exited cleanly (`rc=0`), `/sys/kernel/debug/abox/log-00` showed continuous `Virtual PCMDAI ACK` and pointer updates, and `dmesg` had **zero** `Not enough memory` or `data abort` messages. (`abox_rdma close timeout` remains a minor cosmetic shutdown message during WirePlumber probe teardown.)
+
+### 0.4 Round 5 — `exynos-drm` (`DSI-1`) Restored Alongside `CONFIG_EXYNOS_IOMMU=y` (2026-11-15 18:13)
+
+Rebuilt and flashed kernel `#5 SMP PREEMPT_DYNAMIC Sun Nov 15 11:08:03 UTC 2026` (`boot-avb.img`, `37,748,736` bytes, rollback index `12`) to `/dev/mmcblk0p18` with `/root/p18-backup-before-drm.img` saved on the device:
+
+1. **Synced `src/linux` patches & DTB parity:**
+   - Applied `patches/linux/0003-a21s-abox-audio-dts.patch` (`abox_tplg:` + `samsung,aux`), `0004-exynos-drm-dma-iommu-optional.patch`, `0005-a21s-power-modem-dts.patch`, and `0006-s2mu106-fuelgauge-compatible.patch`, and captured the `&i2c_3` (`i2c@13860000`, `clock-frequency = <400000>`, `sma1303@1e`) node in `patches/linux/0007-a21s-sma1303-amp-dts.patch`.
+   - Decompiled `exynos850-a217f.dtb` matched live `/sys/firmware/fdt` node-for-node (differing only in `uniLoader`-injected `chosen/linux,initrd-*`).
+2. **`uniLoader` partition-size pitfall (`ld.lld` `.stack` zero-fill):**
+   - Building `uniLoader` with `LLVM=1` (`ld.lld`) marks `.stack` as `PROGBITS` and zero-fills the `500 KiB` `.bss` (`CONFIG_FDT_BUF_SIZE=500000`), growing `uniLoader` to `36,360,192` B and overflowing `/dev/mmcblk0p18` (`37,748,736` B).
+   - Building `uniLoader` cleanly with `ARCH=aarch64 CROSS_COMPILE=aarch64-linux-gnu-` keeps `.stack` `NOBITS` (`35,854,216` B), fitting inside `boot-avb.img`.
+3. **Verified on clean reboot (`#5` on `root@172.16.42.1`):**
+   - `exynos-drm` bound `13060000.display-controller` (`decon850_component_ops`) and `13070000.dsi` (`dsim850_component_ops`), `[drm] Initialized exynos 1.1.0 for exynos-drm on minor 0`, `/sys/class/drm/card0-DSI-1/status` = `connected` (`720x1600`, `enabled`), and `/sys/class/backlight/13070000.dsi.0` + `ovt-td4150` touchscreen + `weston --backend=drm --drm-device=card0` + `Xwayland` + `steam -gamepadui` all came up cleanly.
+   - Zero ABOX/audio regressions: `calliope_version=nEB0`, `0-001e` (`sma1303`) `playback_init done (bclk=1536000 Hz)`, `wpctl status` (`XDG_RUNTIME_DIR=/run/user/1001`) shows `Internal speaker (SMA1303)` active with Chromium connected, `paplay /tmp/s16-48k.wav` (2×) succeeded with zero Calliope aborts, and `wlan0` / `usb0` / `hci0` remain up.
+
+### Still remaining (M5 / M6)
+
+1. **M5 / M6:** `schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend (`docs/a21s-power-battery-modem-plan.md`), then M6.
 
 ### Resume recipe
 
@@ -140,9 +166,9 @@ Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/
 
 ## 1. Current Verified Device State
 
-- **Kernel:** Mainline Linux `7.3.0-g14a425b3a7dc-dirty` (`LLVM=1` Clang) with `exynos850-a217f.dtb` (`patches/linux/0001`..`0004` applied).
+- **Kernel:** Mainline Linux `7.3.0-g14a425b3a7dc-dirty` (`#5`, Clang 19 + GNU ld) with `exynos850-a217f.dtb` (`patches/linux/0001`..`0007` applied).
   - `CONFIG_EXYNOS_IOMMU=y` **must** be in the flashed kernel — a stale `src/uniLoader/blob/Image` without it silently breaks the whole ABOX path (`iommu_paging_domain_alloc` → `Unable to alloc iommu domain`). Always refresh `blob/Image` + `blob/dtb` before repacking `boot-avb.img`.
-- **Boot & Display:** `uniLoader` (`06a1bba`) + `decon850` + `dsi` (`td4150`) + `panfrost`/`panvk` + `steamos-session.service`.
+- **Boot & Display:** `uniLoader` (`06a1bba`) + `exynos-drm` (`card0-DSI-1`, `720x1600`) + `decon850` + `dsi` (`td4150` + `/sys/class/backlight/13070000.dsi.0`) + `weston` (`--drm-device=card0`) + `panfrost`/`panvk` + `steamos-session.service`.
 - **Networking:** `usb0` (`172.16.42.1/24`, systemd-networkd, unmanaged in NM) + `wlan0` (`scsc_wlan`, NetworkManager, `192.168.1.142`).
 - **Bluetooth & Gamepads:** `scsc_bt.ko` (`hci0`) + BlueZ 5.88 + PipeWire + HID/UHID.
 - **Audio (`abox` — ✅ INTERNAL SPEAKER PLAYS MUSIC, verified on device):**
@@ -252,8 +278,11 @@ Adding `sma1303` as `.codecs` on the `UAIF1` BE link made its DAI ops fire (good
 
 ## 3. Files Changed
 
-- `drivers/abox/abox.c` — real-PA DRAM mapping + hold-cores-in-reset + DIAG seeds + **`BUG_ON`→ratelimit in `abox_process_ipc` (RC#8)** + **`boot_retry_work` DSP boot retry (RC#10/boot flakiness)**.
-- `drivers/abox/abox.h` — `boot_retry_work` + `boot_retry_count` fields.
+- `drivers/abox/abox.c` — real-PA DRAM mapping via `dma_get_sgtable()` + `abox_iommu_map_sg()` (both `IOVA_DRAM_FIRMWARE` and fake `IOVA_VSS_FIRMWARE`) + hold-cores-in-reset + DIAG seeds + **`BUG_ON`→ratelimit in `abox_process_ipc` (RC#8)** + **`boot_retry_work` DSP boot retry (RC#10/boot flakiness)**.
+- `drivers/abox/abox.h` — `boot_retry_work` + `boot_retry_count` fields; **`BUFFER_BYTES_MAX` capped at `SZ_256K`**.
+- `drivers/abox/abox_vdma.c` — **`SNDRV_PCM_INFO_SYNC_APPLPTR`** added in `abox_vdma_register()` and `abox_vdma_register_component()`.
+- `scripts/abox_speaker.sh` — removed `set -e`, set `ABOX SPUS ASRC3 0`, removed transient `RESERVED` reset on `ABOX SPUS OUT3` / `ABOX UAIF1 SPK`.
+- `rootfs-overlay/home/gamer/.config/wireplumber/wireplumber.conf.d/50-a21s-abox.conf` — **NEW**: disables ACP Pro Audio probe, disables `abox_vdma`/`abox_dump`, forces soft-mixer + `S16LE` 48 kHz + non-mmap `writei` on `platform-sound`.
 - `drivers/abox/abox_dma.c` — NULL guard in `abox_dma_hw_params_set`.
 - `drivers/abox/abox_dump.c` — dummy platform for dump-card links + **skip dump ASoC component/dai_link (RC#9)**.
 - `drivers/abox/s2mpu12-regulator.c` — **NEW**: 29-rail PMIC regulator via ACPM regmap (RC#11).
@@ -263,7 +292,7 @@ Adding `sma1303` as `.codecs` on the `UAIF1` BE link made its DAI ops fire (good
 - `drivers/abox/aud3004x.c` — codec probe/register (+217 lines).
 - `drivers/abox/exynos3830_aud3004x.c` — cpu_dai-by-name BE binding (`d8315e1`); `.dai_fmt` on UAIF0..2 + aud3004x codec link on UAIF0.
 - `patches/linux/0003-a21s-abox-audio-dts.patch` — `abox_tplg:` label + `samsung,aux`.
-- `arch/arm64/boot/dts/exynos/exynos850-a217f.dts` — `i2c_3`/`usi_hsi2c_2` + `sma1303@1e` node.
+- `patches/linux/0007-a21s-sma1303-amp-dts.patch` — **NEW**: `i2c_3` (`400 kHz`) + `sma1303@1e` node in `arch/arm64/boot/dts/exynos/exynos850-a217f.dts`.
 
 ---
 
@@ -278,17 +307,17 @@ Adding `sma1303` as `.codecs` on the `UAIF1` BE link made its DAI ops fire (good
 
 ## 5. Immediate Next Steps
 
-**Audio hardware path: DONE** — main speaker + earpiece verified. Remaining audio work is userspace/integration, not bring-up.
+**Audio hardware & PipeWire integration: DONE** — speaker, UCM2, PipeWire/WirePlumber, and `paplay` verified on clean boot (`nEB0`, zero data aborts; see §0.3).
 
 1. ~~All kernel bring-up~~ — DONE (see RC#1–#12 + `a21s-audio-abox-plan.md` §0 bug table).
-2. **Userspace audio integration:** unmask PipeWire/WirePlumber now that the card is stable; verify `wpctl status` sees card 1; set default sink to `Exynos3830-Madera` speaker path; test `paplay`/Steam audio. **Caveat:** PipeWire opens capture streams that can exhaust the ~768 KiB DSP workspace → keep an eye on `Not enough memory` aborts; may need to disable capture PCMs or reduce buffer sizes.
-3. **Robustness caveats (from Claude's verified run):**
-   - Some boots Calliope misses `BOOT_DONE` → `calliope boot retry 1/8..8/8` → needs another reboot. `boot_retry_work` helps but isn't 100%.
+2. ~~Userspace audio integration~~ — **DONE** (unmasked PipeWire/WirePlumber, `50-a21s-abox.conf`, `BUFFER_BYTES_MAX = SZ_256K`, `SNDRV_PCM_INFO_SYNC_APPLPTR`, `abox_speaker.sh` `ASRC3=0`, verified `wpctl status` + `paplay /tmp/s16-48k.wav`).
+3. ~~**Rebuild & flash `Image` for `exynos-drm` (`DSI-1`)**~~ — **DONE** (Round 5 / `#5`: `exynos-drm` `card0-DSI-1` `connected`, `weston --drm-device=card0`, ABOX `nEB0` + PipeWire `paplay` verified on reboot).
+4. **Robustness caveats (keep in mind):**
    - **Never `rmmod exynos3830_aud3004x`** — `aud3004x_jack_remove` oopses on unload. Reboot instead.
-   - `s2mpu12-regulator.ko` caused a ~31 s black screen after boot (boot-on rail handling) — see `a21s-mainline-boot.md`. Kept-`always_on` fix is in; verify on next flash.
-   - After a DSP runtime `data abort`, Calliope does NOT self-recover — reboot (or re-trigger enable) before retrying playback.
-   - RDMA close prints `close timeout` — cosmetic; stream still works.
-4. **Finalize:** remove `/etc/modprobe.d/blacklist-abox.conf`; ensure `audio-up.sh` loads `aud3004x-codec` too; sync `configs/a21s_linux_defconfig`; consider an audio-up systemd unit so `aplay`/PipeWire work without manual module loads.
+   - `s2mpu12-regulator.ko` keeps boot-on rails `always_on` (`a21s-mainline-boot.md`).
+   - Do **not** run `abox_speaker.sh` with `RESERVED` resets while an active audio stream is running (fixed in `scripts/abox_speaker.sh`).
+   - RDMA close prints `close timeout` during WirePlumber probe teardown — cosmetic; stream still works.
+5. **M5 / M6:** `schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend (`docs/a21s-power-battery-modem-plan.md`), then M6.
 
 ---
 
@@ -302,10 +331,11 @@ make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/drivers/abox modu
 # Deploy module (never overwrite /lib!)
 scp drivers/abox/abox-snd.ko root@172.16.42.1:/usr/lib/modules/$(uname -r)/extra/
 
-# Repack + flash boot-avb.img (ALWAYS refresh blob Image+dtb first)
+# Repack + flash boot-avb.img (ALWAYS refresh blob Image+dtb first; clean + CROSS_COMPILE avoids ld.lld .stack zero-fill overflow)
 cp build/linux/arch/arm64/boot/Image src/uniLoader/blob/Image
 cp build/linux/arch/arm64/boot/dts/exynos/exynos850-a217f.dtb src/uniLoader/blob/dtb
-make -C src/uniLoader ARCH=aarch64 LLVM=1 -j$(nproc)
+rm -f src/uniLoader/uniLoader src/uniLoader/uniLoader.o src/uniLoader/uniLoader.gz src/uniLoader/.uniLoader* src/uniLoader/arch/aarch64/linker.lds src/uniLoader/arch/aarch64/.linker.lds.cmd
+make -C src/uniLoader ARCH=aarch64 CROSS_COMPILE=aarch64-linux-gnu- -j$(nproc)
 mkbootimg --kernel src/uniLoader/uniLoader --ramdisk src/uniLoader/blob/ramdisk \
   --dtb src/tools/AIK-Linux/split_img/boot.img-dtb --dtb_offset 0x00000000 \
   --header_version 2 --pagesize 2048 --base 0x10000000 \

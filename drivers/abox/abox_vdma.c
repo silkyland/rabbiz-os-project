@@ -669,7 +669,8 @@ int abox_vdma_register(struct device *dev, int id, int stream,
 			| SNDRV_PCM_INFO_BLOCK_TRANSFER
 			| SNDRV_PCM_INFO_MMAP
 			| SNDRV_PCM_INFO_MMAP_VALID
-			| SNDRV_PCM_INFO_NO_PERIOD_WAKEUP;
+			| SNDRV_PCM_INFO_NO_PERIOD_WAKEUP
+			| SNDRV_PCM_INFO_SYNC_APPLPTR;
 	hardware->formats = width_range_to_bits(pcm_hardware->width_min,
 			pcm_hardware->width_max);
 	hardware->rates = (pcm_hardware->rate_max > 192000) ?
@@ -714,7 +715,8 @@ struct device *abox_vdma_register_component(struct device *dev,
 		rtd->hardware.info = SNDRV_PCM_INFO_INTERLEAVED
 			| SNDRV_PCM_INFO_BLOCK_TRANSFER
 			| SNDRV_PCM_INFO_MMAP
-			| SNDRV_PCM_INFO_MMAP_VALID;
+			| SNDRV_PCM_INFO_MMAP_VALID
+			| SNDRV_PCM_INFO_SYNC_APPLPTR;
 		rtd->buffer.dev.type = SNDRV_DMA_TYPE_DEV;
 		rtd->buffer.dev.dev = dev;
 		rtd->buffer.bytes = playback->buffer_bytes_max;
@@ -726,7 +728,8 @@ struct device *abox_vdma_register_component(struct device *dev,
 		rtd->hardware.info = SNDRV_PCM_INFO_INTERLEAVED
 			| SNDRV_PCM_INFO_BLOCK_TRANSFER
 			| SNDRV_PCM_INFO_MMAP
-			| SNDRV_PCM_INFO_MMAP_VALID;
+			| SNDRV_PCM_INFO_MMAP_VALID
+			| SNDRV_PCM_INFO_SYNC_APPLPTR;
 		rtd->buffer.dev.type = SNDRV_DMA_TYPE_DEV;
 		rtd->buffer.dev.dev = dev;
 		rtd->buffer.bytes = capture->buffer_bytes_max;

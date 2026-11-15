@@ -3254,24 +3254,30 @@ static int samsung_abox_probe(struct platform_device *pdev)
 	}
 	dev_info(dev, "%s(%#x) alloc\n", "dram firmware", DRAM_FIRMWARE_SIZE);
 
-	/* dram_base_phys is a DMA address (an IOVA in the device's DMA
-	 * domain when an iommu is attached), not a physical address.
-	 * The ABOX paging domain below feeds the Calliope SysMMU, which
-	 * emits *physical* addresses onto the interconnect - so it must
-	 * map the buffer's real PA, otherwise the DSP fetches whatever
-	 * sits at the dma_addr (zeros -> firmware marches off the
-	 * mapped window and dies). */
+	/* dmam_alloc_coherent on an IOMMU-attached device may allocate
+	 * multiple non-contiguous physical chunks and vmap them; mapping
+	 * only the first page's PA misses subsequent chunks when buddy
+	 * allocations aren't 18 MiB contiguous. Build an sg_table from
+	 * the coherent allocation and map every physical segment into
+	 * Calliope's SysMMU domain. */
 	{
-		phys_addr_t dram_pa;
+		struct sg_table sgt;
 
-		if (is_vmalloc_addr(data->dram_base))
-			dram_pa = page_to_phys(vmalloc_to_page(data->dram_base));
-		else
-			dram_pa = virt_to_phys(data->dram_base);
-		dev_info(dev, "dram firmware: va=%p dma_addr=%pa pa=%pa\n",
-				data->dram_base, &data->dram_base_phys, &dram_pa);
-		abox_iommu_map(dev, IOVA_DRAM_FIRMWARE, dram_pa,
+		ret = dma_get_sgtable(dev, &sgt, data->dram_base,
+				data->dram_base_phys, DRAM_FIRMWARE_SIZE);
+		if (ret < 0) {
+			dev_err(dev, "dram firmware dma_get_sgtable fail: %d\n", ret);
+			return ret;
+		}
+		dev_info(dev, "dram firmware: va=%p dma_addr=%pa nents=%u\n",
+				data->dram_base, &data->dram_base_phys,
+				sgt.orig_nents);
+		ret = abox_iommu_map_sg(dev, IOVA_DRAM_FIRMWARE, sgt.sgl,
+				sgt.orig_nents, IOMMU_READ | IOMMU_WRITE,
 				DRAM_FIRMWARE_SIZE, data->dram_base);
+		sg_free_table(&sgt);
+		if (ret < 0)
+			return ret;
 	}
 
 	paddr = shm_get_vss_base();
@@ -3281,10 +3287,20 @@ static int samsung_abox_probe(struct platform_device *pdev)
 		abox_iommu_map(dev, IOVA_VSS_FIRMWARE, paddr,
 				shm_get_vss_size(), shm_get_vss_region());
 	} else {
+		struct sg_table sgt;
+
 		dev_info(dev, "%s(%#x) fake\n", "vss firmware", PHSY_VSS_SIZE);
 		addr = dmam_alloc_coherent(dev, PHSY_VSS_SIZE, &paddr,
 				GFP_KERNEL);
-		abox_iommu_map(dev, IOVA_VSS_FIRMWARE, paddr, PHSY_VSS_SIZE, addr);
+		if (!addr)
+			return -ENOMEM;
+		ret = dma_get_sgtable(dev, &sgt, addr, paddr, PHSY_VSS_SIZE);
+		if (ret < 0)
+			return ret;
+		abox_iommu_map_sg(dev, IOVA_VSS_FIRMWARE, sgt.sgl,
+				sgt.orig_nents, IOMMU_READ | IOMMU_WRITE,
+				PHSY_VSS_SIZE, addr);
+		sg_free_table(&sgt);
 	}
 #if 0
 	paddr = shm_get_vparam_base();

@@ -38,7 +38,7 @@ static inline struct snd_soc_component *snd_soc_kcontrol_component(
 #define DEFAULT_SYS_POWER_ID		DEFAULT_CPU_GEAR_ID
 
 #define BUFFER_BYTES_MIN		(SZ_64K)
-#define BUFFER_BYTES_MAX		(SZ_1M)
+#define BUFFER_BYTES_MAX		(SZ_256K)
 #define PERIOD_BYTES_MIN		(SZ_16)
 #define PERIOD_BYTES_MAX		(BUFFER_BYTES_MAX / 2)
 
