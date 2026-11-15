@@ -17,6 +17,8 @@
 #include <linux/pm_runtime.h>
 #include <linux/dma-mapping.h>
 #include <linux/firmware.h>
+#include <linux/vmalloc.h>
+#include <linux/mm.h>
 #include <linux/regmap.h>
 #include <linux/exynos_iovmm.h>
 #include <linux/workqueue.h>
@@ -2708,6 +2710,16 @@ static int abox_enable(struct device *dev)
 		}
 		abox_start_timer(data);
 	} else {
+		/* Hold the Calliope cores in reset while we write the
+		 * firmware image. The cores can be left powered and running
+		 * by the boot chain; abox_cpu_power() is a RMW no-op when
+		 * the PMU bit is already set, so an already-running DSP
+		 * would execute the half-written image and also scribble
+		 * over SRAM while we download. */
+		abox_cpu_enable(false);
+		abox_cpu_power(false);
+		udelay(100);
+
 		abox_gic_init_gic(data->dev_gic);
 
 		ret = abox_download_firmware(dev);
@@ -2726,6 +2738,15 @@ static int abox_enable(struct device *dev)
 				memcpy_toio(data->drv_args_addr, "slog=false", SZ_256);
 			}
 		}
+
+		/* A21S-DIAG: firmware crash-dump ptr var @ SRAM+0xc170 is NULL
+		 * on our build (BSS inited late), so abort frames land on the
+		 * vector table. Point it at SRAM+0xd000 to capture a clean frame.
+		 * Also write "slog=false" at the fw bootargs area (0x23e00):
+		 * we have no abox-slog reserved region, so slog must stay off. */
+		writel(0xd000, data->sram_base + 0xc170);
+		memcpy_toio(data->sram_base + 0x23e00, "slog=false vss=false",
+				SZ_256);
 	}
 
 	{
@@ -3186,8 +3207,26 @@ static int samsung_abox_probe(struct platform_device *pdev)
 		return -ENOMEM;
 	}
 	dev_info(dev, "%s(%#x) alloc\n", "dram firmware", DRAM_FIRMWARE_SIZE);
-	abox_iommu_map(dev, IOVA_DRAM_FIRMWARE, data->dram_base_phys,
-			DRAM_FIRMWARE_SIZE, data->dram_base);
+
+	/* dram_base_phys is a DMA address (an IOVA in the device's DMA
+	 * domain when an iommu is attached), not a physical address.
+	 * The ABOX paging domain below feeds the Calliope SysMMU, which
+	 * emits *physical* addresses onto the interconnect - so it must
+	 * map the buffer's real PA, otherwise the DSP fetches whatever
+	 * sits at the dma_addr (zeros -> firmware marches off the
+	 * mapped window and dies). */
+	{
+		phys_addr_t dram_pa;
+
+		if (is_vmalloc_addr(data->dram_base))
+			dram_pa = page_to_phys(vmalloc_to_page(data->dram_base));
+		else
+			dram_pa = virt_to_phys(data->dram_base);
+		dev_info(dev, "dram firmware: va=%p dma_addr=%pa pa=%pa\n",
+				data->dram_base, &data->dram_base_phys, &dram_pa);
+		abox_iommu_map(dev, IOVA_DRAM_FIRMWARE, dram_pa,
+				DRAM_FIRMWARE_SIZE, data->dram_base);
+	}
 
 	paddr = shm_get_vss_base();
 	if (paddr) {

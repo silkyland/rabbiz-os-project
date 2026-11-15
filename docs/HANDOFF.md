@@ -1,132 +1,140 @@
 # Engineering Handoff — Galaxy A21s (`SM-A217F` / Exynos 850)
 
-Last updated: 2026-11-15
+Last updated: 2026-11-15 (post Calliope breakthrough)
 
 ---
 
 ## 1. Current Verified Device State
 
 - **Kernel:** Mainline Linux `7.3.0-g14a425b3a7dc-dirty` (`LLVM=1` Clang) with `exynos850-a217f.dtb` (`patches/linux/0001`..`0004` applied).
-  - `CONFIG_EXYNOS_IOMMU=y` is enabled in `build/linux/.config` and on the live kernel together with `patches/linux/0004-exynos-drm-dma-iommu-optional.patch` so `decon850` / display continues working. (`configs/a21s_linux_defconfig` has not yet been synced with `CONFIG_EXYNOS_IOMMU=y` — sync it once ABOX is finalized.)
-- **Boot & Display:** `uniLoader` (`06a1bba`) + `decon850` + `dsi` (`td4150`) + `panfrost`/`panvk` (`/dev/dri/renderD128`) + `steamos-session.service` (`active`).
-- **Networking:**
-  - **USB (`usb0`, preferred):** `172.16.42.1/24` (`systemd-networkd`, `unmanaged` in NetworkManager) over NCM gadget `18d1:d001` (`enp119s0u1` on Linux host, NetworkManager `"Wired connection 3"` at `172.16.42.2/24`). Reachable at `ssh root@172.16.42.1` (~1.7 ms).
-  - **Wi-Fi (`wlan0`):** `scsc_wlan.ko` managed by `NetworkManager` (`wifi.scan-rand-mac-address=no`), reachable at `ssh root@192.168.1.142`.
-- **Bluetooth & Gamepads:**
-  - `scsc_bt.ko` (`hci0`, `F0:00:01:00:A2:17`) + BlueZ `5.88` + PipeWire/WirePlumber (`gamer` user session) + kernel HID/UHID stack.
-- **Audio (`abox` Phase A in progress):**
-  - `/etc/modprobe.d/blacklist-abox.conf` on the device still blacklists `abox_snd`, `aud3004x_codec`, and `exynos3830_aud3004x` so `udev` does not auto-load them at boot.
-  - `abox-snd.ko` + `exynos3830-aud3004x.ko` probe cleanly when loaded manually (`modprobe exynos3830-aud3004x`) and register ALSA sound card `1 [Exynos3830Mader]`.
-  - `drivers/abox/abox.c` has the broken `DIAG SMMU` `ioremap` (`0x8100`/`0x810c` external abort) removed, keeps `clk_prepare_enable(clk_sysmmu)` (`258048030` Hz), and calls `exynos_smc(SMC_CMD_PREAPRE_PD_ONOFF, 1, 0x14810204, 2)` (vendor `pd-aud` `need_smc = <0x14810204>` TZPC restore, returns `0`).
+  - `CONFIG_EXYNOS_IOMMU=y` **must** be in the flashed kernel — a stale `src/uniLoader/blob/Image` without it silently breaks the whole ABOX path (`iommu_paging_domain_alloc` → `Unable to alloc iommu domain`). Always refresh `blob/Image` + `blob/dtb` before repacking `boot-avb.img`.
+- **Boot & Display:** `uniLoader` (`06a1bba`) + `decon850` + `dsi` (`td4150`) + `panfrost`/`panvk` + `steamos-session.service`.
+- **Networking:** `usb0` (`172.16.42.1/24`, systemd-networkd, unmanaged in NM) + `wlan0` (`scsc_wlan`, NetworkManager, `192.168.1.142`).
+- **Bluetooth & Gamepads:** `scsc_bt.ko` (`hci0`) + BlueZ 5.88 + PipeWire + HID/UHID.
+- **Audio (`abox` — Phase A DONE, Phase B next):**
+  - `Calliope is ready to sing (version:nEB0)` — DSP boots + handshake completes reliably on clean boots with pristine firmware.
+  - `loaded abox_tplg.bin` — topology loads; card 1 `Exynos3830-Madera` registers **10 playback PCMs (`calliope_0`–`calliope_9`, `hw:1,100`–`hw:1,109`)** + ~29 capture PCMs + 9 WDMA capture.
+  - Still missing: physical speaker output (AUD3004X codec path — Phase B); `speaker-test -D plughw:1,100` currently returns `-EINVAL` on open (FE PCM open path under investigation).
+  - `/etc/modprobe.d/blacklist-abox.conf` may still blacklist the modules — load manually with `modprobe exynos3830-aud3004x`.
 
 ---
 
-## 2. Current Blocker & Verified Findings (Calliope DSP Core 0)
+## 2. The Calliope March — Root Cause Story
 
-- **Symptom:** `modprobe exynos3830-aud3004x` probes ALSA card 1, then Calliope firmware boot fails with `Invalid calliope state: 2` (`CALLIOPE_ENABLING`).
-- **What we proved:**
-  1. **`14850000.sysmmu` IS working and translating (NOT bypassed):**
-     - `14850000.sysmmu` (v7.4, `0x70800000`, `CAPA1=0x0000e041` `VCR_ENABLED | NO_BLOCK_MODE`) has **only VM0** (`0x8000=0x9`, `0x800c=pt_base`); `0x8040`/`0x8080`/`0x80c0`/`0x8100` are unmapped (Bus error on `/dev/mem`).
-     - `iommu_iova_to_phys(0x80035600) == 0xfe035600` (`dram_phys=0xfe000000`), and `0.abox-debug/calliope_dram` matches `/lib/firmware/calliope_dram.bin` (`0x47df8` bytes).
-     - When `abox_iommu_map(dev, IOVA_DRAM_FIRMWARE, ...)` was temporarily skipped, `14850000.sysmmu` immediately caught `[READ] PAGE FAULT occurred at 0x80000090` with Core 0 `pc : 800000a0` (confirmed in `/sys/fs/pstore/console-ramoops-0`).
-  2. **Exact failure after Core 0 enters `calliope_dram.bin` (`0x80000000`):**
-     - With `0x80000000` mapped, Core 0 runs `calliope_dram.bin`, reaches `r04=81200000 r05=80c00094 r09=81200000` (end of `0x1200000` DRAM window / BSS), and `calliope_log` (`0xb00000`) + `handshake` (`0x23800`) remain all zeros.
-     - Inspecting `/sys/devices/platform/soc@0/14a50000.abox/0.abox-debug/calliope_sram` vs `/lib/firmware/calliope_sram.bin` shows **only the first 15 words (`0x00..0x38`, the ARM32 exception vector table in SRAM)** were overwritten with register/runtime values:
-       - `0x00=0x00000000`, `0x04=0x00000000`, `0x08=0x00002818`, `0x0c=0x00002814`
-       - `0x10=0x0000001d`, `0x14=0x14af1400`, `0x18=0xffffffff`, `0x1c=0x00000200`
-       - `0x20=0x14af1c08`, `0x24=0x00000007`, `0x28=0x44418186`, `0x2c=0xa4030006`
-       - `0x30=0x00005c16`, `0x34=0x0000dafc`, `0x38=0x81200000`
-     - Those values (`0x00002818`, `0x00002814`, `0x14af1400`, `0xffffffff`, `0x00000200`, `0xa4030006`, `0x00005c16`, `0x81200000`) match Core 0's own registers (`r02..r12`) dumped via an `stm` to address `0x00000000` (NULL pointer dereference in SRAM!).
-     - Core 0 then ends up trapped in `0x0c..0x28` / `0xb3a8` while Core 1 waits at `0x14464`..`0x14548`.
+### Symptom
+
+`modprobe exynos3830-aud3004x` → Calliope Core 0 crashes before the `ABOX_BOOT_DONE` IPC: `Invalid calliope state: 2` (stuck `CALLIOPE_ENABLING`), no playback/capture PCMs from topology, sometimes an ASoC NULL-deref oops.
+
+### What the DSP was actually doing
+
+Firmware-instrumented debugging (patched exception vectors + milestone markers + direct SRAM/DRAM probing via `0.abox-debug` debugfs and a custom `abox_diag` module):
+
+1. Core 0 executes SRAM init (mode stacks, MMU build, `cpsie if`, init-table runner at `0x58`), writes `"init"` (`0x696e6974`) at SRAM `0x23000` **on good runs only**.
+2. On failing runs it takes a **prefetch abort in Thumb state** marching through zeros to `0x81200000` (the first byte past the mapped `0x1200000` DRAM window). The march entry point varied between runs (`bl #0x114` trampoline → DRAM memset, decompressor `0x800005ca`, `bl #0xaaa0` GIC init) — always the same signature: a call into `calliope_dram.bin` code that fetched zeros instead of instructions.
+3. Host-side debugfs showed the DRAM buffer **full of valid firmware** (`CLP8` magic + ARM code) — while a `memremap` probe of the SysMMU's target **physical address `0xfe000000` showed all zeros**.
+
+### Root cause #1 — DMA IOVA mapped as physical address
+
+`dmam_alloc_coherent()` returns a `dma_addr_t` in the **device's DMA domain** — for `14a50000.abox` (which has `iommus = <&sysmmu_aud>`), that is an **IOVA `0xfe000000`**, *not* a physical address. The driver stored it in `data->dram_base_phys` and mapped it into the **ABOX paging domain** (`IOVA 0x80000000 → "PA" 0xfe000000`). The Calliope SysMMU then emitted real PA `0xfe000000` onto the interconnect — an empty RAM region — so the DSP fetched zeros → Thumb march → PABT.
+
+The CPU-visible `virt_to_phys(dram_base)` gives the real PA (observed `0x8aad00000` / `0xb8400000` / `0xb9600000` across boots — dynamic each time).
+
+**Fix** (`drivers/abox/abox.c`, `samsung_abox_probe`): compute `dram_pa = virt_to_phys(dram_base)` (with `vmalloc_to_page` fallback) and map *that*:
+
+```c
+if (is_vmalloc_addr(data->dram_base))
+    dram_pa = page_to_phys(vmalloc_to_page(data->dram_base));
+else
+    dram_pa = virt_to_phys(data->dram_base);
+abox_iommu_map(dev, IOVA_DRAM_FIRMWARE, dram_pa,
+        DRAM_FIRMWARE_SIZE, data->dram_base);
+```
+
+### Root cause #2 — cores not held in reset during download
+
+The boot chain leaves the Calliope cores **powered and running**. `abox_cpu_power(true)` is a PMU RMW no-op when the power bit is already set — so the DSP kept executing a half-written image and stamped exception frames over the low SRAM (48 KB of identical 32-byte frames — destroyed vector table + trampolines).
+
+**Fix** (`abox_enable`, `has_reset` path): `abox_cpu_enable(false); abox_cpu_power(false); udelay(100);` **before** `abox_download_firmware()`.
+
+### Root cause #3 — stale debug firmware in `/lib/firmware`
+
+A marker-instrumented `calliope_sram.bin` (48 304 B vs stock 47 964 B) was left deployed. Its exception stubs **halt the core on any fault** — stock firmware hits recoverable faults post-`init` and continues, but the stub parked Core 0 → DSP booted (`"init"` written, cores running real code) yet never sent `ABOX_BOOT_DONE` → driver timeout. Restoring the pristine image (saved as `calliope_sram.bin.orig`, md5 `5a4586cb…`) made the handshake reliable: **`Calliope is ready to sing` + 38 IPC interrupts on the next boot.**
+
+### Root cause #4 — missing `samsung,aux` → topology never loaded
+
+The `sound` node in `patches/linux/0003-a21s-abox-audio-dts.patch` lacked `samsung,aux = <&abox_tplg>` (the vendor dts binds it via overlay). With zero aux_devs the `0.abox-tplg` ASoC component registered but its `.probe` never ran → `abox_tplg.bin` never loaded → no FE PCMs (RDMA DAIs are BE-only). Also note the machine-driver `Failed to parse cpu DAI for rdma0: -517` defer is *normal* — it retries after `14a51xxx.abox-rdma` probes.
+
+**Fix:** label the node `abox_tplg: abox-tplg@0` and add `samsung,aux = <&abox_tplg>;` to `sound`. Result: `loaded abox_tplg.bin` + `calliope_0..9` playback + `calliope_10..29` capture PCMs.
+
+### Root cause #5 — dump-card NULL deref
+
+`abox_dump_register_card_work_func` built dummy `dai_link`s with `cpus`/`codecs` but no `platforms`; mainline `snd_soc_add_pcm_runtimes` dereferenced it → oops. **Fix:** allocate a `snd-soc-dummy-platform` platform component (`drivers/abox/abox_dump.c`).
+
+### Root cause #6 — NULL drvdata in `abox_dma_hw_params_set`
+
+Topology links whose cpu DAI resolves to `snd-soc-dummy` call `abox_dma_hw_params_set(dai->dev, …)` → `dev_get_drvdata` NULL → deref at `+0xd4`. **Fix:** NULL guard with an identifying `dev_err` (`drivers/abox/abox_dma.c`). Benign `no dma data on snd-soc-dummy` warnings remain — cosmetic for now.
+
+### Root cause #7 — kernel regression via stale blob Image
+
+`src/uniLoader/blob/Image` was a **23:10 build predating `CONFIG_EXYNOS_IOMMU=y`**. Reflashing it downgraded the kernel → all sysmmu devices driverless → `Unable to alloc iommu domain`. Detected by diffing `build/linux/.config` vs `/proc/config.gz`. **Fix:** always `cp build/linux/arch/arm64/boot/Image src/uniLoader/blob/Image` (and the dtb) before repacking.
 
 ---
 
-## 3. Immediate Next Steps
+## 3. Files Changed
 
-1. **Find why Calliope Core 0 writes/branches through `0x00000000` after `0x800000a0`:**
-   - Rebuild & deploy clean `drivers/abox/abox-snd.ko` (the local `abox.c` has been cleaned of the temporary `skipping dram map` test, but not yet re-deployed after the last panic reboot).
-   - Check `calliope_dram.bin` startup (around `0x00..0x200` and `0x35600`) / `samsung,abox-bootargs` (`0x23e00` in SRAM — note `abox.c` reads `samsung,drv-bootargs-area`, whereas `0003-a21s-abox-audio-dts.patch` has `samsung,abox-bootargs` + `samsung,abox-bootargs-offset = <0x23e00>`, and `sram[0x23e00]` was all zeros) or missing `abox` SFR / SRAM setup before Core 0 boots.
-   - Once `Calliope is ready to sing` appears in `dmesg`, test playback:
-     ```bash
-     ssh root@172.16.42.1 "timeout 3 speaker-test -D plughw:1,0 -c 2 -r 48000 -t sine"
-     ```
-2. **Phase B — Wire `aud3004x-codec.ko` to mainline ACPM & DTS:**
-   - Update `drivers/abox/aud3004x.c` (`aud3004x_acpm_{read,write,update}_reg()` at lines 61–103) to replace `exynos_acpm_*` stubs with `devm_acpm_get_by_node()` (`<linux/firmware/samsung/exynos-acpm-protocol.h>`) against `&acpm_ipc` (`acpm_chan_id = 2`, `acpm->ops->pmic.{read_reg,write_reg,update_reg}`).
-   - Add the `aud3004x` node + UAIF0 codec phandle to `patches/linux/0003-a21s-abox-audio-dts.patch`, rebuild DTB/modules, deploy, and verify physical speaker/headphone output.
-3. **Finalize:**
-   - Remove `/etc/modprobe.d/blacklist-abox.conf` on the device once boot-safe.
-   - Sync `configs/a21s_linux_defconfig` with `CONFIG_EXYNOS_IOMMU=y` and audio config.
+- `drivers/abox/abox.c` — real-PA DRAM mapping + hold-cores-in-reset-before-download + DIAG seeds (`sram+0xc170` dump ptr, `sram+0x23e00` bootargs `slog=false vss=false`).
+- `drivers/abox/abox_dma.c` — NULL guard in `abox_dma_hw_params_set`.
+- `drivers/abox/abox_dump.c` — dummy platform component for dump-card links.
+- `patches/linux/0003-a21s-abox-audio-dts.patch` — `abox_tplg:` label + `samsung,aux = <&abox_tplg>;` in `sound` node.
 
 ---
 
-## 4. Linux Host Setup & Useful Commands
+## 4. Debugging Toolkit (reusable)
 
-### Bootstrap & Build
+- `0.abox-debug` debugfs: `calliope_sram`, `calliope_dram`, `gpr` (per-core regs), `gicd`, `calliope_state`.
+- SRAM landmarks: `0x23000` = `"init"` (`0x696e6974`), `0xc170` = crash-dump pointer var, `0xd000` = captured abort frame, `0xbf00` = marker scratch, `0x23e00` = fw bootargs, `0x23800` = handshake area.
+- `abox_diag.ko` (in `/tmp/abox_diag`): `probe`/`sram`/`dram`/`cycle`/`all` over `/sys/kernel/reload` — memremap physical probes + PMU power cycle. **Warning: power-cycling the DSP while the system is live wedges the device** (ping alive, userspace dead) — only use right after boot failures, not after a good boot.
+- `speaker-test` device is `plughw:1,<100+n>` — calliope PCMs start at device **100**, not 0.
+
+---
+
+## 5. Immediate Next Steps
+
+1. **Fix FE PCM open `-EINVAL`** — calliope_0..9 exist but `hw:1,100` open fails; likely FE link cpu=snd-soc-dummy needing a real platform/CPU or a missing `dynamic`/`no_pcm` route to the RDMA BE links. Trace `soc_pcm_open` on `hw:1,100`.
+2. **Phase B — AUD3004X codec:** `aud3004x-codec.ko` + ACPM (`devm_acpm_get_by_node`) + SPEEDY + `uaif`/`spdy` codec link in the sound node → physical speaker output (`speaker-test -D plughw:1,100`).
+3. **Finalize:** remove `/etc/modprobe.d/blacklist-abox.conf`; sync `configs/a21s_linux_defconfig` (already has `CONFIG_EXYNOS_IOMMU=y`); keep `clk_ignore_unused` + `wifibt_if@b0000000`; evaluate abox-slog (`0xe6c00000/0x2800000`) + abox-dbg reserved-mem if DSP logs are needed.
+
+---
+
+## 6. Build / Deploy / Flash Reference
+
 ```bash
-# 1. Clone upstream linux (14a425b3a) + uniLoader (06a1bba), apply patches/linux/*.patch, prep defconfig
-./scripts/bootstrap_build_env.sh
+# Kernel + DTBs
+make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) Image dtbs
+# ABOX modules
+make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/drivers/abox modules
+# Deploy module (never overwrite /lib!)
+scp drivers/abox/abox-snd.ko root@172.16.42.1:/usr/lib/modules/$(uname -r)/extra/
 
-# 2. Ensure CONFIG_EXYNOS_IOMMU=y is enabled in build/linux/.config (until defconfig is synced)
-./src/linux/scripts/config --file build/linux/.config -e EXYNOS_IOMMU
-make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 olddefconfig
-
-# 3. Build kernel, DTBs, and in-tree modules with LLVM/Clang
-make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) Image dtbs modules
-
-# 4. Build out-of-tree modules (SCSC WLBT + ABOX)
-make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) M=$PWD/drivers/scsc modules
-make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) M=$PWD/drivers/abox modules
-```
-
-### Safe Module Deployment (Arch Linux ARM)
-> **Never overwrite `/lib`** — `/lib` is a symlink to `usr/lib`. Always deploy to `/usr/lib/modules/`:
-```bash
-KREL=$(make -s -C src/linux O=../../build/linux ARCH=arm64 kernelrelease)
-
-# Quick single-module deploy over USB (or 192.168.1.142 over Wi-Fi):
-scp drivers/abox/abox-snd.ko root@172.16.42.1:/usr/lib/modules/$KREL/extra/
-```
-
-### Rebooting Over SSH
-```bash
-ssh root@172.16.42.1 "depmod -a && sync && reboot"
-# After reboot, bring up USB connection if needed:
-nmcli connection up "Wired connection 3" || true
-```
-
-### Packing & Flashing `boot-avb.img`
-```bash
+# Repack + flash boot-avb.img (ALWAYS refresh blob Image+dtb first)
 cp build/linux/arch/arm64/boot/Image src/uniLoader/blob/Image
 cp build/linux/arch/arm64/boot/dts/exynos/exynos850-a217f.dtb src/uniLoader/blob/dtb
 make -C src/uniLoader ARCH=aarch64 LLVM=1 -j$(nproc)
-
-mkbootimg \
-  --kernel src/uniLoader/uniLoader \
-  --ramdisk src/uniLoader/blob/ramdisk \
-  --dtb src/tools/AIK-Linux/split_img/boot.img-dtb \
-  --dtb_offset 0x00000000 \
+mkbootimg --kernel src/uniLoader/uniLoader --ramdisk src/uniLoader/blob/ramdisk \
+  --dtb src/tools/AIK-Linux/split_img/boot.img-dtb --dtb_offset 0x00000000 \
   --header_version 2 --pagesize 2048 --base 0x10000000 \
   --kernel_offset 0x00008000 --ramdisk_offset 0x01000000 --tags_offset 0x00000100 \
   --cmdline "$(cat src/tools/AIK-Linux/split_img/boot.img-cmdline)" \
   --os_version "$(cat src/tools/AIK-Linux/split_img/boot.img-os_version)" \
   --os_patch_level "$(cat src/tools/AIK-Linux/split_img/boot.img-os_patch_level)" \
   -o build/images/boot-linux.img
-
 cp build/images/boot-linux.img build/images/boot-avb.img
-python3 ./build/avbtool.py add_hash_footer \
-  --image build/images/boot-avb.img \
+python3 ./build/avbtool.py add_hash_footer --image build/images/boot-avb.img \
   --partition_size 37748736 --partition_name boot --rollback_index 12
+# On-device: backup + dd
+#   dd if=/dev/mmcblk0p18 of=/root/p18-backup.img bs=4M
+#   dd if=/root/boot-avb-new.img of=/dev/mmcblk0p18 bs=4M && sync && reboot
 ```
-- **Download Mode recovery:** Enter fresh Download Mode (`Power + Vol Down` ~7–10 s, then `Vol Up + Vol Down` + plug USB-C, then `Vol Up`), and run `heimdall flash --BOOT build/images/boot-avb.img` directly (**do not** run `heimdall detect` right before `heimdall flash`).
 
----
-
-## 5. Key Gotchas & Lessons Learned
-
-1. **`boot.img` packing:** Use **uncompressed** `src/uniLoader/uniLoader` + exact `boot.img-*` metadata + `avbtool.py`. Live rootfs is Arch Linux ARM64 on `/dev/mmcblk0p31`.
-2. **`CONFIG_EXYNOS_IOMMU=y` + `exynos-drm`:** Requires `patches/linux/0004-exynos-drm-dma-iommu-optional.patch`; without it, `decon850` fails with `-ENODEV` (`-19`) -> black screen.
-3. **DT `#address-cells` under `&soc`:** `&soc` uses `#address-cells = <1>; #size-cells = <1>;`. Use 1-cell `reg` in `patches/linux/0003-a21s-abox-audio-dts.patch`.
-4. **ABOX `AUD` Power Domain & Blacklist:** Keep `/etc/modprobe.d/blacklist-abox.conf` while developing and load manually via `modprobe` over SSH.
-5. **`aud3004x` ACPM Bus:** `exynos_acpm_read_reg()` in `drivers/vendor-include/soc/samsung/acpm_mfd.h` is a no-op stub; Phase B must switch to mainline `devm_acpm_get_by_node()`.
-6. **Always keep `clk_ignore_unused` and `wifibt_if@b0000000`:** Removing `clk_ignore_unused` causes an immediate SoC reset on WLBT `SM_MSG_START_REQ`.
-7. **USB NCM (`usb0`) recovery:** If `18d1:d001` does not appear on the host after a hard power event, toggling Download Mode (`04e8:685d`) and rebooting resets the S2MU106 MUIC D+/D- switch.
+- **kexec caveat:** `kexec -l Image --dtb=dtb --reuse-cmdline` is unreliable here (hung with no `--initrd`); prefer the flash path.
+- **Device wedge signature:** ping OK, sshd dead → hard reset (`Power+VolDown` 10–15 s).

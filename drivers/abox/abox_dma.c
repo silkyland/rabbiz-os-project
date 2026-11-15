@@ -742,9 +742,16 @@ void abox_dma_hw_params_set(struct device *dev, unsigned int rate,
 		unsigned int width, unsigned int channels,
 		unsigned int period_size, unsigned int periods, bool packed)
 {
-	struct abox_dma_data *data = dev_get_drvdata(dev);
-	struct snd_pcm_hw_params *params = &data->hw_params;
+	struct abox_dma_data *data = dev ? dev_get_drvdata(dev) : NULL;
+	struct snd_pcm_hw_params *params;
 	unsigned int buffer_size, format, pwidth;
+
+	if (!data) {
+		dev_err(dev, "%s: no dma data on %s\n", __func__,
+				dev ? dev_name(dev) : "(null)");
+		return;
+	}
+	params = &data->hw_params;
 
 	dev_dbg(dev, "%s(%u, %u, %u, %u, %u, %d)\n", __func__, rate, width,
 			channels, period_size, periods, packed);

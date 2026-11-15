@@ -735,6 +735,9 @@ static void abox_dump_register_card_work_func(struct work_struct *work)
 		link->num_cpus = 1;
 		link->cpus[0].name = "snd-soc-dummy";
 		link->cpus[0].dai_name = "snd-soc-dummy-dai";
+		link->platforms = kzalloc(sizeof(*link->platforms), GFP_KERNEL);
+		link->num_platforms = 1;
+		link->platforms[0].name = "snd-soc-dummy-platform";
 		link->codecs = kzalloc(sizeof(*link->codecs), GFP_KERNEL);
 		link->num_codecs = 1;
 		link->codecs[0].name = "snd-soc-dummy";

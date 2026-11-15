@@ -448,7 +448,7 @@
 +			reg = <0 0>;
 +		};
 +
-+		abox-tplg@0 {
++		abox_tplg: abox-tplg@0 {
 +			compatible = "samsung,abox-tplg";
 +			reg = <0 0>;
 +			sound-name-prefix = "ABOX";
@@ -537,6 +537,7 @@
 +/ {
 +	sound {
 +	compatible = "samsung,exynos3830-madera";
++	samsung,aux = <&abox_tplg>;
 +
 +	rdma0 {
 +		cpu { sound-dai = <&abox_rdma0 0>; };
