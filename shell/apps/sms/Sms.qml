@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
+import A21s.Components as Components
 
 // a21s-sms — Google-Messages-style SMS app for the A21s shell.
 // Launched by the `a21s-sms` wrapper under `quickshell -p` (labwc
@@ -17,6 +18,7 @@ ApplicationWindow {
     height: Screen.height > 0 ? Screen.height : 1600
     title: "Messages"
     color: Theme.bg
+    font.family: Theme.fontFamily
 
     palette {
         window: Theme.bg
@@ -25,8 +27,8 @@ ApplicationWindow {
         text: Theme.text
         button: Theme.card
         buttonText: Theme.text
-        highlight: Theme.primary
-        highlightedText: Theme.primaryContent
+        highlight: ShellPrefs.accentColor
+        highlightedText: ShellPrefs.onAccentColor
         placeholderText: Theme.textFaint
         toolTipBase: Theme.surfaceHigh
         toolTipText: Theme.text
@@ -510,12 +512,12 @@ ApplicationWindow {
                     font.family: Theme.fontFamily
                     font.pixelSize: Theme.fontBody
                     background: Rectangle {
-                        color: sendChatBtn.enabled ? Theme.primary : Theme.tileOff
+                        color: sendChatBtn.enabled ? ShellPrefs.accentColor : Theme.tileOff
                         radius: Theme.radiusPill
                     }
                     contentItem: Text {
                         text: sendChatBtn.text
-                        color: sendChatBtn.enabled ? Theme.primaryContent : Theme.tileOffText
+                        color: sendChatBtn.enabled ? ShellPrefs.onAccentColor : Theme.tileOffText
                         font: sendChatBtn.font
                         horizontalAlignment: Text.AlignHCenter
                         verticalAlignment: Text.AlignVCenter
@@ -540,11 +542,26 @@ ApplicationWindow {
     StackView {
         id: stack
 
-        anchors.fill: parent
+        anchors {
+            fill: parent
+            bottomMargin: Theme.navZoneHeight
+        }
         initialItem: threadListComponent
         onDepthChanged: {
             if (depth === 1)
                 root.activeThread = "";
+        }
+    }
+
+    Components.AppGestureLayer {
+        anchors.fill: parent
+        z: 50
+        enabled: !newChatDialog.visible && !msgMenu.visible && !threadMenu.visible
+        onBackTriggered: {
+            if (stack.depth > 1)
+                stack.pop();
+            else
+                root.close();
         }
     }
 
@@ -560,38 +577,45 @@ ApplicationWindow {
                 // App bar.
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Theme.iconL + Theme.spaceL
+                    Layout.preferredHeight: Theme.iconL + Theme.spaceM
                     color: Theme.bg
 
                     RowLayout {
                         anchors {
                             fill: parent
-                            leftMargin: Theme.spaceL
+                            leftMargin: Theme.spaceM
                             rightMargin: Theme.spaceM
                         }
-                        spacing: Theme.spaceM
+                        spacing: Theme.spaceS
+
+                        Rectangle {
+                            width: 48
+                            height: 48
+                            radius: 24
+                            color: Qt.alpha(ShellPrefs.accentColor, 0.16)
+                            border.width: 1
+                            border.color: Qt.alpha(ShellPrefs.accentColor, 0.30)
+
+                            Components.MaterialIcon {
+                                anchors.centerIn: parent
+                                name: "sms"
+                                size: 24
+                                color: ShellPrefs.accentColor
+                            }
+                        }
 
                         Text {
                             text: "Messages"
                             color: Theme.text
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontTitle
-                            font.bold: true
+                            font.weight: Font.DemiBold
                         }
                         Item { Layout.fillWidth: true }
                         Loader {
                             sourceComponent: demoChip
                             Layout.alignment: Qt.AlignVCenter
                         }
-                    }
-                    Rectangle {
-                        anchors {
-                            left: parent.left
-                            right: parent.right
-                            bottom: parent.bottom
-                        }
-                        height: 1
-                        color: Theme.separator
                     }
                 }
 
@@ -600,11 +624,15 @@ ApplicationWindow {
 
                     Layout.fillWidth: true
                     Layout.fillHeight: true
+                    Layout.leftMargin: Theme.spaceM
+                    Layout.rightMargin: Theme.spaceM
                     clip: true
                     model: threadsModel
-                    spacing: 0
+                    topMargin: Theme.spaceXS
+                    bottomMargin: Theme.iconApp + Theme.spaceXL
+                    spacing: Theme.spaceS
 
-                    delegate: Item {
+                    delegate: Rectangle {
                         id: threadRow
 
                         required property int index
@@ -616,18 +644,18 @@ ApplicationWindow {
 
                         width: ListView.view.width
                         height: Theme.iconL + Theme.spaceM * 2
-
-                        Rectangle {
-                            anchors.fill: parent
-                            color: Theme.surfaceHigh
-                            opacity: rowMouse.pressed ? 0.6 : 0
-                        }
+                        radius: Theme.radiusL
+                        color: rowMouse.pressed ? Theme.surfaceHigh : Theme.card
+                        border.width: 1
+                        border.color: threadRow.unread > 0
+                                      ? Qt.alpha(ShellPrefs.accentColor, 0.35)
+                                      : Qt.alpha(Theme.text, 0.07)
 
                         RowLayout {
                             anchors {
                                 fill: parent
-                                leftMargin: Theme.spaceL
-                                rightMargin: Theme.spaceL
+                                leftMargin: Theme.spaceM
+                                rightMargin: Theme.spaceM
                             }
                             spacing: Theme.spaceM
 
@@ -637,14 +665,18 @@ ApplicationWindow {
                                 Layout.preferredHeight: Theme.iconL
                                 Layout.alignment: Qt.AlignVCenter
                                 radius: Theme.radiusPill
-                                color: threadRow.unread > 0 ? Theme.primary : Theme.tileOn
+                                color: threadRow.unread > 0
+                                       ? ShellPrefs.accentColor
+                                       : Qt.alpha(ShellPrefs.accentColor, 0.16)
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: (threadRow.name.length > 0
                                            ? threadRow.name
                                            : threadRow.number).charAt(0).toUpperCase()
-                                    color: threadRow.unread > 0 ? Theme.primaryContent : Theme.tileOnText
+                                    color: threadRow.unread > 0
+                                           ? ShellPrefs.onAccentColor
+                                           : ShellPrefs.accentColor
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontTitle
                                     font.bold: true
@@ -684,7 +716,7 @@ ApplicationWindow {
                                 Text {
                                     Layout.alignment: Qt.AlignRight
                                     text: threadRow.lastBody.length > 0 ? root.fmtThreadTime(threadRow.lastTs) : ""
-                                    color: threadRow.unread > 0 ? Theme.primary : Theme.textFaint
+                                    color: threadRow.unread > 0 ? ShellPrefs.accentColor : Theme.textFaint
                                     font.family: Theme.fontFamily
                                     font.pixelSize: Theme.fontCaption
                                     font.bold: threadRow.unread > 0
@@ -696,30 +728,19 @@ ApplicationWindow {
                                                             Theme.fontCaption + Theme.spaceXS)
                                     implicitHeight: Theme.fontCaption + Theme.spaceXS
                                     radius: Theme.radiusPill
-                                    color: Theme.primary
+                                    color: ShellPrefs.accentColor
 
                                     Text {
                                         id: countText
                                         anchors.centerIn: parent
                                         text: threadRow.unread
-                                        color: Theme.primaryContent
+                                        color: ShellPrefs.onAccentColor
                                         font.family: Theme.fontFamily
                                         font.pixelSize: Theme.fontCaption
                                         font.bold: true
                                     }
                                 }
                             }
-                        }
-
-                        Rectangle {
-                            anchors {
-                                left: parent.left
-                                right: parent.right
-                                bottom: parent.bottom
-                                leftMargin: Theme.iconL + Theme.spaceL * 2
-                            }
-                            height: 1
-                            color: Theme.separator
                         }
 
                         MouseArea {
@@ -739,21 +760,22 @@ ApplicationWindow {
                     bottom: parent.bottom
                     margins: Theme.spaceL
                 }
-                width: Theme.iconApp
-                height: Theme.iconApp
-                radius: Theme.radiusPill
-                color: Theme.primary
+                width: 78
+                height: 78
+                radius: 26
+                color: ShellPrefs.accentColor
+                scale: fabTap.pressed ? 0.92 : 1.0
+                Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
 
-                Text {
+                Components.MaterialIcon {
                     anchors.centerIn: parent
-                    text: "+"
-                    color: Theme.primaryContent
-                    font.family: Theme.fontFamily
-                    font.pixelSize: Theme.fontHeadline
+                    name: "chat"
+                    size: 34
+                    color: ShellPrefs.onAccentColor
                 }
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: newChatDialog.open()
+                TapHandler {
+                    id: fabTap
+                    onTapped: newChatDialog.open()
                 }
             }
         }
@@ -800,46 +822,26 @@ ApplicationWindow {
                         }
                         spacing: Theme.spaceM
 
-                        // Back chevron — drawn, no font dependency.
-                        Item {
+                        // Back button
+                        Rectangle {
                             id: backBtn
 
                             Layout.preferredWidth: Theme.iconM
                             Layout.preferredHeight: Theme.iconM
                             Layout.alignment: Qt.AlignVCenter
+                            radius: Theme.radiusPill
+                            color: backMouse.pressed ? Theme.surfaceHigh : Theme.card
+                            border.width: 1
+                            border.color: Qt.alpha(Theme.text, 0.08)
 
-                            Item {
-                                id: backIcon
-
-                                anchors.centerIn: backBtn
-                                width: Theme.iconS
-                                height: Theme.iconS
-
-                                property real px: width * 0.32
-                                property real py: height * 0.5
-                                property real len: width * 0.5
-                                property real th: 4
-
-                                Rectangle {
-                                    width: backIcon.len
-                                    height: backIcon.th
-                                    radius: backIcon.th / 2
-                                    color: Theme.text
-                                    x: backIcon.px + backIcon.len * 0.354 - backIcon.len / 2
-                                    y: backIcon.py - backIcon.len * 0.354 - backIcon.th / 2
-                                    rotation: -45
-                                }
-                                Rectangle {
-                                    width: backIcon.len
-                                    height: backIcon.th
-                                    radius: backIcon.th / 2
-                                    color: Theme.text
-                                    x: backIcon.px + backIcon.len * 0.354 - backIcon.len / 2
-                                    y: backIcon.py + backIcon.len * 0.354 - backIcon.th / 2
-                                    rotation: 45
-                                }
+                            Components.MaterialIcon {
+                                anchors.centerIn: parent
+                                name: "arrow_back"
+                                size: Theme.iconS - 4
+                                color: Theme.text
                             }
                             MouseArea {
+                                id: backMouse
                                 anchors.fill: parent
                                 onClicked: stack.pop()
                             }
@@ -1015,7 +1017,7 @@ ApplicationWindow {
                             }
                         }
 
-                        // Send FAB — drawn ">" arrow, no font dependency.
+                        // Send FAB
                         Rectangle {
                             id: sendBtn
 
@@ -1024,40 +1026,14 @@ ApplicationWindow {
                             Layout.alignment: Qt.AlignBottom | Qt.AlignRight
                             Layout.bottomMargin: Theme.spaceXS
                             radius: Theme.radiusPill
-                            color: composer.text.trim().length > 0 ? Theme.primary : Theme.tileOff
+                            color: composer.text.trim().length > 0 ? ShellPrefs.accentColor : Theme.tileOff
 
-                            Item {
-                                id: sendIcon
-
-                                anchors.centerIn: sendBtn
-                                width: Theme.iconS * 0.6
-                                height: Theme.iconS * 0.6
-
-                                property real px: width * 0.7
-                                property real py: height * 0.5
-                                property real len: width * 0.75
-                                property real th: 4
-                                property color ink: composer.text.trim().length > 0
-                                                    ? Theme.primaryContent : Theme.tileOffText
-
-                                Rectangle {
-                                    width: sendIcon.len
-                                    height: sendIcon.th
-                                    radius: sendIcon.th / 2
-                                    color: sendIcon.ink
-                                    x: sendIcon.px - sendIcon.len * 0.354 - sendIcon.len / 2
-                                    y: sendIcon.py - sendIcon.len * 0.354 - sendIcon.th / 2
-                                    rotation: 45
-                                }
-                                Rectangle {
-                                    width: sendIcon.len
-                                    height: sendIcon.th
-                                    radius: sendIcon.th / 2
-                                    color: sendIcon.ink
-                                    x: sendIcon.px - sendIcon.len * 0.354 - sendIcon.len / 2
-                                    y: sendIcon.py + sendIcon.len * 0.354 - sendIcon.th / 2
-                                    rotation: -45
-                                }
+                            Components.MaterialIcon {
+                                anchors.centerIn: parent
+                                name: "send"
+                                size: Theme.iconS - 6
+                                color: composer.text.trim().length > 0
+                                       ? ShellPrefs.onAccentColor : Theme.tileOffText
                             }
                             MouseArea {
                                 anchors.fill: parent
