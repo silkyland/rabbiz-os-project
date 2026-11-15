@@ -11,10 +11,11 @@ Last updated: 2026-11-15 (post Calliope breakthrough)
 - **Boot & Display:** `uniLoader` (`06a1bba`) + `decon850` + `dsi` (`td4150`) + `panfrost`/`panvk` + `steamos-session.service`.
 - **Networking:** `usb0` (`172.16.42.1/24`, systemd-networkd, unmanaged in NM) + `wlan0` (`scsc_wlan`, NetworkManager, `192.168.1.142`).
 - **Bluetooth & Gamepads:** `scsc_bt.ko` (`hci0`) + BlueZ 5.88 + PipeWire + HID/UHID.
-- **Audio (`abox` — full hardware chain powered, DSP stream unstable, NO SOUND yet):**
-  - `Calliope is ready to sing (version:nEB0)` — DSP boots; **boot retry added** (`boot_retry_work`, pulses cpu_power/cpu_enable if BOOT_DONE missed → much more reliable than ~50%).
-  - Card 1 `Exynos3830-Madera` registers cleanly — **zero kernel oops now** (dump-component crash fixed, see RC#8/#9).
-  - **`calliope_0` opens + streams** through `RDMA3 BE`+`UAIF1 BE`; `abox_rdma_trigger` fires; stream runs ~0.5 s then `write error: EIO` (DSP-side xrun — does not drain buffer continuously). **User confirms NO audible sound.**
+- **Audio (`abox` — ✅ INTERNAL SPEAKER PLAYS MUSIC, verified on device):**
+  - Main speaker `UAIF1 → SMA1303` plays clean music; earpiece `UAIF0 → aud3004x → EP` also verified. `calliope_version=nEB0`.
+  - **Playback recipe** (after `/root/audio-up.sh`): `amixer -c 1 cset name='ABOX SPUS ASRC3' 0` → `echo 1536000 > /sys/bus/i2c/devices/0-001e/playback_init` → `aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 song.wav` (small buffers required — DSP RDMA buffer is tiny).
+  - Card 1 `Exynos3830-Madera` registers only after **`aud3004x-codec` module is loaded** (machine driver links the codec into UAIF links).
+  - Full bug table in `docs/a21s-audio-abox-plan.md` §0 — headline fix: `abox_ion.c` sg_table needed `dma_get_sgtable()` (was mapping random RAM → cicada noise).
   - **PMIC `s2mpu12-regulator` DONE** — `drivers/abox/s2mpu12-regulator.c` registers 29 rails via ACPM regmap; `vdd_aldo1`=1.8 V, `vdd_aldo2`=2.9 V enabled (audio codec/amp rails).
   - **`sma1303` smart amp POWERED + responding** — `0-001e` reads `chip version 0x11`, `playback_init` sysfs configures I2S-slave + PLL-from-BCLK + power-on + mono + unmute out-of-band (no codec_dai link needed — avoids bind crash).
   - **Still missing: real audio out the speaker.** DSP→UAIF1→sma1303 chain is configured but produces no sound — either (a) DSP isn't emitting real audio on UAIF1 (its render graph needs the codec/effects path), (b) the speaker actually routes through `aud3004x` codec (DAC→SPKDRV→analog) not sma1303-direct, or (c) amp I2S format/PLL mismatch. **`aud3004x` codec still not in card 1's ASoC path** (dummy links; ACPM/SPEEDY bus node `acpm_mfd_bus@11A50000`/`aud3004x@07` not yet added to DT).
@@ -123,7 +124,10 @@ Adding `sma1303` as `.codecs` on the `UAIF1` BE link made its DAI ops fire (good
 - `drivers/abox/abox_dump.c` — dummy platform for dump-card links + **skip dump ASoC component/dai_link (RC#9)**.
 - `drivers/abox/s2mpu12-regulator.c` — **NEW**: 29-rail PMIC regulator via ACPM regmap (RC#11).
 - `drivers/abox/sma1303.c` — vendor 4.19→7.3 port + `playback_init` sysfs + sysfs_remove_group fix.
-- `drivers/abox/exynos3830_aud3004x.c` — cpu_dai-by-name BE binding (`d8315e1`); sma1303 codec_dai added then reverted (keep `snd-soc-dummy`).
+- `drivers/abox/abox_ion.c` — **`dma_get_sgtable()` for PCM sg_table (RC#12 — the cicada-noise fix)**.
+- `drivers/abox/abox_if.c` — `abox_if_select_pinctrl()` → `aud-i2s1-pins` during playback.
+- `drivers/abox/aud3004x.c` — codec probe/register (+217 lines).
+- `drivers/abox/exynos3830_aud3004x.c` — cpu_dai-by-name BE binding (`d8315e1`); `.dai_fmt` on UAIF0..2 + aud3004x codec link on UAIF0.
 - `patches/linux/0003-a21s-abox-audio-dts.patch` — `abox_tplg:` label + `samsung,aux`.
 - `arch/arm64/boot/dts/exynos/exynos850-a217f.dts` — `i2c_3`/`usi_hsi2c_2` + `sma1303@1e` node.
 
@@ -140,18 +144,17 @@ Adding `sma1303` as `.codecs` on the `UAIF1` BE link made its DAI ops fire (good
 
 ## 5. Immediate Next Steps
 
-**Goal: get audible sound from the internal speaker.** Everything up to the DSP→amp boundary now works; the remaining problem is *no audio reaches the speaker*.
+**Audio hardware path: DONE** — main speaker + earpiece verified. Remaining audio work is userspace/integration, not bring-up.
 
-1. ~~FE PCM `-EINVAL`, module deploy paths, IOMMU PA, cores-in-reset, `samsung,aux`, dump-card NULL, drvdata NULL, stale Image~~ — all DONE.
-2. ~~PMIC regulator (`s2mpu12`)~~ — DONE (RC#11). ~~`sma1303` power/enumerate~~ — DONE (`0x11`).
-3. ~~IPC `BUG_ON` wedge (RC#8)~~, ~~dump re-bind crash (RC#9)~~, ~~DSP boot retry (RC#10/boot_retry_work)~~ — DONE. Card is stable, zero oops.
-4. **NEW — diagnose "no sound":** `calliope_0` streams ~0.5 s then EIO; amp is configured+unmuted but silent. Determine which of these is true:
-   - **(a) DSP emits silence on UAIF1** — its render graph (`media-speaker` path) may need the codec/effects initialized, OR the FE→BE DPCM isn't actually pumping processed audio. Check DSP log (`/sys/kernel/debug/abox/log-00`, `dump/`) for render errors; verify `hw_ptr` advances during playback.
-   - **(b) Speaker routes through `aud3004x` codec, not sma1303-direct** — aud3004x is the real DAC+speaker-driver (DAPM `DAC→SPKDRV→SPKOUTLN`, `EXT_BST` boost via ACPM→PMIC). If so, must add `acpm_mfd_bus@11A50000` + `aud3004x@07` (`codec,aud3004x`, `reg=<0x07>`, `i2c-speedy-address`) to `exynos850-a217f.dts`, get codec probing via ACPM, and link it into the UAIF1 backend. Vendor DTS has the node — port it.
-   - **(c) Amp I2S/PLL mismatch** — UAIF1 `bclk=1529174` but `playback_init` was given `1536000`; PLL table has no exact match → falls back to entry[0]. Try matching the real BCLK or verify amp actually clocks (read back PLL/status regs via `i2cget`/regmap debugfs).
-   - **(d) Wrong UAIF** — speaker may be on UAIF0 or UAIF2, not UAIF1. Vendor comment says "UAIF1 - Speaker/RCV AMP" but verify against `mixer_paths_a21s.xml` (`route-sifs0-to-uaif1` is the speaker path → UAIF1 confirmed for media-speaker).
-5. **DSP stream dies ~0.5 s (xrun):** RDMA3 BE buffer is tiny (`Total=3840` frames). Investigate whether the DSP firmware drains it — likely tied to (a). May need correct DSP speaker-processing coeffs (`Speaker Volume/Mode/Mute`, `Bass Boost SPK Coeff`, `DRC SPK Coeff` controls exist).
-6. **Files touched this session:** `drivers/abox/abox.c` (BUG_ON→ratelimit + boot_retry_work), `drivers/abox/abox.h` (boot_retry_work field), `drivers/abox/abox_dump.c` (skip dump component/dai_link), `drivers/abox/sma1303.c` (playback_init sysfs + sysfs_remove_group fix), `drivers/abox/exynos3830_aud3004x.c` (sma1303 codec_dai was added then REVERTED — keep dummy), `drivers/abox/s2mpu12-regulator.c` (new). Device helpers: `/root/audio-up.sh` (module load order), `/root/spk-min.sh` (minimal media-speaker routing), `/root/abox_speaker.sh` (full 64-ctl routing — hangs if IPC busy).
+1. ~~All kernel bring-up~~ — DONE (see RC#1–#12 + `a21s-audio-abox-plan.md` §0 bug table).
+2. **Userspace audio integration:** unmask PipeWire/WirePlumber now that the card is stable; verify `wpctl status` sees card 1; set default sink to `Exynos3830-Madera` speaker path; test `paplay`/Steam audio. **Caveat:** PipeWire opens capture streams that can exhaust the ~768 KiB DSP workspace → keep an eye on `Not enough memory` aborts; may need to disable capture PCMs or reduce buffer sizes.
+3. **Robustness caveats (from Claude's verified run):**
+   - Some boots Calliope misses `BOOT_DONE` → `calliope boot retry 1/8..8/8` → needs another reboot. `boot_retry_work` helps but isn't 100%.
+   - **Never `rmmod exynos3830_aud3004x`** — `aud3004x_jack_remove` oopses on unload. Reboot instead.
+   - `s2mpu12-regulator.ko` caused a ~31 s black screen after boot (boot-on rail handling) — see `a21s-mainline-boot.md`. Kept-`always_on` fix is in; verify on next flash.
+   - After a DSP runtime `data abort`, Calliope does NOT self-recover — reboot (or re-trigger enable) before retrying playback.
+   - RDMA close prints `close timeout` — cosmetic; stream still works.
+4. **Finalize:** remove `/etc/modprobe.d/blacklist-abox.conf`; ensure `audio-up.sh` loads `aud3004x-codec` too; sync `configs/a21s_linux_defconfig`; consider an audio-up systemd unit so `aplay`/PipeWire work without manual module loads.
 
 ---
 
