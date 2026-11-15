@@ -504,8 +504,12 @@ static void abox_process_ipc(struct work_struct *work)
 			ret = __abox_process_ipc(dev, data, hw_irq, msg, size);
 			if (ret < 0) {
 				abox_failsafe_report(dev);
-				BUG_ON(error++ > THRESHOLD);
-				dev_dbg(dev, "%d\n", error);
+				if (error++ > THRESHOLD)
+					dev_err_ratelimited(dev,
+						"%s: ipc error storm (%d)\n",
+						__func__, error);
+				else
+					dev_dbg(dev, "%d\n", error);
 			} else {
 				error = 0;
 			}
@@ -1685,6 +1689,41 @@ static void abox_boot_clear_work_func(struct work_struct *work)
 	}
 }
 
+#define BOOT_RETRY_MAX		8
+#define BOOT_RETRY_DELAY_MS	(BOOT_DONE_TIMEOUT_MS)
+
+static void abox_boot_retry_work_func(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct abox_data *data = container_of(dwork, struct abox_data,
+			boot_retry_work);
+	struct device *dev = data->dev;
+
+	if (data->calliope_state != CALLIOPE_ENABLING)
+		return;
+
+	if (data->boot_retry_count >= BOOT_RETRY_MAX) {
+		dev_err(dev, "calliope boot failed after %d retries\n",
+				data->boot_retry_count);
+		return;
+	}
+
+	data->boot_retry_count++;
+	dev_warn(dev, "calliope boot retry %d/%d (BOOT_DONE timeout)\n",
+			data->boot_retry_count, BOOT_RETRY_MAX);
+
+	/* Pulse the Calliope cores out of reset so the already-downloaded
+	 * firmware image re-runs and re-signals BOOT_DONE. */
+	abox_cpu_enable(false);
+	abox_cpu_power(false);
+	udelay(100);
+	abox_cpu_power(true);
+	abox_cpu_enable(true);
+
+	schedule_delayed_work(&data->boot_retry_work,
+			msecs_to_jiffies(BOOT_RETRY_DELAY_MS));
+}
+
 static void abox_boot_done_work_func(struct work_struct *work)
 {
 	struct abox_data *data = container_of(work, struct abox_data,
@@ -1711,6 +1750,7 @@ static void abox_boot_done(struct device *dev, unsigned int version)
 			ver_char[3], ver_char[2], ver_char[1], ver_char[0]);
 	data->calliope_state = CALLIOPE_ENABLED;
 	schedule_work(&data->boot_done_work);
+	cancel_delayed_work(&data->boot_retry_work);
 	cancel_delayed_work(&data->boot_clear_work);
 	schedule_delayed_work(&data->boot_clear_work, HZ);
 
@@ -2769,9 +2809,13 @@ static int abox_enable(struct device *dev)
 	}
 	abox_request_dram_on(dev, DEFAULT_SYS_POWER_ID, true);
 	data->calliope_state = CALLIOPE_ENABLING;
+	data->boot_retry_count = 0;
+	cancel_delayed_work(&data->boot_retry_work);
 	if (has_reset) {
 		abox_cpu_power(true);
 		abox_cpu_enable(true);
+		schedule_delayed_work(&data->boot_retry_work,
+				msecs_to_jiffies(BOOT_RETRY_DELAY_MS));
 	}
 
 	data->enabled = true;
@@ -3122,6 +3166,7 @@ static int samsung_abox_probe(struct platform_device *pdev)
 	INIT_WORK(&data->restore_data_work, abox_restore_data_work_func);
 	INIT_WORK(&data->boot_done_work, abox_boot_done_work_func);
 	INIT_DEFERRABLE_WORK(&data->boot_clear_work, abox_boot_clear_work_func);
+	INIT_DELAYED_WORK(&data->boot_retry_work, abox_boot_retry_work_func);
 	INIT_DELAYED_WORK(&data->wdt_work, abox_wdt_work_func);
 	INIT_LIST_HEAD(&data->firmware_extra);
 	INIT_LIST_HEAD(&data->ipc_actions);

@@ -815,14 +815,13 @@ static int samsung_abox_dump_probe(struct platform_device *pdev)
 		pm_runtime_no_callbacks(dev);
 		pm_runtime_enable(dev);
 
-		ret = devm_snd_soc_register_component(dev, &abox_dump_component,
-				NULL, 0);
-		if (ret < 0)
-			dev_err(dev, "register component failed: %d\n", ret);
-
-		ret = abox_dump_add_dai_link(dev);
-		if (ret < 0)
-			dev_err(dev, "add dai link failed: %d\n", ret);
+		/* The per-buffer dump devices only need their debugfs file
+		 * (created in abox_dump_register). Registering an ASoC
+		 * component + DAI link here re-triggers snd_soc_bind_card on
+		 * the already-instantiated card and crashes in
+		 * soc_cleanup_card_resources -> snd_soc_dapm_free. Skip it. */
+		dev_info(dev, "%s[%d]: dump debugfs only, skip asoc component\n",
+				__func__, id);
 	}
 
 	return ret;

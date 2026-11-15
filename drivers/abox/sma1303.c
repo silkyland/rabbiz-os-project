@@ -3124,6 +3124,92 @@ const struct regmap_config sma_i2c_regmap = {
 	.num_reg_defaults = ARRAY_SIZE(sma1303_reg_def),
 };
 
+/*
+ * Out-of-band playback bring-up. The A21s machine driver keeps codec links
+ * on snd-soc-dummy (the DSP owns the I2S pins), so the amp's DAI ops never
+ * run. This performs the same register sequence the DAI path would, for
+ * I2S-slave 48 kHz stereo playback with the PLL locked to the incoming BCLK.
+ * Triggered via the playback_init sysfs attribute (value = BCLK in Hz).
+ */
+static int sma1303_playback_init(struct sma1303_priv *sma1303,
+				 unsigned long bclk)
+{
+	struct regmap *regmap = sma1303->regmap;
+	int i;
+
+	if (!regmap)
+		return -ENODEV;
+
+	sma1303->sys_clk_id = SMA1303_PLL_CLKIN_BCLK;
+	sma1303->format = SND_SOC_DAIFMT_I2S;
+
+	/* I2S/PCM clock mode - slave (amp receives BCLK/LRCLK from UAIF) */
+	regmap_update_bits(regmap, SMA1303_01_INPUT1_CTRL1,
+			MASTER_SLAVE_MASK, SLAVE_MODE);
+
+	/* PLL operation, reference clock = SCK (BCLK) */
+	regmap_update_bits(regmap, SMA1303_A2_TOP_MAN1,
+			PLL_PD_MASK|PLL_REF_CLK_MASK, PLL_OPERATION|PLL_SCK);
+
+	for (i = 0; i < sma1303->num_of_pll_matches; i++)
+		if (sma1303->pll_matches[i].input_clk == bclk)
+			break;
+	if (i == sma1303->num_of_pll_matches) {
+		dev_warn(sma1303->dev, "no PLL match for bclk %lu, using first\n",
+			 bclk);
+		i = 0;
+	}
+
+	regmap_write(regmap, SMA1303_8B_PLL_POST_N,
+			sma1303->pll_matches[i].post_n);
+	regmap_write(regmap, SMA1303_8C_PLL_N, sma1303->pll_matches[i].n);
+	regmap_write(regmap, SMA1303_8D_PLL_A_SETTING,
+			sma1303->pll_matches[i].vco);
+	regmap_write(regmap, SMA1303_8F_PLL_P_CP, sma1303->pll_matches[i].p_cp);
+
+	/* 48 kHz class playback format (16-bit slot, low-first channel) */
+	regmap_update_bits(regmap, SMA1303_A2_TOP_MAN1,
+			DAC_DN_CONV_MASK, DAC_DN_CONV_DISABLE);
+	regmap_update_bits(regmap, SMA1303_01_INPUT1_CTRL1,
+			LEFTPOL_MASK, LOW_FIRST_CH);
+	regmap_update_bits(regmap, SMA1303_01_INPUT1_CTRL1,
+			I2S_MODE_MASK, STANDARD_I2S);
+
+	/* power up + unmute (mono) */
+	regmap_update_bits(regmap, SMA1303_8E_PLL_CTRL,
+			PLL_PD2_MASK, PLL_OPERATION2);
+	regmap_update_bits(regmap, SMA1303_00_SYSTEM_CTRL,
+			POWER_MASK, POWER_ON);
+	regmap_update_bits(regmap, SMA1303_10_SYSTEM_CTRL1,
+			SPK_MODE_MASK, SPK_MONO);
+	regmap_update_bits(regmap, SMA1303_0E_MUTE_VOL_CTRL,
+			SPK_MUTE_MASK, SPK_UNMUTE);
+
+	sma1303->amp_power_status = true;
+	dev_info(sma1303->dev, "playback_init done (bclk=%lu Hz)\n", bclk);
+	return 0;
+}
+
+static ssize_t playback_init_store(struct device *dev,
+	struct device_attribute *devattr, const char *buf, size_t count)
+{
+	struct sma1303_priv *sma1303 = dev_get_drvdata(dev);
+	unsigned long bclk;
+	int ret;
+
+	ret = kstrtoul(buf, 10, &bclk);
+	if (ret)
+		return -EINVAL;
+
+	ret = sma1303_playback_init(sma1303, bclk);
+	if (ret)
+		return ret;
+
+	return (ssize_t)count;
+}
+
+static DEVICE_ATTR_WO(playback_init);
+
 static ssize_t check_fault_period_show(struct device *dev,
 	struct device_attribute *devattr, char *buf)
 {
@@ -3194,6 +3280,7 @@ static DEVICE_ATTR_RW(check_fault_status);
 static struct attribute *sma1303_attr[] = {
 	&dev_attr_check_fault_period.attr,
 	&dev_attr_check_fault_status.attr,
+	&dev_attr_playback_init.attr,
 	NULL,
 };
 

@@ -447,7 +447,9 @@ struct abox_data {
 	struct work_struct restore_data_work;
 	struct work_struct boot_done_work;
 	struct delayed_work boot_clear_work;
+	struct delayed_work boot_retry_work;
 	struct delayed_work wdt_work;
+	int boot_retry_count;
 	unsigned long long audio_mode_time;
 	enum audio_mode audio_mode;
 	enum abox_call_event call_event;

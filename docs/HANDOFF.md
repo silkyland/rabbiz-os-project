@@ -11,12 +11,13 @@ Last updated: 2026-11-15 (post Calliope breakthrough)
 - **Boot & Display:** `uniLoader` (`06a1bba`) + `decon850` + `dsi` (`td4150`) + `panfrost`/`panvk` + `steamos-session.service`.
 - **Networking:** `usb0` (`172.16.42.1/24`, systemd-networkd, unmanaged in NM) + `wlan0` (`scsc_wlan`, NetworkManager, `192.168.1.142`).
 - **Bluetooth & Gamepads:** `scsc_bt.ko` (`hci0`) + BlueZ 5.88 + PipeWire + HID/UHID.
-- **Audio (`abox` — Phase A DONE, Phase B = codec):**
-  - `Calliope is ready to sing (version:nEB0)` — DSP boots + handshake completes reliably on clean boots with pristine firmware.
-  - `loaded abox_tplg.bin` — topology loads; card 1 `Exynos3830-Madera` registers **10 playback PCMs (`calliope_0`–`calliope_9`, `hw:1,100`–`hw:1,109`)** + ~29 capture PCMs + 9 WDMA capture.
-  - **`calliope_0` playback now OPENS and STREAMS** — `dpcm_fe_dai_open` succeeds, DPCM resolves `RDMA3 BE`+`UAIF1 BE`, `abox_rdma_open`/`abox_uaif_hw_params`/`abox_vdma` all run, `abox_rdma_trigger[3](1)` fires. Stream plays ~1 buffer then `write error: EIO` — DSP-side output path needs the codec (Phase B).
-  - Still missing: physical speaker output — AUD3004X codec is on the **SPEEDY/ACPM bus (not yet ported)**; machine links intentionally use `snd-soc-dummy` for codec. The codec component (`aud3004x_codec`/`codec_speedy`) registers but has **no bound I2C/device** and is **not in card 1's component list**.
-  - `/etc/modprobe.d/blacklist-abox.conf` may still blacklist the modules — load manually with `modprobe exynos3830-aud3004x aud3004x-codec`.
+- **Audio (`abox` — full hardware chain powered, DSP stream unstable, NO SOUND yet):**
+  - `Calliope is ready to sing (version:nEB0)` — DSP boots; **boot retry added** (`boot_retry_work`, pulses cpu_power/cpu_enable if BOOT_DONE missed → much more reliable than ~50%).
+  - Card 1 `Exynos3830-Madera` registers cleanly — **zero kernel oops now** (dump-component crash fixed, see RC#8/#9).
+  - **`calliope_0` opens + streams** through `RDMA3 BE`+`UAIF1 BE`; `abox_rdma_trigger` fires; stream runs ~0.5 s then `write error: EIO` (DSP-side xrun — does not drain buffer continuously). **User confirms NO audible sound.**
+  - **PMIC `s2mpu12-regulator` DONE** — `drivers/abox/s2mpu12-regulator.c` registers 29 rails via ACPM regmap; `vdd_aldo1`=1.8 V, `vdd_aldo2`=2.9 V enabled (audio codec/amp rails).
+  - **`sma1303` smart amp POWERED + responding** — `0-001e` reads `chip version 0x11`, `playback_init` sysfs configures I2S-slave + PLL-from-BCLK + power-on + mono + unmute out-of-band (no codec_dai link needed — avoids bind crash).
+  - **Still missing: real audio out the speaker.** DSP→UAIF1→sma1303 chain is configured but produces no sound — either (a) DSP isn't emitting real audio on UAIF1 (its render graph needs the codec/effects path), (b) the speaker actually routes through `aud3004x` codec (DAC→SPKDRV→analog) not sma1303-direct, or (c) amp I2S format/PLL mismatch. **`aud3004x` codec still not in card 1's ASoC path** (dummy links; ACPM/SPEEDY bus node `acpm_mfd_bus@11A50000`/`aud3004x@07` not yet added to DT).
 
 ### ⚠️ Module deploy paths (cost a full debug cycle — DO NOT get wrong)
 
@@ -96,14 +97,35 @@ Topology links whose cpu DAI resolves to `snd-soc-dummy` call `abox_dma_hw_param
 
 `src/uniLoader/blob/Image` was a **23:10 build predating `CONFIG_EXYNOS_IOMMU=y`**. Reflashing it downgraded the kernel → all sysmmu devices driverless → `Unable to alloc iommu domain`. Detected by diffing `build/linux/.config` vs `/proc/config.gz`. **Fix:** always `cp build/linux/arch/arm64/boot/Image src/uniLoader/blob/Image` (and the dtb) before repacking.
 
+### Root cause #8 — `BUG_ON` kills the DSP IPC workqueue
+
+`abox_process_ipc` (`drivers/abox/abox.c`) counted consecutive `__abox_process_ipc` failures and hit `BUG_ON(error++ > 128)` → oops → `abox_ipc` workqueue dead → **every subsequent mixer/PCM IPC hangs in `D` state forever** (device "alive" but audio wedged). Triggered whenever the DSP stopped answering IPC (e.g. after a stream error). **Fix:** replaced `BUG_ON` with `dev_err_ratelimited` — workqueue survives error storms; `abox_failsafe_report` still runs.
+
+### Root cause #9 — `samsung-abox-dump` re-binds the card → `snd_soc_dapm_free` NULL deref
+
+Every DSP buffer registers a `samsung-abox-dump` platform device; its probe called `devm_snd_soc_register_component` + `abox_dump_add_dai_link`, which re-triggers `snd_soc_bind_card` on the **already-instantiated** card → `soc_cleanup_card_resources` → `snd_soc_dapm_free` NULL deref (`pc : snd_soc_dapm_free+0x24`) → kworker dies holding a corrupted DAPM mutex → **all `amixer`/`aplay` hang in `D`**. This is why the whole card wedged after module load. **Fix:** in `samsung_abox_dump_probe` (`drivers/abox/abox_dump.c`), skip `devm_snd_soc_register_component`/`abox_dump_add_dai_link` for `id>=0` — dump debugfs files are created in `abox_dump_register` anyway; the ASoC component/dai_link is optional debug plumbing. Result: **zero oops, card stable**.
+
+### Root cause #10 — sma1303 as codec_dai destabilizes card bind
+
+Adding `sma1303` as `.codecs` on the `UAIF1` BE link made its DAI ops fire (good) but its late component registration re-triggered card bind → contributed to the cleanup crash path. **Decision:** keep machine codec links `snd-soc-dummy`; configure the amp **out-of-band** via the new `playback_init` sysfs attr (`echo <BCLK_Hz> > /sys/bus/i2c/devices/0-001e/playback_init`) which does I2S-slave + PLL + power + mono + unmute directly over regmap.
+
+### Root cause #11 — `s2mpu12` regulator had no driver → amp unpowered
+
+`sma1303` I2C returned `-ENXIO`/version `0x00` because the PMIC audio rails were off. `sec-pmic-acpm` enumerated `S2MPU12` but had no regulator child. **Fix:** `drivers/abox/s2mpu12-regulator.c` registers 29 LDO/buck rails over the ACPM regmap; DT `regulators/ldo33`(vdd_aldo1)/`ldo34`(vdd_aldo2) apply via `.of_match`+`.regulators_node="regulators"`+`device_set_of_node_from_dev`. Result: `vdd_aldo1`=1.8 V, `vdd_aldo2`=2.9 V enabled → **sma1303 reads `chip version 0x11`**.
+
 ---
 
 ## 3. Files Changed
 
-- `drivers/abox/abox.c` — real-PA DRAM mapping + hold-cores-in-reset-before-download + DIAG seeds (`sram+0xc170` dump ptr, `sram+0x23e00` bootargs `slog=false vss=false`).
+- `drivers/abox/abox.c` — real-PA DRAM mapping + hold-cores-in-reset + DIAG seeds + **`BUG_ON`→ratelimit in `abox_process_ipc` (RC#8)** + **`boot_retry_work` DSP boot retry (RC#10/boot flakiness)**.
+- `drivers/abox/abox.h` — `boot_retry_work` + `boot_retry_count` fields.
 - `drivers/abox/abox_dma.c` — NULL guard in `abox_dma_hw_params_set`.
-- `drivers/abox/abox_dump.c` — dummy platform component for dump-card links.
-- `patches/linux/0003-a21s-abox-audio-dts.patch` — `abox_tplg:` label + `samsung,aux = <&abox_tplg>;` in `sound` node.
+- `drivers/abox/abox_dump.c` — dummy platform for dump-card links + **skip dump ASoC component/dai_link (RC#9)**.
+- `drivers/abox/s2mpu12-regulator.c` — **NEW**: 29-rail PMIC regulator via ACPM regmap (RC#11).
+- `drivers/abox/sma1303.c` — vendor 4.19→7.3 port + `playback_init` sysfs + sysfs_remove_group fix.
+- `drivers/abox/exynos3830_aud3004x.c` — cpu_dai-by-name BE binding (`d8315e1`); sma1303 codec_dai added then reverted (keep `snd-soc-dummy`).
+- `patches/linux/0003-a21s-abox-audio-dts.patch` — `abox_tplg:` label + `samsung,aux`.
+- `arch/arm64/boot/dts/exynos/exynos850-a217f.dts` — `i2c_3`/`usi_hsi2c_2` + `sma1303@1e` node.
 
 ---
 
@@ -118,15 +140,18 @@ Topology links whose cpu DAI resolves to `snd-soc-dummy` call `abox_dma_hw_param
 
 ## 5. Immediate Next Steps
 
-1. ~~**Fix FE PCM open `-EINVAL`**~~ — **DONE.** Root cause was twofold: (a) BE links (`RDMA0-11 BE`, `WDMA0-4 BE`, `UAIF0-2`) had no `.cpus` because DT `sound` children bind `exynos3830_dai[]` **positionally** and only 21 children exist → fixed by binding `.cpus={{.dai_name=…}}` by name (commit `d8315e1`); (b) rebuilt modules were deployed to the wrong path (see table above). `calliope_0` now opens + streams.
-2. **Phase B — speaker amp power + codec (the only thing left for speaker):** two output chips exist —
-   - **`sma1303` smart amp** (`siliconmitus,sma1303`, I2S slave → speaker): **DONE enumerating** — `i2c_3` (`i2c@13860000`, s3c2410, pins `gpp1-0/1`) enabled in `exynos850-a217f.dts`, `sma1303.ko` ported from vendor 4.19→7.3 (`drivers/abox/sma1303.c`), DT node `sma1303@1e` (`init-vol=0x31`, `sys-clk-id=3`=PLL-from-BCLK). After flashing `boot-avb.img` the chip **enumerates at `0-001e` and the driver binds** — reads DT props correctly (`init_vol 0x31`, `Mono`, `Boost ctrl`, `PLL from BCLK`). **BUT `regmap_read(0xFF)` returns `-ENXIO`/`chip version 0x00` → chip NAKs = UNPOWERED.** Vendor DTS has NO power/regulator/gpio on the node → amp rail is powered externally.
-   - **`aud3004x` codec** (ACPM/SPEEDY bus `acpm_mfd_bus@11A50000`, `aud3004x@07`, `codec,aud3004x`): the real DAC+speaker-driver (DAPM `DAC→SPKDRV→SPK→SPKOUTLN`). Its `spkdrv_ev` writes **`AUD3004X_PMIC_ADDR`(ACPM slave 0x01) regs 0x26/0x14 to enable the external speaker BOOST** — i.e. codec powers the speaker rail via ACPM→PMIC.
-   - **Power dependency chain:** codec needs `vdd_aldo1`/`vdd_aldo2` (PMIC LDO33/34, `regulator-always-on` in vendor) + ACPM coprocessor to translate codec/PMIC register writes. **Main PMIC `s2mpu12mfd` has NO mainline driver** (only `s2mpb03-regulator`, `s2mps11`, `sec-acpm`/`sec-pmic-acpm` ACPM-regmap exist). ACPM infra (`exynos-acpm-mbox`, `acpm_protocol`, `acpm-clocks`, `sec_acpm`) is loaded but `acpm_mfd_bus@11A50000` DT node is absent → `codec_speedy`/codec device never instantiates.
-   - **Next:** bring up `acpm_mfd_bus` + `aud3004x@07` node → codec probes via ACPM → its speaker path enables EXT_BST → powers amp/codec rail → then `sma1303` I2C should respond (if its rail is the codec boost) → configure unmute/format → `calliope_0`→UAIF1→amp→speaker. Machine codec links stay `snd-soc-dummy`. Reference: `drivers/abox/aud3004x.c`, vendor `acpm_mfd_bus@11A50000`/`aud3004x@07` node.
-3. **DSP boot flakiness:** `BOOT_DONE` is an edge-triggered IPC — if missed, Calliope parks in `CALLIOPE_ENABLING` forever (no timeout-retry in `abox_enable`). Add a delayed-work retry (disable→enable) or investigate the SGI/IPC race. ~50% of cold boots.
-4. **Unregister crash:** `snd_soc_unregister_card`→`soc_cleanup_card_resources` oops on `rmmod`/unbind (mutex leak). Guard exists for `is_instantiated` but cleanup path still crashes — avoid module reload; reboot instead.
-5. **Finalize:** remove `/etc/modprobe.d/blacklist-abox.conf`; sync `configs/a21s_linux_defconfig`; keep `clk_ignore_unused` + `wifibt_if@b0000000`; evaluate abox-slog + abox-dbg reserved-mem if DSP logs are needed.
+**Goal: get audible sound from the internal speaker.** Everything up to the DSP→amp boundary now works; the remaining problem is *no audio reaches the speaker*.
+
+1. ~~FE PCM `-EINVAL`, module deploy paths, IOMMU PA, cores-in-reset, `samsung,aux`, dump-card NULL, drvdata NULL, stale Image~~ — all DONE.
+2. ~~PMIC regulator (`s2mpu12`)~~ — DONE (RC#11). ~~`sma1303` power/enumerate~~ — DONE (`0x11`).
+3. ~~IPC `BUG_ON` wedge (RC#8)~~, ~~dump re-bind crash (RC#9)~~, ~~DSP boot retry (RC#10/boot_retry_work)~~ — DONE. Card is stable, zero oops.
+4. **NEW — diagnose "no sound":** `calliope_0` streams ~0.5 s then EIO; amp is configured+unmuted but silent. Determine which of these is true:
+   - **(a) DSP emits silence on UAIF1** — its render graph (`media-speaker` path) may need the codec/effects initialized, OR the FE→BE DPCM isn't actually pumping processed audio. Check DSP log (`/sys/kernel/debug/abox/log-00`, `dump/`) for render errors; verify `hw_ptr` advances during playback.
+   - **(b) Speaker routes through `aud3004x` codec, not sma1303-direct** — aud3004x is the real DAC+speaker-driver (DAPM `DAC→SPKDRV→SPKOUTLN`, `EXT_BST` boost via ACPM→PMIC). If so, must add `acpm_mfd_bus@11A50000` + `aud3004x@07` (`codec,aud3004x`, `reg=<0x07>`, `i2c-speedy-address`) to `exynos850-a217f.dts`, get codec probing via ACPM, and link it into the UAIF1 backend. Vendor DTS has the node — port it.
+   - **(c) Amp I2S/PLL mismatch** — UAIF1 `bclk=1529174` but `playback_init` was given `1536000`; PLL table has no exact match → falls back to entry[0]. Try matching the real BCLK or verify amp actually clocks (read back PLL/status regs via `i2cget`/regmap debugfs).
+   - **(d) Wrong UAIF** — speaker may be on UAIF0 or UAIF2, not UAIF1. Vendor comment says "UAIF1 - Speaker/RCV AMP" but verify against `mixer_paths_a21s.xml` (`route-sifs0-to-uaif1` is the speaker path → UAIF1 confirmed for media-speaker).
+5. **DSP stream dies ~0.5 s (xrun):** RDMA3 BE buffer is tiny (`Total=3840` frames). Investigate whether the DSP firmware drains it — likely tied to (a). May need correct DSP speaker-processing coeffs (`Speaker Volume/Mode/Mute`, `Bass Boost SPK Coeff`, `DRC SPK Coeff` controls exist).
+6. **Files touched this session:** `drivers/abox/abox.c` (BUG_ON→ratelimit + boot_retry_work), `drivers/abox/abox.h` (boot_retry_work field), `drivers/abox/abox_dump.c` (skip dump component/dai_link), `drivers/abox/sma1303.c` (playback_init sysfs + sysfs_remove_group fix), `drivers/abox/exynos3830_aud3004x.c` (sma1303 codec_dai was added then REVERTED — keep dummy), `drivers/abox/s2mpu12-regulator.c` (new). Device helpers: `/root/audio-up.sh` (module load order), `/root/spk-min.sh` (minimal media-speaker routing), `/root/abox_speaker.sh` (full 64-ctl routing — hangs if IPC busy).
 
 ---
 
