@@ -21,6 +21,14 @@
     <reuseOutputMode>no</reuseOutputMode>
   </core>
 
+  <!-- Reserve space for the shell's own layer bars so maximized apps
+       don't render under them. StatusBar is 44px top (exclusionMode
+       Normal alone doesn't reach XDG windows reliably), NavBar zone
+       is 56px bottom. Applies to output DSI-1 only; takes effect for
+       windows mapped after config load — restart the session or
+       re-maximize existing windows after changing. -->
+  <margin top="44" bottom="56" left="0" right="0" output="DSI-1"/>
+
   <placement>
     <policy>center</policy>
   </placement>

@@ -1,9 +1,28 @@
 #!/bin/sh
-# a21s-files — launch KDE Dolphin when installed, else fall back to Files.qml.
+# a21s-files — prefer Maui Index (touch-first), else Dolphin phone UI,
+# else fall back to Files.qml.
+export QT_QPA_PLATFORM=wayland
+# exynos-drm can't import non-contiguous dmabufs — Qt Quick apps must
+# use the software backend (same reason labwc/environment sets this).
+export QT_QUICK_BACKEND=software
+if command -v index >/dev/null 2>&1; then
+    exec index "$@"
+fi
 if command -v dolphin >/dev/null 2>&1; then
-    export QT_QPA_PLATFORM=wayland
+    # One-time migration: Dolphin's phone UI applies its layout tweaks
+    # (bottom toolbar, hidden Places, RenameInline=false) only on a
+    # "first run" (dolphinrc [General] Version < 200) and a saved
+    # dolphinstaterc forces the desktop layout back — KDE bug 505864.
+    if [ ! -f "$HOME/.config/a21s-shell/dolphin-phone.done" ]; then
+        rm -f "$HOME/.config/dolphinrc" "$HOME/.local/state/dolphinstaterc"
+        mkdir -p "$HOME/.config/a21s-shell"
+        touch "$HOME/.config/a21s-shell/dolphin-phone.done"
+    fi
+    export PLASMA_PLATFORM=phone:handset   # KRuntimePlatform → dolphinuiforphones.rc (Gear >= 24.12)
+    export QT_QPA_PLATFORMTHEME=kde        # plasma-integration → kdeglobals fonts/colors/icons/single-click
+    export XDG_CURRENT_DESKTOP=KDE
+    export QT_SCALE_FACTOR=1.5             # touch-sized hit targets on the 720px panel
     exec dolphin "$@"
 fi
 export QML_IMPORT_PATH=/usr/share/a21s-shell
-export QT_QUICK_BACKEND=software
 exec quickshell -p /usr/share/a21s-shell/apps/files/Files.qml "$@"

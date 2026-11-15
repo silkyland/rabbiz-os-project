@@ -74,6 +74,7 @@
 - **Objective:** Replace the Steam-only session with an Android-like launcher: homescreen/app drawer, pull-down notification+quick-settings shade, dialer, SMS, settings — all QML on `labwc`+`quickshell`, Steam stays launchable from the launcher card/dock (`a21s-steam`).
 - **Layout:** `shell/` (QML, modules `A21s.Theme`/`A21s.Services`/`A21s.Components`), `rootfs-overlay/` (systemd unit, labwc config, wrappers, .desktop, udev/logind rules), `scripts/deploy_shell.sh`. Details: `docs/a21s-phone-shell.md`, `shell/README.md`.
 - **Verified on host & device:** `labwc` + `quickshell 0.3.2` + `squeekboard` running on Galaxy A21s (`DSI-1` `card0`); `shell.qml` and all 7 built-in apps (`a21s-{settings,dialer,sms,calculator,clock,files,notes}`) load with zero QML errors (`QT_QUICK_BACKEND=software`).
+- **App layer landed (2026-11-15):** `index-fm` (touch-first FM) + Dolphin **phone UI** (`PLASMA_PLATFORM=phone` + first-run wipe) via `a21s-files`; `merkuro` replaces calindori; `gnome-calls`/`chatty`/`gnome-contacts`/`callaudiod`/`feedbackd` installed for M6; Maui suite (`pix`/`vvave`/`buho`/`station`), `plasma-settings`, `swappy`; official **Google Chrome ARM64** in `/opt/google/chrome` (`a21s-browser`, `--disable-gpu`); squeekboard **Thai** + auto-show via gsettings; labwc `<margin>` reserves shell bars; `UDISKS_IGNORE` hides raw partitions; NavBar auto-hide. Details: `docs/a21s-phone-shell.md` "App layer".
 - **Tasks:**
   - [x] Skeleton + design tokens + service contracts (lead)
   - [x] Session/compositor/deploy infra + labwc config (W1)

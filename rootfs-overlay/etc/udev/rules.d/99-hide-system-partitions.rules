@@ -1,0 +1,12 @@
+# Hide Android/Samsung-internal eMMC partitions and the pmOS system
+# partitions from udisks-based file-manager UIs (Dolphin Places,
+# Index Drives) — they're system storage, not user-removable media,
+# and listing 13 raw Android partitions makes the sidebar useless.
+# UDISKS_IGNORE only affects udisks' presentation; mounting still works.
+ACTION=="remove", GOTO="a21s_hide_end"
+SUBSYSTEM!="block", GOTO="a21s_hide_end"
+
+KERNEL=="mmcblk0p*", ENV{UDISKS_IGNORE}="1"
+KERNEL=="loop0p*",  ENV{UDISKS_IGNORE}="1"
+
+LABEL="a21s_hide_end"

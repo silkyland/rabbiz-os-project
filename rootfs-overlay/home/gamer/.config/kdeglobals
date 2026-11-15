@@ -1,0 +1,24 @@
+# kdeglobals seed for a21s-shell — read by KDE apps (Dolphin etc.) when
+# QT_QPA_PLATFORMTHEME=kde (plasma-integration) or XDG_CURRENT_DESKTOP=KDE.
+# Deployed to ~gamer/.config/kdeglobals by scripts/deploy_shell.sh.
+
+[KDE]
+SingleClick=true
+DoubleClickInterval=400
+widgetStyle=Breeze
+StartDragDist=10
+StartDragTime=600
+AnimationDurationFactor=0
+ShowIconsInMenuItems=true
+ShowIconsOnPushButtons=true
+WheelScrollLines=3
+
+[General]
+font=Noto Sans,12,-1,5,50,0,0,0,0,0
+toolBarFont=Noto Sans,12,-1,5,50,0,0,0,0,0
+smallestReadableFont=Noto Sans,10,-1,5,50,0,0,0,0,0
+menuFont=Noto Sans,12,-1,5,50,0,0,0,0,0
+ColorScheme=BreezeDark
+
+[Icons]
+Theme=breeze-dark

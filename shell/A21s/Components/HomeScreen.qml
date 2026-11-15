@@ -404,7 +404,7 @@ PanelWindow {
         function buildApps() {
             homeApps = [
                 DesktopEntries.byId("a21s-files")      || DesktopEntries.byId("org.kde.dolphin") || ({ id: "a21s-files", name: "Files", materialIcon: "folder" }),
-                DesktopEntries.byId("org.kde.calindori") || ({ id: "org.kde.calindori", name: "Calendar", materialIcon: "calendar_month" }),
+                DesktopEntries.byId("org.kde.merkuro.calendar") || DesktopEntries.byId("org.kde.merkuro") || DesktopEntries.byId("org.kde.calindori") || ({ id: "org.kde.calindori", name: "Calendar", materialIcon: "calendar_month" }),
                 DesktopEntries.byId("a21s-clock")      || DesktopEntries.byId("org.kde.kclock") || ({ id: "a21s-clock", name: "Clock", materialIcon: "schedule" }),
                 DesktopEntries.byId("a21s-calculator") || DesktopEntries.byId("org.kde.kalk") || ({ id: "a21s-calculator", name: "Calculator", materialIcon: "calculate" }),
                 DesktopEntries.byId("org.kde.kweather") || ({ id: "org.kde.kweather", name: "Weather", materialIcon: "wb_sunny" }),

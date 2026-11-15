@@ -40,6 +40,7 @@ PanelWindow {
         if (hadOpenApp)
             ShellState.triggerCloseMorph();
         ShellState.goHome();
+        bar.expanded = false;
     }
 
     // Back action: dismiss shell overlays first; otherwise close the active
@@ -70,8 +71,10 @@ PanelWindow {
             if (!t.minimized && target === null)
                 target = t;
         }
-        if (target)
+        if (target) {
             target.close();
+            bar.expanded = false;
+        }
     }
 
     function toggleRecents() {
@@ -103,6 +106,25 @@ PanelWindow {
             target.activate();
             ShellState.activeAppId = target.appId || "";
         }
+        collapseTimer.restart();
+    }
+
+    // Immersive mode: the button row stays hidden behind a thin gesture
+    // pill until the user taps or swipes up inside the bottom zone, then
+    // auto-collapses again after a few seconds. The layer surface keeps
+    // its 56px height in both states (labwc reserves it via <margin>),
+    // so the collapsed zone still owns all touches — apps never see them.
+    property bool expanded: false
+
+    function showTemporarily() {
+        bar.expanded = true;
+        collapseTimer.restart();
+    }
+
+    onSwitcherOpenChanged: {
+        if (bar.switcherOpen)
+            bar.expanded = true;
+        collapseTimer.restart();
     }
 
     anchors {
@@ -115,8 +137,40 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     color: "transparent"
 
+    // Collapsed gesture zone: tap or swipe up reveals the button row.
+    // Covers the whole bar but only exists while collapsed.
+    MouseArea {
+        anchors.fill: parent
+        enabled: !bar.expanded
+        preventStealing: true
+        property real pressY: 0
+        onPressed: (mouse) => { pressY = mouse.y; }
+        onReleased: bar.showTemporarily()
+    }
+
+    // Slim gesture hint, always rendered (brighter when expanded).
+    Rectangle {
+        visible: !bar.expanded
+        anchors {
+            horizontalCenter: parent.horizontalCenter
+            bottom: parent.bottom
+            bottomMargin: 10
+        }
+        width: 140
+        height: 6
+        radius: Theme.radiusPill
+        color: Qt.alpha(Theme.text, 0.45)
+    }
+
+    Timer {
+        id: collapseTimer
+        interval: 5000
+        onTriggered: bar.expanded = false
+    }
+
     Rectangle {
         anchors.fill: parent
+        visible: bar.expanded
         color: Qt.alpha(Theme.bg, 0.82)
 
         // Subtle top hairline divider

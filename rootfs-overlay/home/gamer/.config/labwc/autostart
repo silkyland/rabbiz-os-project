@@ -12,4 +12,11 @@ dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT
 quickshell -p /usr/share/a21s-shell/shell.qml &
 
 # On-screen keyboard (optional — skip silently if not installed).
+# Idempotent OSK defaults first: auto-show on text focus (im-v2 under
+# labwc needs this key) and US + Thai (Kedmanee, squeekboard 'th'
+# layout ships built-in) sources — the 🌐 key toggles between them.
+command -v gsettings >/dev/null 2>&1 && {
+  gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true
+  gsettings set org.gnome.desktop.input-sources sources "[('xkb','us'),('xkb','th')]"
+} &
 command -v squeekboard >/dev/null 2>&1 && squeekboard &

@@ -24,8 +24,31 @@ PACKAGES=(
   qt6-declarative        # Qt/QML runtime (quickshell pulls qt6-declarative)
   qt6-svg
   qt6-wayland
-  dolphin                # KDE file manager (launched by a21s-files)
-  calindori              # Plasma Mobile calendar
+  dolphin                # KDE file manager (phone UI via PLASMA_PLATFORM=phone)
+  index-fm               # Maui Index — touch-first file manager (a21s-files prefers it)
+  plasma-integration     # 'kde' Qt platformtheme: kdeglobals colors/fonts/single-click in Dolphin
+  breeze                 # Breeze widget style + BreezeDark color scheme for KDE apps
+  merkuro                # KDE calendar (replaces calindori — upstream successor, much better UI)
+  gnome-calls            # dialer UI (ModemManager) — ready for M6
+  chatty                 # SMS/MMS + Matrix (ModemManager) — ready for M6
+  gnome-contacts         # contacts (EDS — shared with calls/chatty)
+  plasma-settings        # Kirigami mobile settings panel
+  maui-pix               # Maui touch gallery
+  vvave                  # Maui touch music player
+  buho                   # Maui touch notes/todo
+  maui-station           # Maui touch terminal
+  clapper                # adaptive GTK video player
+  papers                 # libadwaita PDF/doc viewer (evince successor)
+  loupe                  # libadwaita image viewer (pinch zoom)
+  gnome-maps             # adaptive maps
+  geary                  # adaptive email
+  feedbackd              # haptic/sound/LED feedback — needed by calls/chatty alerts
+  callaudiod             # call audio routing on PipeWire — needed by calls
+  swappy                 # screenshot annotation (grim companion)
+  squeekboard            # Wayland OSK; Thai layout ('th') + emoji built in
+  gsettings-desktop-schemas # gsettings keys for OSK auto-show + GTK apps
+  dconf                  # gsettings backend
+  calindori              # Plasma Mobile calendar (kept as fallback; merkuro preferred)
   kclock                 # Plasma Mobile clock & alarms
   kalk                   # Plasma Mobile calculator & converter
   kweather               # Plasma Mobile weather
@@ -43,7 +66,6 @@ PACKAGES=(
   koko                   # KDE Plasma Mobile image gallery
   xorg-xwayland          # XWayland for gamescope/steam and X11 clients
   gamescope              # nested Steam session
-  squeekboard            # on-screen keyboard (optional but recommended)
   noto-fonts
   ttf-nerd-fonts-symbols # icon glyphs used by the shell
   upower                 # battery service consumed by A21s.Services
@@ -110,12 +132,17 @@ ssh "${TARGET}" "
   chown -R root:root /usr/share/a21s-shell
   chown root:root /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/a21s-modem-init.service
   chmod 644 /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/a21s-modem-init.service
-  chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
-  chmod 644 /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
+  chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/udev/rules.d/99-hide-system-partitions.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
+  chmod 644 /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/udev/rules.d/99-hide-system-partitions.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
   chown root:root /usr/local/bin/a21s-* /usr/local/bin/volume-keys.py
   chmod 755 /usr/local/bin/a21s-* /usr/local/bin/volume-keys.py
   chown root:root /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
   chmod 644 /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
+  # tar preserves the macOS uids baked into the archive (501/20), which
+  # leaves /, /home and /home/gamer owned by a non-existent uid and breaks
+  # runuser/su + systemd path-transition checks. Restore real owners.
+  chown root:root / /home 2>/dev/null || true
+  chown gamer:gamer /home/gamer
   chown -R gamer:gamer /home/gamer/.config
   chgrp video /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true
   chmod g+w /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true

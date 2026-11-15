@@ -1,0 +1,17 @@
+#!/bin/sh
+# a21s-browser — launch Google Chrome in the a21s phone session (labwc/Wayland)
+# NOTE: exynos-drm cannot import non-contiguous dmabufs; Chromes GBM/dmabuf
+# path is fatal on wlroots (compositor kills the client). Keep --disable-gpu.
+# --disable-component-update: stop Chrome pulling 100-300MB of on-device ML
+# components (OptimizationGuide TFLite, WasmTtsEngine) onto the nearly-full /.
+export MOZ_ENABLE_WAYLAND=1
+exec /opt/google/chrome/google-chrome \
+    --ozone-platform=wayland \
+    --disable-gpu \
+    --no-first-run \
+    --no-default-browser-check \
+    --touch-events=enabled \
+    --enable-pinch \
+    --force-device-scale-factor=1.5 \
+    --disable-component-update \
+    "$@"

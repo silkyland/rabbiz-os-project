@@ -95,9 +95,57 @@ swaymsg / labwc --version; ls /usr/share/a21s-shell
   `-W 720 -H 1600` to match the panel's native mode; if gamepadui renders
   badly, rotate the labwc output or flip gamescope to `-W 1600 -H 720`.
 - **Modem/telephony**: no modem driver yet (M6) — Dialer/SMS run against
-  `A21s.Services.Telephony` demo mode.
+  `A21s.Services.Telephony` demo mode. `gnome-calls` + `chatty` +
+  `gnome-contacts` + `callaudiod` + `feedbackd` are installed and ready
+  (all ModemManager-based, EDS contacts shared).
 - **labwc config keys** (`<touch naturalScroll>`, `skipWindowSwitcher`,
   `OnScreenDisplay` font place) target current labwc (≥0.8); unknown keys
   are warned-and-ignored, not fatal.
 - `brightnessctl`/backlight and battery may report unavailable until the
   M5 power drivers land — shell degrades gracefully by contract.
+
+## App layer (added 2026-11-15)
+
+- **File managers**: `a21s-files` prefers `index` (index-fm, Maui — true
+  touch-first UI) then falls back to **Dolphin phone UI**
+  (`PLASMA_PLATFORM=phone:handset`, `QT_QPA_PLATFORMTHEME=kde`,
+  `QT_SCALE_FACTOR=1.5`; first-run wipe done once in the wrapper).
+  `plasma-integration` + `breeze` + seeded `~gamer/.config/kdeglobals`
+  (BreezeDark, `SingleClick`, Noto fonts, `breeze-dark` icons).
+- **Raw partition noise hidden**: `99-hide-system-partitions.rules` sets
+  `UDISKS_IGNORE=1` on `mmcblk0p*`/`loop0p*` so Android eMMC partitions
+  (efs/sec_efs/cpefs/key*/metadata/prism/optics/cache/omr/spu) and the
+  pmOS system partitions stop appearing in Dolphin/Index sidebars.
+- **labwc `<margin top="44" bottom="56">`** reserves StatusBar/NavBar
+  space for maximized apps (layer-shell exclusion alone doesn't reach
+  XDG windows). Applies at window map time — restart the session (or
+  re-maximize windows) after changing it; `SIGHUP`/`labwc -r` did NOT
+  retile existing maximized windows in testing.
+- **NavBar auto-hides** (`NavBar.qml`): collapsed to a thin gesture pill;
+  tap/swipe-up in the bottom zone reveals back/home/recents, auto-collapse
+  after 5 s or after any action. Dolphin-style swipe-reveal is impossible
+  for app-internal toolbars — this is the compositor-level equivalent.
+- **Calendar**: `merkuro` (`merkuro-calendar`/`merkuro-contact`/
+  `merkuro-mail`, needs Akonadi) replaces calindori as the pinned
+  calendar; calindori stays installed as fallback.
+- **Chrome**: official Google Chrome ARM64 (`google-chrome-stable` .deb
+  → `/opt/google/chrome`, wrapper `/usr/local/bin/a21s-browser`) —
+  needs `--disable-gpu` (exynos dmabuf), `--force-device-scale-factor=1.5`;
+  no Widevine on aarch64 Linux.
+- **OSK**: squeekboard autostarts; `screen-keyboard-enabled=true` +
+  `input-sources=[us,th]` set in labwc `autostart` — Thai Kedmanee
+  layout + emoji pane built in. Dead ends on labwc: maliit,
+  plasma-keyboard, ibus (all `input-method-v1`). Better long-term Thai
+  IM: `fcitx5` + `fcitx5-libthai` (real sequence-checking IM), or
+  `stevia` (more Gboard-like, conflicts squeekboard).
+- **Disk is ~99% full** (22G root, Steam ~7.5G) — installs must be
+  batched; `pacman -Scc` between waves. Freed: stale `7.3.4-1-aarch64-ARCH`
+  modules (205M), /root boot-img backups (moved to `backups/` on host).
+  Wave-2 apps deferred (clapper/papers/loupe/gnome-maps/geary).
+- **AppDrawer/Devices picks**: Maui suite (`buho`, `maui-station`,
+  `maui-pix`, `vvave` installed; `maui-nota`/`fiery`/`maui-shelf`/
+  `maui-clip`/`communicator`/`arca`/`strike`/`maui-agenda` all in ALARM
+  extra aarch64), KDE Gear mobile (`kasts`, `arianna`, `audiotube`,
+  `tokodon`, `neochat`, `ktrip`, `keysmith`, `alligator`, `plasmatube`,
+  `plasma-camera`), GNOME adaptive stack — all verified packaged on the
+  device.
