@@ -3363,6 +3363,9 @@ static void sma1303_i2c_remove(struct i2c_client *client)
 
 	cancel_delayed_work_sync(&sma1303->check_fault_work);
 
+	if (sma1303->attr_grp)
+		sysfs_remove_group(sma1303->kobj, sma1303->attr_grp);
+
 	snd_soc_unregister_component(&client->dev);
 
 	if (sma1303)
