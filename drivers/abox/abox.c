@@ -2015,9 +2015,10 @@ int abox_register_extra_sound_card(struct device *dev,
 	mutex_lock(&lock);
 	dev_dbg(dev, "%s(%s, %u)\n", __func__, card->name, idx);
 
-	for (i = ARRAY_SIZE(cards) - 1; i >= idx; i--)
-		if (cards[i])
+	for (i = ARRAY_SIZE(cards) - 1; i >= idx; i--) {
+		if (snd_soc_card_is_instantiated(cards[i]))
 			snd_soc_unregister_card(cards[i]);
+	}
 
 	cards[idx] = card;
 
