@@ -16,3 +16,5 @@ obj-m += exynos3830-aud3004x.o
 exynos3830-aud3004x-y := exynos3830_aud3004x.o exynos3830_aud3004x_sysfs_cb.o
 
 obj-m += sma1303.o
+
+obj-m += s2mpu12-regulator.o
