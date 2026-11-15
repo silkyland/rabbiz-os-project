@@ -1,0 +1,319 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_NAME="Galaxy A21s"
+USER_RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+STATE_DIR="${USER_RUNTIME}/a21s-spotify"
+CACHE_DIR="${HOME}/.cache/a21s-spotify"
+SYS_CACHE_DIR="${CACHE_DIR}/sys"
+PID_FILE="${STATE_DIR}/librespot.pid"
+LOG_FILE="${STATE_DIR}/librespot.log"
+EVENT_FILE="${STATE_DIR}/event.env"
+SELF_BIN="/usr/local/bin/a21s-spotify-ctl"
+if [ ! -x "${SELF_BIN}" ]; then
+    SELF_BIN="$(realpath "$0")"
+fi
+
+ensure_dirs() {
+    mkdir -p "${STATE_DIR}" "${CACHE_DIR}" "${SYS_CACHE_DIR}"
+}
+
+sanitize_line() {
+    printf '%s' "${1:-}" | tr '\r\n' '  '
+}
+
+handle_onevent() {
+    ensure_dirs
+    local ev="${PLAYER_EVENT:-unknown}"
+    local tmp_file="${EVENT_FILE}.tmp.$$"
+    local existing_title="" existing_artist="" existing_album="" existing_art="" existing_status="Idle"
+
+    if [ -f "${EVENT_FILE}" ]; then
+        # Read previously recorded metadata for events that omit track tags (e.g. paused/playing)
+        while IFS='=' read -r k v; do
+            case "${k}" in
+                EVT_STATUS) existing_status="${v}" ;;
+                EVT_TITLE)  existing_title="${v}" ;;
+                EVT_ARTIST) existing_artist="${v}" ;;
+                EVT_ALBUM)  existing_album="${v}" ;;
+                EVT_ART)    existing_art="${v}" ;;
+            esac
+        done < "${EVENT_FILE}"
+    fi
+
+    local new_status="${existing_status}"
+    case "${ev}" in
+        playing|started|track_changed|changed)
+            new_status="Playing"
+            ;;
+        paused)
+            new_status="Paused"
+            ;;
+        stopped|session_disconnected)
+            new_status="Stopped"
+            ;;
+    esac
+
+    local new_title="${NAME:-${existing_title}}"
+    local new_artist="${ARTISTS:-${existing_artist}}"
+    local new_album="${ALBUM:-${existing_album}}"
+    local new_art=""
+    if [ -n "${COVERS:-}" ]; then
+        new_art="$(printf '%s' "${COVERS}" | tr '\n' ' ' | awk '{print $1}')"
+    else
+        new_art="${existing_art}"
+    fi
+
+    {
+        printf 'EVT_EVENT=%s\n' "$(sanitize_line "${ev}")"
+        printf 'EVT_STATUS=%s\n' "$(sanitize_line "${new_status}")"
+        printf 'EVT_TITLE=%s\n' "$(sanitize_line "${new_title}")"
+        printf 'EVT_ARTIST=%s\n' "$(sanitize_line "${new_artist}")"
+        printf 'EVT_ALBUM=%s\n' "$(sanitize_line "${new_album}")"
+        printf 'EVT_ART=%s\n' "$(sanitize_line "${new_art}")"
+    } > "${tmp_file}"
+    mv -f "${tmp_file}" "${EVENT_FILE}"
+}
+
+connect_pid() {
+    if [ -f "${PID_FILE}" ]; then
+        local pid
+        pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+            printf '%s\n' "${pid}"
+            return 0
+        fi
+    fi
+    local matched
+    matched="$(pgrep -u "$(id -u)" -x librespot 2>/dev/null | head -n1 || true)"
+    if [ -n "${matched}" ]; then
+        printf '%s\n' "${matched}"
+        return 0
+    fi
+    return 1
+}
+
+cmd_start_connect() {
+    ensure_dirs
+    if connect_pid >/dev/null 2>&1; then
+        printf 'Spotify Connect already running (pid=%s)\n' "$(connect_pid)"
+        return 0
+    fi
+
+    if ! command -v librespot >/dev/null 2>&1; then
+        printf 'librespot binary not found\n' >&2
+        return 1
+    fi
+
+    nohup librespot \
+        --name "${APP_NAME}" \
+        --device-type smartphone \
+        --backend pulseaudio \
+        --bitrate 320 \
+        --enable-volume-normalisation \
+        --cache "${CACHE_DIR}" \
+        --system-cache "${SYS_CACHE_DIR}" \
+        --cache-size-limit 512M \
+        --onevent "${SELF_BIN}" \
+        >"${LOG_FILE}" 2>&1 </dev/null &
+    local pid=$!
+    printf '%s\n' "${pid}" > "${PID_FILE}"
+    sleep 0.2
+    if kill -0 "${pid}" 2>/dev/null; then
+        printf 'Started Spotify Connect receiver "%s" (pid=%s)\n' "${APP_NAME}" "${pid}"
+        return 0
+    fi
+    printf 'librespot failed to stay running; see %s\n' "${LOG_FILE}" >&2
+    return 1
+}
+
+cmd_stop_connect() {
+    local pid=""
+    if pid="$(connect_pid 2>/dev/null)"; then
+        kill "${pid}" 2>/dev/null || true
+        sleep 0.2
+        kill -9 "${pid}" 2>/dev/null || true
+    fi
+    pkill -u "$(id -u)" -x librespot 2>/dev/null || true
+    rm -f "${PID_FILE}"
+    printf 'Stopped Spotify Connect receiver\n'
+}
+
+cmd_restart_connect() {
+    cmd_stop_connect
+    cmd_start_connect
+}
+
+cmd_volume() {
+    local pct="${1:-}"
+    if [ -z "${pct}" ]; then
+        wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || true
+        return 0
+    fi
+    local clamped
+    clamped="$(awk -v v="${pct}" 'BEGIN { n = int(v + 0.5); if (n < 0) n = 0; if (n > 100) n = 100; printf "%d", n }')"
+    wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true
+    wpctl set-volume @DEFAULT_AUDIO_SINK@ "${clamped}%" 2>/dev/null || \
+        pactl set-sink-volume @DEFAULT_SINK@ "${clamped}%" 2>/dev/null || true
+}
+
+active_mpris_player() {
+    command -v playerctl >/dev/null 2>&1 || return 1
+    local players
+    players="$(playerctl -l 2>/dev/null || true)"
+    [ -n "${players}" ] || return 1
+    # Prefer spotify_player / spotifyd / spotifyd-like players first
+    local p
+    for p in ${players}; do
+        case "${p}" in
+            *spotify*)
+                printf '%s\n' "${p}"
+                return 0
+                ;;
+        esac
+    done
+    printf '%s\n' "${players%%$'\n'*}"
+    return 0
+}
+
+cmd_play_pause() {
+    local p=""
+    if p="$(active_mpris_player 2>/dev/null)"; then
+        playerctl -p "${p}" play-pause 2>/dev/null && return 0
+    fi
+    if [ -f "${HOME}/.cache/spotify-player/credentials.json" ] && command -v spotify_player >/dev/null 2>&1; then
+        spotify_player playback play-pause >/dev/null 2>&1 || true
+    fi
+}
+
+cmd_next() {
+    local p=""
+    if p="$(active_mpris_player 2>/dev/null)"; then
+        playerctl -p "${p}" next 2>/dev/null && return 0
+    fi
+    if [ -f "${HOME}/.cache/spotify-player/credentials.json" ] && command -v spotify_player >/dev/null 2>&1; then
+        spotify_player playback next >/dev/null 2>&1 || true
+    fi
+}
+
+cmd_prev() {
+    local p=""
+    if p="$(active_mpris_player 2>/dev/null)"; then
+        playerctl -p "${p}" previous 2>/dev/null && return 0
+    fi
+    if [ -f "${HOME}/.cache/spotify-player/credentials.json" ] && command -v spotify_player >/dev/null 2>&1; then
+        spotify_player playback previous >/dev/null 2>&1 || true
+    fi
+}
+
+cmd_tui() {
+    # Ensure PipeWire/PulseAudio Spotify Connect isn't required to be killed, just open spotify_player in QMLKonsole
+    nohup env \
+        QT_QPA_PLATFORM=wayland \
+        QT_QUICK_BACKEND=software \
+        QT_QUICK_CONTROLS_MOBILE=1 \
+        qmlkonsole -e spotify_player >/dev/null 2>&1 </dev/null &
+}
+
+cmd_status() {
+    local connect_running=0
+    local connect_pid_val=""
+    if connect_pid_val="$(connect_pid 2>/dev/null)"; then
+        connect_running=1
+    fi
+
+    local player_name="" player_status="Idle" title="" artist="" album="" art_url=""
+    if player_name="$(active_mpris_player 2>/dev/null)"; then
+        player_status="$(playerctl -p "${player_name}" status 2>/dev/null || printf 'Idle')"
+        title="$(playerctl -p "${player_name}" metadata title 2>/dev/null || true)"
+        artist="$(playerctl -p "${player_name}" metadata artist 2>/dev/null || true)"
+        album="$(playerctl -p "${player_name}" metadata album 2>/dev/null || true)"
+        art_url="$(playerctl -p "${player_name}" metadata mpris:artUrl 2>/dev/null || true)"
+    fi
+
+    # Fallback to librespot onevent metadata when Spotify Connect is active without MPRIS
+    if [ -z "${title}" ] && [ -f "${EVENT_FILE}" ]; then
+        local evt_status="" evt_title="" evt_artist="" evt_album="" evt_art=""
+        while IFS='=' read -r k v; do
+            case "${k}" in
+                EVT_STATUS) evt_status="${v}" ;;
+                EVT_TITLE)  evt_title="${v}" ;;
+                EVT_ARTIST) evt_artist="${v}" ;;
+                EVT_ALBUM)  evt_album="${v}" ;;
+                EVT_ART)    evt_art="${v}" ;;
+            esac
+        done < "${EVENT_FILE}"
+        if [ "${connect_running}" -eq 1 ] && [ -n "${evt_title}" ]; then
+            player_status="${evt_status:-Playing}"
+            title="${evt_title}"
+            artist="${evt_artist}"
+            album="${evt_album}"
+            art_url="${evt_art}"
+        fi
+    fi
+
+    local vol_pct=50
+    local muted=0
+    local wp_out=""
+    wp_out="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || true)"
+    if [ -n "${wp_out}" ]; then
+        vol_pct="$(printf '%s' "${wp_out}" | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+(\.[0-9]+)?$/) { printf "%d", ($i * 100) + 0.5; exit }}')"
+        if printf '%s' "${wp_out}" | grep -q 'MUTED'; then
+            muted=1
+        fi
+    fi
+
+    local sink=""
+    sink="$(pactl get-default-sink 2>/dev/null || true)"
+
+    local ip_addr=""
+    ip_addr="$(ip -4 -o addr show dev wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1 || true)"
+    if [ -z "${ip_addr}" ]; then
+        ip_addr="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1 || true)"
+    fi
+
+    local sp_auth=0
+    if [ -f "${HOME}/.cache/spotify-player/credentials.json" ] || [ -f "${SYS_CACHE_DIR}/credentials.json" ]; then
+        sp_auth=1
+    fi
+
+    printf 'CONNECT_NAME=%s\n' "$(sanitize_line "${APP_NAME}")"
+    printf 'CONNECT_RUNNING=%s\n' "${connect_running}"
+    printf 'CONNECT_PID=%s\n' "$(sanitize_line "${connect_pid_val}")"
+    printf 'PLAYER_SOURCE=%s\n' "$(sanitize_line "${player_name}")"
+    printf 'PLAYER_STATUS=%s\n' "$(sanitize_line "${player_status}")"
+    printf 'TITLE=%s\n' "$(sanitize_line "${title}")"
+    printf 'ARTIST=%s\n' "$(sanitize_line "${artist}")"
+    printf 'ALBUM=%s\n' "$(sanitize_line "${album}")"
+    printf 'ART_URL=%s\n' "$(sanitize_line "${art_url}")"
+    printf 'VOLUME=%s\n' "${vol_pct:-50}"
+    printf 'MUTED=%s\n' "${muted}"
+    printf 'SINK=%s\n' "$(sanitize_line "${sink}")"
+    printf 'IP=%s\n' "$(sanitize_line "${ip_addr}")"
+    printf 'AUTH_READY=%s\n' "${sp_auth}"
+}
+
+# librespot invokes --onevent PROGRAM with no positional arguments and PLAYER_EVENT in env
+if [ $# -eq 0 ] && [ -n "${PLAYER_EVENT:-}" ]; then
+    handle_onevent
+    exit 0
+fi
+
+cmd="${1:-status}"
+shift || true
+
+case "${cmd}" in
+    start-connect)   cmd_start_connect ;;
+    stop-connect)    cmd_stop_connect ;;
+    restart-connect) cmd_restart_connect ;;
+    play-pause)      cmd_play_pause ;;
+    next)            cmd_next ;;
+    prev|previous)   cmd_prev ;;
+    volume)          cmd_volume "${1:-}" ;;
+    tui|auth)        cmd_tui ;;
+    status)          cmd_status ;;
+    *)
+        printf 'Usage: %s {start-connect|stop-connect|restart-connect|status|play-pause|next|prev|volume <0-100>|tui}\n' "$0" >&2
+        exit 2
+        ;;
+esac

@@ -33,6 +33,10 @@ PACKAGES=(
   marknote               # KDE Kirigami markdown notes
   qmlkonsole             # Plasma Mobile touch terminal
   elisa                  # KDE Kirigami music player
+  librespot              # Native ARM64 Spotify Connect receiver
+  spotifyd               # Lightweight Spotify Connect daemon (MPRIS)
+  spotify-player         # Fast native ARM64 Spotify TUI/CLI client
+  playerctl              # MPRIS playback controller
   xorg-xwayland          # XWayland for gamescope/steam and X11 clients
   gamescope              # nested Steam session
   squeekboard            # on-screen keyboard (optional but recommended)

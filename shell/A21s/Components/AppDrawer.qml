@@ -54,6 +54,7 @@ Item {
                 || ename.indexOf("settings") >= 0 || ename.indexOf("file") >= 0)
             return "system"
         if (eid.indexOf("steam") >= 0 || eid.indexOf("elisa") >= 0
+                || eid.indexOf("spotify") >= 0
                 || eid.indexOf("mpv") >= 0 || eid.indexOf("vlc") >= 0
                 || eid.indexOf("krecorder") >= 0 || ename.indexOf("music") >= 0
                 || ename.indexOf("game") >= 0 || ename.indexOf("recorder") >= 0)

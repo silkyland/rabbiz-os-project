@@ -82,11 +82,18 @@ QtObject {
     }
 
     function openMusicApp() {
-        var entry = DesktopEntries.byId("org.kde.elisa") || DesktopEntries.byId("elisa")
+        var entry = DesktopEntries.byId("a21s-spotify")
+            || DesktopEntries.byId("org.kde.elisa")
+            || DesktopEntries.byId("elisa")
         if (entry && typeof entry.execute === "function")
             entry.execute()
-        else if (!elisaProc.running)
-            elisaProc.running = true
+        else if (!spotifyProc.running)
+            spotifyProc.running = true
+    }
+
+    property var spotifyProc: Process {
+        command: ["sh", "-c",
+            "QT_QPA_PLATFORM=wayland QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_MOBILE=1 a21s-spotify >/dev/null 2>&1 &"]
     }
 
     property var elisaProc: Process {
