@@ -447,6 +447,16 @@ ApplicationWindow {
                         x: -30; y: 70
                     }
 
+                    Image {
+                        anchors.fill: parent
+                        source: ShellPrefs.activeWallpaper.image || ""
+                        fillMode: Image.PreserveAspectCrop
+                        smooth: true
+                        asynchronous: true
+                        opacity: 0.92
+                        visible: status === Image.Ready
+                    }
+
                     Row {
                         anchors.centerIn: parent
                         anchors.verticalCenterOffset: -22
@@ -515,37 +525,49 @@ ApplicationWindow {
                     Repeater {
                         model: ShellPrefs.wallpapers
                         delegate: ColumnLayout {
+                            id: wpItem
                             required property var modelData
                             Layout.fillWidth: true
                             spacing: 6
+
+                            readonly property bool selectedWp: ShellPrefs.activeWallpaper.id === modelData.id
 
                             Rectangle {
                                 Layout.alignment: Qt.AlignHCenter
                                 width: 72
                                 height: 72
                                 radius: Theme.radiusM
-                                border.width: ShellPrefs.wallpaperId === modelData.id ? 3 : 1
-                                border.color: ShellPrefs.wallpaperId === modelData.id
+                                clip: true
+                                border.width: wpItem.selectedWp ? 3 : 1
+                                border.color: wpItem.selectedWp
                                     ? ShellPrefs.accentColor
                                     : Qt.alpha(Theme.text, 0.15)
                                 gradient: Gradient {
-                                    GradientStop { position: 0.0; color: modelData.orb1 }
-                                    GradientStop { position: 0.5; color: modelData.mid }
-                                    GradientStop { position: 1.0; color: modelData.bottom }
+                                    GradientStop { position: 0.0; color: wpItem.modelData.orb1 }
+                                    GradientStop { position: 0.5; color: wpItem.modelData.mid }
+                                    GradientStop { position: 1.0; color: wpItem.modelData.bottom }
+                                }
+                                Image {
+                                    anchors.fill: parent
+                                    anchors.margins: wpItem.selectedWp ? 3 : 1
+                                    source: wpItem.modelData.image || ""
+                                    fillMode: Image.PreserveAspectCrop
+                                    smooth: true
+                                    asynchronous: true
+                                    visible: status === Image.Ready
                                 }
                                 MouseArea {
                                     anchors.fill: parent
                                     onClicked: {
-                                        ShellPrefs.wallpaperId = modelData.id
+                                        ShellPrefs.wallpaperId = wpItem.modelData.id
                                         ShellPrefs.save()
                                     }
                                 }
                             }
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
-                                text: modelData.name
-                                color: ShellPrefs.wallpaperId === modelData.id
-                                       ? Theme.text : Theme.textDim
+                                text: wpItem.modelData.name
+                                color: wpItem.selectedWp ? Theme.text : Theme.textDim
                                 font.pixelSize: Theme.fontStatus
                             }
                         }

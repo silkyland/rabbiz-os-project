@@ -8,7 +8,7 @@ import Quickshell.Io
 QtObject {
     id: prefs
 
-    property string wallpaperId: "obsidian"   // obsidian | graphite | slate | oled | warm
+    property string wallpaperId: "aurora"     // aurora | nebula | sunset | emerald | oled
     property string accentId: "blue"          // mono | blue | emerald | amber | crimson
     property string clockStyle: "editorial"   // editorial | classic | compact
     property bool use24h: true
@@ -17,54 +17,59 @@ QtObject {
 
     readonly property var wallpapers: [
         {
-            id: "obsidian",
-            name: "Obsidian",
-            top: "#141417",
-            mid: "#0E0E10",
-            bottom: "#08080A",
-            orb1: "#FFFFFF",
-            orb2: "#FFFFFF",
-            orb3: "#FFFFFF"
+            id: "aurora",
+            name: "Aurora",
+            image: Qt.resolvedUrl("../../assets/wallpapers/aurora.png"),
+            top: "#060B18",
+            mid: "#0C1B2E",
+            bottom: "#050C16",
+            orb1: "#38BDF8",
+            orb2: "#34D399",
+            orb3: "#818CF8"
         },
         {
-            id: "graphite",
-            name: "Graphite",
-            top: "#1A1A1E",
-            mid: "#131316",
-            bottom: "#0B0B0D",
-            orb1: "#FFFFFF",
-            orb2: "#FFFFFF",
-            orb3: "#FFFFFF"
+            id: "nebula",
+            name: "Nebula",
+            image: Qt.resolvedUrl("../../assets/wallpapers/nebula.png"),
+            top: "#0B0616",
+            mid: "#170D2B",
+            bottom: "#07040E",
+            orb1: "#C084FC",
+            orb2: "#F472B6",
+            orb3: "#38BDF8"
         },
         {
-            id: "slate",
-            name: "Slate",
-            top: "#14181F",
-            mid: "#0E1116",
-            bottom: "#090B0E",
-            orb1: "#94A3B8",
-            orb2: "#94A3B8",
-            orb3: "#94A3B8"
+            id: "sunset",
+            name: "Dune",
+            image: Qt.resolvedUrl("../../assets/wallpapers/sunset.png"),
+            top: "#180B16",
+            mid: "#2B1420",
+            bottom: "#0B070B",
+            orb1: "#F59E0B",
+            orb2: "#FB7185",
+            orb3: "#FBBF24"
+        },
+        {
+            id: "emerald",
+            name: "Alpine",
+            image: Qt.resolvedUrl("../../assets/wallpapers/emerald.png"),
+            top: "#061312",
+            mid: "#0C2421",
+            bottom: "#040B0A",
+            orb1: "#10B981",
+            orb2: "#2DD4BF",
+            orb3: "#6EE7B7"
         },
         {
             id: "oled",
-            name: "Pure Black",
-            top: "#000000",
-            mid: "#000000",
+            name: "OLED",
+            image: Qt.resolvedUrl("../../assets/wallpapers/oled.png"),
+            top: "#080A10",
+            mid: "#030407",
             bottom: "#000000",
-            orb1: "#27272A",
-            orb2: "#27272A",
-            orb3: "#27272A"
-        },
-        {
-            id: "warm",
-            name: "Espresso",
-            top: "#171412",
-            mid: "#110F0D",
-            bottom: "#0A0908",
-            orb1: "#D6D3D1",
-            orb2: "#D6D3D1",
-            orb3: "#D6D3D1"
+            orb1: "#60A5FA",
+            orb2: "#94A3B8",
+            orb3: "#334155"
         }
     ]
 

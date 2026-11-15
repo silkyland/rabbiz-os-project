@@ -58,7 +58,7 @@ PanelWindow {
         ? Network.activeSsid
         : (Network.wifiEnabled ? "Wi-Fi On" : "Offline")
 
-    // ---- Matte architectural gradient wallpaper (no neon orbs / no shaders) ----
+    // ---- Wallpaper layer (fallback gradient + ambient glow + crisp 720x1600 artwork + vignettes) ----
     Rectangle {
         anchors.fill: parent
         gradient: Gradient {
@@ -68,30 +68,82 @@ PanelWindow {
         }
     }
 
-    // Whisper-soft top light falloff for subtle depth
+    Image {
+        id: wallpaperImg
+        anchors.fill: parent
+        source: home.wp.image || ""
+        fillMode: Image.PreserveAspectCrop
+        smooth: true
+        asynchronous: true
+        visible: status === Image.Ready
+    }
+
+    // Subtle feathered ambient circles using orb1/orb2 for fallback & extra depth
+    Item {
+        anchors.fill: parent
+        opacity: wallpaperImg.status === Image.Ready ? 0.09 : 0.12
+        clip: true
+
+        Rectangle {
+            width: home.width * 1.15
+            height: width
+            radius: width / 2
+            x: home.width * 0.25
+            y: -home.height * 0.08
+            color: Qt.alpha(home.wp.orb1, 0.45)
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width * 0.68
+                height: width
+                radius: width / 2
+                color: Qt.alpha(home.wp.orb1, 0.55)
+            }
+        }
+
+        Rectangle {
+            width: home.width * 1.05
+            height: width
+            radius: width / 2
+            x: -home.width * 0.35
+            y: home.height * 0.32
+            color: Qt.alpha(home.wp.orb2, 0.40)
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width * 0.65
+                height: width
+                radius: width / 2
+                color: Qt.alpha(home.wp.orb2, 0.50)
+            }
+        }
+    }
+
+    // Top legibility gradient for status bar & clock
     Rectangle {
         anchors {
             left: parent.left
             right: parent.right
             top: parent.top
         }
-        height: home.height * 0.35
+        height: home.height * 0.22
         gradient: Gradient {
-            GradientStop { position: 0.0; color: Qt.alpha(home.wp.orb1, 0.03) }
+            GradientStop { position: 0.0; color: Qt.alpha("#000000", 0.28) }
             GradientStop { position: 1.0; color: "transparent" }
         }
     }
 
+    // Bottom vignette for app grid labels, Steam card & dock legibility
     Rectangle {
         anchors {
             left: parent.left
             right: parent.right
             bottom: parent.bottom
         }
-        height: home.height * 0.30
+        height: home.height * 0.28
         gradient: Gradient {
             GradientStop { position: 0.0; color: "transparent" }
-            GradientStop { position: 1.0; color: Qt.alpha("#000000", 0.48) }
+            GradientStop { position: 1.0; color: Qt.alpha("#000000", 0.52) }
         }
     }
 
