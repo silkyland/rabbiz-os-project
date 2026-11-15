@@ -2,6 +2,7 @@
 build/
 src/
 vendor/
+backups/
 
 # deep-plan working memory
 docs/.deep-plan/

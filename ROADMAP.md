@@ -33,7 +33,9 @@
 
 ### M4 (R1): Xiaomi Pad 7 Pro (`muyu` / `SM8635`) — todo
 - **Objective:** Unlock HyperOS bootloader on `muyu` (`ac9c8ddc`) and port Native SteamOS ARM64 (`Zaviya`).
+- **Detail:** See [docs/muyu-stock-backup-and-plan.md](docs/muyu-stock-backup-and-plan.md).
 - **Tasks:**
+  - [x] Stock Fastboot ROM (`OS3.0.303.0.WOYMIXM`) + ADB `device-info` backed up locally (`backups/xiaomi-pad-7-pro/`, gitignored).
   - [ ] `M4-R1-T1`: Submit HyperOS bootloader unlock via Xiaomi Community and unlock `muyu` via `fastboot`.
   - [ ] `M4-R1-T2`: Port/adapt `hashtagbasit/Zaviya` kernel/DTB/Turnip stack for `SM8635`.
 
