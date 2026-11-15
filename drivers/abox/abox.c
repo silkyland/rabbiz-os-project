@@ -2737,21 +2737,13 @@ static int abox_enable(struct device *dev)
 				of_node_put(smmu_np);
 			}
 		}
-		if (!IS_ERR_OR_NULL(clk_sysmmu)) {
-			void __iomem *smmu = ioremap(0x14850000, 0x9000);
+		if (!IS_ERR_OR_NULL(clk_sysmmu))
 			clk_prepare_enable(clk_sysmmu);
-			if (smmu) {
-				dev_info(dev, "DIAG SMMU: ctrl=%#x vm0=%#x pt0=%#x vm1=%#x pt1=%#x sysreg=%#x/%#x/%#x\n",
-					 readl(smmu + 0x0), readl(smmu + 0x8000),
-					 readl(smmu + 0x800c), readl(smmu + 0x8100),
-					 readl(smmu + 0x810c),
-					 readl(data->sysreg_base + 0x400),
-					 readl(data->sysreg_base + 0x404),
-					 readl(data->sysreg_base + 0x40c));
-				iounmap(smmu);
-			}
-		} else
+		else
 			dev_warn(dev, "sysmmu clk not found: %ld\n", PTR_ERR(clk_sysmmu));
+
+		/* Restore AUD TZPC (vendor pd-aud need_smc = <0x14810204>). */
+		exynos_smc(SMC_CMD_PREAPRE_PD_ONOFF, 1, 0x14810204, 2);
 	}
 	abox_request_dram_on(dev, DEFAULT_SYS_POWER_ID, true);
 	data->calliope_state = CALLIOPE_ENABLING;
@@ -3169,6 +3161,9 @@ static int samsung_abox_probe(struct platform_device *pdev)
 		if (ret < 0)
 			return ret;
 	}
+
+	/* Restore AUD TZPC before IOMMU domain setup. */
+	exynos_smc(SMC_CMD_PREAPRE_PD_ONOFF, 1, 0x14810204, 2);
 
 	data->iommu_domain = iommu_paging_domain_alloc(dev);
 	if (IS_ERR_OR_NULL(data->iommu_domain)) {
