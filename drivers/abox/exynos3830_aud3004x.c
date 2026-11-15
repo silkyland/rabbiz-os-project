@@ -1156,6 +1156,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "UAIF0",
 		.stream_name = "UAIF0",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "UAIF0" }}, .num_cpus = 1,
 		.platforms = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy" }}, .num_platforms = 1,
 		.no_pcm = 1,
 		.ignore_suspend = 1,
@@ -1169,6 +1170,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "UAIF1",
 		.stream_name = "UAIF1",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "UAIF1" }}, .num_cpus = 1,
 		.platforms = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy" }}, .num_platforms = 1,
 		.no_pcm = 1,
 		.ignore_suspend = 1,
@@ -1181,6 +1183,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "UAIF2",
 		.stream_name = "UAIF2",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "UAIF2" }}, .num_cpus = 1,
 		.platforms = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy" }}, .num_platforms = 1,
 		.no_pcm = 1,
 		.ignore_suspend = 1,
@@ -1342,6 +1345,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA0 BE",
 		.stream_name = "RDMA0 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA0 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 0),
 		.no_pcm = 1,
@@ -1354,6 +1358,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA1 BE",
 		.stream_name = "RDMA1 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA1 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 1),
 		.no_pcm = 1,
@@ -1366,6 +1371,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA2 BE",
 		.stream_name = "RDMA2 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA2 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 2),
 		.no_pcm = 1,
@@ -1378,6 +1384,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA3 BE",
 		.stream_name = "RDMA3 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA3 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 3),
 		.no_pcm = 1,
@@ -1390,6 +1397,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA4 BE",
 		.stream_name = "RDMA4 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA4 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 4),
 		.no_pcm = 1,
@@ -1402,6 +1410,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA5 BE",
 		.stream_name = "RDMA5 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA5 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 5),
 		.no_pcm = 1,
@@ -1414,6 +1423,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA6 BE",
 		.stream_name = "RDMA6 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA6 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 6),
 		.no_pcm = 1,
@@ -1426,6 +1436,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA7 BE",
 		.stream_name = "RDMA7 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA7 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 7),
 		.no_pcm = 1,
@@ -1438,6 +1449,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA8 BE",
 		.stream_name = "RDMA8 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA8 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 8),
 		.no_pcm = 1,
@@ -1450,6 +1462,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA9 BE",
 		.stream_name = "RDMA9 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA9 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 9),
 		.no_pcm = 1,
@@ -1462,6 +1475,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA10 BE",
 		.stream_name = "RDMA10 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA10 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 10),
 		.no_pcm = 1,
@@ -1474,6 +1488,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "RDMA11 BE",
 		.stream_name = "RDMA11 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "RDMA11 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(0, 11),
 		.no_pcm = 1,
@@ -1486,6 +1501,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "WDMA0 BE",
 		.stream_name = "WDMA0 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "WDMA0 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(1, 0),
 		.no_pcm = 1,
@@ -1498,6 +1514,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "WDMA1 BE",
 		.stream_name = "WDMA1 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "WDMA1 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(1, 1),
 		.no_pcm = 1,
@@ -1510,6 +1527,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "WDMA2 BE",
 		.stream_name = "WDMA2 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "WDMA2 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(1, 2),
 		.no_pcm = 1,
@@ -1522,6 +1540,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "WDMA3 BE",
 		.stream_name = "WDMA3 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "WDMA3 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(1, 3),
 		.no_pcm = 1,
@@ -1534,6 +1553,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 	{
 		.name = "WDMA4 BE",
 		.stream_name = "WDMA4 BE",
+		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "WDMA4 BE" }}, .num_cpus = 1,
 		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy", .dai_name = "snd-soc-dummy-dai" }}, .num_codecs = 1,
 		.id = ABOX_BE_DAI_ID(1, 4),
 		.no_pcm = 1,
