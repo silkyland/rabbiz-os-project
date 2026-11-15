@@ -297,3 +297,41 @@ Sensor list จาก vendor `a21s_eur_open_w00_r00.dts` `fragment@camera` + `ca
 - Kernel port `exynos/camera/` ทั้งก้อน: **XL** (816 files, Kconfig ยุ่ง, พึ่งพา vendor framework เยอะ) — หรือ minimal path: CSIS+sensor อย่างเดียวข้าม ISP (ถ้าถ่าย raw bayer ได้) = **L**
 - Userspace: ต้องเขียนเองหรือ reverse is-sock protocol — **L–XL**
 - **แนะนำ:** กล้องไว้หลังสุด (หลัง M6 modem + เสียงเสร็จ) — ถ้าจะทำจริง ควรเริ่มจาก minimal path: port `is-device-csi_v4` + sensor i2c drivers + ดูว่า CSIS→memory raw capture ทำได้ไหมก่อนค่อยตัดสินใจ ISP
+
+## 11. Motion sensors / gyroscope — Samsung SSP (CHUB) sensor hub
+
+### 11.1 Sensor chips บน A21s (จาก sensor dump ของเครื่องจริง + vendor driver list)
+
+- **LSM6DSL** (STMicro) — accelerometer + gyroscope ในตัวเดียว (6-axis IMU) — ตัวหลักที่ตอบ "gyroscope"
+- **AK09916C / AK09918C หรือ MMC5603** — magnetometer (compass)
+- **GP2AP110S** (Sharp) — proximity
+- light/ALS + grip **ISG5320A** (IMAGIS, สำหรับ grip/edge gesture)
+- Virtual sensors (rotation vector, gravity, significant motion, step counter ฯลฯ) — คำนวณบน AP หรือใน CHUB fw
+
+### 11.2 Architecture — ทุกอย่างผ่าน Samsung SSP/CHUB MCU
+
+- Sensor จริง **ไม่ได้ต่อ AP โดยตรง** — ต่อกับ **CHUB** (sensor hub MCU) ซึ่งคุยกับ AP ผ่าน mailbox/shared memory:
+  - `chub_rmem` reserved mem: `0xfd000000`/`0x50000`
+  - wakeup source `MAILBOX_CHUB2AP`, `CHUB_WDT`
+  - Firmware: `sensorhub/shub_nacho_a21s.bin` ("nacho" = platform codename ของ hub)
+- มี `contexthub` (`samsung,exynos-nanohub`, fw `os.checked.bin`) อีกตัวสำหรับ context/scontext — คนละตัวกับ SSP
+- Vendor kernel: `drivers/soc/samsung/exynos-ssp.c` (misc dev `/dev/ssp` ioctl shim "CMSSP") + `drivers/sensorhub/` (~40 files: `ssp_dev/comm/platform/sysfs/iio/firmware` + per-chip drivers ใน `accelerometer/gyroscope/magnetic/proximity/`)
+- DT props `ssp-acc-position`, `ssp-mag-position`, `ssp-prox-thresh*` ฯลฯ ใน a21s dts → `ssp_dev.c` อ่านผ่าน `of_property_read_*` (platform device compatible `"ssp"` — node อยู่ใน base dts ที่ไม่ได้อยู่ใน sparse checkout)
+
+### 11.3 Mainline status — transport มีแล้ว, sensor drivers ไม่มี
+
+- **Upstream มี SSP transport + IIO clients แล้ว** (ตั้งแต่ ~2015, Exynos เก่า):
+  - `drivers/iio/common/ssp_sensors/` — `ssp_dev.c`, `ssp_iio.c`, `ssp_iio_sensor.h`, `ssp_spi.c`
+  - `drivers/iio/gyro/ssp_gyro_sensor.c`, `drivers/iio/accel/ssp_accel_sensor.c` — ครบใน tree 7.3 ของเราแล้ว
+- **แต่** upstream SSP ผูกกับ **SPI transport** (`depends on SPI`) สำหรับ SoC เก่า — Exynos850 CHUB น่าจะใช้ mailbox/ACPM path (vendor `sensorhub_comms_write` ต้องตามไปดู transport จริง — open item)
+- ไม่มี SSP node ใน `exynos850.dtsi`/`exynos850-a217f.dts` เลย — ต้องหา DT node จริง + transport regs
+- Vendor per-chip drivers (`accel_lsm6dsl.c`, `gyro_lsm6dsl.c`, `magnetic_ak09916c.c`, `prox_gp2ap110s.c` ฯลฯ) เป็น vendor-only — mainline ไม่มี; แต่เป็น register-sequence drivers มาตรฐาน แปลงเป็น IIO drivers ตรงๆ ได้
+- ไม่มีใครทำ SSP/CHUB บน Exynos850 mainline — pmOS ก็ไม่มี
+
+### 11.4 Effort estimate
+
+- หา transport path (ACPI? ACPM channel? mailbox regs) + DT node: **M** — ต้อง reverse จาก vendor `ssp_comm.c`/`ssp_platform.c` + syscon regs
+- Port sensor drivers 4-5 ตัวเป็น IIO: **M** (register tables มีครบใน vendor source)
+- Firmware `shub_nacho_a21s.bin`: ต้อง extract จาก vendor image (อยู่ใน vendor/modem partition?) — ถ้า CHUB บูตแล้วค้าง fw ไว้ อาจไม่ต้องดาวน์โหลดใหม่ทุก boot
+- ทางเลือก minimal: ถ้า gyro/accel ไม่ critical สำหรับ SteamOS (ใช้แค่ auto-rotate + game orientation) → **defer**; ถ้าจะทำ → accel+gyro (LSM6DSL) ก่อน, mag/prox ตามหลัง
+- Open questions: (1) transport จริง AP↔CHUB คืออะไร (ACPM channel?), (2) sensor อยู่บน bus ของ CHUB หรือ share กับ AP, (3) fw blob extract จาก partition ไหน, (4) node "ssp" จริงใน base DTB อยู่ไหน
