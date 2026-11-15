@@ -129,13 +129,16 @@
     </keybind>
     <!-- XF86 keys the shell may also handle via its own binds. -->
     <keybind key="XF86AudioRaiseVolume">
-      <action name="Execute" command="wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+"/>
+      <action name="Execute" command="a21s-volume up"/>
     </keybind>
     <keybind key="XF86AudioLowerVolume">
-      <action name="Execute" command="wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-"/>
+      <action name="Execute" command="a21s-volume down"/>
     </keybind>
     <keybind key="XF86AudioMute">
-      <action name="Execute" command="wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle"/>
+      <action name="Execute" command="a21s-volume mute"/>
+    </keybind>
+    <keybind key="Print">
+      <action name="Execute" command="a21s-screenshot"/>
     </keybind>
     <keybind key="XF86MonBrightnessUp">
       <action name="Execute" command="brightnessctl set +10%"/>

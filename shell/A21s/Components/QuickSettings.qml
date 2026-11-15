@@ -251,17 +251,16 @@ Item {
         // --- Volume ----------------------------------------------------
         QSSlider {
             Layout.fillWidth: true
-            materialIcon: root.sinkAudio && root.sinkAudio.muted ? "volume_off" : "volume_up"
-            interactive: root.sinkAudio !== null
+            materialIcon: (SystemControl.volumeMuted || SystemControl.volumeLevel === 0)
+                ? "volume_off" : "volume_up"
+            interactive: true
             disabledHint: "audio unavailable"
-            value: root.sinkAudio ? Math.min(1, root.sinkAudio.volume) : 0
+            value: SystemControl.volumeMuted ? 0 : (SystemControl.volumeLevel / 100)
             onMoved: function(v) {
-                if (root.sinkAudio)
-                    root.sinkAudio.volume = v
+                SystemControl.setVolume(Math.round(v * 100))
             }
             onIconTapped: {
-                if (root.sinkAudio)
-                    root.sinkAudio.muted = !root.sinkAudio.muted
+                SystemControl.toggleMute()
             }
         }
     }

@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GAMER_USER="gamer"
+GAMER_UID="$(id -u "${GAMER_USER}" 2>/dev/null || echo 1001)"
+if [ "$(id -u)" -eq 0 ]; then
+    RUNTIME_DIR="/run/user/${GAMER_UID}"
+    DBUS_ADDR="unix:path=${RUNTIME_DIR}/bus"
+else
+    RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${GAMER_UID}}"
+    DBUS_ADDR="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${RUNTIME_DIR}/bus}"
+fi
+STATE_FILE="${RUNTIME_DIR}/a21s-volume.state"
+LOCK_FILE="${RUNTIME_DIR}/a21s-volume.lock"
+STAMP_FILE="${RUNTIME_DIR}/a21s-volume.stamp"
+SINK_TARGET="@DEFAULT_AUDIO_SINK@"
+
+mkdir -p "${RUNTIME_DIR}" 2>/dev/null || true
+
+run_as_gamer() {
+    if [ "$(id -u)" -eq 0 ]; then
+        runuser -u "${GAMER_USER}" -- env \
+            XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+            DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDR}" \
+            HOME="/home/${GAMER_USER}" \
+            "$@"
+    else
+        env \
+            XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+            DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDR}" \
+            "$@"
+    fi
+}
+
+wpctl_cmd() {
+    run_as_gamer wpctl "$@" 2>/dev/null
+}
+
+read_sink_volume() {
+    local out pct=75 muted=0
+    out="$(wpctl_cmd get-volume "${SINK_TARGET}" || true)"
+    if [ -n "${out}" ]; then
+        pct="$(printf '%s' "${out}" | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+(\.[0-9]+)?$/) { printf "%d", ($i * 100) + 0.5; exit }}')"
+        if printf '%s' "${out}" | grep -q 'MUTED'; then
+            muted=1
+        fi
+    fi
+    if [ -z "${pct}" ]; then
+        pct=75
+    fi
+    if [ "${pct}" -lt 0 ]; then pct=0; fi
+    if [ "${pct}" -gt 100 ]; then pct=100; fi
+    printf '%s %s\n' "${pct}" "${muted}"
+}
+
+write_state() {
+    local pct="$1"
+    local muted="$2"
+    local nonce tmp
+    nonce="$(date +%s%N 2>/dev/null || date +%s)-$$"
+    tmp="${STATE_FILE}.tmp.$$"
+    {
+        printf 'VOLUME=%s\n' "${pct}"
+        printf 'MUTED=%s\n' "${muted}"
+        printf 'NONCE=%s\n' "${nonce}"
+    } > "${tmp}"
+    mv -f "${tmp}" "${STATE_FILE}"
+    if [ "$(id -u)" -eq 0 ]; then
+        chown "${GAMER_USER}:${GAMER_USER}" "${STATE_FILE}" 2>/dev/null || true
+    fi
+    chmod 664 "${STATE_FILE}" 2>/dev/null || true
+}
+
+ensure_amp() {
+    if amixer -c 1 cget name='SPK SPK On' 2>/dev/null | grep -q "values=off"; then
+        amixer -c 1 cset name='SPK SPK On' on >/dev/null 2>&1 || true
+    fi
+    if amixer -c 1 cget name='ABOX SPUS ASRC3' 2>/dev/null | grep -q "values=on"; then
+        amixer -c 1 cset name='ABOX SPUS ASRC3' 0 >/dev/null 2>&1 || true
+    fi
+    if [ -r /sys/kernel/debug/regmap/0-001e/registers ] && [ -w /sys/bus/i2c/devices/0-001e/playback_init ]; then
+        local r00 r0e
+        r00="$(awk -F': ' '/^00:/{print $2}' /sys/kernel/debug/regmap/0-001e/registers 2>/dev/null || true)"
+        r0e="$(awk -F': ' '/^0e:/{print $2}' /sys/kernel/debug/regmap/0-001e/registers 2>/dev/null || true)"
+        # Ensure SMA1303 POWER_ON (bit0=1 in reg 00) and SPK_UNMUTE (bit0=0 in reg 0e)
+        if [ -z "${r00}" ] || [ $((0x${r00} & 1)) -eq 0 ] || [ $((0x${r0e} & 1)) -eq 1 ]; then
+            echo 1536000 > /sys/bus/i2c/devices/0-001e/playback_init 2>/dev/null || true
+        fi
+    fi
+}
+
+# Serialize and debounce rapid dual triggers (e.g. volume-keys.py + labwc)
+debounce_step() {
+    local dir="$1"
+    local now_ms prev_line prev_dir prev_ms
+    now_ms="$(date +%s%3N 2>/dev/null || echo $(($(date +%s)*1000)))"
+    if [ -f "${STAMP_FILE}" ]; then
+        prev_line="$(cat "${STAMP_FILE}" 2>/dev/null || true)"
+        prev_dir="${prev_line%%:*}"
+        prev_ms="${prev_line#*:}"
+        if [ "${prev_dir}" = "${dir}" ] && [ -n "${prev_ms}" ] && [ "${prev_ms}" -eq "${prev_ms}" ] 2>/dev/null; then
+            if [ $((now_ms - prev_ms)) -lt 100 ]; then
+                return 1
+            fi
+        fi
+    fi
+    printf '%s:%s\n' "${dir}" "${now_ms}" > "${STAMP_FILE}" 2>/dev/null || true
+    if [ "$(id -u)" -eq 0 ]; then
+        chown "${GAMER_USER}:${GAMER_USER}" "${STAMP_FILE}" 2>/dev/null || true
+        chmod 664 "${STAMP_FILE}" 2>/dev/null || true
+    fi
+    return 0
+}
+
+cmd="${1:-get}"
+shift || true
+
+exec 9>"${LOCK_FILE}"
+if [ "$(id -u)" -eq 0 ]; then
+    chown "${GAMER_USER}:${GAMER_USER}" "${LOCK_FILE}" 2>/dev/null || true
+    chmod 666 "${LOCK_FILE}" 2>/dev/null || true
+fi
+flock -w 2 9 || true
+
+case "${cmd}" in
+    up)
+        step="${1:-5}"
+        if ! debounce_step "up"; then
+            exit 0
+        fi
+        ensure_amp
+        wpctl_cmd set-mute "${SINK_TARGET}" 0 || true
+        wpctl_cmd set-volume -l 1.0 "${SINK_TARGET}" "${step}%+" || true
+        read -r pct muted < <(read_sink_volume)
+        write_state "${pct}" "${muted}"
+        printf 'VOLUME=%s MUTED=%s\n' "${pct}" "${muted}"
+        ;;
+    down)
+        step="${1:-5}"
+        if ! debounce_step "down"; then
+            exit 0
+        fi
+        wpctl_cmd set-volume "${SINK_TARGET}" "${step}%-" || true
+        read -r pct muted < <(read_sink_volume)
+        write_state "${pct}" "${muted}"
+        printf 'VOLUME=%s MUTED=%s\n' "${pct}" "${muted}"
+        ;;
+    mute)
+        if ! debounce_step "mute"; then
+            exit 0
+        fi
+        wpctl_cmd set-mute "${SINK_TARGET}" toggle || true
+        read -r pct muted < <(read_sink_volume)
+        write_state "${pct}" "${muted}"
+        printf 'VOLUME=%s MUTED=%s\n' "${pct}" "${muted}"
+        ;;
+    set)
+        val="${1:-75}"
+        clamped="$(awk -v v="${val}" 'BEGIN { n = int(v + 0.5); if (n < 0) n = 0; if (n > 100) n = 100; printf "%d", n }')"
+        ensure_amp
+        wpctl_cmd set-mute "${SINK_TARGET}" 0 || true
+        wpctl_cmd set-volume -l 1.0 "${SINK_TARGET}" "${clamped}%" || true
+        read -r pct muted < <(read_sink_volume)
+        write_state "${pct}" "${muted}"
+        printf 'VOLUME=%s MUTED=%s\n' "${pct}" "${muted}"
+        ;;
+    ensure-amp)
+        ensure_amp
+        ;;
+    get)
+        read -r pct muted < <(read_sink_volume)
+        printf 'VOLUME=%s\nMUTED=%s\n' "${pct}" "${muted}"
+        ;;
+    *)
+        printf 'Usage: %s {up [step]|down [step]|mute|set <0-100>|get|ensure-amp}\n' "$0" >&2
+        exit 2
+        ;;
+esac

@@ -179,7 +179,24 @@ PanelWindow {
                               : ""
                     }
 
-                    // Sleep, Lock & Power Menu pills in shade header
+                    // Screenshot, Sleep, Lock & Power Menu pills in shade header
+                    Rectangle {
+                        width: 40; height: 40; radius: 20
+                        color: Theme.surfaceHigh
+                        border.width: 1; border.color: Qt.alpha(Theme.text, 0.10)
+                        MaterialIcon {
+                            anchors.centerIn: parent
+                            name: "photo_camera"
+                            size: 20; color: "#A855F7"
+                        }
+                        TapHandler {
+                            onTapped: {
+                                win.snapTo(0)
+                                SystemControl.takeScreenshot(350)
+                            }
+                        }
+                    }
+
                     Rectangle {
                         width: 40; height: 40; radius: 20
                         color: Theme.surfaceHigh

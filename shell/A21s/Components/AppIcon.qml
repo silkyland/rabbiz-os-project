@@ -50,6 +50,9 @@ Item {
             "utilities-terminal":      "terminal",
             "a21s-spotify":            "headphones",
             "spotify":                 "headphones",
+            "a21s-gallery":            "photo_library",
+            "org.kde.koko":            "photo_library",
+            "koko":                    "photo_library",
             "org.kde.elisa":           "music_note",
             "elisa":                   "music_note",
             "call-start":              "call",
@@ -100,7 +103,8 @@ Item {
                     || (idLow === "a21s-calculator" && (tid.indexOf("kalk") >= 0 || ttitle.indexOf("kalk") >= 0))
                     || (idLow === "a21s-clock" && (tid.indexOf("kclock") >= 0 || ttitle.indexOf("clock") >= 0))
                     || (idLow === "a21s-notes" && (tid.indexOf("marknote") >= 0 || ttitle.indexOf("marknote") >= 0))
-                    || (idLow === "a21s-spotify" && (tid.indexOf("spotify") >= 0 || ttitle.indexOf("spotify") >= 0))) {
+                    || (idLow === "a21s-spotify" && (tid.indexOf("spotify") >= 0 || ttitle.indexOf("spotify") >= 0))
+                    || (idLow === "a21s-gallery" && (tid.indexOf("gallery") >= 0 || tid.indexOf("koko") >= 0 || ttitle.indexOf("gallery") >= 0 || ttitle.indexOf("คลังภาพ") >= 0))) {
                 return t;
             }
         }

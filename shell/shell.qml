@@ -9,4 +9,5 @@ ShellRoot {
     Shade {}
     NavBar {}
     PowerMenu {}
+    HudOverlay {}
 }

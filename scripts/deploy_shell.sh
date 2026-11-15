@@ -37,6 +37,10 @@ PACKAGES=(
   spotifyd               # Lightweight Spotify Connect daemon (MPRIS)
   spotify-player         # Fast native ARM64 Spotify TUI/CLI client
   playerctl              # MPRIS playback controller
+  mpv                    # Media player for local/HTTP audio streams
+  angelfish              # Plasma Mobile QtWebEngine browser (Spotify Web)
+  grim                   # Wayland screenshot capture utility
+  koko                   # KDE Plasma Mobile image gallery
   xorg-xwayland          # XWayland for gamescope/steam and X11 clients
   gamescope              # nested Steam session
   squeekboard            # on-screen keyboard (optional but recommended)
@@ -108,8 +112,8 @@ ssh "${TARGET}" "
   chmod 644 /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/a21s-modem-init.service
   chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
   chmod 644 /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
-  chown root:root /usr/local/bin/a21s-*
-  chmod 755 /usr/local/bin/a21s-*
+  chown root:root /usr/local/bin/a21s-* /usr/local/bin/volume-keys.py
+  chmod 755 /usr/local/bin/a21s-* /usr/local/bin/volume-keys.py
   chown root:root /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
   chmod 644 /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
   chown -R gamer:gamer /home/gamer/.config

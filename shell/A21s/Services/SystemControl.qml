@@ -42,6 +42,14 @@ QtObject {
     property string cpRegionsSummary: ""
     property string modemNodesSummary: ""
 
+    // --- Volume OSD & Screenshot Toast ---
+    property int volumeLevel: 75
+    property bool volumeMuted: false
+    property bool volumeOsdVisible: false
+    property bool screenshotToastVisible: false
+    property string lastScreenshotPath: ""
+    property string lastScreenshotName: ""
+
     // --- Internals ---
     property real _prevTotal: 0
     property real _prevIdle: 0
@@ -52,10 +60,23 @@ QtObject {
     property string _preSleepGovernor: "performance"
     property string _lastPowerCmd: ""
     property bool _powerCmdPrimed: false
+    property string _lastVolNonce: ""
+    property bool _volStatePrimed: false
+    property string _lastShotNonce: ""
+    property bool _shotStatePrimed: false
+    property int _pendingVolume: -1
 
     readonly property string _powerCmdPath: {
         var rt = Quickshell.env("XDG_RUNTIME_DIR") || "/run/user/1001"
         return rt + "/a21s-power.cmd"
+    }
+    readonly property string _volStatePath: {
+        var rt = Quickshell.env("XDG_RUNTIME_DIR") || "/run/user/1001"
+        return rt + "/a21s-volume.state"
+    }
+    readonly property string _shotStatePath: {
+        var rt = Quickshell.env("XDG_RUNTIME_DIR") || "/run/user/1001"
+        return rt + "/a21s-screenshot.state"
     }
 
     function refreshTelemetry() {
@@ -506,6 +527,178 @@ QtObject {
 
     property var powerProc: Process {}
 
+    function setVolume(pct) {
+        var clamped = Math.max(0, Math.min(100, Math.round(pct)))
+        root.volumeLevel = clamped
+        root.volumeMuted = false
+        root._pendingVolume = clamped
+        if (!ShellState.shadeOpen) {
+            root.volumeOsdVisible = true
+            volOsdTimer.restart()
+        }
+        volSetTimer.restart()
+    }
+
+    function adjustVolume(delta) {
+        setVolume(root.volumeLevel + delta)
+    }
+
+    function toggleMute() {
+        root.volumeMuted = !root.volumeMuted
+        if (!ShellState.shadeOpen) {
+            root.volumeOsdVisible = true
+            volOsdTimer.restart()
+        }
+        if (!volProc.running) {
+            volProc.command = ["a21s-volume", "mute"]
+            volProc.running = true
+        }
+    }
+
+    function takeScreenshot(delayMs) {
+        var d = (delayMs && delayMs > 0) ? Math.round(delayMs) : 0
+        if (!shotProc.running) {
+            shotProc.command = d > 0
+                ? ["a21s-screenshot", "--delay", String(d)]
+                : ["a21s-screenshot"]
+            shotProc.running = true
+        }
+    }
+
+    function openGallery(imagePath) {
+        root.screenshotToastVisible = false
+        var p = imagePath || ""
+        _runCmd(["sh", "-c", "a21s-gallery \"$1\" >/dev/null 2>&1 &", "_", p])
+    }
+
+    function _handleVolState(raw) {
+        var lines = (raw || "").split("\n")
+        var pct = -1
+        var muted = root.volumeMuted
+        var nonce = ""
+        for (var i = 0; i < lines.length; ++i) {
+            var line = lines[i].trim()
+            if (line.indexOf("VOLUME=") === 0) {
+                var parsed = parseInt(line.slice(7), 10)
+                if (!isNaN(parsed))
+                    pct = Math.max(0, Math.min(100, parsed))
+            } else if (line.indexOf("MUTED=") === 0) {
+                muted = (line.slice(6).trim() === "1")
+            } else if (line.indexOf("NONCE=") === 0) {
+                nonce = line.slice(6).trim()
+            }
+        }
+        if (pct >= 0 && !volSetTimer.running)
+            root.volumeLevel = pct
+        root.volumeMuted = muted
+
+        if (!root._volStatePrimed) {
+            root._volStatePrimed = true
+            root._lastVolNonce = nonce
+            return
+        }
+        if (nonce.length > 0 && nonce !== root._lastVolNonce) {
+            root._lastVolNonce = nonce
+            if (!ShellState.shadeOpen) {
+                root.volumeOsdVisible = true
+                volOsdTimer.restart()
+            }
+        }
+    }
+
+    function _handleShotState(raw) {
+        var trimmed = (raw || "").trim()
+        if (trimmed.length === 0)
+            return
+        var parts = trimmed.split("|")
+        if (parts.length < 3)
+            return
+        var path = parts[0]
+        var name = parts[1]
+        var nonce = parts[2]
+        root.lastScreenshotPath = path
+        root.lastScreenshotName = name
+        if (!root._shotStatePrimed) {
+            root._shotStatePrimed = true
+            root._lastShotNonce = nonce
+            return
+        }
+        if (nonce.length > 0 && nonce !== root._lastShotNonce) {
+            root._lastShotNonce = nonce
+            root.screenshotToastVisible = true
+            shotToastTimer.restart()
+        }
+    }
+
+    property var volProc: Process {
+        onExited: {
+            if (root._pendingVolume >= 0)
+                volSetTimer.restart()
+        }
+    }
+    property var shotProc: Process {}
+
+    property var volSetTimer: Timer {
+        interval: 80
+        onTriggered: {
+            if (root._pendingVolume >= 0 && !volProc.running) {
+                var v = root._pendingVolume
+                root._pendingVolume = -1
+                volProc.command = ["a21s-volume", "set", String(v)]
+                volProc.running = true
+            }
+        }
+    }
+
+    property var volOsdTimer: Timer {
+        interval: 2500
+        onTriggered: root.volumeOsdVisible = false
+    }
+
+    property var shotToastTimer: Timer {
+        interval: 4000
+        onTriggered: root.screenshotToastVisible = false
+    }
+
+    property var volStateInitProc: Process {
+        command: ["sh", "-c",
+            "F=\"$1\"; mkdir -p \"$(dirname \"$F\")\" 2>/dev/null || true; "
+          + "if [ ! -f \"$F\" ]; then "
+          + "  V=\"$(a21s-volume get 2>/dev/null || true)\"; "
+          + "  PCT=\"$(printf '%s\\n' \"$V\" | awk -F= '/^VOLUME=/{print $2}')\"; "
+          + "  MUT=\"$(printf '%s\\n' \"$V\" | awk -F= '/^MUTED=/{print $2}')\"; "
+          + "  printf 'VOLUME=%s\\nMUTED=%s\\nNONCE=init\\n' \"${PCT:-75}\" \"${MUT:-0}\" > \"$F\"; "
+          + "fi; echo ok",
+            "_", root._volStatePath]
+        stdout: StdioCollector {
+            onStreamFinished: volStateWatcher.reload()
+        }
+    }
+
+    property var volStateWatcher: FileView {
+        path: root._volStatePath
+        watchChanges: true
+        onLoaded: root._handleVolState(text())
+        onFileChanged: reload()
+    }
+
+    property var shotStateInitProc: Process {
+        command: ["sh", "-c",
+            "F=\"$1\"; mkdir -p \"$(dirname \"$F\")\" 2>/dev/null || true; "
+          + "[ -f \"$F\" ] || printf '||init\\n' > \"$F\"; echo ok",
+            "_", root._shotStatePath]
+        stdout: StdioCollector {
+            onStreamFinished: shotStateWatcher.reload()
+        }
+    }
+
+    property var shotStateWatcher: FileView {
+        path: root._shotStatePath
+        watchChanges: true
+        onLoaded: root._handleShotState(text())
+        onFileChanged: reload()
+    }
+
     property var powerCmdInitProc: Process {
         command: ["sh", "-c",
             "F=\"$1\"; mkdir -p \"$(dirname \"$F\")\" 2>/dev/null || true; "
@@ -535,5 +728,7 @@ QtObject {
     Component.onCompleted: {
         root.refreshTelemetry()
         powerCmdInitProc.running = true
+        volStateInitProc.running = true
+        shotStateInitProc.running = true
     }
 }

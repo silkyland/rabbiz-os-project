@@ -912,12 +912,13 @@ PanelWindow {
 
                 Repeater {
                     model: [
-                        { key: "sleep",   label: "Sleep (Screen Off)", sub: "Lock + blank panel & powersave", icon: "bedtime",            tint: ShellPrefs.accentColor },
-                        { key: "lock",    label: "Lock Screen",        sub: "Swipe-up lock overlay",          icon: "lock",               tint: Theme.text },
-                        { key: "steam",   label: "SteamOS Mode",       sub: "Launch Big Picture",             icon: "sports_esports",     tint: "#38BDF8" },
-                        { key: "reload",  label: "Reload Shell UI",    sub: "Restart quickshell",             icon: "refresh",            tint: Theme.success },
-                        { key: "reboot",  label: "Reboot Device",      sub: "Restart Linux kernel",           icon: "restart_alt",        tint: Theme.warn },
-                        { key: "power",   label: "Power Off",          sub: "Shutdown Galaxy A21s",           icon: "power_settings_new", tint: Theme.danger }
+                        { key: "screenshot", label: "Take Screenshot",  sub: "Save screen to Gallery",        icon: "photo_camera",       tint: "#A855F7" },
+                        { key: "sleep",      label: "Sleep (Screen Off)", sub: "Lock + blank panel & powersave", icon: "bedtime",           tint: ShellPrefs.accentColor },
+                        { key: "lock",       label: "Lock Screen",        sub: "Swipe-up lock overlay",          icon: "lock",               tint: Theme.text },
+                        { key: "steam",      label: "SteamOS Mode",       sub: "Launch Big Picture",             icon: "sports_esports",     tint: "#38BDF8" },
+                        { key: "reload",     label: "Reload Shell UI",    sub: "Restart quickshell",             icon: "refresh",            tint: Theme.success },
+                        { key: "reboot",     label: "Reboot Device",      sub: "Restart Linux kernel",           icon: "restart_alt",        tint: Theme.warn },
+                        { key: "power",      label: "Power Off",          sub: "Shutdown Galaxy A21s",           icon: "power_settings_new", tint: Theme.danger }
                     ]
 
                     delegate: Rectangle {
@@ -978,7 +979,11 @@ PanelWindow {
                         TapHandler {
                             id: rowTap
                             onTapped: {
-                                if (modelData.key === "sleep") SystemControl.sleep()
+                                if (modelData.key === "screenshot") {
+                                    ShellState.powerMenuOpen = false
+                                    SystemControl.takeScreenshot(320)
+                                }
+                                else if (modelData.key === "sleep") SystemControl.sleep()
                                 else if (modelData.key === "lock") SystemControl.lockScreen()
                                 else if (modelData.key === "steam") SystemControl.switchToSteamOS()
                                 else if (modelData.key === "reload") SystemControl.reloadShell()

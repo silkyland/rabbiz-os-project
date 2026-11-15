@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Gallery
+GenericName=Photo & Screenshot Gallery
+Comment=View captured screenshots and wallpapers on Galaxy A21s
+Exec=a21s-gallery
+Icon=org.kde.koko
+Categories=Graphics;Photography;Viewer;Qt;
+Terminal=false
+StartupNotify=true

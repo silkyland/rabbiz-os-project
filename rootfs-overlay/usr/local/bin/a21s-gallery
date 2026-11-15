@@ -1,0 +1,10 @@
+#!/bin/sh
+export QML_IMPORT_PATH="/usr/share/a21s-shell${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}"
+export QT_QUICK_BACKEND="${QT_QUICK_BACKEND:-software}"
+
+if [ -n "${1:-}" ] && [ -e "$1" ]; then
+    export A21S_GALLERY_OPEN="$1"
+    shift
+fi
+
+exec quickshell -p /usr/share/a21s-shell/apps/gallery/Gallery.qml "$@"
