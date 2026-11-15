@@ -1,15 +1,12 @@
 import QtQuick
 import QtQuick.Layouts
-import QtQuick.Shapes
 import Quickshell.Io
 import Quickshell.Services.Pipewire
 import A21s.Theme
 import A21s.Services
 
-// Quick-settings content for the shade: brightness slider, 4x2 tile
-// grid, volume slider. Tiles without a backend yet (airplane, rotation
-// lock, flashlight, do-not-disturb, mobile data) are marked `stub` —
-// they render dimmed with "soon" and only pulse on tap.
+// Stitch-designed Quick Settings: brightness slider, 2x4 Pixel-style pill
+// tiles with MaterialIcons, and volume slider.
 Item {
     id: root
 
@@ -19,7 +16,6 @@ Item {
     readonly property var sink: Pipewire.defaultAudioSink
     readonly property var sinkAudio: root.sink ? root.sink.audio : null
 
-    // Keeps Pipewire.defaultAudioSink bindings live.
     PwObjectTracker {
         objects: root.sink ? [root.sink] : []
     }
@@ -37,63 +33,43 @@ Item {
         // --- Brightness ------------------------------------------------
         QSSlider {
             Layout.fillWidth: true
-            glyph: "🔆"
+            materialIcon: "brightness_medium"
             interactive: Brightness.available
             disabledHint: "brightness unavailable"
             value: Brightness.level / 100
             onMoved: function(v) { Brightness.setLevel(Math.round(v * 100)) }
         }
 
-        // --- Tiles -----------------------------------------------------
+        // --- 2-Column Pill Tiles --------------------------------------
         GridLayout {
             Layout.fillWidth: true
-            columns: 4
+            columns: 2
             columnSpacing: Theme.spaceS
             rowSpacing: Theme.spaceS
 
             QSTile {
                 Layout.fillWidth: true
-                glyph: "📶"
+                materialIcon: Network.wifiEnabled ? "wifi" : "wifi_off"
                 label: "Wi-Fi"
                 secondary: Network.wifiConnected ? Network.activeSsid
-                         : Network.wifiEnabled ? "on" : "off"
+                         : Network.wifiEnabled ? "On" : "Off"
                 active: Network.wifiEnabled
                 onTapped: Network.setWifiEnabled(!Network.wifiEnabled)
             }
 
             QSTile {
-                id: btTile
                 Layout.fillWidth: true
+                materialIcon: Bluetooth.powered ? "bluetooth" : "bluetooth_disabled"
                 label: "Bluetooth"
                 secondary: Bluetooth.connected ? Bluetooth.connectedName
-                         : Bluetooth.powered ? "on" : "off"
+                         : Bluetooth.powered ? "On" : "Off"
                 active: Bluetooth.powered
                 onTapped: Bluetooth.setPowered(!Bluetooth.powered)
-
-                // Bluetooth rune drawn as a Shape (no emoji glyph exists).
-                glyphDelegate: Shape {
-                    width: Theme.iconS
-                    height: Theme.iconS
-                    ShapePath {
-                        strokeWidth: 2.5
-                        strokeColor: btTile.active ? Theme.tileOnText
-                                                   : Theme.tileOffText
-                        fillColor: "transparent"
-                        capStyle: ShapePath.RoundCap
-                        joinStyle: ShapePath.RoundJoin
-                        PathSvg {
-                            path: "M 18 4 L 27 11 L 18 18 L 27 25 L 18 32 "
-                                + "M 18 4 L 18 32 "
-                                + "M 18 18 L 9 11 "
-                                + "M 18 18 L 9 25"
-                        }
-                    }
-                }
             }
 
             QSTile {
                 Layout.fillWidth: true
-                glyph: "✈️"
+                materialIcon: "flight"
                 label: "Airplane"
                 stub: true
                 onTapped: {}
@@ -101,40 +77,42 @@ Item {
 
             QSTile {
                 Layout.fillWidth: true
-                glyph: "🔃"
-                label: "Rotation"
+                materialIcon: "screen_rotation"
+                label: "Auto-rotate"
+                secondary: "Portrait"
                 stub: true
                 onTapped: {}
             }
 
             QSTile {
                 Layout.fillWidth: true
-                glyph: "🔦"
-                label: "Torch"
+                materialIcon: "flashlight_on"
+                label: "Flashlight"
                 stub: true
                 onTapped: {}
             }
 
             QSTile {
                 Layout.fillWidth: true
-                glyph: "🌙"
-                label: "DND"
+                materialIcon: "do_not_disturb_on"
+                label: "Do Not Disturb"
                 stub: true
                 onTapped: {}
             }
 
             QSTile {
                 Layout.fillWidth: true
-                glyph: "🌐"
-                label: "Data"
+                materialIcon: "signal_cellular_alt"
+                label: "Mobile Data"
                 stub: true
                 onTapped: {}
             }
 
             QSTile {
                 Layout.fillWidth: true
-                glyph: "⚙️"
+                materialIcon: "settings"
                 label: "Settings"
+                secondary: "System"
                 onTapped: {
                     if (!settingsProc.running)
                         settingsProc.running = true
@@ -145,7 +123,7 @@ Item {
         // --- Volume ----------------------------------------------------
         QSSlider {
             Layout.fillWidth: true
-            glyph: root.sinkAudio && root.sinkAudio.muted ? "🔇" : "🔊"
+            materialIcon: root.sinkAudio && root.sinkAudio.muted ? "volume_off" : "volume_up"
             interactive: root.sinkAudio !== null
             disabledHint: "audio unavailable"
             value: root.sinkAudio ? Math.min(1, root.sinkAudio.volume) : 0

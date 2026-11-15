@@ -1,15 +1,15 @@
 import QtQuick
 import QtQuick.Layouts
 import A21s.Theme
+import A21s.Services
 
-// One quick-settings tile: rounded rect, glyph + label (+ optional
-// secondary line). `active` switches tileOn/tileOff colors. `stub`
-// tiles (no backend yet) dim the label and show "soon"; every tap
-// fires `tapped` and plays a short pulse animation.
+// Stitch-designed Pixel/Android 15 pill Quick Settings tile:
+// 2-column horizontal pill with left icon + right title & secondary status.
 Rectangle {
     id: root
 
-    property string glyph: ""               // text/emoji icon
+    property string glyph: ""               // fallback text/emoji icon
+    property string materialIcon: ""        // MaterialIconsRound name
     property string label: ""
     property string secondary: ""           // small line under label
     property bool active: false
@@ -18,61 +18,79 @@ Rectangle {
 
     signal tapped()
 
-    radius: Theme.radiusM
-    color: active ? Theme.tileOn : Theme.tileOff
+    radius: Theme.radiusPill
+    color: active ? ShellPrefs.accentColor : Theme.surfaceHigh
+    border.width: active ? 0 : 1
+    border.color: Theme.separator
     Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
-    implicitWidth: Theme.iconApp + Theme.spaceM
-    implicitHeight: tileCol.implicitHeight + Theme.spaceM
+    implicitWidth: 280
+    implicitHeight: 88
 
-    scale: pressArea.pressed ? 0.94 : 1.0
+    scale: pressArea.pressed ? 0.96 : 1.0
     Behavior on scale {
         NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase }
     }
 
     SequentialAnimation {
         id: pulse
-        NumberAnimation { target: root; property: "opacity"; to: 0.35; duration: Theme.animFast }
+        NumberAnimation { target: root; property: "opacity"; to: 0.40; duration: Theme.animFast }
         NumberAnimation { target: root; property: "opacity"; to: 1.0;  duration: Theme.animMed }
     }
 
-    ColumnLayout {
-        id: tileCol
+    RowLayout {
         anchors {
-            left: parent.left
-            right: parent.right
-            verticalCenter: parent.verticalCenter
-            leftMargin: Theme.spaceXS
-            rightMargin: Theme.spaceXS
+            fill: parent
+            leftMargin: Theme.spaceM
+            rightMargin: Theme.spaceM
         }
-        spacing: Theme.spaceXS
+        spacing: Theme.spaceS + 4
 
         Loader {
-            Layout.alignment: Qt.AlignHCenter
+            Layout.alignment: Qt.AlignVCenter
+            Layout.preferredWidth: Theme.iconS
             Layout.preferredHeight: Theme.iconS
-            sourceComponent: root.glyphDelegate ? root.glyphDelegate : glyphText
+            sourceComponent: root.glyphDelegate ? root.glyphDelegate
+                : (root.materialIcon.length > 0 ? matIconComp : glyphText)
         }
 
-        Text {
+        ColumnLayout {
             Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
-            text: root.label
+            Layout.alignment: Qt.AlignVCenter
+            spacing: 2
+
+            Text {
+                Layout.fillWidth: true
+                text: root.label
+                color: root.stub ? Theme.textFaint
+                     : root.active ? ShellPrefs.onAccentColor : Theme.text
+                font.pixelSize: Theme.fontCaption + 2
+                font.family: Theme.fontFamily
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+                maximumLineCount: 1
+            }
+
+            Text {
+                Layout.fillWidth: true
+                visible: text.length > 0
+                text: root.stub && root.secondary === "" ? "Off" : root.secondary
+                color: root.active ? Qt.alpha(ShellPrefs.onAccentColor, 0.80) : Theme.textDim
+                font.pixelSize: Theme.fontStatus
+                font.family: Theme.fontFamily
+                elide: Text.ElideRight
+                maximumLineCount: 1
+            }
+        }
+    }
+
+    Component {
+        id: matIconComp
+        MaterialIcon {
+            name: root.materialIcon
+            size: Theme.iconS - 2
             color: root.stub ? Theme.textFaint
-                 : root.active ? Theme.tileOnText : Theme.tileOffText
-            font.pixelSize: Theme.fontCaption
-            elide: Text.ElideRight
-            maximumLineCount: 1
-        }
-
-        Text {
-            Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
-            visible: text.length > 0
-            text: root.stub && root.secondary === "" ? "soon" : root.secondary
-            color: root.active ? Theme.tileOnText : Theme.textFaint
-            font.pixelSize: Theme.fontStatus
-            elide: Text.ElideRight
-            maximumLineCount: 1
+                 : root.active ? ShellPrefs.onAccentColor : Theme.text
         }
     }
 
@@ -81,7 +99,9 @@ Rectangle {
         Text {
             text: root.glyph
             font.pixelSize: Theme.fontTitle
-            color: root.active ? Theme.tileOnText : Theme.tileOffText
+            color: root.active ? ShellPrefs.onAccentColor : Theme.text
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
         }
     }
 
@@ -89,7 +109,8 @@ Rectangle {
         id: pressArea
         anchors.fill: parent
         onClicked: {
-            pulse.restart()
+            if (root.stub)
+                pulse.restart()
             root.tapped()
         }
     }

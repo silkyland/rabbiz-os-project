@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Clock
+GenericName=Clock & Timer
+Comment=Clock, stopwatch and timer (a21s-shell)
+Exec=a21s-clock
+Icon=preferences-system-time
+Categories=Utility;
+Terminal=false
+StartupNotify=true

@@ -33,6 +33,29 @@ PanelWindow {
         ShellState.goHome();
     }
 
+    // Cycle to previous/next open toplevel when swiping horizontally on the pill.
+    function switchAdjacentApp(delta) {
+        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
+        if (tops.length < 2)
+            return;
+        var activeIdx = -1;
+        for (var i = 0; i < tops.length; ++i) {
+            if (tops[i] && tops[i].activated) {
+                activeIdx = i;
+                break;
+            }
+        }
+        var nextIdx = activeIdx === -1
+            ? 0
+            : (activeIdx + delta + tops.length) % tops.length;
+        var target = tops[nextIdx];
+        if (target) {
+            target.minimized = false;
+            target.activate();
+            ShellState.activeAppId = target.appId || "";
+        }
+    }
+
     anchors {
         bottom: true
         left: true
@@ -45,7 +68,30 @@ PanelWindow {
 
     // Home indicator pill.
     Rectangle {
-        anchors {
+        // Cycle to previous/next open toplevel when swiping horizontally on the pill.
+    function switchAdjacentApp(delta) {
+        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
+        if (tops.length < 2)
+            return;
+        var activeIdx = -1;
+        for (var i = 0; i < tops.length; ++i) {
+            if (tops[i] && tops[i].activated) {
+                activeIdx = i;
+                break;
+            }
+        }
+        var nextIdx = activeIdx === -1
+            ? 0
+            : (activeIdx + delta + tops.length) % tops.length;
+        var target = tops[nextIdx];
+        if (target) {
+            target.minimized = false;
+            target.activate();
+            ShellState.activeAppId = target.appId || "";
+        }
+    }
+
+    anchors {
             horizontalCenter: parent.horizontalCenter
             bottom: parent.bottom
             bottomMargin: Theme.spaceS
@@ -67,11 +113,13 @@ PanelWindow {
         id: gesture
         anchors.fill: parent
 
+        property real pressX: 0
         property real pressY: 0
         property real lastY: 0
         property bool held: false
 
         onPressed: (mouse) => {
+            pressX = mouse.x;
             pressY = mouse.y;
             lastY = mouse.y;
             held = false;
@@ -82,10 +130,17 @@ PanelWindow {
         }
         onReleased: (mouse) => {
             holdTimer.stop();
+            var dy = pressY - mouse.y;
+            var dx = mouse.x - pressX;
             // Short, quick flick up -> home. A held gesture already opened
             // the switcher and must not also trigger home.
-            if (!held && !bar.switcherOpen && pressY - mouse.y > Theme.navZoneHeight)
-                bar.goHome();
+            if (!held && !bar.switcherOpen) {
+                if (dy > Theme.navZoneHeight) {
+                    bar.goHome();
+                } else if (Math.abs(dx) > Theme.navZoneHeight * 1.4 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+                    bar.switchAdjacentApp(dx > 0 ? 1 : -1);
+                }
+            }
             held = false;
         }
         onCanceled: {

@@ -1,0 +1,3 @@
+#!/bin/sh
+export QML_IMPORT_PATH=/usr/share/a21s-shell
+exec quickshell -p /usr/share/a21s-shell/apps/notes/Notes.qml "$@"

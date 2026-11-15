@@ -1,22 +1,39 @@
 import QtQuick
 import Quickshell
 import A21s.Theme
+import A21s.Services
 
-// Reusable launcher tile: rounded-square icon + label, like a phone home/drawer
-// app icon. `entry` is normally a Quickshell DesktopEntry, but any object with
-// `name`/`icon` fields works (used for placeholder entries). Entries with an
-// unresolvable icon fall back to a first-letter tile.
+// Reusable launcher tile: squircle/circle/glass icon + label.
+// `entry` is normally a Quickshell DesktopEntry, but any object with
+// `name`/`icon` (and optional `execString` / `action`) works.
 Item {
     id: appIcon
     required property var entry
     property bool labelVisible: true
+    property int tileSize: Theme.iconApp
     signal launched()
 
     readonly property string entryName: (entry && entry.name) ? String(entry.name) : ""
-    readonly property url iconUrl: (entry && entry.icon) ? Quickshell.iconPath(String(entry.icon)) : ""
+    readonly property string entryMaterialIcon: (entry && entry.materialIcon) ? String(entry.materialIcon) : ""
+    readonly property string entryGlyph: (entry && entry.glyph) ? String(entry.glyph) : ""
+    readonly property url iconUrl: (entry && entry.icon && !entryMaterialIcon && !entryGlyph)
+        ? Quickshell.iconPath(String(entry.icon)) : ""
+    readonly property bool isGlass: ShellPrefs.iconStyle === "glass"
+    readonly property bool isCircle: ShellPrefs.iconStyle === "circle"
 
-    implicitWidth: Theme.iconApp + Theme.spaceL
-    implicitHeight: Theme.iconApp + (labelVisible ? Theme.fontCaption * 2 : 0) + Theme.spaceS
+    readonly property color fallbackTint: {
+        var palette = [
+            "#4C8DFF", "#3DD9B6", "#9B7BFF",
+            "#FF6B7A", "#FFB547", "#38BDF8"
+        ]
+        var h = 0
+        for (var i = 0; i < entryName.length; ++i)
+            h = (h * 31 + entryName.charCodeAt(i)) & 0x7fffffff
+        return palette[h % palette.length]
+    }
+
+    implicitWidth: tileSize + Theme.spaceL
+    implicitHeight: tileSize + (labelVisible ? Theme.fontCaption * 2 : 0) + Theme.spaceS
 
     Rectangle {
         id: tile
@@ -24,16 +41,35 @@ Item {
             top: parent.top
             horizontalCenter: parent.horizontalCenter
         }
-        width: Theme.iconApp
-        height: Theme.iconApp
-        radius: Theme.radiusM
-        color: Theme.card
+        width: appIcon.tileSize
+        height: appIcon.tileSize
+        radius: appIcon.isCircle ? width / 2 : (Theme.radiusM + 4)
+
+        color: appIcon.isGlass
+            ? Qt.alpha(Theme.surfaceHigh, 0.62)
+            : Theme.card
+
+        border.width: 1
+        border.color: appIcon.isGlass
+            ? Qt.alpha(Theme.text, 0.16)
+            : Qt.alpha(Theme.text, 0.08)
+
+        // Subtle top-to-bottom sheen (disabled for glass so translucency stays clean).
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            visible: !appIcon.isGlass
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.alpha(Theme.text, 0.04) }
+                GradientStop { position: 1.0; color: "transparent" }
+            }
+        }
 
         Image {
             id: image
             anchors.centerIn: parent
-            width: parent.width - Theme.spaceM * 2
-            height: parent.height - Theme.spaceM * 2
+            width: Math.round(parent.width * 0.60)
+            height: Math.round(parent.height * 0.60)
             source: appIcon.iconUrl
             fillMode: Image.PreserveAspectFit
             asynchronous: true
@@ -41,17 +77,36 @@ Item {
             visible: status === Image.Ready
         }
 
-        Text {
+        MaterialIcon {
             anchors.centerIn: parent
-            visible: image.status !== Image.Ready
-            text: appIcon.entryName.length > 0 ? appIcon.entryName.charAt(0).toUpperCase() : "?"
-            color: Theme.primary
-            font.pixelSize: Theme.fontTitle
-            font.family: Theme.fontFamily
-            font.bold: true
+            visible: image.status !== Image.Ready && appIcon.entryMaterialIcon.length > 0
+            name: appIcon.entryMaterialIcon
+            size: Math.round(appIcon.tileSize * 0.46)
+            color: Theme.text
         }
 
-        scale: tap.pressed ? 0.92 : 1.0
+        Text {
+            anchors.centerIn: parent
+            visible: image.status !== Image.Ready && appIcon.entryMaterialIcon.length === 0
+            text: appIcon.entryGlyph.length > 0
+                ? appIcon.entryGlyph
+                : (appIcon.entryName.length > 0 ? appIcon.entryName.charAt(0).toUpperCase() : "?")
+            color: Theme.text
+            font.pixelSize: Math.round(appIcon.tileSize * 0.40)
+            font.family: Theme.fontFamily
+            font.weight: Font.DemiBold
+        }
+
+        // Press highlight overlay.
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: Theme.text
+            opacity: tap.pressed ? 0.12 : 0.0
+            Behavior on opacity { NumberAnimation { duration: Theme.animFast } }
+        }
+
+        scale: tap.pressed ? 0.90 : 1.0
         Behavior on scale {
             NumberAnimation {
                 duration: Theme.animFast
@@ -73,6 +128,7 @@ Item {
         color: Theme.text
         font.pixelSize: Theme.fontCaption
         font.family: Theme.fontFamily
+        font.weight: Font.Medium
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
         wrapMode: Text.WordWrap
@@ -84,6 +140,8 @@ Item {
         onTapped: {
             if (appIcon.entry && typeof appIcon.entry.execute === "function")
                 appIcon.entry.execute();
+            else if (appIcon.entry && typeof appIcon.entry.onActivate === "function")
+                appIcon.entry.onActivate();
             appIcon.launched();
         }
     }

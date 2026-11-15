@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+GenericName=File Manager
+Comment=Browse files and folders (a21s-shell)
+Exec=a21s-files
+Icon=system-file-manager
+Categories=System;FileManager;
+Terminal=false
+StartupNotify=true

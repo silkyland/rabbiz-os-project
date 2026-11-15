@@ -79,12 +79,44 @@ Before any playback on that boot: `abox_msg_send: timeout: 1, 193, 43788, 262/26
 
 **Not yet tested** (device went offline before these ran): `ASRC3=0` + `playback_init` applied *before the first* playback on a clean boot; S32-vs-S16 width isolation; a deliberate 1 MiB (`--buffer-size=262144` frames S16) request. Test WAVs are on the device: `/root/s16-48k.wav`, `/root/s32-48k.wav`.
 
-### Device state right now
+### 0.2 Round 3 — Non-stop console messages on screen & boot traps (2026-11-15 16:42)
 
-Last reboot: **host unreachable on both `usb0` and `wlan0`** after a software reboot — needs a manual power cycle. Before that, `Calliope` failed `BOOT_DONE` on every boot since the 16:12 DSP data abort (`calliope_version` empty, 8/8 retries).
+When recovering from the 16:18 hang, the phone screen continuously scrolled text messages and appeared unreachable. Root causes identified and verified:
 
-**⚠️ Left behind by Round 2 — must be undone for Steam audio:** the user audio stack is masked in
-`/home/gamer/.config/systemd/user/` (`pipewire.service`, `pipewire.socket`, `pipewire-pulse.service`, `pipewire-pulse.socket`, `wireplumber.service` → `/dev/null`). Remove those five symlinks (or reboot after deleting them) to restore PipeWire/WirePlumber. `abox-audio.service` was left untouched and enabled.
+1. **Trap 1 — `pmos-ramdisk` Volume-Down debug-shell trap during hard reset (`init_functions.sh:1227`):**
+   - Holding **Power + Volume Down** for 7–10 s forces an S-Boot hardware reset, **but if Volume Down is still held after the Samsung logo**, `pmos-ramdisk` stage 1 (`check_keys`) sees `iskey KEY_LEFTCTRL KEY_VOLUMEDOWN` and enters `debug_shell`.
+   - `debug_shell` reconfigures the USB gadget to `acm.usb0` (dropping `172.16.42.1`), prevents switching root to Arch Linux ARM (`wlan0` never starts), and loops `/sbin/getty` on `tty1`.
+   - **Rule:** Release **Volume Down** immediately as soon as the screen turns black / the Samsung logo appears.
+2. **Trap 2 — `exynos-drm` (`DSI-1`) bind failure (`-19`) → `simpledrm` (`Unknown-1`) fallback + `console_loglevel=7` spam:**
+   - The currently flashed kernel (`#8 SMP PREEMPT_DYNAMIC Sun Nov 15 11:07:28 +07 2026`) was built with `CONFIG_EXYNOS_IOMMU=y` (required for ABOX), **but without `patches/linux/0004-exynos-drm-dma-iommu-optional.patch` applied to `src/linux/drivers/gpu/drm/exynos/exynos_drm_dma.c`** (`git -C src/linux status` confirms `exynos_drm_dma.c` is unpatched in `src/linux`).
+   - Consequently, `exynos_drm_register_dma()` calls `iommu_get_domain_for_dev()` on `13060000.display-controller` (which has no IOMMU in DT), gets `NULL`, and returns `-ENODEV` (`-19`):
+     ```
+     exynos-drm exynos-drm: failed to bind 13060000.display-controller (ops decon850_component_ops): -19
+     [drm] Initialized simpledrm 1.0.0 for fa000000.framebuffer on minor 0
+     ```
+   - With `simpledrm` on `/dev/dri/card0` (`Unknown-1`) and `/proc/sys/kernel/printk = 7 4 1 7`, `fbcon` on `/dev/tty1` printed every `KERN_INFO` message (ABOX mixer puts, `wlbt` periodic Wi-Fi scans, `sshd`/`pam` sessions) directly onto the screen.
+   - In addition, `/home/gamer/.config/weston.ini` only matched `[output] name=DSI-1` (`transform=rotate-270`), not `Unknown-1`, and `simpledrm` logs `bo geometry out of bounds` when Weston attempts direct client scanout of XWayland buffers.
+   - Note on `seatd`: restarting `steamos-session.service` alone fails with `[seatd/seat.c:201] Could not add client: seat is VT-bound and has an active client` unless `seatd.service` is restarted alongside it (`systemctl stop steamos-session && systemctl restart seatd && systemctl start steamos-session`).
+3. **Mitigations already applied live on device:**
+   - Set `dmesg -n 1` and persisted `/etc/sysctl.d/20-quiet-printk.conf` (`kernel.printk = 1 4 1 3`) + cleared `/dev/tty1` so kernel log messages no longer spam the display.
+   - Added `[output] name=Unknown-1` (`transform=rotate-270`) to `/home/gamer/.config/weston.ini`.
+
+### Device state right now (2026-11-15 16:42)
+
+- **ONLINE** via USB (`ssh root@172.16.42.1`).
+- **Calliope DSP is LIVE (`calliope_version = nEB0`, 0 boot retries)** and **untouched** (no playback triggered yet on this boot — ready for immediate clean-boot playback testing!).
+- **⚠️ Still masked from Round 2:** `/home/gamer/.config/systemd/user/{pipewire.service,pipewire.socket,pipewire-pulse.service,pipewire-pulse.socket,wireplumber.service} → /dev/null`. Remove those 5 symlinks when ready to re-enable PipeWire/WirePlumber.
+
+### Immediate next steps for the incoming Agent
+
+1. **Run the clean-boot playback test on the live `nEB0` session** (before touching PipeWire or rebooting):
+   - Test `/tmp/opencode/dsp-test.sh` (which sets `ABOX SPUS ASRC3 0` + `playback_init` *before* playing `/root/s16-48k.wav` with `--period-size=960 --buffer-size=3840`).
+   - Fix `scripts/abox_speaker.sh` (deployed at `/root/abox_speaker.sh`): remove `set -e` so a boot-window `abox_msg_send: timeout` on one `cset` does not abort the remaining routing controls, and reconcile `ABOX SPUS ASRC3 0` vs `1`.
+   - Cap `BUFFER_BYTES_MAX` in `drivers/abox/abox.h:41` below the 768 KiB firmware heap (e.g., `SZ_256K` or `SZ_512K`) and rebuild/deploy `abox-snd.ko` so WirePlumber's default probe cannot request 1 MiB (`1048576 of 786432`) and wedge Calliope.
+   - Unmask the 5 user PipeWire/WirePlumber units in `/home/gamer/.config/systemd/user/` and verify Steam audio.
+2. **Restore `exynos-drm` (`DSI-1`) in the flashed kernel:**
+   - Apply `patches/linux/0004-exynos-drm-dma-iommu-optional.patch` to `src/linux/drivers/gpu/drm/exynos/exynos_drm_dma.c`.
+   - Rebuild `Image`, copy to `src/uniLoader/blob/Image`, rebuild `src/uniLoader/uniLoader`, repack `build/images/boot-avb.img`, and flash `/dev/mmcblk0p18` so `exynos-drm` (`decon850` + `DSI-1`) binds properly while keeping `CONFIG_EXYNOS_IOMMU=y` enabled for ABOX.
 
 ### Resume recipe
 

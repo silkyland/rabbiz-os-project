@@ -1,5 +1,6 @@
 import QtQuick
 import A21s.Theme
+import A21s.Services
 
 // Custom quick-settings slider (named QSSlider to avoid clashing with
 // QtQuick.Controls Slider). Left icon (tappable -> iconTapped), pill
@@ -12,6 +13,7 @@ Item {
 
     property real value: 0              // 0..1, externally owned
     property string glyph: ""           // text/emoji icon on the left
+    property string materialIcon: ""    // MaterialIconsRound name
     property bool interactive: true     // false -> dimmed, input ignored
     property string disabledHint: ""    // shown in track when !interactive
 
@@ -28,17 +30,29 @@ Item {
     readonly property real _fill: trackArea.pressed ? trackArea._v
                                                     : Math.max(0, Math.min(1, value))
 
-    Text {
+    Item {
         id: icon
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         width: Theme.iconM
-        horizontalAlignment: Text.AlignHCenter
-        verticalAlignment: Text.AlignVCenter
-        text: root.glyph
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontBody
-        color: Theme.textDim
+        height: Theme.iconM
+
+        MaterialIcon {
+            anchors.centerIn: parent
+            visible: root.materialIcon.length > 0
+            name: root.materialIcon
+            size: Theme.iconS - 4
+            color: Theme.textDim
+        }
+
+        Text {
+            anchors.centerIn: parent
+            visible: root.materialIcon.length === 0
+            text: root.glyph
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontBody
+            color: Theme.textDim
+        }
 
         MouseArea {
             anchors.fill: parent
@@ -70,7 +84,7 @@ Item {
             }
             width: track.width * root._fill
             radius: Theme.radiusPill
-            color: root.interactive ? Theme.primary : Theme.textFaint
+            color: root.interactive ? ShellPrefs.accentColor : Theme.textFaint
         }
 
         Text {

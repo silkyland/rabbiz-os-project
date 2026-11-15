@@ -1,6 +1,8 @@
 import QtQuick
+import QtQuick.Layouts
 import Quickshell
 import A21s.Theme
+import A21s.Services
 
 // Full-screen app drawer, embedded in HomeScreen's background window.
 // Slides up over the home page (transform/opacity only — Exynos 850 friendly).
@@ -49,6 +51,7 @@ Item {
             searchInput.forceActiveFocus();
         } else {
             searchInput.focus = false;
+            searchInput.text = "";
         }
     }
 
@@ -59,6 +62,12 @@ Item {
         function onApplicationsChanged() { drawer.rebuildFilter(); }
     }
 
+    // Dimmed backdrop behind the sliding sheet.
+    Rectangle {
+        anchors.fill: parent
+        color: Qt.alpha(Theme.bg, 0.55)
+    }
+
     // Sliding panel.
     Item {
         id: panel
@@ -66,9 +75,27 @@ Item {
         height: drawer.height
         y: Math.round((1.0 - drawer.progress) * drawer.height)
 
+        // Sheet background with rounded top corners & subtle top border.
         Rectangle {
-            anchors.fill: parent
-            color: Theme.surface
+            anchors {
+                fill: parent
+                topMargin: Theme.statusBarHeight
+            }
+            radius: Theme.radiusL
+            color: Qt.alpha(Theme.surface, 0.96)
+            border.width: 1
+            border.color: Qt.alpha(Theme.text, 0.08)
+
+            // Square off bottom corners.
+            Rectangle {
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    bottom: parent.bottom
+                }
+                height: Theme.radiusL
+                color: parent.color
+            }
         }
 
         // Backdrop: taps that miss interactive children close the drawer.
@@ -77,12 +104,26 @@ Item {
             onClicked: drawer.requestClose()
         }
 
+        // Top drag handle pill.
+        Rectangle {
+            id: grabber
+            anchors {
+                horizontalCenter: parent.horizontalCenter
+                top: parent.top
+                topMargin: Theme.statusBarHeight + Theme.spaceS
+            }
+            width: 56
+            height: 6
+            radius: Theme.radiusPill
+            color: Qt.alpha(Theme.textDim, 0.45)
+        }
+
         // Search field.
         Rectangle {
             id: searchBar
             anchors {
-                top: parent.top
-                topMargin: Theme.statusBarHeight + Theme.spaceM
+                top: grabber.bottom
+                topMargin: Theme.spaceM
                 left: parent.left
                 right: parent.right
                 leftMargin: Theme.spaceM
@@ -91,30 +132,112 @@ Item {
             height: Theme.iconM + Theme.spaceS * 2
             radius: Theme.radiusPill
             color: Theme.surfaceHigh
+            border.width: 1.5
+            border.color: searchInput.activeFocus
+                ? ShellPrefs.accentColor
+                : Qt.alpha(Theme.text, 0.09)
 
-            TextInput {
-                id: searchInput
+            Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+
+            RowLayout {
                 anchors {
                     fill: parent
                     leftMargin: Theme.spaceM
                     rightMargin: Theme.spaceM
                 }
-                color: Theme.text
-                font.pixelSize: Theme.fontBody
-                font.family: Theme.fontFamily
-                verticalAlignment: TextInput.AlignVCenter
-                clip: true
-                onTextChanged: drawer.rebuildFilter()
-                Keys.onEscapePressed: drawer.requestClose()
+                spacing: Theme.spaceS
+
+                MaterialIcon {
+                    name: "search"
+                    size: Theme.fontTitle
+                    color: searchInput.activeFocus ? ShellPrefs.accentColor : Theme.textDim
+                }
+
+                Item {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+
+                    TextInput {
+                        id: searchInput
+                        anchors.fill: parent
+                        color: Theme.text
+                        font.pixelSize: Theme.fontBody
+                        font.family: Theme.fontFamily
+                        verticalAlignment: TextInput.AlignVCenter
+                        clip: true
+                        onTextChanged: drawer.rebuildFilter()
+                        Keys.onEscapePressed: drawer.requestClose()
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        visible: searchInput.text.length === 0
+                        text: "Search apps…"
+                        color: Theme.textFaint
+                        font.pixelSize: Theme.fontBody
+                        font.family: Theme.fontFamily
+                    }
+                }
+
+                Rectangle {
+                    visible: searchInput.text.length > 0
+                    Layout.preferredWidth: Theme.iconS
+                    Layout.preferredHeight: Theme.iconS
+                    radius: Theme.radiusPill
+                    color: Qt.alpha(Theme.text, 0.12)
+
+                    MaterialIcon {
+                        anchors.centerIn: parent
+                        name: "close"
+                        size: Theme.fontStatus + 4
+                        color: Theme.text
+                    }
+
+                    TapHandler {
+                        onTapped: searchInput.text = ""
+                    }
+                }
+            }
+        }
+
+        // Section header.
+        RowLayout {
+            id: sectionHeader
+            anchors {
+                top: searchBar.bottom
+                topMargin: Theme.spaceM
+                left: parent.left
+                right: parent.right
+                leftMargin: Theme.spaceL
+                rightMargin: Theme.spaceL
             }
 
             Text {
-                anchors.centerIn: parent
-                visible: searchInput.text.length === 0
-                text: "Search apps"
-                color: Theme.textFaint
-                font.pixelSize: Theme.fontCaption
+                text: searchInput.text.trim().length > 0 ? "RESULTS" : "ALL APPS"
+                color: Theme.textDim
+                font.pixelSize: Theme.fontStatus
                 font.family: Theme.fontFamily
+                font.weight: Font.DemiBold
+                font.letterSpacing: 1.5
+            }
+
+            Item { Layout.fillWidth: true }
+
+            Rectangle {
+                implicitWidth: countTxt.implicitWidth + Theme.spaceS * 2
+                implicitHeight: countTxt.implicitHeight + 6
+                radius: Theme.radiusPill
+                color: Qt.alpha(ShellPrefs.accentColor, 0.16)
+
+                Text {
+                    id: countTxt
+                    anchors.centerIn: parent
+                    text: drawer.filteredApps.length
+                    color: ShellPrefs.accentColor
+                    font.pixelSize: Theme.fontStatus
+                    font.family: Theme.fontFamily
+                    font.weight: Font.DemiBold
+                }
             }
         }
 
@@ -122,13 +245,14 @@ Item {
         GridView {
             id: grid
             anchors {
-                top: searchBar.bottom
+                top: sectionHeader.bottom
                 topMargin: Theme.spaceM
                 left: parent.left
                 right: parent.right
                 bottom: parent.bottom
                 leftMargin: Theme.spaceS
                 rightMargin: Theme.spaceS
+                bottomMargin: Theme.navZoneHeight
             }
             clip: true
             cellWidth: Math.floor(width / 4)
@@ -153,7 +277,7 @@ Item {
         Text {
             anchors.centerIn: grid
             visible: grid.count === 0
-            text: "No apps"
+            text: "No matching apps"
             color: Theme.textFaint
             font.pixelSize: Theme.fontBody
             font.family: Theme.fontFamily

@@ -4,22 +4,22 @@ import QtQuick
 // A21s shell design tokens — One UI / Material dark.
 // All UI MUST consume these; no magic colors/numbers in components.
 QtObject {
-    // Palette
-    readonly property color bg:           "#0B0C10"
-    readonly property color surface:      "#15171D"
-    readonly property color surfaceHigh:  "#1E212B"
-    readonly property color card:         "#1C1F28"
-    readonly property color separator:    "#262A35"
+    // Palette — neutral matte graphite (no blue/purple tint).
+    readonly property color bg:           "#0A0A0C"
+    readonly property color surface:      "#131316"
+    readonly property color surfaceHigh:  "#1C1C20"
+    readonly property color card:         "#17171B"
+    readonly property color separator:    "#27272B"
     readonly property color scrim:        "#B3000000"
-    readonly property color primary:      "#4C8DFF"
+    readonly property color primary:      "#3B82F6"
     // NB: named "primaryContent", not "onPrimary" — QML parses "on<Capitalized>"
     // as a signal-handler-style name whenever a sibling property "primary"
     // exists, which makes the singleton fail to load at runtime.
     readonly property color primaryContent: "#FFFFFF"
-    readonly property color accent:       "#7BE0C3"
-    readonly property color text:         "#F2F4F8"
-    readonly property color textDim:      "#9AA3B2"
-    readonly property color textFaint:    "#5C6472"
+    readonly property color accent:       "#E4E4E7"
+    readonly property color text:         "#F4F4F5"
+    readonly property color textDim:      "#A1A1AA"
+    readonly property color textFaint:    "#63636E"
     readonly property color danger:       "#FF5C6C"
     readonly property color success:      "#57D38D"
     readonly property color warn:         "#FFC857"

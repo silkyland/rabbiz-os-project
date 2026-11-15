@@ -2,6 +2,8 @@ module A21s.Components
 
 QSSlider 1.0 QSSlider.qml
 QSTile 1.0 QSTile.qml
+MaterialIcon 1.0 MaterialIcon.qml
+AppGestureLayer 1.0 AppGestureLayer.qml
 AppIcon 1.0 AppIcon.qml
 AppDrawer 1.0 AppDrawer.qml
 TaskSwitcher 1.0 TaskSwitcher.qml
