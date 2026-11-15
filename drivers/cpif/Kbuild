@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: GPL-2.0
+# Out-of-tree Kbuild for the A21s Shannon CPIF skeleton (Exynos 850).
+#
+# Build (from repo root, after bootstrap_build_env.sh):
+#   make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 \
+#        M=$PWD/drivers/cpif modules
+#
+# Deploy: copy a21s-cpif.ko to /usr/lib/modules/$(uname -r)/ on the
+# A21s rootfs and modprobe a21s-cpif (never /lib - see AGENTS.md).
+
+ccflags-y += -I$(src)
+
+obj-m += a21s-cpif.o
+a21s-cpif-y := \
+	cpif_core.o \
+	cpif_power.o \
+	cpif_shmem.o \
+	cpif_boot.o \
+	cpif_ipc.o

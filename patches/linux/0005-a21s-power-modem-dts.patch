@@ -1,0 +1,234 @@
+--- a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts	2026-11-15 11:35:30.635086845 +0700
++++ b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts	2026-11-15 11:36:29.179837539 +0700
+@@ -123,6 +123,13 @@
+ 			reg = <0x0 0xb0000000 0xc00000>;
+ 			no-map;
+ 		};
++
++		/* Shannon s318ap CP RAM (vendor cp_rmem, "exynos,modem_if").
++		 * Does not overlap wifibt_if. */
++		cp_rmem: modem-cp@d0000000 {
++			reg = <0x0 0xd0000000 0x8800000>;
++			no-map;
++		};
+ 	};
+ };
+ 
+@@ -1229,3 +1236,217 @@
+ 	};
+ 	};
+ };
++
++/*
++ * M5/M6 power-management + modem skeleton bring-up.
++ * See docs/a21s-modem-power-findings.md. Drivers are out-of-tree
++ * (drivers/cpif, drivers/tmu) - NOT validated on hardware yet.
++ */
++
++/* ---- battery: S2MU106 secondary PMIC on hsi2c_0 ---------------------
++ * TODO: verify bus assignment - vendor DT uses hsi2c0-2 (gpc1 pins)
++ * with 400 kHz. If i2cdetect finds nothing at 0x3b/0x3c/0x3d, try
++ * hsi2c_1/hsi2c_2.
++ */
++&usi_hsi2c_0 { status = "okay"; };
++
++&hsi2c_0 {
++	status = "okay";
++
++	/* s2mu106-mfd@3d (charger + MUIC) intentionally left out: needs a
++	 * mainline charger/MUIC driver first (findings 2.2). The fuel
++	 * gauge is a plain i2c device and works without the MFD. */
++
++	s2mu106_fg: s2mu106-fuelgauge@3b {
++		compatible = "samsung,s2mu106-fuel-gauge";
++		reg = <0x3b>;
++		/* TODO: confirm bank/pin/polarity per board rev.
++		 * Vendor universal3830 fragment@13 uses gpa3-0 for
++		 * fuelgauge,fuel_int; fragment@7 has no FG irq. */
++		interrupts-extended = <&gpa3 0 IRQ_TYPE_EDGE_FALLING>;
++	};
++};
++
++/* ---- backlight: LM36274 LCD bias/WLED on hsi2c_1 -------------------
++ * Vendor drives it via panel_i2c (Samsung panel path). Mainline path:
++ * ti-lmu MFD + leds-lm36274 + lm363x-regulator.
++ * TODO: confirm bus + enable-gpios before enabling. */
++&usi_hsi2c_1 { status = "okay"; };
++
++&hsi2c_1 {
++	status = "okay";
++
++	lm36274: lm36274@11 {
++		compatible = "ti,lm36274";
++		reg = <0x11>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++		/* TODO: enable-gpios = <&gpaX Y GPIO_ACTIVE_HIGH>; */
++
++		backlight {
++			compatible = "ti,lm36274-backlight";
++			#address-cells = <1>;
++			#size-cells = <0>;
++
++			led@0 {
++				reg = <0>;
++				led-sources = <0>;
++				label = "lcd-backlight";
++				linux,default-trigger = "backlight";
++			};
++		};
++	};
++};
++
++/* ---- thermal -------------------------------------------------------
++ * One TMU block, three sensor groups (vendor LITTLE0/LITTLE1/G3D,
++ * ids 0/1/2 = CPUCL0/CPUCL1/GPU). Out-of-tree skeleton driver in
++ * drivers/tmu only dumps registers for now - thermal-zones below are
++ * commented out until get_temp + trim formula land.
++ */
++&soc {
++	tpu: tmu@10070000 {
++		compatible = "samsung,exynos850-tmu";
++		reg = <0x10070000 0x800>;
++		interrupts = <GIC_SPI 226 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&cmu_peri CLK_GOUT_BUSIF_TMU_PCLK>;
++		clock-names = "tmu_apbif";
++		#thermal-sensor-cells = <0>;
++		status = "okay";
++	};
++
++	cpif: cpif@14020000 {
++		compatible = "samsung,exynos-cp";
++		#address-cells = <1>;
++		#size-cells = <1>;
++		reg = <0x14020000 0x1000>, <0x11a50000 0x1000>;
++		reg-names = "apcp-shm", "vgpio-monitor";
++		interrupt-parent = <&gic>;
++		interrupts = <GIC_SPI 190 IRQ_TYPE_LEVEL_HIGH>; /* RESET_REQ 0xbe */
++		memory-region = <&cp_rmem>;
++		pmu = <&pmu_system_controller>;
++		status = "okay";
++
++		/* vendor mif,* properties kept verbatim for the future port */
++		mif,name = "s318ap";
++		mif,cp_num = <0>;
++		mif,modem_type = <0>;
++		mif,protocol = <0>;
++		mif,ipc_version = <0x32>;
++		mif,link_type = <0>;
++		mif,link_name = "shmem";
++		mif,link_attrs = <0x7c9>;
++
++		cp_mailbox: cp-mailbox@11920000 {
++			compatible = "samsung,exynos-cp-mailbox";
++			reg = <0x11920000 0x180>;
++			interrupt-parent = <&gic>;
++			interrupts = <GIC_SPI 51 IRQ_TYPE_LEVEL_HIGH>;
++			mcu,name = "cp_mailbox";
++			mcu,id = <0>;
++			mcu,irq_affinity_mask = <0x3>;
++		};
++
++		cp_shmem: cp-shmem {
++			compatible = "samsung,exynos-cp-shmem";
++			cp_num = <0>;
++			use_mem_map_on_cp = <1>;
++
++			regions {
++				region-cp {
++					region,name = "CP";
++					region,index = <0>;
++					region,rmem = <0>;
++					region,offset = <0x0>;
++					region,size = <0x6900000>;
++					region,cached = <0>;
++				};
++				region-vss {
++					region,name = "VSS";
++					region,index = <1>;
++					region,rmem = <0>;
++					region,offset = <0x6900000>;
++					region,size = <0x700000>;
++					region,cached = <0>;
++				};
++				region-ipc {
++					region,name = "IPC";
++					region,index = <3>;
++					region,rmem = <0>;
++					region,offset = <0x7000000>;
++					region,size = <0x800000>;
++					region,cached = <0>;
++				};
++				region-btl {
++					region,name = "BTL";
++					region,index = <5>;
++					region,rmem = <0>;
++					region,offset = <0x7800000>;
++					region,size = <0x1000000>;
++					region,cached = <0>;
++				};
++			};
++		};
++	};
++};
++
++/*
++ * TODO: uncomment once drivers/tmu implements get_temp.
++ * Suggested trips from vendor data (alert ~80C, crit ~115C):
++thermal-zones {
++	cpu0-thermal {
++		polling-delay-passive = <0>;
++		polling-delay = <1000>;
++		thermal-sensors = <&tmu 0>;
++		trips {
++			cpu_alert: cpu-alert {
++				temperature = <80000>;
++				hysteresis = <3000>;
++				type = "passive";
++			};
++			cpu_crit: cpu-crit {
++				temperature = <115000>;
++				hysteresis = <0>;
++				type = "critical";
++			};
++		};
++		cooling-maps {
++			map0 {
++				trip = <&cpu_alert>;
++				cooling-device = <&cpu0 THERMAL_NO_LIMIT
++							THERMAL_NO_LIMIT>;
++			};
++		};
++	};
++	gpu-thermal {
++		polling-delay-passive = <0>;
++		polling-delay = <1000>;
++		thermal-sensors = <&tmu 2>;
++		trips {
++			gpu_alert: gpu-alert {
++				temperature = <80000>;
++				hysteresis = <3000>;
++				type = "passive";
++			};
++			gpu_crit: gpu-crit {
++				temperature = <115000>;
++				hysteresis = <0>;
++				type = "critical";
++			};
++		};
++	};
++};
++*/
++
++/* ---- cpuidle hooks -------------------------------------------------
++ * Vendor/PSCI cpuidle needs the exynos850-pmu patch series + PSCI
++ * MPIDR workaround (findings 5.3). Cooling cells added now so thermal
++ * cooling-maps can bind later; harmless without idle-states. */
++&cpu0 { #cooling-cells = <2>; };
++&cpu4 { #cooling-cells = <2>; };
++
++/* ---- cellular modem: Shannon s318ap CPIF ---------------------------
++ * Node lives under &soc above (see cpif@14020000). Mirrors vendor
++ * fragment@modemif; modem.bin is loaded from userspace by
++ * tools/cbd via /dev/umts_boot0.
++ */

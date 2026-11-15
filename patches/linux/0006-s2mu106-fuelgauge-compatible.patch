@@ -1,0 +1,16 @@
+--- a/drivers/power/supply/s2mu005-battery.c	2026-11-15 11:36:37.238880844 +0700
++++ b/drivers/power/supply/s2mu005-battery.c	2026-11-15 11:36:39.384965294 +0700
+@@ -287,6 +287,13 @@
+ 		.compatible = "samsung,s2mu005-fuel-gauge",
+ 		.data = &s2mu005_fg_desc,
+ 	},
++	{
++		/* Galaxy A21s secondary PMIC (S2MU106): register map is
++		 * identical to S2MU005 for voltage/current/SOC reads.
++		 * TODO: verify capacity/SOC scaling on hardware. */
++		.compatible = "samsung,s2mu106-fuel-gauge",
++		.data = &s2mu005_fg_desc,
++	},
+ 	{ }
+ };
+ MODULE_DEVICE_TABLE(of, s2mu005_fg_of_match_table);

@@ -225,3 +225,21 @@ Objects: `modem_main modem_variation modem_io_device net_io_device bootdump_io_d
 - [ ] PSCI `CPU_SUSPEND`/`SYSTEM_SUSPEND` บน TEEGRIS ที่ resident + MPIDR arg-shift workaround (ขอ patch จาก Klimov) — ทดสอบ `rtcwake -m mem`/`s2idle` บนเครื่องจริง
 - [ ] FG calibration: `s2mu005-battery.c` ไม่เขียน `battery_data` — เช็กว่า % SOC เพี้ยนไหมก่อนตัดสินใจย้าย calibration logic จาก vendor `s2mu106_fuelgauge.c`
 - [ ] Rebase โอกาส: `samsungexynos850/linux` master ใหม่กว่า pin ของเรา (`8be82eac` มี `a217f-{3,4,6}gb.dts`) — diff ดูว่ามี driver/DTS ใหม่ที่เรายังไม่มี
+
+## 9. Skeleton code ที่เขียนไว้แล้ว (ยังไม่ deploy)
+
+เขียนโครงทั้งหมดใน repo แล้ว — compile ผ่าน (`make M=` ได้ `.ko` จริง) แต่**ยังไม่ได้เทสบนเครื่อง**:
+
+| Artifact | Path | สถานะ |
+|---|---|---|
+| cpif driver skeleton | `drivers/cpif/` (`a21s-cpif.ko`) | POWER_ON/OFF/RESET + LOAD_CP_IMAGE + GET_CP_STATUS ทำงานในเชิงโค้ด; REQ_SECURITY/START_BOOTLOADER/COMPLETE ยัง `-EOPNOTSUPP` (รอ SMC id + mailbox) |
+| PMU power sequences | `drivers/cpif/cpif_power.c` | แปล `pmucal_cp_exynos3830.h` เป็น regmap ops บน `pmu_system_controller` syscon + VGPIO wait `0x11a50000` |
+| shmem/TOC parser | `drivers/cpif/cpif_shmem.c` | parse `cp_shmem/regions` + dump `cp_toc`/`cp_mem_map` หลังโหลด fw |
+| SIPC stubs | `drivers/cpif/cpif_ipc.c` | `/dev/umts_ipc0`,`umts_ipc1`,`umts_rfs0` มี node แต่ I/O คืน `-EIO` |
+| userspace loader | `tools/cbd/a21s-cbd.c` | เปิด `/dev/umts_boot0`, stream modem.bin/RADIO partition, รัน ioctl sequence |
+| TMU skeleton | `drivers/tmu/exynos850-tmu.c` | probe + dump regs 0x10070000; get_temp/thermal-zones ยังไม่ทำ |
+| DTS patch | `patches/linux/0005-a21s-power-modem-dts.patch` | `cp_rmem`@0xd0000000, hsi2c_0+s2mu106_fg@0x3b, hsi2c_1+lm36274@0x11, tmu node, `&cpu0`/`&cpu4` cooling-cells, cpif+cp_mailbox+cp_shmem (thermal-zones comment ไว้) |
+| FG compatible | `patches/linux/0006-s2mu106-fuelgauge-compatible.patch` | เพิ่ม `samsung,s2mu106-fuel-gauge` ใน `s2mu005-battery.c` |
+| defconfig | `configs/a21s_linux_defconfig` | `BATTERY_S2MU005=y`, `MFD_TI_LMU=m`, `LEDS_LM36274=m`, `REGULATOR_LM363X=m`, default governor → `schedutil` |
+
+**ก่อน flash ครั้งแรก:** (1) `i2cdetect` เช็ก bus จริงของ s2mu106/lm36274 (patch เดา hsi2c_0/hsi2c_1 — vendor fragment target resolve ไม่ได้จาก source), (2) เช็ก PMU regs 0x3000+ เข้าถึงได้จาก non-secure world ไหม, (3) หา SMC_ID สำหรับ `REQ_SECURITY`, (4) modem.bin partition offset จริงจาก PIT
