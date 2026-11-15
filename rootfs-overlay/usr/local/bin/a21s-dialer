@@ -3,4 +3,5 @@
 # Quickshell.Io / Quickshell.Services — plain qml6 cannot load them).
 # Deployed to /usr/local/bin/ by scripts/deploy_shell.sh, which sets +x.
 export QML_IMPORT_PATH=/usr/share/a21s-shell
+export QT_QUICK_BACKEND=software
 exec quickshell -p /usr/share/a21s-shell/apps/dialer/Dialer.qml "$@"

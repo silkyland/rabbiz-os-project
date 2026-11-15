@@ -68,30 +68,7 @@ PanelWindow {
 
     // Home indicator pill.
     Rectangle {
-        // Cycle to previous/next open toplevel when swiping horizontally on the pill.
-    function switchAdjacentApp(delta) {
-        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
-        if (tops.length < 2)
-            return;
-        var activeIdx = -1;
-        for (var i = 0; i < tops.length; ++i) {
-            if (tops[i] && tops[i].activated) {
-                activeIdx = i;
-                break;
-            }
-        }
-        var nextIdx = activeIdx === -1
-            ? 0
-            : (activeIdx + delta + tops.length) % tops.length;
-        var target = tops[nextIdx];
-        if (target) {
-            target.minimized = false;
-            target.activate();
-            ShellState.activeAppId = target.appId || "";
-        }
-    }
-
-    anchors {
+        anchors {
             horizontalCenter: parent.horizontalCenter
             bottom: parent.bottom
             bottomMargin: Theme.spaceS

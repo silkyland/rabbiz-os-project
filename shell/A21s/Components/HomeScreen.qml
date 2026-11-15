@@ -273,7 +273,7 @@ PanelWindow {
             DesktopEntries.byId("a21s-dialer")   || ({ name: "Phone",    materialIcon: "call" }),
             DesktopEntries.byId("a21s-sms")      || ({ name: "Messages", materialIcon: "sms" }),
             DesktopEntries.byId("a21s-settings") || ({ name: "Settings", materialIcon: "settings" }),
-            DesktopEntries.byId("a21s-steam")    || ({ name: "Browser",  materialIcon: "public" })
+            DesktopEntries.byId("a21s-steam")    || DesktopEntries.byId("steam") || ({ name: "Steam", materialIcon: "sports_esports" })
         ];
     }
 
@@ -455,7 +455,7 @@ PanelWindow {
         TapHandler {
             id: steamTap
             onTapped: {
-                var steamEntry = DesktopEntries.byId("a21s-steam")
+                var steamEntry = DesktopEntries.byId("a21s-steam") || DesktopEntries.byId("steam")
                 if (steamEntry && typeof steamEntry.execute === "function")
                     steamEntry.execute()
                 else if (!steamFallbackProc.running)

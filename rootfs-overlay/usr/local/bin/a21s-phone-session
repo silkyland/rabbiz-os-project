@@ -10,12 +10,17 @@
 set -euo pipefail
 
 # --- XDG base dirs -------------------------------------------------------
+export LANG="${LANG:-C.UTF-8}"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" "$XDG_CONFIG_HOME/a21s-shell"
+if [ ! -f "$XDG_CONFIG_HOME/a21s-shell/prefs.json" ]; then
+    printf '{}\n' > "$XDG_CONFIG_HOME/a21s-shell/prefs.json"
+fi
 
 # --- Session identity ----------------------------------------------------
 export XDG_SESSION_TYPE=wayland
@@ -25,10 +30,16 @@ export XDG_CURRENT_DESKTOP=labwc
 # --- Compositor/seat -----------------------------------------------------
 export LIBSEAT_BACKEND=seatd
 export WLR_RENDERER="${WLR_RENDERER:-gles2}"   # Mali-G52/Panfrost: GLES only
+# Bind strictly to exynos-drm (DSI-1) so wlroots ignores simpledrm (card1).
+if [ -e /dev/dri/by-path/platform-exynos-drm-card ]; then
+    export WLR_DRM_DEVICES="$(readlink -f /dev/dri/by-path/platform-exynos-drm-card)"
+elif [ -e /dev/dri/card0 ]; then
+    export WLR_DRM_DEVICES=/dev/dri/card0
+fi
 
 # --- Toolkit env (inherited by quickshell, qml6 apps, gamescope) -----------
 export QT_QPA_PLATFORM=wayland
-export QSG_RHI_BACKEND=opengl
+export QT_QUICK_BACKEND=software
 export QT_SCALE_FACTOR=1
 export QT_QPA_PLATFORMTHEME=                   # no qt platformtheme plugins
 export QML_IMPORT_PATH="${QML_IMPORT_PATH:-/usr/share/a21s-shell}"

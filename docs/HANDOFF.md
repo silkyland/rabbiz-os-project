@@ -1,6 +1,6 @@
 # Engineering Handoff — Galaxy A21s (`SM-A217F` / Exynos 850)
 
-Last updated: 2026-11-15 (`exynos-drm` `DSI-1` display + PipeWire/Steam/`paplay` speaker playback **BOTH WORKING** on `#5` with `CONFIG_EXYNOS_IOMMU=y` and zero Calliope aborts; next up is M5 power/battery)
+Last updated: 2026-11-15 (`exynos-drm` `DSI-1` display + PipeWire/Steam/`paplay` speaker playback **BOTH WORKING** on `#5` with `CONFIG_EXYNOS_IOMMU=y` and zero Calliope aborts + **`a21s-shell` Mobile Launcher (`labwc` + `quickshell` + `squeekboard` + 7 apps) deployed & verified on device**; next up is M5 power/battery)
 
 ---
 
@@ -139,6 +139,25 @@ Rebuilt and flashed kernel `#5 SMP PREEMPT_DYNAMIC Sun Nov 15 11:08:03 UTC 2026`
 3. **Verified on clean reboot (`#5` on `root@172.16.42.1`):**
    - `exynos-drm` bound `13060000.display-controller` (`decon850_component_ops`) and `13070000.dsi` (`dsim850_component_ops`), `[drm] Initialized exynos 1.1.0 for exynos-drm on minor 0`, `/sys/class/drm/card0-DSI-1/status` = `connected` (`720x1600`, `enabled`), and `/sys/class/backlight/13070000.dsi.0` + `ovt-td4150` touchscreen + `weston --backend=drm --drm-device=card0` + `Xwayland` + `steam -gamepadui` all came up cleanly.
    - Zero ABOX/audio regressions: `calliope_version=nEB0`, `0-001e` (`sma1303`) `playback_init done (bclk=1536000 Hz)`, `wpctl status` (`XDG_RUNTIME_DIR=/run/user/1001`) shows `Internal speaker (SMA1303)` active with Chromium connected, `paplay /tmp/s16-48k.wav` (2×) succeeded with zero Calliope aborts, and `wlan0` / `usb0` / `hci0` remain up.
+
+### 0.5 Round 6 — `a21s-shell` Mobile Launcher Deployed & Verified on Device (2026-11-15 18:37)
+
+Replaced the single-app `steamos-session.service` with `a21s-phone-session.service` (`labwc` + `quickshell` + `squeekboard` + 7 QML phone apps) on the Samsung Galaxy A21s:
+
+1. **Packages installed on device (`pacman`):**
+   - Installed `labwc 0.20.2-1`, `quickshell 0.3.2-1`, `qt6-declarative 6.12.0-4`, `qt6-svg 6.12.0-1`, `qt6-wayland 6.12.0-1`, `squeekboard 1.43.1-6`, `noto-fonts 1:2026.11.01-1`, `ttf-nerd-fonts-symbols 3.5.1-1`, `upower 1.91.5-1`, `brightnessctl 0.5.1-3` (`xorg-xwayland` and `gamescope` already present).
+2. **Hardware/DRM integration fixes discovered during bring-up:**
+   - **Qt Quick backend (`QT_QUICK_BACKEND=software`):** With `QSG_RHI_BACKEND=opengl`, Qt Wayland allocates non-contiguous Panfrost dmabufs (`renderD129`), which `exynos_drm_gem_prime_import_sg_table()` rejects (`buffer chunks must be mapped contiguously` → `error 7: importing the supplied dmabufs failed`) because `exynos-drm` (`card0`) has no IOMMU. Switching `quickshell` and all `a21s-*` QML launchers to `QT_QUICK_BACKEND=software` (`wl_shm`) eliminates all Wayland protocol errors and `swiotlb` kernel spam while keeping `labwc` GLES2 (`WLR_RENDERER=gles2`).
+   - **DRM output pinning (`WLR_DRM_DEVICES`):** `a21s-phone-session` resolves `/dev/dri/by-path/platform-exynos-drm-card` (`card0`) so `wlroots`/`labwc` ignores `simpledrm` (`card1`).
+   - **DRM teardown pitfall:** Stopping an active DRM master (`weston` or `labwc`) live triggers `drm_fbdev_client_restore()` → `exynos850-decon: DECON timeout` / `flip_done timed out`. **Reboot cleanly** after switching between `steamos-session.service` and `a21s-phone-session.service`.
+   - **Material icons & Steam desktop lookup:** `shell/A21s/Components/AppIcon.qml` now maps built-in `.desktop` ids/icons to `MaterialIconsRound` ligatures (and passes `true` to `Quickshell.iconPath(..., true)` to suppress missing-icon warnings); `HomeScreen.qml` checks both `a21s-steam` and `steam`; `NavBar.qml` duplicate `switchAdjacentApp()` removed.
+   - **Steam launcher (`rootfs-overlay/usr/local/bin/a21s-steam`):** Defaults to `labwc`'s XWayland (`DISPLAY=:0`) using `/home/gamer/.local/share/Steam/steamrtarm64/steam` with `PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1` and `STEAMOS=1` (pass `--gamescope` to opt into nested `gamescope`).
+   - **Hardware ergonomics & deploy hygiene:** Added `rootfs-overlay/etc/udev/rules.d/90-a21s-backlight.rules` (`video` group write access on `/sys/class/backlight/*/brightness`), `rootfs-overlay/etc/systemd/logind.conf.d/10-a21s-powerkey.conf` (`HandlePowerKey=ignore`, `HandlePowerKeyLongPress=poweroff`), `COPYFILE_DISABLE=1` + `._*` cleanup in `scripts/deploy_shell.sh`, and `prefs.json` seeding in `a21s-phone-session`.
+   - **`labwc 0.20` `rc.xml` cleanup:** Removed empty `<theme><name></name>` and `<touch><naturalScroll>no</naturalScroll>` (handled under `<libinput><device>`).
+3. **Verified live on device (`root@172.16.42.1`):**
+   - `a21s-phone-session.service` enabled (`steamos-session.service` disabled), `labwc`, `squeekboard`, and `quickshell -p /usr/share/a21s-shell/shell.qml` running under `gamer` with zero errors or warnings in `log.log` / `log.qslog`.
+   - Tested launching `a21s-settings`, `a21s-dialer`, `a21s-sms`, `a21s-calculator`, `a21s-clock`, `a21s-files`, and `a21s-notes` on `wayland-0`: all 7 reached `Configuration Loaded` with zero QML errors.
+   - Backlight `/sys/class/backlight/13070000.dsi.0/brightness` (`root:video`, `664`) adjustable via `brightnessctl set 80%` as `gamer`; `upower.service` active; `wpctl status` shows `Built-in Audio Internal speaker (SMA1303)` active alongside `quickshell`.
 
 ### Still remaining (M5 / M6)
 

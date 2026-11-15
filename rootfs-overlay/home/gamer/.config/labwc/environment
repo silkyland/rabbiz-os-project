@@ -3,15 +3,19 @@
 # squeekboard, app windows). No shell expansion happens here.
 # Deployed to ~gamer/.config/labwc/environment by scripts/deploy_shell.sh.
 
+LANG=C.UTF-8
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
+
 XDG_SESSION_TYPE=wayland
 XDG_SESSION_DESKTOP=a21s-shell
 XDG_CURRENT_DESKTOP=labwc
 
 LIBSEAT_BACKEND=seatd
 
-# Mali-G52 / Panfrost: GLES only.
+# Software Qt Quick backend (wl_shm): avoids exynos-drm non-contiguous dmabuf
+# import error while keeping labwc/games GLES2 on Panfrost.
 QT_QPA_PLATFORM=wayland
-QSG_RHI_BACKEND=opengl
+QT_QUICK_BACKEND=software
 QT_SCALE_FACTOR=1
 QT_QPA_PLATFORMTHEME=
 

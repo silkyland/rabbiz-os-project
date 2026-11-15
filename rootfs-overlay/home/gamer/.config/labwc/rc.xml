@@ -35,7 +35,6 @@
   <theme>
     <!-- No real theme needed: decorations are off for all toplevels.
          Font only matters for labwc's OSD (e.g. window switcher). -->
-    <name></name>
     <cornerRadius>0</cornerRadius>
     <dropShadows>no</dropShadows>
     <font place="ActiveWindow">
@@ -79,12 +78,10 @@
     </windowRule>
   </windowRules>
 
-  <!-- Touchscreen: natural scroll off (Android-style direct-manipulation
-       scrolling = content follows finger). mapToOutput pins touch input
-       to the single internal panel. -->
+  <!-- Touchscreen: naturalScroll is configured via <libinput><device>.
+       mapToOutput pins touch input to the single internal panel. -->
   <touch deviceName="*">
     <mapToOutput>DSI-1</mapToOutput>
-    <naturalScroll>no</naturalScroll>
   </touch>
 
   <libinput>

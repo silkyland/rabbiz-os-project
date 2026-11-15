@@ -75,30 +75,33 @@ fi
 # --- deploy shell QML tree ----------------------------------------------
 echo ">> shell/ -> /usr/share/a21s-shell/"
 ssh "${TARGET}" "mkdir -p /usr/share/a21s-shell"
-tar -C "${REPO_ROOT}/shell" -cf - . \
+COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/shell" -cf - . \
   | ssh "${TARGET}" "tar -C /usr/share/a21s-shell -xf -"
 
 # --- deploy rootfs overlay (merge into /) --------------------------------
 echo ">> rootfs-overlay/ -> /"
-tar -C "${REPO_ROOT}/rootfs-overlay" -cf - . \
+COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/rootfs-overlay" -cf - . \
   | ssh "${TARGET}" "tar -C / -xf -"
 
 # --- fix ownership / permissions remotely --------------------------------
 echo ">> Fixing permissions + daemon-reload"
 ssh "${TARGET}" "
   set -e
+  find /usr/share/a21s-shell /home/gamer/.config/labwc /home/gamer/.config/wireplumber \
+    /usr/share/applications /usr/local/bin /etc/systemd/system \
+    /etc/udev/rules.d /etc/systemd/logind.conf.d -maxdepth 3 -name '._*' -delete 2>/dev/null || true
   chown -R root:root /usr/share/a21s-shell
-  chown root:root /etc/systemd/system/a21s-phone-session.service
-  chmod 644 /etc/systemd/system/a21s-phone-session.service
-  chown -R root:root /usr/local/bin/a21s-phone-session /usr/local/bin/a21s-dialer \
-    /usr/local/bin/a21s-sms /usr/local/bin/a21s-settings /usr/local/bin/a21s-steam
-  chmod 755 /usr/local/bin/a21s-phone-session /usr/local/bin/a21s-dialer \
-    /usr/local/bin/a21s-sms /usr/local/bin/a21s-settings /usr/local/bin/a21s-steam
-  chmod 644 /usr/share/applications/a21s-dialer.desktop \
-    /usr/share/applications/a21s-sms.desktop \
-    /usr/share/applications/a21s-settings.desktop \
-    /usr/share/applications/steam.desktop
-  chown -R gamer:gamer /home/gamer/.config/labwc
+  chown root:root /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/abox-audio.service
+  chmod 644 /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/abox-audio.service
+  chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf
+  chmod 644 /etc/udev/rules.d/90-a21s-backlight.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf
+  chown root:root /usr/local/bin/a21s-*
+  chmod 755 /usr/local/bin/a21s-*
+  chown root:root /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
+  chmod 644 /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
+  chown -R gamer:gamer /home/gamer/.config
+  chgrp video /sys/class/backlight/*/brightness 2>/dev/null || true
+  chmod g+w /sys/class/backlight/*/brightness 2>/dev/null || true
   systemctl daemon-reload
 "
 

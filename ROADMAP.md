@@ -71,9 +71,9 @@
   - [ ] Integrate `libsamsung-ipc` / `oFono` + ABOX/Bluetooth HFP voice audio routing.
 
 ### M7: `a21s-shell` Android-style DE — wip
-- **Objective:** Replace the Steam-only session with an Android-like launcher: homescreen/app drawer, pull-down notification+quick-settings shade, dialer, SMS, settings — all QML on `labwc`+`quickshell`, Steam stays launchable via `gamescope`.
-- **Layout:** `shell/` (QML, modules `A21s.Theme`/`A21s.Services`/`A21s.Components`), `rootfs-overlay/` (systemd unit, labwc config, wrappers, .desktop), `scripts/deploy_shell.sh`. Details: `docs/a21s-phone-shell.md`, `shell/README.md`.
-- **Verified on host:** `quickshell 0.3.2` + sway-headless load of `shell.qml`, `apps/{dialer,sms,settings}` all reach `Configuration Loaded`. **Not yet on-device** — needs `deploy_shell.sh` + enable `a21s-phone-session.service`.
+- **Objective:** Replace the Steam-only session with an Android-like launcher: homescreen/app drawer, pull-down notification+quick-settings shade, dialer, SMS, settings — all QML on `labwc`+`quickshell`, Steam stays launchable from the launcher card/dock (`a21s-steam`).
+- **Layout:** `shell/` (QML, modules `A21s.Theme`/`A21s.Services`/`A21s.Components`), `rootfs-overlay/` (systemd unit, labwc config, wrappers, .desktop, udev/logind rules), `scripts/deploy_shell.sh`. Details: `docs/a21s-phone-shell.md`, `shell/README.md`.
+- **Verified on host & device:** `labwc` + `quickshell 0.3.2` + `squeekboard` running on Galaxy A21s (`DSI-1` `card0`); `shell.qml` and all 7 built-in apps (`a21s-{settings,dialer,sms,calculator,clock,files,notes}`) load with zero QML errors (`QT_QUICK_BACKEND=software`).
 - **Tasks:**
   - [x] Skeleton + design tokens + service contracts (lead)
   - [x] Session/compositor/deploy infra + labwc config (W1)
@@ -82,7 +82,7 @@
   - [x] Dialer app + Telephony facade (demo mode) (W4)
   - [x] SMS app (W5)
   - [x] StatusBar + notification daemon/shade list (W6)
-  - [ ] On-device smoke test: install packages, enable session, verify touch/shade/launch
+  - [x] On-device deployment & bring-up: install 44 packages, enable `a21s-phone-session.service`, verify `labwc` + `quickshell` + all 7 `a21s-*` apps + `brightnessctl` + `wpctl status` on `DSI-1`
   - [ ] Real telephony backend when M6 lands (`Telephony.backend` hook / `mm-backend.sh` reference)
 
 ## Open questions

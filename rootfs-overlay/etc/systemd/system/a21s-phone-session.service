@@ -36,13 +36,15 @@ PAMName=login
 # /run/user/1001 + XDG_RUNTIME_DIR are normally created by pam_systemd, but
 # set explicitly so the session never starts without a valid runtime dir.
 Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
+Environment=LANG=C.UTF-8
 Environment=XDG_SESSION_TYPE=wayland
 # Force libseat onto the seatd backend (no logind seat-claim attempt).
 Environment=LIBSEAT_BACKEND=seatd
-# Mali-G52 / Panfrost is GLES-only: Qt must use the OpenGL(ES) RHI backend
-# and the Wayland QPA. No qt platformtheme (gtk/gnome) integration.
+# Software Qt Quick backend (wl_shm): exynos-drm lacks IOMMU for non-contiguous
+# Panfrost dmabufs on card0, so software Qt Quick avoids EGL dmabuf import failure.
 Environment=QT_QPA_PLATFORM=wayland
-Environment=QSG_RHI_BACKEND=opengl
+Environment=QT_QUICK_BACKEND=software
 Environment=QT_QPA_PLATFORMTHEME=
 ExecStart=/usr/local/bin/a21s-phone-session
 # Phone UX: if the compositor dies, bring the shell back instead of

@@ -13,11 +13,41 @@ Item {
     property int tileSize: Theme.iconApp
     signal launched()
 
+    readonly property string entryId: (entry && entry.id) ? String(entry.id) : ""
     readonly property string entryName: (entry && entry.name) ? String(entry.name) : ""
+    readonly property string entryIconName: (entry && entry.icon) ? String(entry.icon) : ""
     readonly property string entryMaterialIcon: (entry && entry.materialIcon) ? String(entry.materialIcon) : ""
     readonly property string entryGlyph: (entry && entry.glyph) ? String(entry.glyph) : ""
-    readonly property url iconUrl: (entry && entry.icon && !entryMaterialIcon && !entryGlyph)
-        ? Quickshell.iconPath(String(entry.icon)) : ""
+    readonly property string resolvedMaterialIcon: {
+        if (entryMaterialIcon.length > 0)
+            return entryMaterialIcon
+        var iconMap = {
+            "system-file-manager":    "folder",
+            "a21s-files":             "folder",
+            "accessories-calculator": "calculate",
+            "a21s-calculator":        "calculate",
+            "preferences-system-time": "schedule",
+            "a21s-clock":             "schedule",
+            "accessories-text-editor": "edit_note",
+            "a21s-notes":             "edit_note",
+            "call-start":             "call",
+            "a21s-dialer":            "call",
+            "mail-message-new":       "sms",
+            "a21s-sms":               "sms",
+            "preferences-system":     "settings",
+            "a21s-settings":          "settings",
+            "steam":                  "sports_esports",
+            "a21s-steam":             "sports_esports",
+            "application-x-executable": "widgets"
+        }
+        if (iconMap[entryIconName])
+            return iconMap[entryIconName]
+        if (iconMap[entryId])
+            return iconMap[entryId]
+        return ""
+    }
+    readonly property url iconUrl: (entryIconName.length > 0 && resolvedMaterialIcon.length === 0 && !entryGlyph)
+        ? Quickshell.iconPath(entryIconName, true) : ""
     readonly property bool isGlass: ShellPrefs.iconStyle === "glass"
     readonly property bool isCircle: ShellPrefs.iconStyle === "circle"
 
@@ -79,15 +109,15 @@ Item {
 
         MaterialIcon {
             anchors.centerIn: parent
-            visible: image.status !== Image.Ready && appIcon.entryMaterialIcon.length > 0
-            name: appIcon.entryMaterialIcon
+            visible: image.status !== Image.Ready && appIcon.resolvedMaterialIcon.length > 0
+            name: appIcon.resolvedMaterialIcon
             size: Math.round(appIcon.tileSize * 0.46)
             color: Theme.text
         }
 
         Text {
             anchors.centerIn: parent
-            visible: image.status !== Image.Ready && appIcon.entryMaterialIcon.length === 0
+            visible: image.status !== Image.Ready && appIcon.resolvedMaterialIcon.length === 0
             text: appIcon.entryGlyph.length > 0
                 ? appIcon.entryGlyph
                 : (appIcon.entryName.length > 0 ? appIcon.entryName.charAt(0).toUpperCase() : "?")

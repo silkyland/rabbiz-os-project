@@ -106,7 +106,7 @@ PanelWindow {
                         ? DesktopEntries.heuristicLookup(modelData.appId)
                         : null
                     readonly property url appIconUrl: appEntry && appEntry.icon
-                        ? Quickshell.iconPath(String(appEntry.icon))
+                        ? Quickshell.iconPath(String(appEntry.icon), true)
                         : ""
                     readonly property string appTitle: modelData && modelData.title
                         ? String(modelData.title)

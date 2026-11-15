@@ -1,17 +1,31 @@
 #!/bin/sh
-# a21s-steam — Steam Big Picture nested inside labwc via gamescope.
+# a21s-steam — Steam Big Picture inside labwc via XWayland (default) or gamescope.
 #
-# Runs gamescope fullscreen as a regular labwc toplevel (which the rc.xml
-# window rule maximizes/undecorates like every app). Internal gamescope
-# geometry matches the panel's native portrait mode 720x1600 (DSI-1).
-# Steam flags per docs/a21s-game-results.md: the CEF GPU-compositing
-# workarounds avoid a black steamwebhelper under Panfrost/XWayland.
-#
-# NOTE: Steam Big Picture was validated in *landscape* 1600x720 under
-# Weston. If portrait gamepadui renders badly, either rotate the labwc
-# output or change to: gamescope -W 1600 -H 720 -f ...
+# Launching directly on labwc's built-in XWayland (DISPLAY=:0) avoids nested
+# gamescope's dmabuf import issue on exynos-drm (no IOMMU on card0). Pass
+# `--gamescope` to opt into nested gamescope explicitly.
 #
 # Deployed to /usr/local/bin/ by scripts/deploy_shell.sh, which sets +x.
 
-exec gamescope -W 720 -H 1600 -f --steam -- \
-    steam -gamepadui -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing "$@"
+export PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1
+export STEAMOS=1
+export STEAM_RUNTIME=0
+export DBUS_FATAL_WARNINGS=0
+export LD_LIBRARY_PATH="/home/gamer/.local/share/Steam/steamrtarm64:/home/gamer/.local/share/Steam/steamrtarm64/libs:/home/gamer/.local/share/Steam/steamrtarm64/video${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+STEAM_BIN="/home/gamer/.local/share/Steam/steamrtarm64/steam"
+if [ ! -x "$STEAM_BIN" ]; then
+    STEAM_BIN="steam"
+fi
+
+STEAM_ARGS="-noverifyfiles -nobootstrapupdate -skipinitialbootstrap -gamepadui -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing"
+
+if [ "${1:-}" = "--gamescope" ]; then
+    shift
+    exec gamescope -W 720 -H 1600 -f -e -- \
+        env SDL_VIDEODRIVER=x11 "$STEAM_BIN" $STEAM_ARGS "$@"
+fi
+
+export DISPLAY="${DISPLAY:-:0}"
+unset SDL_VIDEODRIVER
+exec "$STEAM_BIN" $STEAM_ARGS "$@"
