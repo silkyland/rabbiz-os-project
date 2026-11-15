@@ -111,9 +111,9 @@ PanelWindow {
 
     // Immersive mode: the button row stays hidden behind a thin gesture
     // pill until the user taps or swipes up inside the bottom zone, then
-    // auto-collapses again after a few seconds. The layer surface keeps
-    // its 56px height in both states (labwc reserves it via <margin>),
-    // so the collapsed zone still owns all touches — apps never see them.
+    // auto-collapses again after a few seconds. While an app is open the
+    // collapsed surface shrinks to a 24px gesture strip (matching labwc's
+    // bottom <margin>) so apps get almost the whole screen.
     property bool expanded: false
 
     function showTemporarily() {
@@ -127,12 +127,23 @@ PanelWindow {
         collapseTimer.restart();
     }
 
+    // Opening an app always drops the bar back to the slim gesture strip.
+    Connections {
+        target: ShellState
+        function onAppOpenChanged() {
+            if (ShellState.appOpen)
+                bar.expanded = false;
+        }
+    }
+
     anchors {
         bottom: true
         left: true
         right: true
     }
-    implicitHeight: 56
+    // Collapsed + app open -> 24px gesture strip only; otherwise the full
+    // 56px row (expanded or on the home screen, where the strip is free).
+    implicitHeight: (ShellState.appOpen && !bar.expanded) ? 24 : 56
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Top
     color: "transparent"
@@ -154,7 +165,7 @@ PanelWindow {
         anchors {
             horizontalCenter: parent.horizontalCenter
             bottom: parent.bottom
-            bottomMargin: 10
+            bottomMargin: ShellState.appOpen ? 9 : 10
         }
         width: 140
         height: 6

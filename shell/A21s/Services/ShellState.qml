@@ -1,5 +1,6 @@
 pragma Singleton
 import QtQuick
+import Quickshell.Wayland
 
 // Global shell UI state. Owned by the integration lead.
 QtObject {
@@ -12,6 +13,15 @@ QtObject {
     property real drawerProgress: 0.0
     // currently focused app (desktop id), "" when on home
     property string activeAppId: ""
+    // true while any app toplevel is visible (i.e. not on the home screen)
+    readonly property bool appOpen: {
+        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
+        for (var i = 0; i < tops.length; ++i) {
+            if (tops[i] && !tops[i].minimized)
+                return true;
+        }
+        return false;
+    }
     // global overlays
     property bool powerMenuOpen: false
     property bool lockScreenOpen: false

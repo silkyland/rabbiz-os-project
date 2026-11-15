@@ -163,6 +163,16 @@ QtObject {
         Telephony.signalStrength = online ? (root.mobileData ? 86 : 68) : 45
     }
 
+    // --- On-screen keyboard (squeekboard via sm.puri.OSK0 / gsettings) ---
+
+    function toggleOsk() {
+        _runCmd(["a21s-osk-ctl", "toggle"])
+    }
+
+    function nextOskLanguage() {
+        _runCmd(["a21s-osk-ctl", "lang-next"])
+    }
+
     function setGovernor(name) {
         if (!name || name.length === 0)
             return

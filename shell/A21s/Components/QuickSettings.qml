@@ -129,6 +129,22 @@ Item {
                         settingsProc.running = true
                 }
             }
+
+            QSTile {
+                Layout.fillWidth: true
+                materialIcon: "keyboard"
+                label: "Keyboard"
+                secondary: "Show / hide OSK"
+                onTapped: SystemControl.toggleOsk()
+            }
+
+            QSTile {
+                Layout.fillWidth: true
+                materialIcon: "language"
+                label: "Language"
+                secondary: "EN ⇄ ไทย"
+                onTapped: SystemControl.nextOskLanguage()
+            }
         }
 
         // --- Compact Shade Media Player Row ----------------------------

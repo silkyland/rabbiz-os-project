@@ -144,6 +144,8 @@ ssh "${TARGET}" "
   chown root:root / /home 2>/dev/null || true
   chown gamer:gamer /home/gamer
   chown -R gamer:gamer /home/gamer/.config
+  # squeekboard user layouts override the built-ins; keep gamer-owned.
+  chown -R gamer:gamer /home/gamer/.local/share/squeekboard 2>/dev/null || true
   chgrp video /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true
   chmod g+w /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true
   chgrp video /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true

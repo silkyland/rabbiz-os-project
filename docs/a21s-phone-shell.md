@@ -116,11 +116,15 @@ swaymsg / labwc --version; ls /usr/share/a21s-shell
   `UDISKS_IGNORE=1` on `mmcblk0p*`/`loop0p*` so Android eMMC partitions
   (efs/sec_efs/cpefs/key*/metadata/prism/optics/cache/omr/spu) and the
   pmOS system partitions stop appearing in Dolphin/Index sidebars.
-- **labwc `<margin top="44" bottom="56">`** reserves StatusBar/NavBar
-  space for maximized apps (layer-shell exclusion alone doesn't reach
-  XDG windows). Applies at window map time — restart the session (or
-  re-maximize windows) after changing it; `SIGHUP`/`labwc -r` did NOT
-  retile existing maximized windows in testing.
+- **Immersive bars**: `ShellState.appOpen` (any non-minimized toplevel
+  via ToplevelManager) drives both bars — StatusBar `visible=false` while
+  an app is open (exclusionMode `Ignore`, pure overlay; the shade handle,
+  power menu and lock screen still reveal it) and NavBar collapses to a
+  24 px gesture strip. labwc margin is therefore `top=0 bottom=24`: apps
+  draw edge-to-edge, the strip is the only reserved zone. Applies at
+  window map time — restart the session (or re-maximize windows) after
+  changing margin; `SIGHUP`/`labwc -r` did NOT retile existing maximized
+  windows in testing.
 - **NavBar auto-hides** (`NavBar.qml`): collapsed to a thin gesture pill;
   tap/swipe-up in the bottom zone reveals back/home/recents, auto-collapse
   after 5 s or after any action. Dolphin-style swipe-reveal is impossible
@@ -134,10 +138,24 @@ swaymsg / labwc --version; ls /usr/share/a21s-shell
   no Widevine on aarch64 Linux.
 - **OSK**: squeekboard autostarts; `screen-keyboard-enabled=true` +
   `input-sources=[us,th]` set in labwc `autostart` — Thai Kedmanee
-  layout + emoji pane built in. Dead ends on labwc: maliit,
-  plasma-keyboard, ibus (all `input-method-v1`). Better long-term Thai
-  IM: `fcitx5` + `fcitx5-libthai` (real sequence-checking IM), or
-  `stevia` (more Gboard-like, conflicts squeekboard).
+  layout + emoji pane built in. Custom layouts in
+  `~/.local/share/squeekboard/keyboards/{us,th}.yaml` (Gboard-style
+  number row) override the compiled-in ones by name. `a21s-osk-ctl`
+  gives system-level control: `toggle` force-shows/hides via
+  `sm.puri.OSK0 SetVisible` (covers apps without text-input-v3 —
+  terminals, XWayland, games), `lang-next` flips EN⇄TH instantly by
+  reordering input-sources + setting `current=0` (squeekboard follows
+  sources[0]; its own 🌐 key still opens the prefs popover, which also
+  holds emoji). Quick Settings has Keyboard + Language tiles wired to
+  it. Dead ends on labwc: maliit, plasma-keyboard, ibus (all
+  `input-method-v1`). Better long-term Thai IM: `fcitx5` +
+  `fcitx5-libthai` (real sequence-checking IM), or `stevia` (more
+  Gboard-like, conflicts squeekboard).
+- **runuser env trap**: `runuser -u gamer` inherits the *parent's*
+  `XDG_RUNTIME_DIR`/`DBUS_SESSION_BUS_ADDRESS` (e.g. `/run/user/0`) —
+  gdbus/gsettings calls then hit "Could not connect: Permission denied".
+  `a21s-osk-ctl` repoints both at the runtime dir owned by the current
+  uid before touching the session bus.
 - **Disk is ~99% full** (22G root, Steam ~7.5G) — installs must be
   batched; `pacman -Scc` between waves. Freed: stale `7.3.4-1-aarch64-ARCH`
   modules (205M), /root boot-img backups (moved to `backups/` on host).

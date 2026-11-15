@@ -14,7 +14,17 @@ PanelWindow {
 
     anchors { top: true; left: true; right: true }
     implicitHeight: Theme.statusBarHeight
-    exclusionMode: ExclusionMode.Normal
+    // Immersive: hide while an app fills the screen; the surface unmaps so
+    // labwc gives the whole top strip back. The shade handle / power menu
+    // / lock screen bring it back temporarily.
+    visible: !ShellState.appOpen
+        || ShellState.shadeProgress > 0.02
+        || ShellState.powerMenuOpen
+        || ShellState.lockScreenOpen
+        || ShellState.sleeping
+    // Pure overlay: never reserves space (labwc margin top=0), so apps
+    // stay edge-to-edge and don't reflow when the bar appears/disappears.
+    exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.namespace: "a21s-statusbar"
     color: "transparent"

@@ -21,13 +21,15 @@
     <reuseOutputMode>no</reuseOutputMode>
   </core>
 
-  <!-- Reserve space for the shell's own layer bars so maximized apps
-       don't render under them. StatusBar is 44px top (exclusionMode
-       Normal alone doesn't reach XDG windows reliably), NavBar zone
-       is 56px bottom. Applies to output DSI-1 only; takes effect for
-       windows mapped after config load — restart the session or
-       re-maximize existing windows after changing. -->
-  <margin top="44" bottom="56" left="0" right="0" output="DSI-1"/>
+  <!-- Immersive app space: the StatusBar hides whenever a toplevel is
+       visible, so no top margin is reserved — apps draw edge-to-edge.
+       The NavBar collapses to a 24px gesture strip while an app is open;
+       keep exactly that much reserved so the strip never overlaps app
+       content (its expanded 56px row draws over the app transiently).
+       Applies to output DSI-1 only; takes effect for windows mapped
+       after config load — restart the session or re-maximize existing
+       windows after changing. -->
+  <margin top="0" bottom="24" left="0" right="0" output="DSI-1"/>
 
   <placement>
     <policy>center</policy>

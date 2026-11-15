@@ -1,0 +1,48 @@
+#!/bin/sh
+# a21s-osk-ctl — system-level squeekboard control for a21s-shell.
+#
+#   toggle      force show/hide the OSK via sm.puri.OSK0 D-Bus — works even
+#               in apps with no text-input-v3 (terminals, XWayland, games)
+#   lang-next   instantly switch EN ⇄ TH keyboard layout (no popover menu)
+#
+# Squeekboard auto-shows on text-input-v3 focus when GNOME
+# screen-keyboard-enabled=true; this script covers everything else.
+# runuser/su callers inherit the *parent's* XDG_RUNTIME_DIR (e.g. /run/user/0)
+# — repoint at the runtime dir actually owned by the current uid.
+RD="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+[ -O "$RD" ] || RD="/run/user/$(id -u)"
+export XDG_RUNTIME_DIR="$RD"
+export DBUS_SESSION_BUS_ADDRESS="unix:path=$RD/bus"
+
+case "${1:-toggle}" in
+toggle)
+    cur=$(gdbus call --session -d sm.puri.OSK0 -o /sm/puri/OSK0 \
+        -m org.freedesktop.DBus.Properties.Get sm.puri.OSK0 Visible 2>/dev/null)
+    case "$cur" in
+        *true*) next=false ;;
+        *)      next=true  ;;
+    esac
+    gdbus call --session -d sm.puri.OSK0 -o /sm/puri/OSK0 \
+        -m sm.puri.OSK0.SetVisible "$next" >/dev/null 2>&1
+    ;;
+lang-next)
+    # Reorder input-sources so the target layout is first AND point
+    # 'current' at index 0 — covers both watch semantics.
+    src=$(gsettings get org.gnome.desktop.input-sources sources 2>/dev/null)
+    case "$src" in
+        *us*,*th*)
+            gsettings set org.gnome.desktop.input-sources \
+                sources "[('xkb','th'),('xkb','us')]"
+            ;;
+        *)
+            gsettings set org.gnome.desktop.input-sources \
+                sources "[('xkb','us'),('xkb','th')]"
+            ;;
+    esac
+    gsettings set org.gnome.desktop.input-sources current "uint32 0" 2>/dev/null
+    ;;
+*)
+    echo "usage: a21s-osk-ctl [toggle|lang-next]" >&2
+    exit 1
+    ;;
+esac
