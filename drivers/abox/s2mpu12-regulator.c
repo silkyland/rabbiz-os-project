@@ -16,6 +16,7 @@
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/regulator/driver.h>
+#include <linux/regulator/machine.h>
 #include <linux/regulator/of_regulator.h>
 #include <linux/mfd/samsung/core.h>
 #include <linux/mfd/samsung/s2mpu12.h>
@@ -203,6 +204,20 @@ static int s2mpu12_regulator_probe(struct platform_device *pdev)
 			dev_err(dev, "failed to register %s: %d\n",
 				s2mpu12_regulators[i].name, ret);
 			return ret;
+		}
+
+		/*
+		 * Rails left on by the bootloader (regulator-boot-on) have no
+		 * DT consumers yet, e.g. ldo28 = lcd_vddi for the simpledrm
+		 * panel. regulator_late_cleanup() would switch them off ~30s
+		 * after boot and black out the screen, so keep them on until
+		 * their consumers are described in the DTS.
+		 */
+		if (rdev->constraints && rdev->constraints->boot_on &&
+		    !rdev->constraints->always_on) {
+			rdev->constraints->always_on = true;
+			dev_info(dev, "%s: boot-on rail kept enabled\n",
+				 rdev_get_name(rdev));
 		}
 	}
 

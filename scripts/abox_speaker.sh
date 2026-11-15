@@ -91,6 +91,7 @@ $C cset name='ABOX SIFS5' RESERVED
 $C cset name='ABOX UAIF1 SPK' SIFS0
 $C cset name='ABOX SPUS OUT3' SIFS0
 $C cset name='ABOX SPUS ASRC3' 1
+$C cset name='ABOX RDMA3 Width' 16
 $C cset name='ABOX RDMA3_A' BD_MIXER
 $C cset name='ABOX BD_SRCCOM0_A' VPCMOUT_DAI0
 $C cset name='ABOX BD_SRCCOM1_A' VPCMOUT_DAI1

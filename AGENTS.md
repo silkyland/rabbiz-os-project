@@ -11,6 +11,8 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 - **Keep `wifibt_if` at `0xb0000000` (`0xc00000`)** in `exynos850-a217f.dts` — avoids colliding with kernel/initramfs memory (`docs/a21s-wifi-bluetooth.md`).
 - **Uncompressed `uniLoader` + `--dtb` packing** — pack `build/images/boot-avb.img` using `mkbootimg` with `--dtb src/tools/AIK-Linux/split_img/boot.img-dtb --dtb_offset 0x00000000` and uncompressed `src/uniLoader/uniLoader`.
 - **`src/` and `build/` are gitignored** (`.gitignore:2-3`) — tracked driver code lives in `drivers/scsc/`.
+- **Keep boot-on S2MPU12 rails `always_on`** in `drivers/abox/s2mpu12-regulator.c` until panel supplies are wired in DTS — otherwise `regulator_late_cleanup()` disables `vdd_ldo28` (lcd_vddi) at ~31 s and the screen goes black (`docs/a21s-mainline-boot.md`).
+- **Never `rmmod exynos3830_aud3004x`** — `aud3004x_jack_remove` oopses; reboot instead (`docs/a21s-audio-abox-plan.md` §0).
 
 ## Common wrong assumptions
 
@@ -18,6 +20,7 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 - **"Use `wpa_supplicant` + `systemd-networkd` for Steam Wi-Fi"** is wrong: Steam `-gamepadui` requires `org.freedesktop.NetworkManager` over D-Bus (`docs/a21s-wifi-bluetooth.md`).
 - **"Vendor `scsc_bt` compiles directly on Mainline 7.3"** is wrong: Mainline removed `hdev->dev_type = HCI_BREDR` and uses `<net/bluetooth/hci_h4.h>` `h4_recv_skb(hdev, NULL, NULL, ...)` (`drivers/scsc/bt/scsc_bluez.c`).
 - **"Vendor `mxman.c` unregisters cleanly without `recovery_disabled_unreg` check"** is wrong: `mxman_stop()` must guard `if (mif->recovery_disabled_unreg)` (`drivers/scsc/misc/mxman.c:2667`).
+- **"ABOX noise means wrong I2S format/clock"** can be wrong: cicada/mosquito noise on *both* speakers was a broken `sg_table` (no `struct page`) in the `drivers/abox/abox_ion.c` ION shim — build it with `dma_get_sgtable()` (`docs/a21s-audio-abox-plan.md` §0).
 
 ## Commands
 

@@ -6,6 +6,41 @@ Related: [a21s-ble-gamepad.md](a21s-ble-gamepad.md) §5 (BT audio userspace), `s
 
 ---
 
+## 0. Status 2026-11-15 — main speaker plays music ✅
+
+**Verified on device:** a 48 kHz S16_LE stereo WAV played through the main speaker (`UAIF1 → SMA1303`) is heard as clean music, after reboot, with `calliope_version=nEB0`. The earpiece (`UAIF0 → aud3004x → EP`) produced audible output earlier. It has **not** been re-tested with music since the `abox_ion.c` fix below.
+
+Playback recipe (after `/root/audio-up.sh`):
+
+```sh
+amixer -c 1 cset name='ABOX SPUS ASRC3' 0
+echo 1536000 > /sys/bus/i2c/devices/0-001e/playback_init   # SMA1303 PLL from 1.536 MHz BCLK
+aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 song.wav
+```
+
+### Bugs fixed, in the order they were found
+
+| # | Symptom | Root cause | Fix |
+|---|---------|-----------|-----|
+| 1 | Speaker silent | `gpb1-0..3` stayed in the idle pinctrl state | `abox_if.c`: `abox_if_select_pinctrl()` switches to `aud-i2s1-pins` during playback |
+| 2 | Clicking ("ติ๊กๆ") | `UAIF1`/`UAIF2` in `exynos3830_dai[]` had no `.dai_fmt`. `exynos3830_audio_probe()` only rewrites DT-listed links (`[0..13]`), so `abox_uaif_hw_params()` hit `default:` → `ABOX_UAIF1_CTRL1 (0x0514)` got `VALID_STR=VALID_END=15`, keeping 1 of 16 bits | `exynos3830_aud3004x.c`: `.dai_fmt = I2S \| NB_NF \| CBC_CFC` on `UAIF0..2`. Check: `0514` reads `00800000` |
+| 3 | `ABOX RDMA3 Width` = 8 | Default kcontrol value | `scripts/abox_speaker.sh` sets it to `16` |
+| 4 | **Cicada/mosquito noise on *both* speakers** (the real bug) | `abox_ion.c` mainline shim (replaces ION) built its `sg_table` with `sg_alloc_table()` + `sg_dma_address()` only, leaving **no `struct page`**. `abox_iommu_map_sg()` → `iommu_map_sg()` uses `sg_phys()` = `page_to_phys(NULL)`, so the Calliope IOVA for the PCM buffer pointed at **random RAM**. The DSP pipeline timing was perfect (log-00 clean), but the samples were garbage | Build the table with `dma_get_sgtable(dev, &sgt, vaddr, dma_addr, size)` |
+
+> [!NOTE]
+> Debug lesson: if `log-00` shows `PCMOUT0 → BD_SRCCOM0 → BD_MIXER → RDMA3` running cleanly, the registers look right, and **both** codecs make the same kind of noise, suspect the shared DMA/IOMMU buffer mapping before the codec or I2S format.
+
+### Things that turned out not to be the cause
+- `ABOX UAIF1 Width=32` (64fs, 3.072 MHz BCLK with `playback_init 3072000`): changed the noise from cicada to mosquito. Keep 16 / 1.536 MHz.
+- SMA1303 regs `01..04`, PLL `8b..8f` (`1.536MHz` entry `07 e0 8b 03`), `fb: 08` without `CLK_MON` fault were all fine.
+
+### Known caveats
+- On some boots Calliope never signals `BOOT_DONE` (`calliope boot retry 1/8..8/8`), so audio needs another reboot.
+- **Never `rmmod exynos3830_aud3004x`.** `aud3004x_jack_remove` oopses on unload. Reboot instead.
+- Loading `s2mpu12-regulator.ko` caused a black screen ~31 s after boot. See [a21s-mainline-boot.md](a21s-mainline-boot.md) § "Black screen ~30 s after boot".
+
+---
+
 ## 1. Current state (verified on device)
 
 - **No sound card**: `/proc/asound` absent, `lsmod` shows no `snd_*`, PipeWire `wpctl status` → 0 Devices/Sinks.

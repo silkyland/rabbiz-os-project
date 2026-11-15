@@ -55,6 +55,19 @@ static int abox_if_set_tristate(struct snd_soc_dai *dai, int tristate)
 	return abox_if_disable_qchannel(data, !tristate);
 }
 
+static void abox_if_select_pinctrl(struct device *dev, const char *name)
+{
+	struct pinctrl *p = pinctrl_get(dev);
+	struct pinctrl_state *s;
+
+	if (IS_ERR(p))
+		return;
+	s = pinctrl_lookup_state(p, name);
+	if (!IS_ERR(s))
+		pinctrl_select_state(p, s);
+	pinctrl_put(p);
+}
+
 static int abox_if_startup(struct snd_pcm_substream *substream,
 		struct snd_soc_dai *dai)
 {
@@ -67,6 +80,7 @@ static int abox_if_startup(struct snd_pcm_substream *substream,
 			(substream->stream == SNDRV_PCM_STREAM_CAPTURE) ?
 			'C' : 'P');
 
+	abox_if_select_pinctrl(dev, "active");
 	abox_request_cpu_gear_dai(dev, abox_data, dai, abox_data->cpu_gear_min);
 	ret = clk_enable(data->clk_mclk);
 	if (ret < 0) {
@@ -102,6 +116,7 @@ static void abox_if_shutdown(struct snd_pcm_substream *substream,
 	clk_disable(data->clk_bclk_gate);
 	clk_disable(data->clk_bclk);
 	abox_request_cpu_gear_dai(dev, abox_data, dai, 0);
+	abox_if_select_pinctrl(dev, "idle");
 }
 
 static int abox_if_hw_free(struct snd_pcm_substream *substream,
@@ -317,12 +332,13 @@ static int abox_uaif_set_fmt(struct snd_soc_dai *dai, unsigned int fmt)
 		ret = -EINVAL;
 	}
 
-	switch (fmt & SND_SOC_DAIFMT_MASTER_MASK) {
-	case SND_SOC_DAIFMT_CBP_CFP:
+	switch (fmt & SND_SOC_DAIFMT_CLOCK_PROVIDER_MASK) {
+	case SND_SOC_DAIFMT_BC_FC:
 		data->slave = true;
 		set_value_by_name(ctrl0, ABOX_MODE, 0);
 		break;
-	case SND_SOC_DAIFMT_CBC_CFC:
+	case SND_SOC_DAIFMT_BP_FP:
+		data->slave = false;
 		set_value_by_name(ctrl0, ABOX_MODE, 1);
 		break;
 	default:

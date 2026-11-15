@@ -10,3 +10,14 @@
   - **Touchscreen:** `ovt-td4150 spi0.0: TD4150 ready: 719x1599, 5 objects` (`/dev/input/event0..2`)
   - **USB-C Networking:** `cdc_ncm` (`172.16.42.1` device / `172.16.42.2` host, ~1.70 ms RTT)
 - **Next step (`M2 (R1)`):** Deploy Native ARM64 Linux rootfs onto `USERDATA` (`mmcblk0p...`) with ZRAM, Mesa `Panfrost`/`PanVK`, and test `kmscube` / `vulkaninfo` directly on DRM/KMS.
+
+## Black screen ~30 s after boot (fixed 2026-11-15)
+
+- **Symptom:** After `s2mpu12-regulator.ko` was added for audio, the panel went fully black about 30 s after every boot. SSH, Steam and audio kept working.
+- **Root cause:** On current boots exynos-drm fails to bind (`decon850_component_ops: -19`), so the screen is driven by `simpledrm` on the framebuffer uniLoader set up. Nothing in the DTS consumes the panel supplies (`vio-supply = <&reg_dummy>`, see TODO in `exynos850-a217f.dts`). Once the S2MPU12 rails were registered, `regulator_late_cleanup()` turned off the unused boot-on rails:
+  ```
+  [   31.714188] vdd_grip_3p3: disabling
+  [   31.714441] vdd_ldo28: disabling        <- ldo28 = lcd_vddi
+  ```
+- **Fix:** `drivers/abox/s2mpu12-regulator.c` marks every `regulator-boot-on` rail as `always_on` at probe (`"<rail>: boot-on rail kept enabled"` in dmesg). Re-enabling the rail at runtime does not restore the panel because it needs uniLoader's init sequence, so a reboot is required.
+- **Proper fix later:** wire `vio-supply = <&vdd_ldo28>` (plus LM36274 `vsn/vsp` + backlight) in the DTS, then drop the blanket `always_on`.

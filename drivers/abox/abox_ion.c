@@ -103,7 +103,8 @@ static struct dma_buf *abox_ion_alloc_dmabuf(struct device *dev, size_t size)
 		return ERR_PTR(-ENOMEM);
 	}
 
-	ret = sg_alloc_table(&priv->sgt, 1, GFP_KERNEL);
+	ret = dma_get_sgtable(dev, &priv->sgt, priv->vaddr, priv->dma_addr,
+			size);
 	if (ret) {
 		dma_free_coherent(dev, size, priv->vaddr, priv->dma_addr);
 		kfree(priv);
@@ -111,8 +112,6 @@ static struct dma_buf *abox_ion_alloc_dmabuf(struct device *dev, size_t size)
 	}
 	sg_dma_address(priv->sgt.sgl) = priv->dma_addr;
 	sg_dma_len(priv->sgt.sgl) = size;
-	priv->sgt.sgl->offset = 0;
-	priv->sgt.sgl->length = size;
 
 	exp_info.exp_name = "abox-heap";
 	exp_info.owner = THIS_MODULE;

@@ -3182,6 +3182,7 @@ static int sma1303_playback_init(struct sma1303_priv *sma1303,
 			POWER_MASK, POWER_ON);
 	regmap_update_bits(regmap, SMA1303_10_SYSTEM_CTRL1,
 			SPK_MODE_MASK, SPK_MONO);
+	regmap_write(regmap, SMA1303_0A_SPK_VOL, 0x28);
 	regmap_update_bits(regmap, SMA1303_0E_MUTE_VOL_CTRL,
 			SPK_MUTE_MASK, SPK_UNMUTE);
 

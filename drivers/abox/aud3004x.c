@@ -28,6 +28,8 @@
 #include <sound/tlv.h>
 #include <sound/samsung/abox.h>
 #include <linux/i2c.h>
+#include <linux/platform_device.h>
+#include <linux/firmware/samsung/exynos-acpm-protocol.h>
 #include <linux/regulator/consumer.h>
 #include <linux/gpio.h>
 #include <linux/of.h>
@@ -58,13 +60,22 @@ void aud3004x_usleep(unsigned int u_sec)
 	usleep_range(u_sec, u_sec + 10);
 }
 
+static struct acpm_handle *g_aud3004x_acpm;
+#define AUD3004X_ACPM_CHAN_ID	2
+#define AUD3004X_SPEEDY_CHAN	0
+
 int aud3004x_acpm_read_reg(unsigned int slave, unsigned int reg,
 		unsigned int *val)
 {
 	int ret;
-	u8 reg_val;
+	u8 reg_val = 0;
 
-	ret = exynos_acpm_read_reg(0, slave, reg, &reg_val);
+	if (!g_aud3004x_acpm)
+		return -ENODEV;
+
+	ret = g_aud3004x_acpm->ops->pmic.read_reg(g_aud3004x_acpm,
+			AUD3004X_ACPM_CHAN_ID, slave, reg,
+			AUD3004X_SPEEDY_CHAN, &reg_val);
 	*val = reg_val;
 
 	if (ret)
@@ -79,7 +90,12 @@ int aud3004x_acpm_write_reg(unsigned int slave, unsigned int reg,
 {
 	int ret;
 
-	ret = exynos_acpm_write_reg(0, slave, reg, val);
+	if (!g_aud3004x_acpm)
+		return -ENODEV;
+
+	ret = g_aud3004x_acpm->ops->pmic.write_reg(g_aud3004x_acpm,
+			AUD3004X_ACPM_CHAN_ID, slave, reg,
+			AUD3004X_SPEEDY_CHAN, val);
 
 	if (ret)
 		pr_err("[%s] acpm ipc write failed! err: %d\n", __func__, ret);
@@ -93,7 +109,12 @@ int aud3004x_acpm_update_reg(unsigned int slave, unsigned int reg,
 {
 	int ret;
 
-	ret = exynos_acpm_update_reg(0, slave, reg, val, mask);
+	if (!g_aud3004x_acpm)
+		return -ENODEV;
+
+	ret = g_aud3004x_acpm->ops->pmic.update_reg(g_aud3004x_acpm,
+			AUD3004X_ACPM_CHAN_ID, slave, reg,
+			AUD3004X_SPEEDY_CHAN, val, mask);
 
 	if (ret)
 		pr_err("[%s] acpm ipc update failed! err: %d\n", __func__, ret);
@@ -118,16 +139,12 @@ void regcache_cache_switch(struct aud3004x_priv *aud3004x, bool on)
 
 static void i2c_client_change(struct aud3004x_priv *aud3004x, int client)
 {
-	struct device *dev = aud3004x->dev;
-	struct i2c_client *i2c = to_i2c_client(dev);
 	struct snd_soc_component *codec = aud3004x->codec;
 
 	if (client != CODEC_CLOSE) {
 		mutex_lock(&aud3004x->regmap_lock);
-		i2c = aud3004x->i2c_priv[client];
 		codec->regmap = aud3004x->regmap[client];
 	} else {
-		i2c = aud3004x->i2c_priv[AUD3004D];
 		codec->regmap = aud3004x->regmap[AUD3004D];
 		mutex_unlock(&aud3004x->regmap_lock);
 	}
@@ -149,8 +166,6 @@ static int i2c_client_return(unsigned int reg)
 
 unsigned int aud3004x_read(struct aud3004x_priv *aud3004x, unsigned int reg)
 {
-	struct device *dev = aud3004x->dev;
-	struct i2c_client *i2c = to_i2c_client(dev);
 	struct snd_soc_component *codec = aud3004x->codec;
 	int client;
 	unsigned int ret;
@@ -167,10 +182,8 @@ unsigned int aud3004x_read(struct aud3004x_priv *aud3004x, unsigned int reg)
 	if (client == AUD3004D) {
 		ret = snd_soc_component_read(codec, reg);
 	} else {
-		i2c = aud3004x->i2c_priv[client];
 		codec->regmap = aud3004x->regmap[client];
 		ret = snd_soc_component_read(codec, reg & 0xFF);
-		i2c = aud3004x->i2c_priv[AUD3004D];
 		codec->regmap = aud3004x->regmap[AUD3004D];
 	}
 	mutex_unlock(&aud3004x->regmap_lock);
@@ -181,8 +194,6 @@ unsigned int aud3004x_read(struct aud3004x_priv *aud3004x, unsigned int reg)
 int aud3004x_write(struct aud3004x_priv *aud3004x, unsigned int reg,
 		unsigned int val)
 {
-	struct device *dev = aud3004x->dev;
-	struct i2c_client *i2c = to_i2c_client(dev);
 	struct snd_soc_component *codec = aud3004x->codec;
 	int client;
 	unsigned int ret;
@@ -199,10 +210,8 @@ int aud3004x_write(struct aud3004x_priv *aud3004x, unsigned int reg,
 	if (client == AUD3004D) {
 		ret = snd_soc_component_write(codec, reg, val);
 	} else {
-		i2c = aud3004x->i2c_priv[client];
 		codec->regmap = aud3004x->regmap[client];
 		ret = snd_soc_component_write(codec, reg & 0xFF, val);
-		i2c = aud3004x->i2c_priv[AUD3004D];
 		codec->regmap = aud3004x->regmap[AUD3004D];
 	}
 	mutex_unlock(&aud3004x->regmap_lock);
@@ -213,8 +222,6 @@ int aud3004x_write(struct aud3004x_priv *aud3004x, unsigned int reg,
 int aud3004x_update_bits(struct aud3004x_priv *aud3004x, unsigned int reg,
 		unsigned int mask, unsigned int value)
 {
-	struct device *dev = aud3004x->dev;
-	struct i2c_client *i2c = to_i2c_client(dev);
 	struct snd_soc_component *codec = aud3004x->codec;
 	int client;
 	unsigned int ret;
@@ -231,10 +238,8 @@ int aud3004x_update_bits(struct aud3004x_priv *aud3004x, unsigned int reg,
 	if (client == AUD3004D) {
 		ret = snd_soc_component_update_bits(codec, reg, mask, value);
 	} else {
-		i2c = aud3004x->i2c_priv[client];
 		codec->regmap = aud3004x->regmap[client];
 		ret = snd_soc_component_update_bits(codec, reg & 0xFF, mask, value);
-		i2c = aud3004x->i2c_priv[AUD3004D];
 		codec->regmap = aud3004x->regmap[AUD3004D];
 	}
 	mutex_unlock(&aud3004x->regmap_lock);
@@ -3294,6 +3299,8 @@ static int aud3004x_codec_probe(struct snd_soc_component *codec)
 	pr_err("Codec Digital Driver Probe: (%s)\n", __func__);
 
 	aud3004x->codec = codec;
+	if (!codec->regmap && aud3004x->regmap[AUD3004D])
+		snd_soc_component_init_regmap(codec, aud3004x->regmap[AUD3004D]);
 
 	/* register codec power */
 	aud3004x->vdd = devm_regulator_get(codec->dev, "vdd_aldo1");
@@ -3531,6 +3538,154 @@ static struct i2c_driver aud3004x_i2c_driver = {
 extern int codec_speedy_init(void);
 extern void codec_speedy_exit(void);
 
+struct aud3004x_acpm_bus_ctx {
+	struct acpm_handle *acpm;
+	u8 slave_type;
+};
+
+static int aud3004x_acpm_bus_write(void *context, const void *data, size_t count)
+{
+	struct aud3004x_acpm_bus_ctx *ctx = context;
+	const u8 *d = data;
+
+	if (count < 2)
+		return -EINVAL;
+	if (count == 2)
+		return ctx->acpm->ops->pmic.write_reg(ctx->acpm,
+				AUD3004X_ACPM_CHAN_ID, ctx->slave_type,
+				d[0], AUD3004X_SPEEDY_CHAN, d[1]);
+	return ctx->acpm->ops->pmic.bulk_write(ctx->acpm,
+			AUD3004X_ACPM_CHAN_ID, ctx->slave_type,
+			d[0], AUD3004X_SPEEDY_CHAN, count - 1, &d[1]);
+}
+
+static int aud3004x_acpm_bus_read(void *context, const void *reg_buf,
+				  size_t reg_size, void *val_buf, size_t val_size)
+{
+	struct aud3004x_acpm_bus_ctx *ctx = context;
+	const u8 *r = reg_buf;
+
+	if (reg_size != 1 || !val_size)
+		return -EINVAL;
+	if (val_size == 1)
+		return ctx->acpm->ops->pmic.read_reg(ctx->acpm,
+				AUD3004X_ACPM_CHAN_ID, ctx->slave_type,
+				r[0], AUD3004X_SPEEDY_CHAN, val_buf);
+	return ctx->acpm->ops->pmic.bulk_read(ctx->acpm,
+			AUD3004X_ACPM_CHAN_ID, ctx->slave_type,
+			r[0], AUD3004X_SPEEDY_CHAN, val_size, val_buf);
+}
+
+static int aud3004x_acpm_bus_update_bits(void *context, unsigned int reg,
+					 unsigned int mask, unsigned int val)
+{
+	struct aud3004x_acpm_bus_ctx *ctx = context;
+
+	return ctx->acpm->ops->pmic.update_reg(ctx->acpm,
+			AUD3004X_ACPM_CHAN_ID, ctx->slave_type,
+			reg & 0xff, AUD3004X_SPEEDY_CHAN, val, mask);
+}
+
+static const struct regmap_bus aud3004x_acpm_regmap_bus = {
+	.write = aud3004x_acpm_bus_write,
+	.read = aud3004x_acpm_bus_read,
+	.reg_update_bits = aud3004x_acpm_bus_update_bits,
+	.max_raw_read = 8,
+	.max_raw_write = 8,
+};
+
+static struct regmap *aud3004x_init_acpm_regmap(struct device *dev,
+		struct acpm_handle *acpm, u8 slave_type,
+		const struct regmap_config *cfg)
+{
+	struct aud3004x_acpm_bus_ctx *ctx;
+
+	ctx = devm_kzalloc(dev, sizeof(*ctx), GFP_KERNEL);
+	if (!ctx)
+		return ERR_PTR(-ENOMEM);
+	ctx->acpm = acpm;
+	ctx->slave_type = slave_type;
+
+	return devm_regmap_init(dev, &aud3004x_acpm_regmap_bus, ctx, cfg);
+}
+
+static int aud3004x_platform_probe(struct platform_device *pdev)
+{
+	struct device *dev = &pdev->dev;
+	struct device_node *acpm_np;
+	struct acpm_handle *acpm;
+	struct aud3004x_priv *aud3004x;
+	int ret;
+
+	acpm_np = of_find_compatible_node(NULL, NULL, "samsung,exynos850-acpm-ipc");
+	if (!acpm_np) {
+		dev_err(dev, "samsung,exynos850-acpm-ipc node not found\n");
+		return -ENODEV;
+	}
+	acpm = devm_acpm_get_by_node(dev, acpm_np);
+	of_node_put(acpm_np);
+	if (IS_ERR(acpm))
+		return dev_err_probe(dev, PTR_ERR(acpm), "failed to get acpm\n");
+
+	g_aud3004x_acpm = acpm;
+
+	aud3004x = devm_kzalloc(dev, sizeof(*aud3004x), GFP_KERNEL);
+	if (!aud3004x)
+		return -ENOMEM;
+
+	aud3004x->dev = dev;
+	aud3004x->is_probe_done = false;
+	aud3004x->regulator_count = 0;
+
+	aud3004x->regmap[AUD3004D] = aud3004x_init_acpm_regmap(dev, acpm,
+			AUD3004X_DIGITAL_ADDR, &aud3004x_regmap);
+	if (IS_ERR(aud3004x->regmap[AUD3004D]))
+		return PTR_ERR(aud3004x->regmap[AUD3004D]);
+
+	aud3004x->regmap[AUD3004A] = aud3004x_init_acpm_regmap(dev, acpm,
+			AUD3004X_ANALOG_ADDR, &aud3004x_analog_regmap);
+	if (IS_ERR(aud3004x->regmap[AUD3004A]))
+		return PTR_ERR(aud3004x->regmap[AUD3004A]);
+
+	aud3004x->regmap[AUD3004O] = aud3004x_init_acpm_regmap(dev, acpm,
+			AUD3004X_OTP_ADDR, &aud3004x_otp_regmap);
+	if (IS_ERR(aud3004x->regmap[AUD3004O]))
+		return PTR_ERR(aud3004x->regmap[AUD3004O]);
+
+	platform_set_drvdata(pdev, aud3004x);
+
+	ret = snd_soc_register_component(dev, &soc_codec_dev_aud3004x,
+			aud3004x_dai, ARRAY_SIZE(aud3004x_dai));
+	if (ret < 0) {
+		dev_err(dev, "Failed to register aud3004x codec: %d\n", ret);
+		return ret;
+	}
+
+	pm_runtime_enable(dev);
+	dev_info(dev, "aud3004x ACPM codec probed successfully\n");
+	return 0;
+}
+
+static void aud3004x_platform_remove(struct platform_device *pdev)
+{
+	pm_runtime_disable(&pdev->dev);
+	snd_soc_unregister_component(&pdev->dev);
+	g_aud3004x_acpm = NULL;
+}
+
+static struct platform_driver aud3004x_platform_driver = {
+	.driver = {
+		.name = "aud3004x",
+		.owner = THIS_MODULE,
+		.pm = &aud3004x_pm,
+		.of_match_table = of_match_ptr(aud3004x_of_match),
+	},
+	.probe = aud3004x_platform_probe,
+	.remove = aud3004x_platform_remove,
+};
+
+static struct platform_device *g_aud3004x_pdev;
+
 static int __init aud3004x_codec_init(void)
 {
 	int ret;
@@ -3540,13 +3695,33 @@ static int __init aud3004x_codec_init(void)
 		return ret;
 	ret = i2c_add_driver(&aud3004x_i2c_driver);
 	if (ret)
-		codec_speedy_exit();
+		goto err_speedy;
+	ret = platform_driver_register(&aud3004x_platform_driver);
+	if (ret)
+		goto err_i2c;
+	g_aud3004x_pdev = platform_device_register_simple("aud3004x", -1, NULL, 0);
+	if (IS_ERR(g_aud3004x_pdev)) {
+		ret = PTR_ERR(g_aud3004x_pdev);
+		g_aud3004x_pdev = NULL;
+		goto err_plat;
+	}
+	return 0;
+
+err_plat:
+	platform_driver_unregister(&aud3004x_platform_driver);
+err_i2c:
+	i2c_del_driver(&aud3004x_i2c_driver);
+err_speedy:
+	codec_speedy_exit();
 	return ret;
 }
 module_init(aud3004x_codec_init);
 
 static void __exit aud3004x_codec_exit(void)
 {
+	if (g_aud3004x_pdev)
+		platform_device_unregister(g_aud3004x_pdev);
+	platform_driver_unregister(&aud3004x_platform_driver);
 	i2c_del_driver(&aud3004x_i2c_driver);
 	codec_speedy_exit();
 }

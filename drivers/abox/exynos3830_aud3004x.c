@@ -1157,13 +1157,15 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 		.name = "UAIF0",
 		.stream_name = "UAIF0",
 		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "UAIF0" }}, .num_cpus = 1,
+		.codecs = (struct snd_soc_dai_link_component[]){{ .name = "aud3004x", .dai_name = "aud3004x-aif" }}, .num_codecs = 1,
 		.platforms = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy" }}, .num_platforms = 1,
+		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBC_CFC,
 		.no_pcm = 1,
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
 		.be_hw_params_fixup = exynos3830_fixup_cap,
 		.init = exynos3830_uaif0_init,
-		.ops = &uaif0_ops,
+		.ops = &uaif_ops,
 		.playback_only = 1,
 		.capture_only = 1,
 	},
@@ -1172,6 +1174,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 		.stream_name = "UAIF1",
 		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "UAIF1" }}, .num_cpus = 1,
 		.platforms = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy" }}, .num_platforms = 1,
+		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBC_CFC,
 		.no_pcm = 1,
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
@@ -1185,6 +1188,7 @@ static struct snd_soc_dai_link exynos3830_dai[100] = {
 		.stream_name = "UAIF2",
 		.cpus = (struct snd_soc_dai_link_component[]){{ .dai_name = "UAIF2" }}, .num_cpus = 1,
 		.platforms = (struct snd_soc_dai_link_component[]){{ .name = "snd-soc-dummy" }}, .num_platforms = 1,
+		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF | SND_SOC_DAIFMT_CBC_CFC,
 		.no_pcm = 1,
 		.ignore_suspend = 1,
 		.ignore_pmdown_time = 1,
@@ -1996,6 +2000,13 @@ static int exynos3830_audio_probe(struct platform_device *pdev)
 		}
 
 		link->dai_fmt = snd_soc_daifmt_parse_format(dai, NULL);
+		if (!link->dai_fmt && !strncasecmp(dai->name, "uaif", 4)) {
+			link->dai_fmt = SND_SOC_DAIFMT_I2S |
+					SND_SOC_DAIFMT_NB_NF |
+					SND_SOC_DAIFMT_CBC_CFC;
+			dev_info(card->dev, "Default dai_fmt=0x%x for %s (link %s)\n",
+				 link->dai_fmt, dai->name, link->name);
+		}
 
 		if (++nlink == card->num_links)
 			break;
