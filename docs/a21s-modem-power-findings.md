@@ -243,3 +243,57 @@ Objects: `modem_main modem_variation modem_io_device net_io_device bootdump_io_d
 | defconfig | `configs/a21s_linux_defconfig` | `BATTERY_S2MU005=y`, `MFD_TI_LMU=m`, `LEDS_LM36274=m`, `REGULATOR_LM363X=m`, default governor → `schedutil` |
 
 **ก่อน flash ครั้งแรก:** (1) `i2cdetect` เช็ก bus จริงของ s2mu106/lm36274 (patch เดา hsi2c_0/hsi2c_1 — vendor fragment target resolve ไม่ได้จาก source), (2) เช็ก PMU regs 0x3000+ เข้าถึงได้จาก non-secure world ไหม, (3) หา SMC_ID สำหรับ `REQ_SECURITY`, (4) modem.bin partition offset จริงจาก PIT
+
+## 10. Camera — findings (A21s triple/quad camera)
+
+Sensor list จาก vendor `a21s_eur_open_w00_r00.dts` `fragment@camera` + `camera-config`:
+
+| Camera | Sensor | i2c addr | i2c ch | mclk ch | position |
+|---|---|---|---|---|---|
+| Rear main 48MP | Samsung **S5KGM2** (ISOCELL GM2) | `0x3d` | 0 | 0 | 0 (back) |
+| Front 13MP | **HI1336** (Hynix) | `0xd3` | 1 | 1 | 1 (front) |
+| Rear2 5MP | **GC02M1** (GalaxyCore) | `0xd6` | 2 | 2 | 2 |
+| Rear3/macro 5MP | **GC02M1** (macro variant) | `0xd6` | 3 | 2 | 6 |
+| Rear4 8MP UW | **S5K4HA** | `0x5a` (`sensor_id 0x27`) | 3 | 2 | 4 |
+
+หมายเหตุ: `sensor_i2c_ch` 0-3 **ไม่ใช่ hsi2c** — เป็น camera i2c เฉพาะ → ไม่ชน s2mu106 @0x3b-0x3d บน hsi2c (ตอบข้อสงสัย bus ของ PMIC ได้ทางอ้อม: hsi2c_0 ยัง free สำหรับ s2mu106)
+
+### 10.1 ISP hardware (Pablo ISP — downstream-only)
+
+- `exynos_is@14440000` compatible `samsung,exynos-is` — ISP หลัก (Samsung "Pablo" ISP):
+  - reg: `0x14430000-0x14480000` + `0x12ca0000`, IRQ GIC 147,156-161,168,171
+  - `num_of_isp=1`, `num_of_3aa=2`, `num_of_mcsc=2`, `num_of_vra=1`
+- `gdc@144C0000` — gamma/display correction, IRQ 146
+- `exynos3830-isppre` syscon @ `0x14520500` (ISP pre-config)
+- CSIS receivers: 3× `samsung,exynos-is-sensor` @ `0x14400000`/`14410000`/`14420000` (reg-names `csi`+`phy`, IRQ mode0_VC0-3)
+- DPHY: 3× `samsung,mipi-phy-m0s4s4s2` @ `0x14490000`/`144a0000`/`144b0000`
+- Power domain `pd-is@11862100`, camera sysmmus @ `0x14850000`/`14550000`/`14570000`
+- `camera_rmem` reserved mem: `0xed210000`/`0x100000` (1 MiB — เล็กมาก น่าจะเป็น fw/shared structs)
+- DVFS: `camera_default` EM scenario ผ่าน ACPM (เหมือน abox — ACPM infra เรามีอยู่แล้ว)
+
+### 10.2 Driver — `drivers/media/platform/exynos/camera/` (~816 files)
+
+- Stack: `is-core`/`is-devicemgr`/`is-groupmgr`/`is-framemgr`/`is-mem`/`is-pipe`/`is-sock`/`is-interface-wrap` + `is-video-3aa*` + `is-subdev-*` + `is-device-csi_v4`
+- ischain versions: `is-v7_0_0`, `is-v8_0_0`, `is-v8_1_0`, `is-v8_10_0`, `is-v8_20_0` (compile หมด เลือกตอน runtime — Exynos850 น่าจะ v8_20_0)
+- Sensor drivers: `sensor/module_framework/cis/is-cis-{gc02m1,hi1336,...}.c` + eeprom `mcd_v2/is-eeprom-*.h`
+- ใช้ custom ioctl/socket interface คุยกับ userspace camera daemon — **ไม่ใช่ V4L2 media-controller path มาตรฐาน**
+
+### 10.3 Userspace — ปัญหาใหญ่กว่า kernel
+
+- Android ใช้ Samsung proprietary camera stack (`libslsi_cam`/sec-cam + camera app) คุยกับ is-* driver ผ่าน `is-sock`
+- บน Arch/SteamOS ไม่มี equivalent — ทางเลือก: (ก) port kernel + เขียน userspace เองผ่าน is-sock protocol (reverse จาก `is-interface*.c`), (ข) V4L2-ize เฉพาะ path ที่ต้องการ (raw capture ผ่าน CSIS bypass ถ้า ISP รองรับ), (ค) libcamera + sensor drivers แยก — แต่ต้องมี ISP ที่ feed raw frames ออกมา
+- Sensor init tables อยู่ใน `is-cis-*.c` (i2c register sequences) — reuse เป็น reference ได้ถ้าขับ sensor ตรง
+
+### 10.4 Mainline/community status — **ไม่มีอะไรเลย**
+
+- `exynos850.dtsi` mainline ไม่มี camera node ใดๆ (SoC support 2021 ใส่มาแค่ core)
+- ไม่มี Pablo ISP driver ใน mainline — exynos4x12 `fimc-is` เป็นคนละ ISP gen ใช้ไม่ได้
+- `samsungexynos850/linux` master/staging ไม่มี camera work
+- pmOS `device-samsung-a21s` ไม่รองรับกล้อง (`firmware-samsung-a21s` มีแค่ `td4150_a21s.bin` ของ touchscreen)
+- A21s ไม่มีใครทำกล้องบน mainline เลย — **เป็น peripheral ที่หนักสุดในบรรดาทั้งหมด** (หนักกว่า modem ด้วยซ้ำ เพราะ ISP+sensor+userspace stack ทั้งสามชั้น proprietary)
+
+### 10.5 Effort estimate & ลำดับแนะนำ
+
+- Kernel port `exynos/camera/` ทั้งก้อน: **XL** (816 files, Kconfig ยุ่ง, พึ่งพา vendor framework เยอะ) — หรือ minimal path: CSIS+sensor อย่างเดียวข้าม ISP (ถ้าถ่าย raw bayer ได้) = **L**
+- Userspace: ต้องเขียนเองหรือ reverse is-sock protocol — **L–XL**
+- **แนะนำ:** กล้องไว้หลังสุด (หลัง M6 modem + เสียงเสร็จ) — ถ้าจะทำจริง ควรเริ่มจาก minimal path: port `is-device-csi_v4` + sensor i2c drivers + ดูว่า CSIS→memory raw capture ทำได้ไหมก่อนค่อยตัดสินใจ ISP
