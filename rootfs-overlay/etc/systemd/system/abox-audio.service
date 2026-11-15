@@ -1,0 +1,12 @@
+[Unit]
+Description=ABOX audio bring-up (Calliope DSP + SMA1303 + AUD3004X)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/root/audio-up.sh
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target
