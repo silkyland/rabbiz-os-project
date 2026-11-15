@@ -8,4 +8,5 @@ ShellRoot {
     HomeScreen {}
     Shade {}
     NavBar {}
+    PowerMenu {}
 }

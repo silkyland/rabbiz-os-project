@@ -5,6 +5,7 @@ QSTile 1.0 QSTile.qml
 MaterialIcon 1.0 MaterialIcon.qml
 AppGestureLayer 1.0 AppGestureLayer.qml
 AppIcon 1.0 AppIcon.qml
+AppLaunchMorph 1.0 AppLaunchMorph.qml
 AppDrawer 1.0 AppDrawer.qml
 TaskSwitcher 1.0 TaskSwitcher.qml
 StatusBar 1.0 StatusBar.qml
@@ -12,6 +13,7 @@ HomeScreen 1.0 HomeScreen.qml
 Shade 1.0 Shade.qml
 QuickSettings 1.0 QuickSettings.qml
 NavBar 1.0 NavBar.qml
+PowerMenu 1.0 PowerMenu.qml
 NotificationCenter 1.0 NotificationCenter.qml
 NotificationItem 1.0 NotificationItem.qml
 NotificationServer 1.0 NotificationServer.qml

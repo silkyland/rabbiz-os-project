@@ -13,6 +13,7 @@ QtObject {
     property string clockStyle: "editorial"   // editorial | classic | compact
     property bool use24h: true
     property bool showSteamCard: true
+    property bool dndEnabled: false
     property string iconStyle: "squircle"     // squircle | circle | glass
 
     readonly property var wallpapers: [
@@ -114,6 +115,7 @@ QtObject {
             if (d.clockStyle !== undefined) clockStyle = String(d.clockStyle)
             if (d.use24h !== undefined) use24h = Boolean(d.use24h)
             if (d.showSteamCard !== undefined) showSteamCard = Boolean(d.showSteamCard)
+            if (d.dndEnabled !== undefined) dndEnabled = Boolean(d.dndEnabled)
             if (d.iconStyle !== undefined) iconStyle = String(d.iconStyle)
         } catch (e) {}
     }
@@ -125,6 +127,7 @@ QtObject {
             clockStyle: clockStyle,
             use24h: use24h,
             showSteamCard: showSteamCard,
+            dndEnabled: dndEnabled,
             iconStyle: iconStyle
         }, null, 2)
         saveProc.command = [

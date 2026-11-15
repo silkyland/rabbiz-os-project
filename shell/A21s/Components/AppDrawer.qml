@@ -4,27 +4,66 @@ import Quickshell
 import A21s.Theme
 import A21s.Services
 
-// Full-screen app drawer, embedded in HomeScreen's background window.
-// Slides up over the home page (transform/opacity only — Exynos 850 friendly).
+// Full-screen app drawer embedded in HomeScreen.
+// Shares ShellState.drawerProgress (0..1) so interactive finger drag,
+// home parallax scale morph, search-pill flight, category-pill sliding morph,
+// and pull-down-to-close all stay 100% synchronized.
 Item {
     id: drawer
 
     // Bound by the caller to ShellState.drawerOpen.
     property bool open: false
+    property string activeCategory: "all"
 
     signal requestClose()
     signal launched()
 
-    // 0 = hidden below screen, 1 = fully open.
-    property real progress: open ? 1.0 : 0.0
-    visible: open || progress > 0
-    opacity: progress
+    readonly property real progress: ShellState.drawerProgress
+    visible: open || progress > 0.005
+    opacity: Math.max(0, Math.min(1, progress * 1.15))
 
-    Behavior on progress {
-        NumberAnimation {
-            duration: Theme.animMed
-            easing.type: Theme.animEase
-        }
+    NumberAnimation {
+        id: snapAnim
+        target: ShellState
+        property: "drawerProgress"
+        duration: Theme.animMed
+        easing.type: Easing.OutQuint
+    }
+
+    function snapTo(targetVal) {
+        snapAnim.stop()
+        snapAnim.from = ShellState.drawerProgress
+        snapAnim.to = targetVal
+        snapAnim.start()
+    }
+
+    readonly property var categories: [
+        { id: "all",    label: "All" },
+        { id: "system", label: "System" },
+        { id: "apps",   label: "Apps" },
+        { id: "media",  label: "Media" },
+        { id: "dev",    label: "Dev" }
+    ]
+
+    function categoryForEntry(entry) {
+        var eid = String(entry.id || "").toLowerCase()
+        var ename = String(entry.name || "").toLowerCase()
+        if (eid === "a21s-settings" || eid === "a21s-files" || eid.indexOf("dolphin") >= 0
+                || eid.indexOf("gparted") >= 0 || eid.indexOf("htop") >= 0
+                || eid.indexOf("btop") >= 0 || eid.indexOf("nm-") >= 0
+                || ename.indexOf("settings") >= 0 || ename.indexOf("file") >= 0)
+            return "system"
+        if (eid.indexOf("steam") >= 0 || eid.indexOf("elisa") >= 0
+                || eid.indexOf("mpv") >= 0 || eid.indexOf("vlc") >= 0
+                || eid.indexOf("krecorder") >= 0 || ename.indexOf("music") >= 0
+                || ename.indexOf("game") >= 0 || ename.indexOf("recorder") >= 0)
+            return "media"
+        if (eid.indexOf("konsole") >= 0 || eid.indexOf("terminal") >= 0
+                || eid.indexOf("code") >= 0 || eid.indexOf("vim") >= 0
+                || eid.indexOf("nvim") >= 0 || ename.indexOf("terminal") >= 0
+                || ename.indexOf("console") >= 0)
+            return "dev"
+        return "apps"
     }
 
     property var filteredApps: []
@@ -50,6 +89,8 @@ Item {
                     || eid === "qv4l2" || eid === "qvidcap"
                     || eid === "org.gnupg.pinentry-qt")
                 continue;
+            if (drawer.activeCategory !== "all" && drawer.categoryForEntry(entry) !== drawer.activeCategory)
+                continue;
             if (query.length > 0 && entry.name.toLowerCase().indexOf(query) === -1)
                 continue;
             result.push(entry);
@@ -59,12 +100,14 @@ Item {
     }
 
     onOpenChanged: {
+        snapTo(open ? 1.0 : 0.0)
         if (open) {
             rebuildFilter();
             searchInput.forceActiveFocus();
         } else {
             searchInput.focus = false;
             searchInput.text = "";
+            activeCategory = "all";
         }
     }
 
@@ -78,7 +121,7 @@ Item {
     // Dimmed backdrop behind the sliding sheet.
     Rectangle {
         anchors.fill: parent
-        color: Qt.alpha(Theme.bg, 0.55)
+        color: Qt.alpha(Theme.bg, 0.58 * drawer.progress)
     }
 
     // Sliding panel.
@@ -117,26 +160,75 @@ Item {
             onClicked: drawer.requestClose()
         }
 
-        // Top drag handle pill.
-        Rectangle {
-            id: grabber
+        // Interactive pull-down header drag zone (grabber + header space).
+        Item {
+            id: handleZone
             anchors {
-                horizontalCenter: parent.horizontalCenter
                 top: parent.top
-                topMargin: Theme.statusBarHeight + Theme.spaceS
+                topMargin: Theme.statusBarHeight
+                left: parent.left
+                right: parent.right
             }
-            width: 56
-            height: 6
-            radius: Theme.radiusPill
-            color: Qt.alpha(Theme.textDim, 0.45)
+            height: 44
+
+            Rectangle {
+                id: grabber
+                anchors.centerIn: parent
+                width: dragHandleArea.pressed ? 76 : 56
+                height: 6
+                radius: Theme.radiusPill
+                color: dragHandleArea.pressed
+                    ? ShellPrefs.accentColor
+                    : Qt.alpha(Theme.textDim, 0.45)
+
+                Behavior on width { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                Behavior on color { ColorAnimation { duration: Theme.animFast } }
+            }
+
+            MouseArea {
+                id: dragHandleArea
+                anchors.fill: parent
+                preventStealing: true
+                property real pressY: 0
+                property bool dragging: false
+
+                onPressed: (mouse) => {
+                    snapAnim.stop()
+                    pressY = mouse.y
+                    dragging = false
+                }
+                onPositionChanged: (mouse) => {
+                    if (!pressed) return
+                    var dy = mouse.y - pressY
+                    if (dy > 8)
+                        dragging = true
+                    if (dragging) {
+                        var range = Math.max(200, drawer.height * 0.55)
+                        ShellState.drawerProgress = Math.max(0, Math.min(1, 1.0 - dy / range))
+                    }
+                }
+                onReleased: {
+                    if (!dragging) {
+                        drawer.requestClose()
+                        return
+                    }
+                    if (ShellState.drawerProgress < 0.72) {
+                        ShellState.drawerOpen = false
+                        drawer.snapTo(0.0)
+                    } else {
+                        ShellState.drawerOpen = true
+                        drawer.snapTo(1.0)
+                    }
+                }
+            }
         }
 
         // Search field.
         Rectangle {
             id: searchBar
             anchors {
-                top: grabber.bottom
-                topMargin: Theme.spaceM
+                top: handleZone.bottom
+                topMargin: Theme.spaceXS
                 left: parent.left
                 right: parent.right
                 leftMargin: Theme.spaceM
@@ -213,11 +305,106 @@ Item {
             }
         }
 
+        // Morphing Category Filter Pills with animated sliding highlight capsule
+        Item {
+            id: categoryStrip
+            anchors {
+                top: searchBar.bottom
+                topMargin: Theme.spaceM
+                left: parent.left
+                right: parent.right
+                leftMargin: Theme.spaceM
+                rightMargin: Theme.spaceM
+            }
+            height: 44
+
+            property Item activeChip: null
+
+            function updateActiveChip() {
+                for (var i = 0; i < catRow.children.length; ++i) {
+                    var ch = catRow.children[i]
+                    if (ch && ch.catId === drawer.activeCategory) {
+                        categoryStrip.activeChip = ch
+                        return
+                    }
+                }
+            }
+
+            Rectangle {
+                id: slidingPill
+                visible: categoryStrip.activeChip !== null
+                y: 0
+                x: categoryStrip.activeChip ? categoryStrip.activeChip.x : 0
+                width: categoryStrip.activeChip ? categoryStrip.activeChip.width : 64
+                height: categoryStrip.height
+                radius: Theme.radiusPill
+                color: ShellPrefs.accentColor
+
+                Behavior on x { NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutQuint } }
+                Behavior on width { NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutQuint } }
+                Behavior on color { ColorAnimation { duration: Theme.animFast } }
+            }
+
+            Row {
+                id: catRow
+                anchors.fill: parent
+                spacing: 6
+
+                Repeater {
+                    model: drawer.categories
+                    delegate: Item {
+                        required property var modelData
+                        readonly property string catId: modelData.id
+                        readonly property bool isSelected: drawer.activeCategory === catId
+
+                        width: Math.floor((catRow.width - (drawer.categories.length - 1) * catRow.spacing) / drawer.categories.length)
+                        height: catRow.height
+
+                        Component.onCompleted: {
+                            if (isSelected)
+                                categoryStrip.activeChip = this
+                        }
+
+                        onIsSelectedChanged: {
+                            if (isSelected)
+                                categoryStrip.activeChip = this
+                        }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: Theme.radiusPill
+                            color: Qt.alpha(Theme.surfaceHigh, isSelected ? 0.0 : 0.7)
+                            border.width: isSelected ? 0 : 1
+                            border.color: Qt.alpha(Theme.text, 0.06)
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            text: modelData.label
+                            color: isSelected ? ShellPrefs.onAccentColor : Theme.textDim
+                            font.pixelSize: Theme.fontStatus
+                            font.family: Theme.fontFamily
+                            font.weight: isSelected ? Font.DemiBold : Font.Medium
+                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                        }
+
+                        TapHandler {
+                            onTapped: {
+                                drawer.activeCategory = catId
+                                categoryStrip.updateActiveChip()
+                                drawer.rebuildFilter()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Section header.
         RowLayout {
             id: sectionHeader
             anchors {
-                top: searchBar.bottom
+                top: categoryStrip.bottom
                 topMargin: Theme.spaceM
                 left: parent.left
                 right: parent.right
@@ -226,7 +413,9 @@ Item {
             }
 
             Text {
-                text: searchInput.text.trim().length > 0 ? "RESULTS" : "ALL APPS"
+                text: searchInput.text.trim().length > 0
+                    ? "RESULTS"
+                    : (drawer.activeCategory === "all" ? "ALL APPS" : drawer.activeCategory.toUpperCase())
                 color: Theme.textDim
                 font.pixelSize: Theme.fontStatus
                 font.family: Theme.fontFamily
@@ -269,7 +458,7 @@ Item {
             }
             clip: true
             cellWidth: Math.floor(width / 4)
-            cellHeight: Theme.iconApp + Theme.fontCaption * 2 + Theme.spaceM
+            cellHeight: Theme.iconApp + Theme.fontCaption * 2 + Theme.spaceM + 8
             model: drawer.filteredApps
 
             delegate: AppIcon {

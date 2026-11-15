@@ -178,6 +178,38 @@ PanelWindow {
                               ? Math.round(UPower.displayDevice.percentage * 100) + "%"
                               : ""
                     }
+
+                    // Lock & Power Menu pills in shade header
+                    Rectangle {
+                        width: 40; height: 40; radius: 20
+                        color: Theme.surfaceHigh
+                        border.width: 1; border.color: Qt.alpha(Theme.text, 0.10)
+                        MaterialIcon {
+                            anchors.centerIn: parent
+                            name: "lock"
+                            size: 20; color: Theme.textDim
+                        }
+                        TapHandler {
+                            onTapped: SystemControl.lockScreen()
+                        }
+                    }
+
+                    Rectangle {
+                        width: 40; height: 40; radius: 20
+                        color: Theme.surfaceHigh
+                        border.width: 1; border.color: Qt.alpha(Theme.text, 0.10)
+                        MaterialIcon {
+                            anchors.centerIn: parent
+                            name: "power_settings_new"
+                            size: 20; color: Theme.danger
+                        }
+                        TapHandler {
+                            onTapped: {
+                                win.snapTo(0)
+                                ShellState.powerMenuOpen = true
+                            }
+                        }
+                    }
                 }
 
                 QuickSettings {

@@ -1,6 +1,7 @@
 import Quickshell
 import Quickshell.Wayland
 import QtQuick
+import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
 
@@ -14,8 +15,15 @@ import A21s.Services
 PanelWindow {
     id: switcher
 
-    // Set by NavBar's hold-gesture (or any integrator).
     property bool open: false
+    property real enterProgress: open ? 1.0 : 0.0
+
+    Behavior on enterProgress {
+        NumberAnimation {
+            duration: Theme.animMed
+            easing.type: Easing.OutQuint
+        }
+    }
 
     // Close the switcher and return to the home screen.
     function close() {
@@ -64,7 +72,7 @@ PanelWindow {
     WlrLayershell.layer: WlrLayer.Top
     WlrLayershell.keyboardFocus: switcher.open ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     color: "transparent"
-    visible: switcher.open
+    visible: switcher.open || switcher.enterProgress > 0.01
 
     onOpenChanged: {
         if (open)
@@ -100,6 +108,43 @@ PanelWindow {
             focus: true
             Keys.onEscapePressed: switcher.close()
 
+            // Live System / RAM status badge at top of Recents
+            Rectangle {
+                anchors {
+                    horizontalCenter: parent.horizontalCenter
+                    top: parent.top
+                    topMargin: Theme.statusBarHeight + Theme.spaceM
+                }
+                implicitWidth: memRow.implicitWidth + Theme.spaceL
+                implicitHeight: 38
+                radius: Theme.radiusPill
+                color: Qt.alpha(Theme.surfaceHigh, 0.88)
+                border.width: 1
+                border.color: Qt.alpha(Theme.text, 0.10)
+                opacity: switcher.enterProgress
+
+                RowLayout {
+                    id: memRow
+                    anchors.centerIn: parent
+                    spacing: Theme.spaceS
+
+                    MaterialIcon {
+                        Layout.alignment: Qt.AlignVCenter
+                        name: "memory"
+                        size: 18
+                        color: ShellPrefs.accentColor
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        text: "RAM " + SystemControl.memUsedText + " (" + SystemControl.memPercent + "%) · CPU " + SystemControl.cpuPercent + "%"
+                        color: Theme.textDim
+                        font.pixelSize: Theme.fontStatus - 1
+                        font.family: Theme.fontFamily
+                        font.weight: Font.Medium
+                    }
+                }
+            }
+
             ListView {
                 id: cards
                 anchors.horizontalCenter: parent.horizontalCenter
@@ -107,6 +152,10 @@ PanelWindow {
                 width: Math.max(Theme.spaceXS,
                     Math.min(parent.width, count * (cellW + Theme.spaceM) - Theme.spaceM))
                 height: cellH
+                scale: 0.90 + 0.10 * switcher.enterProgress
+                transform: Translate {
+                    y: (1.0 - switcher.enterProgress) * 48
+                }
                 orientation: ListView.Horizontal
                 spacing: Theme.spaceM
                 clip: true
@@ -327,19 +376,19 @@ PanelWindow {
                 scale: clearTap.pressed ? 0.94 : 1.0
                 Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
 
-                Row {
+                RowLayout {
                     id: clearRow
                     anchors.centerIn: parent
                     spacing: 8
 
                     MaterialIcon {
-                        anchors.verticalCenter: parent.verticalCenter
+                        Layout.alignment: Qt.AlignVCenter
                         name: "clear_all"
                         size: 24
                         color: Theme.text
                     }
                     Text {
-                        anchors.verticalCenter: parent.verticalCenter
+                        Layout.alignment: Qt.AlignVCenter
                         text: "Clear all"
                         color: Theme.text
                         font.pixelSize: Theme.fontCaption

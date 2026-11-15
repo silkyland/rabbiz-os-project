@@ -7,13 +7,8 @@ import Quickshell.Services.Pipewire
 import A21s.Theme
 import A21s.Services
 
-// Android-style status bar (W6).
-// PanelWindow at WlrLayer.Top with an exclusive zone so app surfaces start
-// below it. Left: clock + carrier. Right: telephony bars, Wi-Fi, Bluetooth,
-// muted-sink and battery indicators — all tiny geometric glyphs drawn from
-// Theme tokens only (no emoji / no guaranteed-glyph fonts needed).
-// Tapping the bar toggles the notification shade; the pull-down drag itself
-// is handled by Shade.qml (W3).
+// Android-style status bar with a morphing Dynamic Island / Heads-Up
+// Notification capsule, airplane/DND indicators, and shade tap toggle.
 PanelWindow {
     id: bar
 
@@ -24,30 +19,36 @@ PanelWindow {
     WlrLayershell.namespace: "a21s-statusbar"
     color: "transparent"
 
-    // The a21s notification daemon facade lives here because the status bar is
-    // instantiated unconditionally at boot (shell.qml): the shell owns the
-    // org.freedesktop.Notifications name even while the shade is collapsed or
-    // lazily loaded. Quickshell's underlying server is a per-process
-    // singleton, so NotificationCenter's own facade sees the same tracked
-    // notifications.
-    NotificationServer { id: notifServer }
+    NotificationServer {
+        id: notifServer
+        onNewNotification: function(notification) {
+            if (SystemControl.dndEnabled || !notification)
+                return
+            bar.toastApp = notification.appName || "Notification"
+            bar.toastSummary = notification.summary || bar.toastApp
+            bar.toastActive = true
+            toastTimer.restart()
+        }
+    }
 
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
-    // --- derived metrics / state (all sizes derive from Theme tokens) ------
-    readonly property int indH: Theme.statusBarHeight - Theme.spaceS * 2   // 20
-    readonly property int smallFont: Math.round(Theme.fontStatus * 0.65)   // ~13
+    property bool toastActive: false
+    property string toastApp: ""
+    property string toastSummary: ""
 
-    // 0..4 filled bars, -1/unknown strength -> empty bars
+    Timer {
+        id: toastTimer
+        interval: 4200
+        onTriggered: bar.toastActive = false
+    }
+
+    readonly property int smallFont: Math.round(Theme.fontStatus * 0.65)
     readonly property int cellLevel: Telephony.signalStrength >= 0
         ? Math.min(4, Math.ceil(Telephony.signalStrength / 25.0)) : 0
-
     readonly property bool muted: Pipewire.defaultAudioSink !== null
         && Pipewire.defaultAudioSink.audio !== null
         && Pipewire.defaultAudioSink.audio.muted
-
-    // No battery driver on the A21s yet (M5): displayDevice may exist but be
-    // unready — then we show the AC plug fallback instead of a bogus 0%.
     readonly property bool batteryOk: UPower.displayDevice !== null
         && UPower.displayDevice.ready
         && UPower.displayDevice.isLaptopBattery
@@ -58,11 +59,13 @@ PanelWindow {
             || UPower.displayDevice.state === UPowerDeviceState.PendingCharge
             || UPower.displayDevice.state === UPowerDeviceState.FullyCharged)
 
-    // Translucent bar background (~85% opacity of Theme.bg).
+    readonly property bool islandExpanded: bar.toastActive || Media.isPlaying || SystemControl.flashlightOn
+
+    // Translucent bar background
     Rectangle {
         anchors.fill: parent
         color: tapArea.pressed
-               ? Qt.alpha(Theme.surfaceHigh, 0.9)
+               ? Qt.alpha(Theme.surfaceHigh, 0.92)
                : Qt.alpha(Theme.bg, 0.85)
     }
 
@@ -74,6 +77,8 @@ PanelWindow {
             verticalCenter: parent.verticalCenter
         }
         spacing: Theme.spaceS
+        opacity: bar.toastActive ? 0.25 : 1.0
+        Behavior on opacity { NumberAnimation { duration: Theme.animFast } }
 
         Text {
             text: Qt.formatTime(clock.date, "HH:mm")
@@ -83,7 +88,7 @@ PanelWindow {
             font.weight: Font.DemiBold
         }
         Text {
-            visible: text.length > 0
+            visible: text.length > 0 && !bar.toastActive
             text: Telephony.operatorName
             color: Theme.textDim
             font.pixelSize: bar.smallFont
@@ -98,10 +103,11 @@ PanelWindow {
             verticalCenter: parent.verticalCenter
         }
         spacing: Theme.spaceS
+        opacity: bar.toastActive ? 0.25 : 1.0
+        Behavior on opacity { NumberAnimation { duration: Theme.animFast } }
 
-        // DEMO tag while the modem is simulated (M6).
         Rectangle {
-            visible: Telephony.demoMode
+            visible: Telephony.demoMode && !SystemControl.airplaneMode
             Layout.preferredWidth: demoText.implicitWidth + Theme.spaceS
             Layout.preferredHeight: demoText.implicitHeight + Theme.spaceXS
             Layout.alignment: Qt.AlignVCenter
@@ -118,9 +124,28 @@ PanelWindow {
             }
         }
 
+        // Airplane indicator
+        MaterialIcon {
+            Layout.alignment: Qt.AlignVCenter
+            visible: SystemControl.airplaneMode
+            name: "flight"
+            size: Theme.fontBody - 4
+            color: Theme.warn
+        }
+
+        // Do Not Disturb indicator
+        MaterialIcon {
+            Layout.alignment: Qt.AlignVCenter
+            visible: SystemControl.dndEnabled
+            name: "do_not_disturb_on"
+            size: Theme.fontBody - 4
+            color: Theme.warn
+        }
+
         // Cellular signal
         MaterialIcon {
             Layout.alignment: Qt.AlignVCenter
+            visible: !SystemControl.airplaneMode
             name: bar.cellLevel > 0 ? "signal_cellular_alt" : "signal_cellular_off"
             size: Theme.fontBody - 4
             color: bar.cellLevel > 0 ? Theme.text : Theme.textFaint
@@ -129,7 +154,7 @@ PanelWindow {
         // Wi-Fi
         MaterialIcon {
             Layout.alignment: Qt.AlignVCenter
-            visible: Network.wifiEnabled
+            visible: Network.wifiEnabled && !SystemControl.airplaneMode
             name: Network.wifiConnected ? "wifi" : "wifi_off"
             size: Theme.fontBody - 4
             color: Network.wifiConnected ? Theme.text : Theme.textFaint
@@ -138,7 +163,7 @@ PanelWindow {
         // Bluetooth
         MaterialIcon {
             Layout.alignment: Qt.AlignVCenter
-            visible: Bluetooth.powered
+            visible: Bluetooth.powered && !SystemControl.airplaneMode
             name: Bluetooth.connected ? "bluetooth_connected" : "bluetooth"
             size: Theme.fontBody - 4
             color: Bluetooth.connected ? Theme.text : Theme.textDim
@@ -153,7 +178,7 @@ PanelWindow {
             color: Theme.text
         }
 
-        // Battery % + icon (or AC power plug icon when battery driver is pending M5)
+        // Battery % + icon
         Row {
             Layout.alignment: Qt.AlignVCenter
             spacing: 4
@@ -183,12 +208,77 @@ PanelWindow {
         }
     }
 
-    // Tap anywhere on the bar -> toggle the shade (convenience; the drag is
-    // owned by the shade itself). Declared last so it sits on top of the
-    // purely-decorative indicators.
+    // Tap anywhere on the bar -> toggle the shade
     MouseArea {
         id: tapArea
         anchors.fill: parent
         onClicked: ShellState.shadeProgress = ShellState.shadeOpen ? 0 : 1
+    }
+
+    // ---- CENTER: Dynamic Island / Heads-Up Notification Capsule ----------
+    Rectangle {
+        id: islandCapsule
+        z: 5
+        anchors.centerIn: parent
+        visible: bar.islandExpanded
+        opacity: bar.islandExpanded ? 1.0 : 0.0
+        width: bar.toastActive
+            ? Math.min(340, Math.max(140, islandRow.implicitWidth + 24))
+            : Math.min(200, Math.max(106, islandRow.implicitWidth + 20))
+        height: bar.toastActive ? 34 : 28
+        radius: height / 2
+        color: Qt.alpha(Theme.surfaceHigh, 0.96)
+        border.width: 1
+        border.color: bar.toastActive
+            ? ShellPrefs.accentColor
+            : (SystemControl.flashlightOn ? Theme.warn : Qt.alpha(ShellPrefs.accentColor, 0.45))
+
+        Behavior on width { NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutBack } }
+        Behavior on height { NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutBack } }
+        Behavior on opacity { NumberAnimation { duration: Theme.animFast } }
+        Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+
+        RowLayout {
+            id: islandRow
+            anchors {
+                centerIn: parent
+            }
+            width: Math.min(parent.width - 18, implicitWidth)
+            spacing: 6
+
+            MaterialIcon {
+                Layout.alignment: Qt.AlignVCenter
+                name: bar.toastActive ? "notifications_active"
+                    : (SystemControl.flashlightOn ? "flashlight_on" : "music_note")
+                size: 16
+                color: SystemControl.flashlightOn && !bar.toastActive ? Theme.warn : ShellPrefs.accentColor
+            }
+
+            Text {
+                Layout.alignment: Qt.AlignVCenter
+                Layout.fillWidth: true
+                text: bar.toastActive ? bar.toastSummary
+                    : (SystemControl.flashlightOn ? "Torch On" : Media.title)
+                color: Theme.text
+                font.pixelSize: bar.smallFont + 1
+                font.family: Theme.fontFamily
+                font.weight: Font.Medium
+                elide: Text.ElideRight
+            }
+        }
+
+        TapHandler {
+            onTapped: {
+                if (bar.toastActive) {
+                    bar.toastActive = false
+                    toastTimer.stop()
+                    ShellState.shadeProgress = 1
+                } else if (SystemControl.flashlightOn) {
+                    SystemControl.setFlashlight(false)
+                } else if (Media.isPlaying) {
+                    Media.togglePlaying()
+                }
+            }
+        }
     }
 }

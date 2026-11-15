@@ -5,3 +5,5 @@ singleton Telephony 1.0 Telephony.qml
 singleton Brightness 1.0 Brightness.qml
 singleton Bluetooth 1.0 Bluetooth.qml
 singleton ShellPrefs 1.0 ShellPrefs.qml
+singleton SystemControl 1.0 SystemControl.qml
+singleton Media 1.0 Media.qml

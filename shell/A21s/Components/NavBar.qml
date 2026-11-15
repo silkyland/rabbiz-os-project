@@ -21,17 +21,24 @@ PanelWindow {
     property alias switcherOpen: switcher.open
 
     // Go home: close overlays/drawers, minimize ALL open app toplevels so
-    // the HomeScreen beneath is always revealed, and emit ShellState.goHome().
+    // the HomeScreen beneath is always revealed, and trigger reverse morph.
     function goHome() {
+        var hadOpenApp = ShellState.activeAppId.length > 0;
+        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
+        for (var i = 0; i < tops.length; ++i) {
+            if (tops[i]) {
+                if (!tops[i].minimized)
+                    hadOpenApp = true;
+                tops[i].minimized = true;
+            }
+        }
         bar.switcherOpen = false;
         ShellState.drawerOpen = false;
         ShellState.shadeProgress = 0;
+        ShellState.powerMenuOpen = false;
         ShellState.activeAppId = "";
-        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
-        for (var i = 0; i < tops.length; ++i) {
-            if (tops[i])
-                tops[i].minimized = true;
-        }
+        if (hadOpenApp)
+            ShellState.triggerCloseMorph();
         ShellState.goHome();
     }
 
