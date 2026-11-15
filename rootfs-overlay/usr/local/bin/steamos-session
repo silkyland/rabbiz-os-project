@@ -1,0 +1,32 @@
+#!/bin/bash
+# steamos-session — weston (kiosk, rotated landscape) + native ARM64
+# steam -gamepadui under XWayland, wrapped in a private D-Bus session.
+# Invoked by steamos-session.service as user `gamer`.
+#
+# Reads ${XDG_RUNTIME_DIR}/a21s-steam-args (written by the `steam` shim /
+# a21s-session-switch callers, e.g. `steam://rungameid/433950`) and
+# appends it to the initial steam invocation so game shortcuts launched
+# from the phone shell start their game once the client is up.
+set -e
+export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+export LIBSEAT_BACKEND=seatd
+export PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1
+export STEAMOS=1
+export LD_LIBRARY_PATH="/home/gamer/.local/share/Steam/steamrtarm64:/home/gamer/.local/share/Steam/steamrtarm64/libs:/home/gamer/.local/share/Steam/steamrtarm64/video${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+ARGSFILE="$XDG_RUNTIME_DIR/a21s-steam-args"
+EXTRA=""
+if [ -f "$ARGSFILE" ]; then
+    EXTRA="$(cat "$ARGSFILE")"
+    rm -f "$ARGSFILE"
+fi
+
+weston --backend=drm --drm-device=card0 > /tmp/weston.log 2>&1 &
+WESTON_PID=$!
+sleep 3
+export DISPLAY=:0
+dbus-run-session -- /home/gamer/.local/share/Steam/steamrtarm64/steam \
+    -noverifyfiles -nobootstrapupdate -skipinitialbootstrap -gamepadui \
+    -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing \
+    $EXTRA > /tmp/steam-arm64.log 2>&1
+kill $WESTON_PID 2>/dev/null || true

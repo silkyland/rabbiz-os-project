@@ -34,7 +34,7 @@ PanelWindow {
 
     Process {
         id: steamFallbackProc
-        command: ["a21s-steam"]
+        command: ["a21s-session-switch", "steamos"]
     }
 
     Process {
@@ -545,7 +545,7 @@ PanelWindow {
                                         }
                                         Text {
                                             Layout.alignment: Qt.AlignVCenter
-                                            text: "Gamescope"
+                                            text: "SteamOS"
                                             color: Theme.textDim
                                             font.pixelSize: Theme.fontStatus - 2
                                             font.family: Theme.fontFamily

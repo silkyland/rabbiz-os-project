@@ -1,0 +1,36 @@
+#!/bin/sh
+# a21s-session-switch <steamos|phone> — hand the seat between the phone
+# shell and the SteamOS weston session.
+#
+# The actual stop+start is atomic inside PID1 via the units' Conflicts=,
+# so this helper may safely die together with the session that launched
+# it. The a21s-in-steam marker makes steamos-session's ExecStopPost
+# return to the phone shell when the steam session ends.
+# Requires polkit rules.d/50-a21s-session.rules for the gamer user.
+# runuser/su callers inherit the parent's XDG_RUNTIME_DIR (e.g.
+# /run/user/0) — repoint at the dir owned by the current uid.
+RD="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+[ -O "$RD" ] || RD="/run/user/$(id -u)"
+
+case "${1:-}" in
+steamos)
+    : > "$RD/a21s-in-steam" 2>/dev/null || true
+    exec systemctl --no-block start steamos-session.service
+    ;;
+phone)
+    rm -f "$RD/a21s-in-steam" 2>/dev/null
+    exec systemctl --no-block start a21s-phone-session.service
+    ;;
+steamos)
+    : > "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/a21s-in-steam" 2>/dev/null || true
+    exec systemctl --no-block start steamos-session.service
+    ;;
+phone)
+    rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/a21s-in-steam" 2>/dev/null
+    exec systemctl --no-block start a21s-phone-session.service
+    ;;
+*)
+    echo "usage: a21s-session-switch <steamos|phone>" >&2
+    exit 1
+    ;;
+esac

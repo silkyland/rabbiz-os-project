@@ -1,0 +1,13 @@
+[Unit]
+Description=FEX x86 guest rootfs (squashfuse ArchLinux.sqsh)
+Before=steamos-session.service
+After=local-fs.target
+
+[Service]
+Type=forking
+ExecStart=/usr/bin/squashfuse -o ro,allow_other /usr/share/fex-emu/RootFS/ArchLinux.sqsh /usr/share/guestos/fex-mesa
+ExecStop=/usr/bin/fusermount3 -u /usr/share/guestos/fex-mesa
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

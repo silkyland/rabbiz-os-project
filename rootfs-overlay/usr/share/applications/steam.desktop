@@ -2,8 +2,8 @@
 Type=Application
 Name=Steam
 GenericName=Game Launcher
-Comment=Steam Big Picture via nested gamescope
-Exec=a21s-steam
+Comment=Switch to the SteamOS session (weston + Big Picture)
+Exec=a21s-session-switch steamos
 Icon=steam
 Categories=Game;
 Terminal=false
