@@ -10,6 +10,7 @@ QtObject {
 
     property string wallpaperId: "aurora"     // aurora | nebula | sunset | emerald | oled
     property string accentId: "blue"          // mono | blue | emerald | amber | crimson
+    property bool lightTheme: false           // false = dark (default)
     property string clockStyle: "editorial"   // editorial | classic | compact
     property bool use24h: true
     property bool showSteamCard: true
@@ -122,6 +123,7 @@ QtObject {
             var d = JSON.parse(raw)
             if (d.wallpaperId !== undefined) wallpaperId = String(d.wallpaperId)
             if (d.accentId !== undefined) accentId = String(d.accentId)
+            if (d.lightTheme !== undefined) lightTheme = Boolean(d.lightTheme)
             if (d.clockStyle !== undefined) clockStyle = String(d.clockStyle)
             if (d.use24h !== undefined) use24h = Boolean(d.use24h)
             if (d.showSteamCard !== undefined) showSteamCard = Boolean(d.showSteamCard)
@@ -144,6 +146,7 @@ QtObject {
         var payload = JSON.stringify({
             wallpaperId: wallpaperId,
             accentId: accentId,
+            lightTheme: lightTheme,
             clockStyle: clockStyle,
             use24h: use24h,
             showSteamCard: showSteamCard,

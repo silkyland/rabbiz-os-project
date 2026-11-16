@@ -71,4 +71,18 @@ if not a.no_gsettings:
     scheme = "prefer-light" if a.light else "prefer-dark"
     subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", scheme],
                    stderr=subprocess.DEVNULL, check=False)
+    # GTK4/libadwaita (and Chromium) pick their accent from a fixed set of names, not a hex:
+    # map our accent to the nearest one. Without this the shell accent reached Qt apps only
+    # (verified: kdeglobals changed, `gsettings get ... accent-color` stayed "blue").
+    adw = {"blue": "#3584e4", "teal": "#2190a4", "green": "#3a944a", "yellow": "#e5a50a",
+           "orange": "#ed5b00", "red": "#e01b24", "pink": "#d56199", "purple": "#9141ac",
+           "slate": "#6f8396"}
+    hx = a.accent.lstrip("#")
+    rgb_acc = tuple(int(hx[i:i + 2], 16) for i in (0, 2, 4)) if len(hx) == 6 else (59, 130, 246)
+    def dist(hex2):
+        r = tuple(int(hex2.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+        return sum((x - y) ** 2 for x, y in zip(rgb_acc, r))
+    nearest = min(adw, key=lambda k: dist(adw[k]))
+    subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "accent-color", nearest],
+                   stderr=subprocess.DEVNULL, check=False)
 print("a21s-appearance: ok", "light" if a.light else "dark", a.accent)

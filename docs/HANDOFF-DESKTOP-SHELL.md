@@ -17,7 +17,7 @@
 | M7.5 form factor seam (`handset` only, D3) | not started |
 | M7.6 close morph via snapshot (S1: `ScreencopyView` exists, untested) | not started |
 | M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Big Picture verified** (logged in, touch taps work, game launch reaches Proton/FEX); game renders black — ADR-8. Input (mouse/keyboard/gamepad) not started |
-| M7.8 Settings v2 (thin shell-owned panels; `plasma-settings` lacks Wi-Fi/BT/sound/battery) | not started |
+| M7.8 Settings v2 (thin shell-owned panels; `plasma-settings` lacks Wi-Fi/BT/sound/battery) | **app ships and is wired** (pre-existing, not a rewrite): verified Wi-Fi list + join dialog, accent live update, volume slider, new light/dark switch; BT pair untested |
 | M7.10 **home editing** (long-press, drag & drop, snap/align, persisted layout) | **not started** — spec §7.1 |
 | M7.11 **clipboard system** | **not started** — spec §7.2 |
 | M7.12 **on-screen keyboard rework** (owner: many bugs, poor UX) | **not started** — triage first, spec §7.3 |
@@ -91,10 +91,18 @@ AGENTS.md hard rules still apply).
    "association took too long / ssid-not-found"), and `Network.qml` no longer treats `p2p0` as the Wi-Fi device.
    **Open:** updating the PSK of an *existing* profile via `nmcli --ask connection modify` hit the 45 s pty timeout in
    one run (not verified); the Settings UI path (`Network.wifiConnect`) was not exercised end to end.
-3. **M7.8 Settings v2.** Keep `shell/apps/settings/Settings.qml` shell-owned but rebuild as thin panels over NM,
-   BlueZ, PipeWire, UPower, appearance. Reuse `plasma-settings` pages for Colors/Fonts/Default apps/Keyboard only if
-   they work when opened (they list fine; opening was not tested). Exit: Wi-Fi join, BT pair, volume, accent/dark
-   switch (calls `Appearance`) all work from it.
+3. ~~**M7.8 Settings v2.**~~ **Done 2026-11-16, with two gaps.** `shell/apps/settings/Settings.qml` (1904 lines)
+   already binds Network/Bluetooth/SystemControl/ShellPrefs, so this was verification, not a rewrite. Verified with
+   injected taps: live Wi-Fi/BT/cellular rows; Wi-Fi list (signal/security) and the join dialog + OSK; accent tap
+   updates shell chrome **live** (no restart) and rewrites the app contract; volume slider -> PipeWire 0.71 with the UI
+   agreeing; Display & Sleep (brightness, timeouts); new Theme > Light theme switch flips
+   `gsettings color-scheme` prefer-dark/prefer-light and `kdeglobals` BackgroundNormal 10,10,12 <-> 246,246,248.
+   Fixed here: `a21s-appearance` wrote `color-scheme` but never `accent-color`, so GTK/Chromium ignored the shell
+   accent (now mapped to the nearest libadwaita accent; green/amber/red verified); added the missing
+   `ShellPrefs.lightTheme` + `Appearance.light` binding + the Settings switch (no dark/light control existed).
+   **Open:** BT pair/connect needs a device in range (MX Keys and the Xbox pad are paired but powered off); the Wi-Fi
+   password field was not typed (agents must not type secrets), so `Network.connectTo` is verified only down to
+   `a21s-wifi-connect`; shell chrome stays dark in light mode because `Theme.qml` is still literal (item 9).
 4. **M7.9 gestures** (§4) then **M7.6 close morph** (S1: `ScreencopyView` of the toplevel -> shrink to its icon;
    fallback icon-only morph; `LaunchFlow.close()` already has a 600 ms timeout).
 5. **M7.3 desktop surface:** wallpaper + icons/widgets on the desktop + dock + drawer overlay. Measure frame time

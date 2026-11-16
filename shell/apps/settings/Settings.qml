@@ -634,6 +634,24 @@ ApplicationWindow {
                     }
                 }
 
+                SectionTitle { text: "THEME" }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Light theme"
+                        color: Theme.text
+                        font.pixelSize: Theme.fontBody
+                    }
+                    PillSwitch {
+                        checked: ShellPrefs.lightTheme
+                        onToggled: function(on) {
+                            ShellPrefs.lightTheme = on
+                            ShellPrefs.save()
+                        }
+                    }
+                }
+
                 // Clock style segmented selector
                 SectionTitle { text: "CLOCK STYLE" }
                 RowLayout {

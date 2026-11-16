@@ -10,7 +10,7 @@ Singleton {
     id: root
 
     property string accent: String(ShellPrefs.accentColor)
-    property bool light: false
+    property bool light: ShellPrefs.lightTheme
     property bool applied: false
 
     function apply() {

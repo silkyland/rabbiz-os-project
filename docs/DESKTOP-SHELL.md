@@ -182,6 +182,7 @@ Evidence for doing it: Plasma Settings rendered light/default on our dark device
 | M7.11 clipboard system | not started | §7.2; `wl-clipboard`/`cliphist` not installed, labwc has data-control |
 | M7.12 on-screen keyboard rework | not started | §7.3; triage squeekboard bugs first |
 | review findings (7 open) | **done, 2 gaps** | WWAN radio not modem power; no `rfkill`; FIFO queues; one `a21s-telemetry` process (stops asleep); "Rotate" label; `schedutil` default; PSK via stdin pty (`a21s-wifi-connect`). New polkit rule allows `gamer` NM only (ADR-9). Verified: `nmcli radio wifi off/on` as gamer, join of an unsaved network (HTTP 301), `nmcli connection add`. Open: PSK update of an existing profile (pty timeout), Settings UI path not exercised |
+| M7.8 Settings v2 | **done with gaps** | app already wired to services; verified Wi-Fi list + join dialog, accent live update, volume slider -> `wpctl` 0.71, new light/dark switch (`color-scheme` + `kdeglobals`), Display&S sleep. Fixed: `a21s-appearance` never set `accent-color`. Open: BT pair (no device in range), typed Wi-Fi join |
 | M7.9 gesture system | **core done** | Android-style home/recents/switch/back verified with injected touch over Kalk and fullscreen Steam; polish listed in `HANDOFF-DESKTOP-SHELL.md` §4 |
 
 Handoff for other agents: [HANDOFF-DESKTOP-SHELL.md](HANDOFF-DESKTOP-SHELL.md); ready-to-paste prompt: [PROMPT-DESKTOP-SHELL.md](PROMPT-DESKTOP-SHELL.md).
