@@ -3,8 +3,9 @@
 Lets agents test gestures without touching the phone.   Usage:
   touch_swipe.py x1 y1 x2 y2 [ms]     swipe (panel is 720x1600 portrait)
   touch_swipe.py x y                  tap
+  HOLD_MS=500 touch_swipe.py x1 y1 x2 y2   long-press first, then drag (drag & drop tests)
 labwc maps every touch device to DSI-1 (rc.xml <touch deviceName="*">)."""
-import sys, time
+import os, sys, time
 from evdev import UInput, AbsInfo, ecodes as e
 W, H = 720, 1600
 a = [float(v) for v in sys.argv[1:5]] if len(sys.argv) >= 5 else None
@@ -22,6 +23,7 @@ def pos(x, y):
 x1, y1, x2, y2 = a
 ui.write(e.EV_ABS, e.ABS_MT_SLOT, 0); ui.write(e.EV_ABS, e.ABS_MT_TRACKING_ID, 1)
 ui.write(e.EV_KEY, e.BTN_TOUCH, 1); pos(x1, y1)
+time.sleep(int(os.environ.get("HOLD_MS", "0")) / 1000)  # long-press before moving
 steps = max(2, ms // 16)
 for i in range(1, steps + 1):
     t = i / steps; pos(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t); time.sleep(ms / 1000 / steps)

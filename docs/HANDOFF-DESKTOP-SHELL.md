@@ -18,6 +18,9 @@
 | M7.6 close morph via snapshot (S1: `ScreencopyView` exists, untested) | not started |
 | M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Steam splash works** (ADR-8), input not started |
 | M7.8 Settings v2 (thin shell-owned panels; `plasma-settings` lacks Wi-Fi/BT/sound/battery) | not started |
+| M7.10 **home editing** (long-press, drag & drop, snap/align, persisted layout) | **not started** — spec §7.1 |
+| M7.11 **clipboard system** | **not started** — spec §7.2 |
+| M7.12 **on-screen keyboard rework** (owner: many bugs, poor UX) | **not started** — triage first, spec §7.3 |
 | M7.9 **gesture system** (Android-style) | **core done, verified with injected touch** (§4): bottom swipe-up=home, swipe-up+hold=recents, swipe along bar=prev/next app, side-edge swipe=back; all work over fullscreen windows (surfaces moved to the Overlay layer). Missing: back-arrow chip + live card following the finger, reverse morph from a window snapshot, Steam resume matching |
 
 Owner decisions (2026-11-16): home = touch-first desktop; replace home-grown apps with real Linux apps (Settings,
@@ -104,3 +107,95 @@ Handset only. Edge zones are 24 px (the labwc bottom margin already reserves it)
 1. Which widgets belong on the home screen? 2. Is external display + mouse/keyboard (`desktop` mode) a real use case on
 the A21s? 3. Is a KDE-looking app set acceptable instead of Material? 4. Do you want the dead `linux-aarch64` package
 removed (frees 386 MiB)?
+
+
+## 7. New work requested on 2026-11-16 (planned only — nothing below is implemented)
+
+The owner asked for three things after the gesture work. Facts gathered from the device on 2026-11-16 are marked
+**(verified)**; everything else is a design hypothesis.
+
+### 7.1 M7.10 Home editing: long-press, drag & drop, align
+
+What the owner wants: icons and apps can be dragged onto the home screen; press-and-hold starts drag; icons align.
+Today **(verified in code)**: `Desktop/HomeScreen.qml` builds a fixed `homeApps` array (8-9 entries) and `dockApps`
+(4); nothing is persisted and there is no edit mode.
+
+Design:
+- **Layout model** in a pure `Desktop/HomeLayout.js` (node-tested like `LaunchFlow.js`): pages -> cells
+  `{id, col, row, spanX, spanY, kind: app|folder|widget}`, 4 columns x N rows (match today's tile size),
+  functions `place`, `moveTo` (collision -> push/reflow neighbours to the next free cell), `snap(x,y)`,
+  `compact()` (the "align" action, fills gaps), `swap`, `groupIntoFolder`, `remove`, `serialize/parse`.
+- **Persistence:** extend `ShellPrefs.qml` JSON (`homeLayout`) — it already saves atomically
+  (`mkdir && printf > tmp && mv`); keep layout separate from prefs if it grows (`~/.config/a21s-shell/home.json`).
+  Unknown/uninstalled ids are dropped on load; first run seeds from the current default list.
+- **Interaction (Android-like):** long-press 400 ms on an icon -> lift (scale 1.08 + shadow, haptic via `feedbackd` if
+  available) and enter edit mode (other icons wiggle or show a grid); drag follows the finger; target cell is
+  highlighted (snap + live reflow); drop on the dock row moves it to the dock; dwell on the left/right screen edge for
+  600 ms flips the page; a "Remove" drop zone at the top (removes from home only, never uninstalls); tap on empty
+  space or swipe-up exits edit mode. Long-press without moving opens quick actions (open, remove, app info).
+- **From the drawer:** long-press an app in `AppDrawer.qml` and drag it onto the home screen (drawer closes while
+  dragging, home page shown). "Align" = snap + compact; add a toggle in edit mode for "auto-arrange".
+- **Gesture conflicts:** the bottom/edge gesture strips (M7.9) are 22-28 px; keep drop targets away from them.
+- **Where:** `Desktop/HomeLayout.js` (+ `tests/homelayout.test.mjs`), `Desktop/HomeGrid.qml` (render + drag),
+  small changes in `HomeScreen.qml`/`AppDrawer.qml`/`AppIcon.qml` (`AppIcon` is already in `Desktop`).
+- **Test with injected touch:** `HOLD_MS=500 a21s-touch x1 y1 x2 y2 700` (long-press then drag; the tool now
+  supports `HOLD_MS`). Exit criteria: drag Calculator to another cell and it stays after
+  `shell_reload.sh` and after a reboot; drop onto the dock works; page flip works; `check.sh` green;
+  frame time during drag measured (S5, software Qt Quick) and reported.
+- **Risks:** software rendering makes drag animations janky — prefer transforms on a single lifted item, no blur.
+
+### 7.2 M7.11 Clipboard system
+
+Facts **(verified 2026-11-16):** nothing installed: `wl-clipboard`, `cliphist` are MISSING (both are in the ALARM
+`extra` repo); `labwc` has `wlr-data-control` and `ext-data-control` built in (needed by `wl-paste --watch`);
+Quickshell has **no** data-control binding (no such strings in the binary), so the shell must talk to a helper process.
+
+Design:
+- Install `wl-clipboard` + `cliphist` (small). Service `Services/Clipboard.qml` runs
+  `wl-paste --watch cliphist store` (text) and `wl-paste --type image --watch cliphist store` (images) as `gamer`,
+  started from labwc `autostart` (or a user systemd unit) so history survives shell restarts.
+- **Privacy rules (do not skip):** keep the store in `$XDG_RUNTIME_DIR` (tmpfs, wiped on reboot) by default; cap
+  history (e.g. 50 items, 1 MB per item); skip items advertising `x-kde-passwordManagerHint=secret`; "Clear" in the UI;
+  clear on a real lock if a lock exists. Never log clipboard contents.
+- **UI:** a clipboard sheet (Panels) reachable from the shade tile, a long-press on text fields is handled by the app
+  toolkit (Qt/GTK touch handles — do not replace), and a clipboard key/row in the new OSK (7.3). Tapping an entry runs
+  `cliphist decode <id> | wl-copy` (re-owns the selection, because a Wayland selection dies with its source app).
+  Paste into the focused app = the user's long-press/paste menu or the OSK paste key (`wtype`-style synthetic
+  Ctrl+V needs `zwp_virtual_keyboard`, which labwc has) — decide after testing which apps honour it.
+- **Exit criteria:** copy in Marknote, switch to Chrome, open the history sheet, see the entry, tap it, paste works;
+  an image copied in Pix shows a thumbnail; history cleared by the button; nothing written to persistent storage by
+  default; documented in `docs/ARCHITECTURE.md` (new ADR) and `AGENTS.md`.
+
+### 7.3 M7.12 On-screen keyboard rework
+
+Owner: the current keyboard has many bugs and bad UX. **I have not reproduced the bugs yet** — the first step is a
+triage, not a rewrite (use the `reproduce-my-bug` skill).
+Facts **(verified):** `squeekboard 1.43.1` runs; custom layouts are `~/.local/share/squeekboard/keyboards/{us,th}.yaml`
+(84 + 113 lines); control via `a21s-osk-ctl` (`toggle` over `sm.puri.OSK0`, `lang-next` reorders gsettings
+input-sources); `QT_IM_MODULE`/`GTK_IM_MODULE` must stay unset (AGENTS.md); `fcitx5 5.1.23` and `fcitx5-libthai` are in
+the ALARM repo (not installed); labwc supports `zwp_input_method_v2`, `zwp_text_input_v3`, `zwp_virtual_keyboard`;
+Quickshell has no binding for any of them, so a custom keyboard cannot be written purely in the shell's QML.
+
+Plan:
+1. **Triage (half a day):** type into Marknote, Chrome, Index search, Kirigami dialogs, XWayland (Steam login), a
+   terminal, using `a21s-touch` taps + screenshots. Record every bug with steps and a screenshot in a table
+   (auto-show/hide, hides behind or covers the field, wrong height/size, language switch, Thai layout errors, key
+   repeat, no haptics/key preview, theme mismatch, stuck visible after app close, interferes with the new gestures).
+2. **Fix squeekboard first (cheap, evidence driven):** layout yaml (key sizes for a 720 px panel, Thai Kedmanee
+   correctness, number row, emoji), behaviour (auto-show/hide, exclusive zone so maximized windows resize — check
+   with the gesture bar), restyle through the desktop contract (`Appearance` colours), add a clipboard/paste row (7.2).
+3. **Decide with evidence whether squeekboard is the ceiling.** If bugs are structural (no theming, no clipboard
+   key, no swipe typing, poor Thai input), the realistic rewrite is **fcitx5 (engine, `fcitx5-libthai`) + our own
+   keyboard UI as a separate Wayland client** that talks `zwp_input_method_v2`/`virtual_keyboard` (Qt Quick app, software
+   renderer) — not in Quickshell. That needs an ADR because it changes the AGENTS.md rule about `QT_IM_MODULE` and the
+   "dead ends on labwc" list. Do not start it before step 1 shows squeekboard cannot be fixed.
+4. **Exit criteria:** a written bug table with every item either fixed or consciously deferred; typing a Thai and an
+   English sentence into Marknote, Chrome and a Kirigami dialog works; the keyboard never covers the focused field;
+   hide/show is predictable; theme follows the accent; verified with screenshots.
+
+### 7.4 Order and parallelism
+
+Suggested order: Steam resume matching + gesture polish (finish M7.9) -> 7.3 triage (cheap, unblocks UX judgement) ->
+7.2 clipboard (small, independent) -> 7.1 home editing (largest) -> OSK rewrite only if triage demands it.
+Disjoint files for parallel agents: 7.1 `Desktop/*` + `HomeLayout.js`; 7.2 `Services/Clipboard.qml`,
+`Panels/ClipboardSheet.qml`, `rootfs-overlay` autostart; 7.3 `rootfs-overlay/.../squeekboard`, `a21s-osk-ctl`.

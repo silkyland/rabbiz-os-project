@@ -42,4 +42,7 @@ Suggested split for parallel agents (disjoint files):
 - Agent A: backlog 1 (Steam) — `rootfs-overlay/usr/local/bin/a21s-steam`, `steam`, ADR-8 only.
 - Agent B: backlog 2 (review findings) — `shell/A21s/Services/{SystemControl,Network,Bluetooth}.qml`.
 - Agent C: backlog 3 (Settings v2) — `shell/apps/settings/`, `shell/A21s/Services/Appearance.qml`.
-- Agent D: backlog 4 (gestures + close morph) — `shell/A21s/Windowing/`, `shell/A21s/Panels/NavBar.qml`.
+- Agent D: backlog 4 (gesture polish + close morph) — `shell/A21s/Windowing/`, `shell/A21s/Panels/NavBar.qml`.
+- Agent E: HANDOFF §7.1 home editing (drag & drop) — `shell/A21s/Desktop/*`, new `HomeLayout.js`.
+- Agent F: HANDOFF §7.2 clipboard — `shell/A21s/Services/Clipboard.qml`, `Panels/ClipboardSheet.qml`.
+- Agent G: HANDOFF §7.3 on-screen keyboard triage + fixes — `rootfs-overlay/.../squeekboard`, `a21s-osk-ctl`.

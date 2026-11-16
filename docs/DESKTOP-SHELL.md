@@ -178,6 +178,9 @@ Evidence for doing it: Plasma Settings rendered light/default on our dark device
 | M7.6 close morph | not started | S1 says ScreencopyView is available, untested |
 | M7.7 input + Steam | **Steam in a window works to the splash** (nested Weston), input not started | ADR-8; Big Picture home + game launch unverified |
 | M7.8 Settings v2 | not started | S2: plasma-settings lacks Wi-Fi/BT/sound/battery |
+| M7.10 home editing (drag & drop, align) | not started | `HANDOFF-DESKTOP-SHELL.md` §7.1 |
+| M7.11 clipboard system | not started | §7.2; `wl-clipboard`/`cliphist` not installed, labwc has data-control |
+| M7.12 on-screen keyboard rework | not started | §7.3; triage squeekboard bugs first |
 | M7.9 gesture system | **core done** | Android-style home/recents/switch/back verified with injected touch over Kalk and fullscreen Steam; polish listed in `HANDOFF-DESKTOP-SHELL.md` §4 |
 
 Handoff for other agents: [HANDOFF-DESKTOP-SHELL.md](HANDOFF-DESKTOP-SHELL.md); ready-to-paste prompt: [PROMPT-DESKTOP-SHELL.md](PROMPT-DESKTOP-SHELL.md).
