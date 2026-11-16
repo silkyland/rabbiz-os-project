@@ -5,7 +5,11 @@ const context = vm.createContext({});
 vm.runInContext(readFileSync(new URL('../A21s/Desktop/AppCatalog.js', import.meta.url), 'utf8').replace(/^\.pragma library\s*/, ''), context);
 const entry = (id, extra = {}) => ({ id, name: id, ...extra });
 const ids = entries => Array.from(context.visibleEntries(entries), e => e.id);
-assert.deepEqual(ids([entry('google-chrome'), entry('a21s-browser'), entry('com.google.Chrome')]), ['a21s-browser']);
+// Third-party identity wins: Chrome must not be replaced by the a21s wrapper.
+assert.deepEqual(ids([entry('google-chrome'), entry('a21s-browser'), entry('com.google.Chrome')]), ['google-chrome']);
+assert.deepEqual(ids([entry('a21s-browser')]), ['a21s-browser']);
+assert.deepEqual(ids([entry('org.kde.index'), entry('a21s-files')]), ['org.kde.index']);
+assert.deepEqual(ids([entry('a21s-files')]), ['a21s-files']);
 assert.deepEqual(ids([entry('org.kde.calindori'), entry('org.kde.merkuro.calendar')]), ['org.kde.merkuro.calendar']);
 assert.deepEqual(ids([entry('a21s-photos'), entry('a21s-gallery', { noDisplay: true }), entry('org.kde.pix')]), ['a21s-photos']);
 assert.deepEqual(ids([entry('a21s-terminal', { noDisplay: true }), entry('xterm'), entry('org.kde.station')]), ['org.kde.station']);

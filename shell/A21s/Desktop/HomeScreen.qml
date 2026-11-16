@@ -521,7 +521,10 @@ PanelWindow {
                 DesktopEntries.byId("a21s-dialer")   || ({ id: "a21s-dialer", name: "Phone", materialIcon: "call" }),
                 DesktopEntries.byId("a21s-sms")      || ({ id: "a21s-sms", name: "Messages", materialIcon: "sms" }),
                 DesktopEntries.byId("a21s-settings") || ({ id: "a21s-settings", name: "Settings", materialIcon: "settings" }),
-                DesktopEntries.byId("a21s-browser")  || ({ id: "a21s-browser", name: "Browser", materialIcon: "language" })
+                DesktopEntries.byId("google-chrome")
+                    || DesktopEntries.byId("com.google.Chrome")
+                    || DesktopEntries.byId("a21s-browser")
+                    || ({ id: "a21s-browser", name: "Browser", materialIcon: "language" })
             ];
         }
 

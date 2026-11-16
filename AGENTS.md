@@ -30,6 +30,8 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 - **"ABOX noise means wrong I2S format/clock"** can be wrong: cicada/mosquito noise on *both* speakers was a broken `sg_table` (no `struct page`) in the `drivers/abox/abox_ion.c` ION shim — build it with `dma_get_sgtable()` (`docs/a21s-audio-abox-plan.md` §0).
 - **"The 18 MiB `ABOX_DRAM_SIZE=0x1200000` is the DSP's audio buffer space"** is wrong: that is the **host-side** DRAM window (`DRAM_FIRMWARE_SIZE`). The firmware's PCM buffer heap is only **768 KiB** — and hitting it does not return a clean error, it data-aborts the DSP.
 
+- **Never restyle a third-party app** — RabbizOS names/artwork are for our own `a21s-*` apps only. Third-party entries keep the name and icon their package ships (Chrome = "Google Chrome" + Chrome logo, KDE apps keep theirs); wrappers (`a21s-browser`, `a21s-files`, `a21s-calendar`, `a21s-contacts`) are fallbacks in `AppCatalog.js`, not replacements.
+
 ## Commands
 
 - Concurrent tasks may develop and run host tests in parallel. Serialize device

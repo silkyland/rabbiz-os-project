@@ -3,19 +3,19 @@
 // One launcher entry per base-app role. Alternatives stay installed and remain
 // available as a fallback when a preferred desktop entry is absent or hidden.
 var preferredGroups = [
-    ["a21s-browser", "google-chrome", "com.google.Chrome", "chromium", "org.kde.angelfish"],
+    ["google-chrome", "com.google.Chrome", "chromium", "org.kde.angelfish", "a21s-browser"],
     ["a21s-dialer", "org.gnome.Calls"],
     ["a21s-sms", "sm.puri.Chatty"],
     ["a21s-settings", "org.kde.mobile.plasmasettings"],
-    ["a21s-files", "org.kde.index", "org.kde.dolphin"],
-    ["a21s-calendar", "org.kde.merkuro.calendar", "org.kde.merkuro", "org.kde.calindori"],
+    ["org.kde.index", "org.kde.dolphin", "a21s-files"],
+    ["org.kde.merkuro.calendar", "org.kde.merkuro", "org.kde.calindori", "a21s-calendar"],
     ["a21s-calculator", "org.kde.kalk"],
     ["a21s-clock", "org.kde.kclock"],
     ["a21s-notes", "org.kde.marknote", "org.kde.buho"],
     ["a21s-photos", "a21s-gallery", "org.kde.pix", "org.kde.koko"],
     ["a21s-music", "org.kde.elisa", "org.kde.vvave"],
     ["a21s-terminal", "org.kde.qmlkonsole", "org.kde.konsole", "org.kde.station", "xterm", "uxterm"],
-    ["a21s-contacts", "org.gnome.Contacts", "org.kde.merkuro.contact", "org.kde.merkuro.contacts"]
+    ["org.gnome.Contacts", "org.kde.merkuro.contact", "org.kde.merkuro.contacts", "a21s-contacts"]
 ]
 
 function visibleEntries(entries) {

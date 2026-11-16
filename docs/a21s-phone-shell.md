@@ -235,6 +235,13 @@ the shade and Settings read as one product.
 
 ### Home icons + unlock entrance
 
+- **Third-party apps keep their own name and icon.** Only in-house `a21s-*`
+  apps use the RabbizOS artwork; Chrome is listed as **Google Chrome** with
+  Chrome's logo, and KDE/GNOME apps keep their package icons. Wrapper entries
+  (`a21s-browser`, `a21s-files`, `a21s-calendar`, `a21s-contacts`) are now
+  fallbacks, so their real counterparts are preferred by `AppCatalog.js`.
+  `AppIcon` resolves theme names **and** absolute/URI icon paths, so Chrome's
+  `/opt/google/chrome/product_logo_256.png` renders as-is.
 - RabbizOS artwork no longer sits on a card tile: the old `Theme.card` well +
   1 px border drew a dark (white in light theme) frame around every icon. The
   well is now only used for generic/fallback glyphs and the explicit glass

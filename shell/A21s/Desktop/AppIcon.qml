@@ -109,66 +109,42 @@ Item {
             return iconMap[entryId]
         return ""
     }
-    // Keep our app artwork independent of the selected system icon theme, including
-    // home-screen placeholders whose DesktopEntry has not been discovered yet.
+    // RabbizOS artwork is only for our own apps. Third-party entries keep the
+    // name and icon their package ships (Chrome must stay "Google Chrome" with
+    // Chrome's logo, KDE apps must keep theirs).
     readonly property string builtinIconName: {
         var icons = {
             "a21s-dialer": "a21s-dialer",
-            "org.gnome.Calls": "a21s-dialer",
             "a21s-sms": "a21s-sms",
-            "sm.puri.Chatty": "a21s-sms",
             "a21s-settings": "a21s-settings",
-            "org.kde.mobile.plasmasettings": "a21s-settings",
-            "a21s-files": "a21s-files",
-            "org.kde.index": "a21s-files",
-            "org.kde.dolphin": "a21s-files",
-            "a21s-calendar": "a21s-calendar",
-            "org.kde.merkuro.calendar": "a21s-calendar",
-            "org.kde.merkuro": "a21s-calendar",
-            "org.kde.calindori": "a21s-calendar",
             "a21s-clock": "a21s-clock",
-            "org.kde.kclock": "a21s-clock",
             "a21s-calculator": "a21s-calculator",
-            "org.kde.kalk": "a21s-calculator",
-            "a21s-weather": "a21s-weather",
-            "org.kde.kweather": "a21s-weather",
             "a21s-notes": "a21s-notes",
-            "org.kde.marknote": "a21s-notes",
-            "org.kde.buho": "a21s-notes",
-            "a21s-gallery": "a21s-gallery",
             "a21s-photos": "a21s-gallery",
-            "org.kde.pix": "a21s-gallery",
-            "org.kde.koko": "a21s-gallery",
-            "a21s-terminal": "a21s-terminal",
-            "org.kde.qmlkonsole": "a21s-terminal",
-            "org.kde.konsole": "a21s-terminal",
-            "a21s-browser": "a21s-browser",
-            "google-chrome": "a21s-browser",
-            "chromium": "a21s-browser",
-            "org.kde.angelfish": "a21s-browser",
             "a21s-music": "a21s-music",
-            "org.kde.elisa": "a21s-music",
-            "org.kde.vvave": "a21s-music",
-            "a21s-recorder": "a21s-recorder",
-            "org.kde.krecorder": "a21s-recorder",
-            "a21s-contacts": "a21s-contacts",
-            "org.gnome.Contacts": "a21s-contacts",
-            "org.kde.merkuro.contact": "a21s-contacts",
-            "org.kde.merkuro.contacts": "a21s-contacts",
-            "a21s-mail": "a21s-mail",
-            "org.kde.merkuro.mail": "a21s-mail",
-            "org.gnome.Geary": "a21s-mail",
-            "a21s-video": "a21s-video",
-            "mpv": "a21s-video",
-            "vlc": "a21s-video"
+            "a21s-terminal": "a21s-terminal"
         }
         return icons[entryId] || ""
+    }
+
+    // DesktopEntry.icon may be an icon-theme name, an absolute path or a URI.
+    function resolveIcon(ref) {
+        if (!ref || ref.length === 0)
+            return ""
+        if (ref.indexOf("://") >= 0)
+            return ref
+        if (ref.indexOf("/") === 0)
+            return "file://" + ref
+        var resolved = Quickshell.iconPath(ref, true)
+        if (resolved.length === 0)
+            return ""
+        return resolved.indexOf("://") < 0 ? "file://" + resolved : resolved
     }
     readonly property bool hasBuiltinIcon: builtinIconName.length > 0
     readonly property url iconUrl: hasBuiltinIcon
         ? "file:///usr/share/icons/hicolor/scalable/apps/" + builtinIconName + ".svg"
-        : ((entryIconName.length > 0 && resolvedMaterialIcon.length === 0 && !entryGlyph)
-            ? Quickshell.iconPath(entryIconName, true) : "")
+        : resolveIcon(entryIconName)
+    readonly property bool hasIconSource: iconUrl.toString().length > 0
     readonly property bool isGlass: ShellPrefs.iconStyle === "glass"
     readonly property bool isCircle: ShellPrefs.iconStyle === "circle"
 
@@ -223,13 +199,10 @@ Item {
         height: appIcon.tileSize
         radius: appIcon.isCircle ? width / 2 : (Theme.radiusM + 4)
 
-        // RabbizOS artwork is a rounded tile of its own. Drawing a card behind
-        // it left a dark (or white, in light theme) frame around every icon, so
-        // the built-in artwork now sits on nothing. It keeps a 90% inset to
-        // preserve the grid rhythm the 4-column layout was designed around.
-        // Generic fallback glyphs still need a well; glass is an explicit style.
-        readonly property bool artworkFillsTile: appIcon.hasBuiltinIcon
-        readonly property bool needsWell: !appIcon.isGlass && !artworkFillsTile
+        // No card behind a real icon (the old Theme.card well + border was the
+        // dark frame). A well is drawn only when there is no icon image at all
+        // (glyph fallback) or for the explicit glass style.
+        readonly property bool needsWell: !appIcon.isGlass && !appIcon.hasIconSource
 
         color: appIcon.isGlass
             ? Qt.alpha(Theme.surfaceHigh, 0.62)
@@ -259,8 +232,8 @@ Item {
         Image {
             id: image
             anchors.centerIn: parent
-            width: Math.round(parent.width * (appIcon.hasBuiltinIcon ? 0.90 : 0.60))
-            height: Math.round(parent.height * (appIcon.hasBuiltinIcon ? 0.90 : 0.60))
+            width: Math.round(parent.width * 0.90)
+            height: Math.round(parent.height * 0.90)
             source: appIcon.iconUrl
             fillMode: Image.PreserveAspectFit
             asynchronous: true
@@ -270,7 +243,7 @@ Item {
 
         MaterialIcon {
             anchors.centerIn: parent
-            visible: !appIcon.hasBuiltinIcon && image.status !== Image.Ready
+            visible: (!appIcon.hasIconSource || image.status === Image.Error)
                      && appIcon.resolvedMaterialIcon.length > 0
             name: appIcon.resolvedMaterialIcon
             size: Math.round(appIcon.tileSize * 0.46)
@@ -279,7 +252,7 @@ Item {
 
         Text {
             anchors.centerIn: parent
-            visible: !appIcon.hasBuiltinIcon && image.status !== Image.Ready
+            visible: (!appIcon.hasIconSource || image.status === Image.Error)
                      && appIcon.resolvedMaterialIcon.length === 0
             text: appIcon.entryGlyph.length > 0
                 ? appIcon.entryGlyph
