@@ -6,7 +6,8 @@ import Quickshell
 import Quickshell.Io
 import A21s.Theme
 import A21s.Services
-import A21s.Components as Components
+import A21s.Widgets as Components
+import A21s.Windowing as Windowing
 
 ApplicationWindow {
     id: win
@@ -2111,7 +2112,7 @@ ApplicationWindow {
         }
     }
 
-    Components.AppGestureLayer {
+    Windowing.AppGestureLayer {
         anchors.fill: parent
         z: 100
         onBackTriggered: {

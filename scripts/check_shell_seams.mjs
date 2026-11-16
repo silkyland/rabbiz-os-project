@@ -10,16 +10,15 @@ import { fileURLToPath } from "node:url";
 const root = process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "..", "shell");
 
 // module -> A21s modules it may import. Anything else is a violation.
-// `Components` and `apps` are legacy (M7.0 splits Components into Desktop/Windowing/Panels/Widgets).
+// `apps` is legacy (deleted by M7.4 as base apps become real Linux apps).
 const ALLOWED = {
   Theme: [],
   Services: ["Theme"],
-  Windowing: ["Theme", "Services"],
   Widgets: ["Theme", "Services"],
+  Windowing: ["Theme", "Services", "Widgets"],
   Desktop: ["Theme", "Services", "Widgets", "Windowing"],
   Panels: ["Theme", "Services", "Widgets", "Windowing"],
-  Components: ["Theme", "Services"],
-  apps: ["Theme", "Services", "Components"],
+  apps: ["Theme", "Services", "Widgets", "Windowing"],
 };
 
 function* qmlFiles(dir) {

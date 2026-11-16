@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Compact non-blocking HUD overlay at bottom of screen for:
 //   1. Hardware / slider Volume OSD with live interactive QSSlider

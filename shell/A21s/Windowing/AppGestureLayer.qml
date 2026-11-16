@@ -1,6 +1,7 @@
 import QtQuick
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Base Android-style edge-back gesture overlay for all a21s-shell apps.
 // Uses thin left/right edge strips (edgeWidth px) so center ListViews,

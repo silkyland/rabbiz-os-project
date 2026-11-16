@@ -4,7 +4,8 @@ import QtQuick.Layouts
 import Quickshell
 import A21s.Theme
 import A21s.Services
-import A21s.Components as Components
+import A21s.Widgets as Components
+import A21s.Windowing as Windowing
 
 // Standalone Clock app (Clock / Stopwatch / Timer) with horizontal swipe tabs
 // and Android edge-back gesture.
@@ -306,7 +307,7 @@ ApplicationWindow {
         }
     }
 
-    Components.AppGestureLayer {
+    Windowing.AppGestureLayer {
         anchors.fill: parent
         onBackTriggered: {
             if (pager.currentIndex > 0)

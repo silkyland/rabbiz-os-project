@@ -4,7 +4,8 @@ import QtQuick.Layouts
 import Quickshell.Io
 import A21s.Theme
 import A21s.Services
-import A21s.Components as Components
+import A21s.Widgets as Components
+import A21s.Windowing as Windowing
 
 // Standalone Settings app — launched by the `a21s-settings` wrapper
 // (QML2_IMPORT_PATH=/usr/share/a21s-shell exec qml6 Settings.qml).
@@ -211,7 +212,7 @@ ApplicationWindow {
         initialItem: mainPage
     }
 
-    Components.AppGestureLayer {
+    Windowing.AppGestureLayer {
         anchors.fill: parent
         enabled: !wifiDialog.visible
         onBackTriggered: {

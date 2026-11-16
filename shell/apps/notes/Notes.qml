@@ -5,7 +5,8 @@ import Quickshell
 import Quickshell.Io
 import A21s.Theme
 import A21s.Services
-import A21s.Components as Components
+import A21s.Widgets as Components
+import A21s.Windowing as Windowing
 
 // Standalone Notes app — launched by `a21s-notes`.
 // Persists to ~/.config/a21s-shell/notes.json; supports Android edge-back.
@@ -254,7 +255,7 @@ ApplicationWindow {
         }
     }
 
-    Components.AppGestureLayer {
+    Windowing.AppGestureLayer {
         anchors.fill: parent
         onBackTriggered: {
             if (stack.depth > 1)

@@ -1,0 +1,4 @@
+module A21s.Desktop
+
+AppDrawer 1.0 AppDrawer.qml
+HomeScreen 1.0 HomeScreen.qml

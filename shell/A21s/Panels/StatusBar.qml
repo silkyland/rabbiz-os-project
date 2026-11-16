@@ -6,6 +6,7 @@ import Quickshell.Services.UPower
 import Quickshell.Services.Pipewire
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Android-style status bar with a morphing Dynamic Island / Heads-Up
 // Notification capsule, airplane/DND indicators, and shade tap toggle.

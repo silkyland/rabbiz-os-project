@@ -6,6 +6,8 @@ import QtQuick
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
+import A21s.Windowing
 
 // Home screen — 720x1600 artwork wallpaper + parallax scale morph on drawer drag,
 // tappable morphing clock + telemetry At-a-Glance pill, 2x4 utility grid,

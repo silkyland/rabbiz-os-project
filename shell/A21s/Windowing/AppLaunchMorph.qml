@@ -1,6 +1,7 @@
 import QtQuick
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Material 3 Expressive container-transform overlay.
 // Morphs seamlessly between the tapped AppIcon tile bounds and fullscreen

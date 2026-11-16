@@ -5,6 +5,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Android-style full-screen connectivity sheet: Wi-Fi + Bluetooth tabs.
 // Opened via ShellState.connPanelOpen / connPanelTab (long-press the QS

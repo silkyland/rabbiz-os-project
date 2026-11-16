@@ -5,7 +5,8 @@ import Quickshell
 import Quickshell.Io
 import A21s.Theme
 import A21s.Services
-import A21s.Components as Components
+import A21s.Widgets as Components
+import A21s.Windowing as Windowing
 
 // Standalone Files manager app — launched by `a21s-files`.
 // Edge-swipe back navigates to parent folder (or closes at root).
@@ -251,7 +252,7 @@ ApplicationWindow {
         }
     }
 
-    Components.AppGestureLayer {
+    Windowing.AppGestureLayer {
         anchors.fill: parent
         onBackTriggered: win.goUp()
     }

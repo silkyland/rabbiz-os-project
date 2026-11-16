@@ -1,0 +1,6 @@
+module A21s.Widgets
+
+QSSlider 1.0 QSSlider.qml
+QSTile 1.0 QSTile.qml
+MaterialIcon 1.0 MaterialIcon.qml
+AppIcon 1.0 AppIcon.qml

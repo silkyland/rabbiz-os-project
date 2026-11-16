@@ -4,6 +4,8 @@ import QtQuick
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
+import A21s.Windowing
 
 // Android-style bottom navigation bar:
 //   - Left button:  Back (closes switcher/shade/drawer, or closes focused app)

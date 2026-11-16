@@ -3,7 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
-import A21s.Components as Components
+import A21s.Widgets as Components
+import A21s.Windowing as Windowing
 
 // Standalone Calculator app — launched by `a21s-calculator`.
 ApplicationWindow {
@@ -217,7 +218,7 @@ ApplicationWindow {
         }
     }
 
-    Components.AppGestureLayer {
+    Windowing.AppGestureLayer {
         anchors.fill: parent
         onBackTriggered: win.close()
     }

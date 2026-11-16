@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Full-screen app drawer embedded in HomeScreen.
 // Shares ShellState.drawerProgress (0..1) so interactive finger drag,

@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Android-style recent-apps switcher. This is a full-screen layer-shell window
 // of its own (NOT an overlay inside the nav strip). NavBar.qml owns the single

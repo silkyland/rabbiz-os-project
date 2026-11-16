@@ -4,6 +4,7 @@ import Quickshell.Io
 import Quickshell.Services.Pipewire
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Quick Settings: brightness slider, wired 2x4 Expressive pill tiles,
 // compact MPRIS media player row, and volume slider.

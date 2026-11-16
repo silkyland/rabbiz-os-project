@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Pull-down notification / quick-settings shade.
 //

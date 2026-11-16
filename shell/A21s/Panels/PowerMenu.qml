@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Overlay layer window owning:
 //   1. Android-style Swipe-Up Lock Screen (clock, notifications, media, torch/power corners)

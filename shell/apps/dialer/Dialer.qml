@@ -3,7 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
-import A21s.Components as Components
+import A21s.Widgets as Components
+import A21s.Windowing as Windowing
 
 // a21s-dialer — One UI / Stitch-styled Phone app for a21s-shell.
 //
@@ -1978,7 +1979,7 @@ ApplicationWindow {
     }
 
     // Edge-back gesture overlay
-    Components.AppGestureLayer {
+    Windowing.AppGestureLayer {
         anchors.fill: parent
         z: 60
         onBackTriggered: {

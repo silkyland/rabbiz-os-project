@@ -63,12 +63,11 @@ Dependency direction is enforced by `scripts/check_shell_seams.mjs` (run `script
 |---|---|---|---|
 | `Theme` | design tokens, derived from the appearance source of truth | — | exists |
 | `Services` | singletons over system backends (NM, BlueZ, UPower, audio, telephony, Appearance writer); no UI | `Theme` | exists |
-| `Windowing` | launch flow, morph overlay, task switcher, window policy by form factor | `Theme`, `Services` | `LaunchFlow.js` exists; rest moves in M7.0 |
-| `Widgets` | small shared controls (tile, slider, icon) | `Theme`, `Services` | planned (today part of `Components`) |
-| `Desktop` | wallpaper, icon grid, widgets, dock, app drawer | `Theme`, `Services`, `Widgets`, `Windowing` | planned (today `HomeScreen`, `AppDrawer`) |
-| `Panels` | status bar, nav/gesture bar, shade, quick settings, power menu, HUD, notifications UI | `Theme`, `Services`, `Widgets`, `Windowing` | planned |
-| `Components` | **legacy** flat bucket, split by M7.0 | `Theme`, `Services` | exists, shrinking |
-| `shell/apps/*` | **legacy** home-grown apps, deleted in M7.4 (Dialer/SMS last, after M6) | `Theme`, `Services`, `Components` | exists, shrinking |
+| `Windowing` | launch flow, morph overlay, task switcher, app gesture layer, window policy by form factor | `Theme`, `Services`, `Widgets` | exists (M7.0 done) |
+| `Widgets` | small shared controls (tile, slider, icon) | `Theme`, `Services` | exists (M7.0 done) |
+| `Desktop` | wallpaper, icon grid, widgets, dock, app drawer | `Theme`, `Services`, `Widgets`, `Windowing` | exists (`HomeScreen`, `AppDrawer`) |
+| `Panels` | status bar, nav/gesture bar, shade, quick settings, power menu, HUD, notifications UI | `Theme`, `Services`, `Widgets`, `Windowing` | exists |
+| `shell/apps/*` | **legacy** home-grown apps, deleted in M7.4 (Dialer/SMS last, after M6) | `Theme`, `Services`, `Widgets`, `Windowing` | exists, shrinking |
 
 Not checked (stated gap): `Loader { source: }` / `Qt.createComponent` paths and runtime string imports.
 Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge location, Settings split (spike S2).
