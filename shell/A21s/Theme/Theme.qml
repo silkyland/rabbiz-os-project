@@ -37,14 +37,15 @@ QtObject {
     readonly property color tileOff:      light ? "#E9E9EF" : "#22252F"
     readonly property color tileOffText:  light ? "#4A4A55" : "#8B93A3"
 
-    // Glassmorphism tokens (#AARRGGBB). The shell renders with the software backend, so a
-    // real backdrop blur (ShaderEffect/MultiEffect) is not available; translucency + a 1 px
-    // light border + a soft top highlight are what reads as "frosted" on this device.
+    // Apps retain software rendering; the shell uses the pinned Panfrost path when available.
     readonly property color glass:        light ? "#B3FFFFFF" : "#B3131316"
     readonly property color glassHigh:    light ? "#D9FFFFFF" : "#D917171B"
     readonly property color glassLow:     light ? "#8CFFFFFF" : "#8C0F0F12"
     readonly property color glassBorder:  light ? "#33FFFFFF" : "#1FFFFFFF"
     readonly property color glassShadow:  light ? "#14000000" : "#33000000"
+    readonly property color glassBlur:     light ? "#80FFFFFF" : "#80131316"
+    readonly property color glassBlurHigh: light ? "#B3FFFFFF" : "#B317171B"
+    readonly property int backdropBlurMax: 32
 
     // Type (px @ 720x1600, scale=1)
     readonly property string fontFamily: "Noto Sans"

@@ -369,9 +369,9 @@ QtObject {
         ShellState.powerMenuOpen = false
         _runCmd(["sh", "-c",
             "OLD=$PPID; (sleep 0.15; kill \"$OLD\" 2>/dev/null || true; sleep 0.30; "
-          + "exec env QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_MOBILE=1 "
+          + "exec env QT_QUICK_CONTROLS_MOBILE=1 "
           + "QML_IMPORT_PATH=/usr/share/a21s-shell QML2_IMPORT_PATH=/usr/share/a21s-shell "
-          + "setsid -f quickshell -p /usr/share/a21s-shell/shell.qml >/dev/null 2>&1 </dev/null) &"])
+          + "setsid -f a21s-shell >/dev/null 2>&1 </dev/null) &"])
     }
 
     function reboot() {
@@ -396,6 +396,7 @@ QtObject {
     property var _cmdQueue: []
 
     property var actionProc: Process {
+        environment: Appearance.appEnvironment
         function _drain() {
             if (root._cmdQueue.length > 0 && !actionProc.running) {
                 var argv = root._cmdQueue.shift()
@@ -628,7 +629,7 @@ QtObject {
                 volSetTimer.restart()
         }
     }
-    property var shotProc: Process {}
+    property var shotProc: Process { environment: Appearance.appEnvironment }
 
     property var volSetTimer: Timer {
         interval: 80

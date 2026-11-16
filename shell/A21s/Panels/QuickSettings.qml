@@ -23,6 +23,7 @@ Item {
 
     Process {
         id: settingsProc
+        environment: Appearance.appEnvironment
         command: ["a21s-settings"]
     }
 

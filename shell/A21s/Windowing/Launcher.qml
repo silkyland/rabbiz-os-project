@@ -35,21 +35,8 @@ Singleton {
         _spawn(entry)
     }
 
-    // The shell process runs with the platform theme disabled (it draws its own UI); apps must not
-    // inherit that, so they are started with the desktop-contract environment instead.
-    readonly property var appEnv: ({
-        "QT_QPA_PLATFORMTHEME": "kde",
-        "PLASMA_PLATFORM": "phone:handset",
-        "QT_QUICK_CONTROLS_STYLE": null
-    })
-
     function _spawn(entry) {
-        if (!entry) return
-        if (entry.command && entry.command.length > 0 && !entry.runInTerminal)
-            Quickshell.execDetached({ command: entry.command, environment: root.appEnv,
-                                      workingDirectory: entry.workingDirectory || "" })
-        else if (typeof entry.execute === "function")
-            entry.execute()
+        Appearance.launchDesktopEntry(entry)
     }
 
     // The running window of a desktop entry, or null. Generic: no per-app table.

@@ -1,5 +1,6 @@
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Io
 import Quickshell.Services.UPower
 import QtQuick
 import QtQuick.Layouts
@@ -9,17 +10,8 @@ import A21s.Widgets
 
 // Pull-down notification / quick-settings shade.
 //
-// Mechanic chosen: RESIZE (not mask). implicitHeight is bound to
-// ShellState.shadeProgress, so the layer-shell surface only ever covers
-//   * collapsed -> Theme.shadeHandleZone px invisible input strip at the
-//     very top of the screen (Android-style: drag down on the status bar
-//     opens the shade; a tap on the strip also opens it), and
-//   * expanded  -> the full screen.
-// The panel itself is bottom-anchored inside the window, so it slides
-// down from above the screen like a physical sheet (bottom edge first).
-// Only the bottom `tailH` slice is visible while collapsed; that slice
-// is kept transparent (opacity fades in with progress) so the strip is
-// invisible and cannot occlude the StatusBar window beneath it.
+// Keep the GPU swapchain at a fixed size. Only the clipped content and input
+// region follow the drag; resizing a KMS-backed buffer every frame exhausts CMA.
 PanelWindow {
     id: win
 
@@ -37,8 +29,10 @@ PanelWindow {
     // grab pill floats in the 32px above it. Transparent when collapsed.
     readonly property real tailH: Theme.shadeHandleZone + Theme.navZoneHeight
 
-    implicitHeight: Theme.shadeHandleZone
+    implicitHeight: Math.max(Theme.shadeHandleZone, fullH)
+    readonly property real visibleHeight: Theme.shadeHandleZone
                   + ShellState.shadeProgress * Math.max(0, fullH - Theme.shadeHandleZone)
+    mask: Region { item: content }
 
     // Release-to-snap animation on the shared progress property.
     NumberAnimation {
@@ -63,6 +57,39 @@ PanelWindow {
     // tab taps / on release, so the page switch is not a hard snap any more.
     property real pageShift: ShellState.shadeMode === "settings" ? 1.0 : 0.0
     property bool pageDragging: false
+
+    IpcHandler {
+        target: "shade"
+        function open(page: string): void {
+            win.setPage(page === "settings" ? "settings" : "notifications")
+            win.snapTo(1)
+        }
+        function close(): void { win.snapTo(0) }
+        function state(): string {
+            return JSON.stringify({ progress: ShellState.shadeProgress, gpu: win.gpu,
+                captured: backdrop.hasContent, sourceWidth: backdrop.sourceSize.width,
+                sourceHeight: backdrop.sourceSize.height, windowHeight: win.height,
+                visibleHeight: win.visibleHeight })
+        }
+    }
+    readonly property bool gpu: content.GraphicsInfo.api === GraphicsInfo.OpenGL
+
+    // One fresh capture per opening, while the sheet is still invisible. A live
+    // output capture here would include the shade and recursively blur itself.
+    ScreencopyView {
+        id: backdrop
+        width: win.width
+        height: win.fullH
+        visible: false
+        paintCursor: false
+        live: false
+        captureSource: win.gpu && ShellState.shadeProgress > 0 ? win.screen : null
+    }
+    Timer {
+        id: captureDeadline
+        interval: 250
+        running: win.gpu && ShellState.shadeProgress > 0 && !backdrop.hasContent
+    }
     property real pageDragStart: 0.0
     Behavior on pageShift {
         enabled: !win.pageDragging
@@ -74,7 +101,9 @@ PanelWindow {
     }
 
     Item {
-        anchors.fill: parent
+        id: content
+        width: win.width
+        height: win.visibleHeight
         clip: true
 
         // Shade drag / tap handling. Lies *beneath* the panel content, so
@@ -136,7 +165,7 @@ PanelWindow {
                 if (tap) {
                     if (!ShellState.shadeOpen)
                         win.snapTo(1)   // tap on collapsed strip -> open
-                    else if (mouse.y > win.height - win.tailH)
+                    else if (mouse.y > content.height - win.tailH)
                         win.snapTo(0)   // tap on bottom grab zone -> close
                 } else {
                     win.snapTo(ShellState.shadeProgress > 0.3 ? 1 : 0)
@@ -147,6 +176,7 @@ PanelWindow {
         // The sheet. Bottom-anchored => slides down from above the screen.
         Item {
             id: panel
+            opacity: !win.gpu || backdrop.hasContent || (!captureDeadline.running && ShellState.shadeProgress > 0) ? 1 : 0
             anchors {
                 left: parent.left
                 right: parent.right
@@ -154,15 +184,18 @@ PanelWindow {
             }
             height: win.fullH
 
-            Rectangle {
+            BackdropBlur {
                 id: bgMain
+                sourceItem: backdrop.hasContent ? backdrop : null
+                // The captured screen stays fixed as the sheet slides down.
+                sourceRect: Qt.rect(0, content.height - panel.height, width, height)
                 anchors {
                     left: parent.left
                     right: parent.right
                     top: parent.top
                 }
                 height: Math.max(0, panel.height - win.tailH)
-                color: Theme.glassHigh          // frosted sheet over the app/home
+                color: gpu && backdrop.hasContent ? Theme.glassBlurHigh : Theme.glassHigh
                 border.width: 0
             }
 

@@ -10,8 +10,8 @@
 # Notes:
 # - the shell must be restarted with the env var, so this script restarts quickshell;
 # - it injects touch through a21s-touch, which needs root (/dev/uinput);
-# - "Frame rendered ... in X ms" numbers are software-renderer numbers: compare before/after
-#   a change, they are not a GPU benchmark.
+# - "Frame rendered ... in X ms" numbers depend on the active backend: compare before/after
+#   a change within one backend; they are not measured display FPS.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
@@ -35,7 +35,7 @@ ENVF="XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=${WD:-wayland-0} $(tr '\0' 
 pkill -f 'quickshell -p /usr/share/a21s-shell/shell.qml' || true
 sleep 1
 runuser -u gamer -- env $ENVF QT_QPA_PLATFORMTHEME= QT_QUICK_CONTROLS_STYLE=Basic QSG_RENDER_TIMING=1 \
-    setsid quickshell -p /usr/share/a21s-shell/shell.qml >/tmp/shell.log 2>&1 </dev/null &
+    setsid a21s-shell >/tmp/shell.log 2>&1 </dev/null &
 sleep 6
 REMOTE
 

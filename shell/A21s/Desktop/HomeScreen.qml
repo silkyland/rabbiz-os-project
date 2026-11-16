@@ -36,11 +36,13 @@ PanelWindow {
 
     Process {
         id: steamFallbackProc
+        environment: Appearance.appEnvironment
         command: ["a21s-session-switch", "steamos"]
     }
 
     Process {
         id: settingsProc
+        environment: Appearance.appEnvironment
         command: ["a21s-settings"]
     }
 
@@ -72,8 +74,14 @@ PanelWindow {
         clockMorphAnim.restart()
     }
 
+    // The drawer samples this sibling scene, which excludes the drawer itself.
+    Item {
+        id: desktopScene
+        anchors.fill: parent
+
     // ---- Fixed-frame Wallpaper layer with subtle parallax zoom when Drawer opens ----
     Item {
+        id: wallpaperScene
         anchors.fill: parent
         clip: true
 
@@ -1070,8 +1078,10 @@ PanelWindow {
         }
 
         // ---- Frosted Glass Dock ----
-        Rectangle {
+        BackdropBlur {
             id: dockContainer
+            sourceItem: wallpaperScene
+            sourceRect: Qt.rect(x, y, width, height)
             anchors {
                 left: parent.left
                 right: parent.right
@@ -1082,7 +1092,7 @@ PanelWindow {
             }
             height: Theme.iconApp + Theme.spaceM
             radius: Theme.radiusL + 10
-            color: Theme.glass
+            color: gpu ? Theme.glassBlur : Theme.glass
             border.width: 1
             border.color: Theme.glassBorder
 
@@ -1105,10 +1115,13 @@ PanelWindow {
         }
     }
 
+    } // desktopScene (must be nested: PanelWindow reparents its direct children)
+
     // ---- Sliding App Drawer ----
     AppDrawer {
         id: appDrawer
         anchors.fill: parent
+        backdropSource: desktopScene
         open: ShellState.drawerOpen
         onRequestClose: ShellState.drawerOpen = false
     }

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
+import Quickshell.Io
 import A21s.Theme
 import A21s.Services
 import A21s.Widgets
@@ -14,10 +15,25 @@ Item {
 
     // Bound by the caller to ShellState.drawerOpen.
     property bool open: false
+    property Item backdropSource: null
     property string activeCategory: "all"
 
     signal requestClose()
     signal launched()
+
+    IpcHandler {
+        target: "drawer"
+        function open(): void { ShellState.drawerOpen = true }
+        function close(): void { ShellState.drawerOpen = false }
+        function state(): string {
+            return JSON.stringify({ open: drawer.open, progress: drawer.progress,
+                gpu: drawer.GraphicsInfo.api === GraphicsInfo.OpenGL,
+                sourceReady: drawer.backdropSource !== null,
+                sceneChildren: drawer.backdropSource ? drawer.backdropSource.children.length : 0,
+                sceneWidth: drawer.backdropSource ? drawer.backdropSource.width : 0,
+                sceneHeight: drawer.backdropSource ? drawer.backdropSource.height : 0 })
+        }
+    }
 
     readonly property real progress: ShellState.drawerProgress
     NumberAnimation {
@@ -127,13 +143,16 @@ Item {
         y: Math.round((1.0 - drawer.progress) * drawer.height)
 
         // Sheet background with rounded top corners & subtle top border.
-        Rectangle {
+        BackdropBlur {
             anchors {
                 fill: parent
                 topMargin: Theme.statusBarHeight
             }
             radius: Theme.radiusL
-            color: Theme.glassHigh
+            sourceItem: drawer.backdropSource
+            sourceRect: Qt.rect(0, panel.y + Theme.statusBarHeight, width, height)
+            blurEnabled: drawer.progress > 0
+            color: gpu ? Theme.glassBlurHigh : Theme.glassHigh
             border.width: 1
             border.color: Qt.alpha(Theme.text, 0.08)
 

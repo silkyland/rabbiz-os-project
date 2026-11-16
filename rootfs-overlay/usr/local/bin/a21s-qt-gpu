@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Experimental process-local Qt RHI/Panfrost path. Keep the session default software.
+set -euo pipefail
+scanout_dir=/usr/local/lib/a21s-qt-scanout
+mesa_library=/usr/lib/libEGL_mesa.so.0
+if [[ $# -eq 0 ]]; then
+    echo "Usage: a21s-qt-gpu command [args...] | --check" >&2
+    exit 2
+fi
+for artifact in mesa.json mesa.sha256 patched.sha256 libEGL_mesa.so.0 kms-node.so; do
+    if [[ ! -r "$scanout_dir/$artifact" ]]; then
+        echo "Missing $artifact; run scripts/setup_qt_scanout.sh from the checkout." >&2
+        exit 1
+    fi
+done
+read -r expected < "$scanout_dir/mesa.sha256"
+read -r actual _ < <(sha256sum "$mesa_library")
+if [[ "$expected" != "$actual" ]]; then
+    echo "Mesa changed: GPU experiment disabled. Re-verify the patch or use QT_QUICK_BACKEND=software." >&2
+    exit 1
+fi
+read -r expected < "$scanout_dir/patched.sha256"
+read -r actual _ < <(sha256sum "$scanout_dir/libEGL_mesa.so.0")
+if [[ "$expected" != "$actual" ]]; then
+    echo "Private EGL checksum failed; reinstall the experiment." >&2
+    exit 1
+fi
+export RABBIZ_EXYNOS_RENDER RABBIZ_EXYNOS_PRIMARY
+RABBIZ_EXYNOS_RENDER=$(readlink -e /dev/dri/by-path/platform-exynos-drm-render)
+RABBIZ_EXYNOS_PRIMARY=$(readlink -e /dev/dri/by-path/platform-exynos-drm-card)
+if [[ ! -r "$RABBIZ_EXYNOS_PRIMARY" || ! -w "$RABBIZ_EXYNOS_PRIMARY" ]]; then
+    echo "Exynos primary node must be accessible to this user (video group)." >&2
+    exit 1
+fi
+if [[ "$1" == --check ]]; then
+    exit 0
+fi
+unset LIBGL_ALWAYS_SOFTWARE GALLIUM_DRIVER MESA_LOADER_DRIVER_OVERRIDE
+export QT_QPA_PLATFORM=wayland QT_QUICK_BACKEND=rhi QSG_RHI_BACKEND=opengl
+export DRI_PRIME=platform-exynos-drm
+export __EGL_VENDOR_LIBRARY_FILENAMES="$scanout_dir/mesa.json"
+export LD_PRELOAD="$scanout_dir/kms-node.so${LD_PRELOAD:+:$LD_PRELOAD}"
+exec "$@"
