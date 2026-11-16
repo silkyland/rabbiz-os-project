@@ -114,10 +114,9 @@ pager with dots instead of the old "Notifications | Controls" tab bar.
 |---|---|
 | ![Controls sheet](shade-controls-preview.png) | ![Notification sheet](shade-notifications-preview.png) |
 
-*(Both are real QML renders of `QuickSettings.qml` / `NotificationCenter.qml` in
-the 720 px-wide phone frame, captured offscreen with stubbed `Quickshell` types —
-not device screenshots. The status bar is drawn by `StatusBar.qml`, so it is
-absent; host window decoration trims the height to 1579 px.)*
+*(Device screenshots of `DSI-1` at 720x1600, 2026-11-16, with notifications
+injected through `notify-send` so the grouping is visible. The status bar is a
+separate `PanelWindow` and therefore not part of the captured sheet.)*
 
 ### Composition
 
@@ -164,14 +163,39 @@ conversation, not an ad. Promotions render dimmed and always last.
   ON state inverts the well to `Theme.text` with an accent glyph.
 - `Panels`: `NotificationCard` (replaces `NotificationItem`), `NotificationGroups.js`.
 
-### Verifying without the device
+### Verification
 
-`tools/shade-preview/preview.py` renders these pages offscreen with the real QML
-(stubbed `Quickshell` types) — see [its README](../tools/shade-preview/README.md).
-`qmllint -I shell <file>` (Qt 6.12) reports no syntax or missing-property errors
-on the new files. **On-device verification is still pending** — the A21s was
-unreachable (no `usb0`, no LAN host) when this landed; re-check the sheet on the
-phone, then refresh these previews if the fonts/metrics shift.
+Deployed and exercised on the A21s on 2026-11-16 (`/usr/share/a21s-shell`,
+`a21s-shell` restarted, clean `quickshell` log). Checked with injected touches
+(`a21s-touch`) and screenshots (`grim`): category grouping and per-app collapse,
+tap-to-expand, the × and the clear-all button, page swiping in both directions
+starting on tiles/cards, dot taps, tile toggles, and vertical slider drags
+(brightness 163→209, volume 71→52). `ipc shade state` now also reports
+`page` / `pageHeight` / `controlsContent` / `controlsScrolling`.
+
+Two defects only the device could show, both fixed:
+
+- `Shade.qml` lost its `A21s.Widgets` import while the header pills were removed,
+  but still uses `BackdropBlur` — the whole shade failed to load until the import
+  came back.
+- **`ShellPrefs.onAccentColor` has always been black.** QML parses
+  `on<Capitalized>` next to a sibling `xxx` property as a *signal handler*, so the
+  declaration never receives its initialiser (the same trap `Theme.qml` documents
+  for `primaryContent`). Shade glyphs now use the new `ShellPrefs.accentContent`;
+  the legacy name is kept for the apps that still bind it (a separate sweep).
+
+Page swiping needed a `DragHandler` in `Shade.qml` with
+`grabPermissions: PointerHandler.CanTakeOverFromAnything`: the tiles, cards and
+sliders are `MouseArea`s that swallow drags, so a `MouseArea`-only pager could
+only work in the 20 px gutters. The handler is x-axis only, so vertical drags
+still scroll, move sliders and pull the sheet closed.
+
+### Iterating without the device
+
+`tools/shade-preview/preview.py` renders both pages offscreen with the real QML
+(stubbed `Quickshell` types) — see [its README](../tools/shade-preview/README.md);
+`qmllint -I shell <file>` (Qt 6.12) catches syntax and missing properties. Neither
+excuses checking the phone: both device defects above passed both tools.
 
 ## App layer (added 2026-11-15)
 

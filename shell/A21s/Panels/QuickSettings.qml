@@ -24,6 +24,11 @@ Item {
     implicitWidth: 400
     implicitHeight: column.implicitHeight
 
+    // Introspection for the shade's `ipc shade state` endpoint: whether the
+    // sheet overflows (and therefore takes the vertical drag) at this height.
+    readonly property real contentHeight: column.implicitHeight
+    readonly property bool scrolling: scroller.interactive
+
     Process {
         id: settingsProc
         environment: Appearance.appEnvironment
@@ -333,7 +338,7 @@ Item {
                                         anchors.centerIn: parent
                                         name: Media.isPlaying ? "pause" : "play_arrow"
                                         size: Theme.fontTitle
-                                        color: Media.isPlaying ? ShellPrefs.onAccentColor : Theme.text
+                                        color: Media.isPlaying ? ShellPrefs.accentContent : Theme.text
                                     }
                                     TapHandler { onTapped: Media.togglePlaying() }
                                 }

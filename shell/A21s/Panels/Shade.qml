@@ -5,6 +5,7 @@ import QtQuick
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Pull-down notification / quick-settings shade.
 //
@@ -79,7 +80,10 @@ PanelWindow {
             return JSON.stringify({ progress: ShellState.shadeProgress, gpu: win.gpu,
                 captured: backdrop.hasContent, sourceWidth: backdrop.sourceSize.width,
                 sourceHeight: backdrop.sourceSize.height, windowHeight: win.height,
-                visibleHeight: win.visibleHeight })
+                visibleHeight: win.visibleHeight, page: win.pageShift,
+                mode: ShellState.shadeMode, pageHeight: ctrlPage.height,
+                controlsContent: quickControls.contentHeight,
+                controlsScrolling: quickControls.scrolling })
         }
     }
     readonly property bool gpu: content.GraphicsInfo.api === GraphicsInfo.OpenGL
@@ -100,7 +104,6 @@ PanelWindow {
         interval: 250
         running: win.gpu && ShellState.shadeProgress > 0 && !backdrop.hasContent
     }
-    property real pageDragStart: 0.0
     Behavior on pageShift {
         enabled: !win.pageDragging
         NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutCubic }
@@ -126,51 +129,30 @@ PanelWindow {
             preventStealing: true
 
             property real pressY: 0
-            property real pressX: 0
             property real pressProgress: 0
 
             onPressed: function(mouse) {
                 snap.stop()
                 pressY = mouse.y
-                pressX = mouse.x
                 pressProgress = ShellState.shadeProgress
-                win.pageDragging = false
-                win.pageDragStart = win.pageShift
                 if (ShellState.shadeProgress < 0.05) {
                     ShellState.shadeMode = mouse.x < win.width / 2 ? "notifications" : "settings"
                     win.pageShift = ShellState.shadeMode === "settings" ? 1.0 : 0.0
                 }
             }
             onPositionChanged: function(mouse) {
-                if (!pressed)
+                if (!pressed || win.pageDragging)
                     return
-                const dy = mouse.y - pressY
-                const dx = mouse.x - pressX
-                // Decide the axis once: once the gesture is clearly sideways the page
-                // follows the finger and the vertical progress is frozen.
-                if (!win.pageDragging && Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.2)
-                    win.pageDragging = true
-                if (win.pageDragging) {
-                    win.pageShift = Math.max(0, Math.min(1, win.pageDragStart - dx / win.width))
-                    return
-                }
+                // Vertical only: sideways page drags are owned by the DragHandler
+                // below, which can steal the grab from tiles and sliders.
                 const range = Math.max(1, win.fullH - Theme.shadeHandleZone)
                 ShellState.shadeProgress = Math.max(0, Math.min(1,
-                    pressProgress + dy / range))
+                    pressProgress + (mouse.y - pressY) / range))
             }
             onReleased: function(mouse) {
-                const dy = mouse.y - pressY
-                const dx = mouse.x - pressX
-                if (win.pageDragging) {
-                    // past 35 % of the width (or a clear flick) commits the page
-                    const target = (Math.abs(dx) > win.width * 0.35)
-                        ? (dx < 0 ? 1.0 : 0.0)
-                        : (win.pageShift > 0.5 ? 1.0 : 0.0)
-                    win.pageDragging = false            // re-enable the Behavior
-                    win.setPage(target >= 0.5 ? "settings" : "notifications")
-                    win.snapTo(1)
+                if (win.pageDragging)
                     return
-                }
+                const dy = mouse.y - pressY
                 const tap = Math.abs(dy) < Theme.spaceS
                 if (tap) {
                     if (!ShellState.shadeOpen)
@@ -180,6 +162,43 @@ PanelWindow {
                 } else {
                     win.snapTo(ShellState.shadeProgress > 0.3 ? 1 : 0)
                 }
+            }
+        }
+
+        // Horizontal pager. A DragHandler (not a MouseArea) so it can take the
+        // grab from the tiles, sliders and cards underneath: only x-axis motion
+        // activates it, so vertical drags still scroll the list, move the
+        // sliders and pull the shade closed.
+        DragHandler {
+            id: pageDrag
+            target: null
+            dragThreshold: 12
+            xAxis.enabled: true
+            yAxis.enabled: false
+            grabPermissions: PointerHandler.CanTakeOverFromAnything
+
+            property real startShift: 0
+            property real lastDx: 0
+
+            onActiveChanged: {
+                if (active) {
+                    startShift = win.pageShift
+                    lastDx = 0
+                    win.pageDragging = true
+                } else if (win.pageDragging) {
+                    win.pageDragging = false            // re-enable the Behavior
+                    // past 30 % of the width (or a clear flick) commits the page
+                    const target = Math.abs(lastDx) > win.width * 0.3
+                        ? (lastDx < 0 ? 1.0 : 0.0)
+                        : (win.pageShift > 0.5 ? 1.0 : 0.0)
+                    win.setPage(target >= 0.5 ? "settings" : "notifications")
+                }
+            }
+            onTranslationChanged: {
+                if (!active)
+                    return
+                lastDx = activeTranslation.x
+                win.pageShift = Math.max(0, Math.min(1, startShift - lastDx / win.width))
             }
         }
 
@@ -302,6 +321,7 @@ PanelWindow {
                             enabled: win.pageShift >= 0.5
 
                             QuickSettings {
+                                id: quickControls
                                 anchors.fill: parent
                             }
                         }

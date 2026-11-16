@@ -83,7 +83,7 @@
   - [x] Dialer app + Telephony facade (demo mode) (W4)
   - [x] SMS app (W5)
   - [x] StatusBar + notification daemon/shade list (W6)
-  - [x] Shade regrouped One UI 7-style: category sections (Conversations/Devices/Apps/Promotions), per-app group cards, vertical brightness/volume, action grid (2026-11-16, docs/a21s-phone-shell.md § Shade UI)
+  - [x] Shade regrouped One UI 7-style: category sections (Conversations/Devices/Apps/Promotions), per-app group cards, vertical brightness/volume, action grid (2026-11-16, deployed + verified on the A21s, docs/a21s-phone-shell.md § Shade UI)
   - [x] On-device deployment & bring-up: install 44 packages, enable `a21s-phone-session.service`, verify `labwc` + `quickshell` + all 7 `a21s-*` apps + `brightnessctl` + `wpctl status` on `DSI-1`
   - [ ] **M7 v2 (branch `feat/desktop-shell-rewrite`, plan [docs/DESKTOP-SHELL.md](docs/DESKTOP-SHELL.md))**: M7.0 retrofit modules → M7.1 launch slice → M7.2 desktop contract → M7.3 desktop surface → M7.4 replace base apps → M7.5 form factors → M7.6 close morph → M7.7 mouse/kbd/gamepad → M7.8 Settings v2 → M7.9 gestures (core done) → M7.10 home drag & drop → M7.11 clipboard → M7.12 on-screen keyboard rework. M7.0/7.1/7.2/7.4 done (verified on device); Steam runs in a nested Weston window (ADR-8). Handoff: [docs/HANDOFF-DESKTOP-SHELL.md](docs/HANDOFF-DESKTOP-SHELL.md).
   - [ ] Real telephony backend when M6 lands (`Telephony.backend` hook / `mm-backend.sh` reference)

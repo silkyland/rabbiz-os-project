@@ -58,7 +58,7 @@ Item {
             name: root.materialIcon
             size: Theme.fontTitle + 4
             color: (glyph.y + glyph.height > glyph.fillTop)
-                ? ShellPrefs.onAccentColor : Theme.text
+                ? ShellPrefs.accentContent : Theme.text
         }
 
         Text {
