@@ -14,7 +14,7 @@
  	};
  };
  
-@@ -1229,3 +1236,217 @@
+@@ -1229,3 +1236,215 @@
  	};
  	};
  };
@@ -25,15 +25,13 @@
 + * (drivers/cpif, drivers/tmu) - NOT validated on hardware yet.
 + */
 +
-+/* ---- battery: S2MU106 secondary PMIC on hsi2c_0 ---------------------
-+ * TODO: verify bus assignment - vendor DT uses hsi2c0-2 (gpc1 pins)
-+ * with 400 kHz. If i2cdetect finds nothing at 0x3b/0x3c/0x3d, try
-+ * hsi2c_1/hsi2c_2.
++/* ---- battery: S2MU106 secondary PMIC on i2c_0 ----------------------
++ * Vendor a21s r06 __fixups__ maps the FG fragment@15 to i2c_0
++ * (0x13830000), not USI hsi2c_0 (0x138a0000).
 + */
-+&usi_hsi2c_0 { status = "okay"; };
-+
-+&hsi2c_0 {
++&i2c_0 {
 +	status = "okay";
++	samsung,i2c-max-bus-freq = <400000>;
 +
 +	/* s2mu106-mfd@3d (charger + MUIC) intentionally left out: needs a
 +	 * mainline charger/MUIC driver first (findings 2.2). The fuel
