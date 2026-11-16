@@ -1,8 +1,0 @@
-#!/bin/sh
-# a21s-spotify — Spotify Web Player as an app window (Chrome --app), plus the Spotify Connect receiver.
-# Replaces the home-grown Spotify.qml (D2, docs/DESKTOP-SHELL.md). Widevine is unavailable on aarch64
-# Linux, so playback relies on Spotify Connect (this device appears as "Galaxy A21s") or the free web tier.
-if command -v a21s-spotify-ctl >/dev/null 2>&1; then
-    a21s-spotify-ctl start-connect >/dev/null 2>&1 &
-fi
-exec a21s-browser --app=https://open.spotify.com "$@"

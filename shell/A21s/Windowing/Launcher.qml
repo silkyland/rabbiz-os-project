@@ -16,6 +16,7 @@ Singleton {
     // true from the tap until the app's first frame is likely on screen
     readonly property bool holding: flow.state === "launching" || flow.state === "mapped"
     property var currentEntry: null
+    property var _preexisting: []   // toplevels open at launch time (for the "first new window" fallback)
 
     function launch(entry, origin, runningToplevel) {
         ShellState.triggerLaunchMorph(origin.x, origin.y, origin.w, origin.h, origin.radius,
@@ -29,6 +30,8 @@ Singleton {
             return
         }
         root.flow = Flow.launch(root.flow, entry ? entry.id : "", origin, Date.now())
+        var cur = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
+        root._preexisting = cur.slice()
         _spawn(entry)
     }
 
@@ -70,11 +73,16 @@ Singleton {
     function _scan() {
         if (root.flow.state !== "launching" || !root.currentEntry) return
         var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
-        for (var i = 0; i < tops.length; ++i)
-            if (Flow.matches(tops[i].appId, root.currentEntry.id, root.currentEntry.startupClass)) {
+        for (var i = 0; i < tops.length; ++i) {
+            // appId match, or -- for hosts that publish no app_id (e.g. a nested Weston) -- the first
+            // window that was not open when the launch started
+            var isNew = root._preexisting.indexOf(tops[i]) < 0
+            if (Flow.matches(tops[i].appId, root.currentEntry.id, root.currentEntry.startupClass)
+                    || (isNew && !tops[i].appId)) {
                 root.flow = Flow.toplevelMapped(root.flow, root.flow.appId, Date.now())
                 return
             }
+        }
     }
 
     Connections {
@@ -101,5 +109,12 @@ Singleton {
             return "launching " + e.id
         }
         function state(): string { return root.flow.state }
+        // debugging aid: "appId|title" per open toplevel, one per line
+        function toplevels(): string {
+            var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
+            var out = []
+            for (var i = 0; i < tops.length; ++i) out.push(String(tops[i].appId) + "|" + String(tops[i].title))
+            return out.join("\n")
+        }
     }
 }

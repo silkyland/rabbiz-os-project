@@ -2,8 +2,9 @@
 Type=Application
 Name=Steam
 GenericName=Game Launcher
-Comment=Switch to the SteamOS session (weston + Big Picture)
-Exec=a21s-session-switch steamos
+Comment=Steam Big Picture in a window (nested Weston, ADR-8)
+Exec=a21s-steam %U
+StartupWMClass=weston
 Icon=steam
 Categories=Game;
 Terminal=false

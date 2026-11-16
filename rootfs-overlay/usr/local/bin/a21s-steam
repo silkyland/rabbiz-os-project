@@ -1,31 +1,46 @@
-#!/bin/sh
-# a21s-steam — Steam Big Picture inside labwc via XWayland (default) or gamescope.
-#
-# Launching directly on labwc's built-in XWayland (DISPLAY=:0) avoids nested
-# gamescope's dmabuf import issue on exynos-drm (no IOMMU on card0). Pass
-# `--gamescope` to opt into nested gamescope explicitly.
-#
-# Deployed to /usr/local/bin/ by scripts/deploy_shell.sh, which sets +x.
+#!/bin/bash
+# a21s-steam — Steam as an ordinary desktop window (ADR-8): a nested Weston (pixman, kiosk, XWayland)
+# runs as one labwc toplevel and the native ARM64 Steam client runs inside it.
+# Why nested Weston: Steam directly on labwc's XWayland dies (DRM_IOCTL_MODE_CREATE_DUMB EACCES) and
+# gamescope has no usable Vulkan device on panvk. Verified 2026-11-16: Steam reaches "Logging in...".
+# `--fullscreen` (no fixed size) is required: a fixed --width/--height renders black inside labwc.
+# Closing the Weston window (or Steam exiting) tears the other down. Args are passed to steam
+# (e.g. steam://rungameid/433950). Never touches the DRM seat.
+RD="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+LOG="$RD/a21s-steam-weston.log"
+STEAM_BIN="/home/gamer/.local/share/Steam/steamrtarm64/steam"
+[ -x "$STEAM_BIN" ] || { echo "a21s-steam: native Steam client not installed" >&2; exit 1; }
 
-export PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1
-export STEAMOS=1
-export STEAM_RUNTIME=0
-export DBUS_FATAL_WARNINGS=0
+# already running -> forward the args to the running client instead of starting a second one
+if pgrep -u "$(id -u)" -f "[s]teamrtarm64/steam -" >/dev/null 2>&1; then
+    [ $# -gt 0 ] && exec "$STEAM_BIN" "$@"
+    exit 0
+fi
+
+export PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1 STEAMOS=1 STEAM_RUNTIME=0
 export LD_LIBRARY_PATH="/home/gamer/.local/share/Steam/steamrtarm64:/home/gamer/.local/share/Steam/steamrtarm64/libs:/home/gamer/.local/share/Steam/steamrtarm64/video${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
 
-STEAM_BIN="/home/gamer/.local/share/Steam/steamrtarm64/steam"
-if [ ! -x "$STEAM_BIN" ]; then
-    STEAM_BIN="steam"
-fi
+SOCK="a21s-steam-wl"
+weston --backend=wayland --renderer=pixman ${A21S_WESTON_ARGS:---fullscreen} \
+       --socket="$SOCK" --shell=kiosk --xwayland >"$LOG" 2>&1 &
+WESTON=$!
+trap 'kill $WESTON 2>/dev/null' EXIT
 
-STEAM_ARGS="-noverifyfiles -nobootstrapupdate -skipinitialbootstrap -gamepadui -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing"
+DISP=""
+for _ in $(seq 1 30); do
+    DISP=$(sed -n 's/.*xserver listening on display \(:[0-9]*\).*/\1/p' "$LOG" | head -1)
+    [ -n "$DISP" ] && break
+    kill -0 $WESTON 2>/dev/null || { echo "a21s-steam: weston exited" >&2; exit 1; }
+    sleep 0.5
+done
+[ -n "$DISP" ] || { echo "a21s-steam: no XWayland display" >&2; exit 1; }
 
-if [ "${1:-}" = "--gamescope" ]; then
-    shift
-    exec gamescope -W 720 -H 1600 -f -e -- \
-        env SDL_VIDEODRIVER=x11 "$STEAM_BIN" $STEAM_ARGS "$@"
-fi
-
-export DISPLAY="${DISPLAY:-:0}"
-unset SDL_VIDEODRIVER
-exec "$STEAM_BIN" $STEAM_ARGS "$@"
+WAYLAND_DISPLAY="$SOCK" DISPLAY="$DISP" dbus-run-session -- "$STEAM_BIN" \
+    -noverifyfiles -nobootstrapupdate -skipinitialbootstrap -gamepadui \
+    -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing "$@" \
+    >"$RD/a21s-steam.log" 2>&1 &
+STEAM=$!
+# whichever ends first ends both
+while kill -0 $WESTON 2>/dev/null && kill -0 $STEAM 2>/dev/null; do sleep 1; done
+kill $STEAM 2>/dev/null
+exit 0

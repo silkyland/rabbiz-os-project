@@ -100,14 +100,12 @@ Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge
 - **Why:** Settings edits state the shell owns (appearance contract, Wi-Fi/BT panel, session switch); `plasma-settings` KCMs expect Plasma daemons we do not run (unverified — spike S2). Disk ~99 % full forbids carrying two toolkits.
 - **Rejected:** replacing Settings outright (breaks the contract); GTK/Qt mix (disk).
 
-### 8. Steam is an ordinary desktop app, not a session — **BLOCKED, interim = session hand-over** (2026-11-16)
-- **Decision (D4):** Steam should be launched like any app. **Evidence from the device (2026-11-16) that it cannot be yet:**
-  1. Steam on labwc's XWayland dies right after start: `DRM_IOCTL_MODE_CREATE_DUMB failed: Permission denied` / `MESA: Failed to create scanout resource` (Mesa opens `card0` while labwc holds DRM master).
-  2. `a21s-steam --gamescope` (nested): `vulkan: failed to find physical device` / `Failed to create backend` (panvk is non-conformant; gamescope needs a real Vulkan device).
-  3. The shim `steam` / `steam.desktop` currently run `a21s-session-switch steamos`, which stops the phone session; killing that session by hand left labwc up with no usable display until a reboot.
-- **Interim rule:** keep the verified session hand-over (`a21s-session-switch steamos`) behind the normal Steam icon; the Launcher shows the morph and times out after 8 s. Do not run `steamos-session` from a shell/SSH while the phone session owns the seat.
-- **Next experiments (not done):** force the render node for Mesa under Xwayland (`MESA_LOADER_DRIVER_OVERRIDE`, `DRI_PRIME`, render-node-only EGL); nested `weston --backend=wayland` as a labwc client with Steam inside; `LIBGL_ALWAYS_SOFTWARE` as a last resort for the launcher UI only.
-- **Supersedes the "parallel session" text only once** one of those works; `shell/README.md` still describes the parallel session and is correct today.
+### 8. Steam is an ordinary desktop app, not a session — **RESOLVED via nested Weston** (2026-11-16)
+- **Decision (D4):** Steam launches like any app: `a21s-steam` runs `weston --backend=wayland --renderer=pixman --fullscreen --shell=kiosk --xwayland` as ONE labwc toplevel and the native ARM64 Steam client inside it (`dbus-run-session`, `-gamepadui`, CEF GPU off).
+- **Why not the obvious ways (device evidence):** Steam on labwc's XWayland dies (`DRM_IOCTL_MODE_CREATE_DUMB failed: Permission denied`); `gamescope` nested: `vulkan: failed to find physical device`; the old `steam` shim ran `a21s-session-switch steamos`, which stops the phone session.
+- **Verified:** Steam reaches the "Logging in..." splash fullscreen with no window decoration, morph releases in ~2 s (Launcher "first new window without app_id" fallback). **Not verified:** reaching the Big Picture home, input (touch/gamepad) inside the nested compositor, launching a game, RAM headroom during a game (free RAM was ~150 MB with shell + Weston + Steam).
+- **Gotchas:** fixed `--width/--height` renders black inside labwc, use `--fullscreen` only; Weston publishes no `app_id` (title "Weston Compositor - wayland-fullscreen"); never run `steamos-session` while the phone session owns the seat (killing it left labwc with no usable display until reboot).
+- `steamos-session.service` / `a21s-session-switch` stay installed as a recovery path only.
 
 ### 7. One shell, window policy per form factor (2026-11-16)
 - **Decision:** `handset` maximizes, `tablet`/`desktop` float (only `handset` built now; Pad 7 Pro deferred); the shell and apps are identical across modes.

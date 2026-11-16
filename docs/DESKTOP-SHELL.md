@@ -12,7 +12,7 @@
 4. The first screen is a **real desktop**.
 
 Answers: **D1** home = a *touch-first desktop* (wallpaper, icons/widgets, dock, drawer, real windows),
-inputs in priority order **touch → mouse/keyboard → gamepad**. **D3** (2026-11-16) Xiaomi Pad 7 Pro is *not planned now*. **D4** Steam is an ordinary app inside the desktop, not a separate session (**blocked on GPU/DRM — see ADR-8 and §10**). **D5** (2026-11-16) we may wrap/override app looks with our own theme, and `A21s.Theme` may be rewritten from scratch. **D2** replace all home-grown QML apps
+inputs in priority order **touch → mouse/keyboard → gamepad**. **D3** (2026-11-16) Xiaomi Pad 7 Pro is *not planned now*. **D4** Steam is an ordinary app inside the desktop, not a separate session (**solved with nested Weston — ADR-8**). **D5** (2026-11-16) we may wrap/override app looks with our own theme, and `A21s.Theme` may be rewritten from scratch. **D2** replace all home-grown QML apps
 with real Linux apps.
 
 ## 2. Where the current code disagrees with the request (evidence)
@@ -173,10 +173,13 @@ Evidence for doing it: Plasma Settings rendered light/default on our dark device
 | M7.1 launch slice | **done** | `quickshell ipc call launcher launch kalk` -> starting window -> real Kalk window -> state idle (2-3 s); same for kclock, index, marknote |
 | M7.2 desktop contract v1 | **done (apps)** | `a21s-appearance` + `Appearance` service write `A21s.colors`, `kdeglobals [Colors:*]`, gsettings; Kalk/KClock render the dark A21s palette. GTK/Chromium only follow `color-scheme` (not verified visually) |
 | M7.3 desktop surface | **not redesigned** | existing HomeScreen (clock, grid, dock, Steam card) kept; widgets/icons-on-desktop not built |
-| M7.4 swap base apps | **done** | home/drawer use `org.kde.*`; Calculator/Clock/Notes/Gallery/Files/Spotify QML + wrappers deleted (~4 k lines); Spotify = Chrome `--app`. Dialer/SMS/Settings QML kept (D1/ADR-6) |
+| M7.4 swap base apps | **done** | home/drawer use `org.kde.*`; Calculator/Clock/Notes/Gallery/Files/Spotify QML + wrappers deleted (~4 k lines); Spotify removed entirely (owner request; Widevine is unavailable so the web player could not play anyway). Dialer/SMS/Settings QML kept (D1/ADR-6) |
 | M7.5 form factors | not started | only `handset` is in scope (D3) |
 | M7.6 close morph | not started | S1 says ScreencopyView is available, untested |
-| M7.7 input + Steam | **Steam blocked**, input not started | ADR-8 evidence |
+| M7.7 input + Steam | **Steam in a window works to the splash** (nested Weston), input not started | ADR-8; Big Picture home + game launch unverified |
 | M7.8 Settings v2 | not started | S2: plasma-settings lacks Wi-Fi/BT/sound/battery |
+| M7.9 gesture system | not started (added on owner request) | spec in `HANDOFF-DESKTOP-SHELL.md` §4 |
+
+Handoff for other agents: [HANDOFF-DESKTOP-SHELL.md](HANDOFF-DESKTOP-SHELL.md); ready-to-paste prompt: [PROMPT-DESKTOP-SHELL.md](PROMPT-DESKTOP-SHELL.md).
 
 Review of the old shell code reported 10 findings (3 fixed, 7 open): mobile-data toggle disables the modem, single-slot command queues in Network/Bluetooth, 3 s telemetry fork storm, airplane mode `rfkill unblock all`, fake auto-rotate, Wi-Fi password in argv, governor defaults to `performance`.

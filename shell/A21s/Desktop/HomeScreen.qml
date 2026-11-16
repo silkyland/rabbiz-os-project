@@ -412,7 +412,6 @@ PanelWindow {
                 DesktopEntries.byId("org.kde.kweather") || ({ id: "org.kde.kweather", name: "Weather", materialIcon: "wb_sunny" }),
                 DesktopEntries.byId("org.kde.marknote") || ({ id: "a21s-notes", name: "Notes", materialIcon: "edit_note" }),
                 DesktopEntries.byId("org.kde.pix")     || DesktopEntries.byId("org.kde.koko") || ({ id: "a21s-gallery", name: "Gallery", materialIcon: "photo_library" }),
-                DesktopEntries.byId("a21s-spotify")    || ({ id: "a21s-spotify", name: "Spotify", materialIcon: "headphones" }),
                 DesktopEntries.byId("org.kde.qmlkonsole") || ({ id: "org.kde.qmlkonsole", name: "Terminal", materialIcon: "terminal" })
             ];
             dockApps = [
