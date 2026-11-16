@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=A21s Clock
+Name=Clock
 GenericName=Clock
 Comment=In-house A21s Clock
 Exec=a21s-clock
