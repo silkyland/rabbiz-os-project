@@ -1,5 +1,4 @@
 #!/bin/sh
 # a21s-calculator — in-house Calculator (docs/BASE-APPS.md). Deployed by scripts/deploy_shell.sh.
 export QML_IMPORT_PATH=/usr/share/a21s-shell:/usr/share/a21s-apps
-export QT_QUICK_BACKEND=software
-exec quickshell -p /usr/share/a21s-apps/calculator/Calculator.qml "$@"
+exec a21s-qt-render quickshell -p /usr/share/a21s-apps/calculator/Calculator.qml "$@"

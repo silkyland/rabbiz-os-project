@@ -239,6 +239,6 @@ QtObject {
     property var elisaProc: Process {
         environment: Appearance.appEnvironment
         command: ["sh", "-c",
-            "QT_QPA_PLATFORM=wayland QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_MOBILE=1 elisa >/dev/null 2>&1 &"]
+            "QT_QPA_PLATFORM=wayland QT_QUICK_CONTROLS_MOBILE=1 a21s-qt-render elisa >/dev/null 2>&1 &"]
     }
 }

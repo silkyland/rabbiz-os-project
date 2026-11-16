@@ -765,25 +765,6 @@ ApplicationWindow {
                                 }
                             }
                         }
-
-                        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.separator }
-
-                        RowLayout {
-                            Layout.fillWidth: true
-                            Text {
-                                Layout.fillWidth: true
-                                text: "SteamOS Gaming card"
-                                color: Theme.text
-                                font.pixelSize: Theme.fontBody
-                            }
-                            PillSwitch {
-                                checked: ShellPrefs.showSteamCard
-                                onToggled: function(on) {
-                                    ShellPrefs.showSteamCard = on
-                                    ShellPrefs.save()
-                                }
-                            }
-                        }
                     }
                 }
             }

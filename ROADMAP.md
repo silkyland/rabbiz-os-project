@@ -1,4 +1,4 @@
-# Roadmap
+# RabbizOS Roadmap
 
 > Source of truth for sequencing. Detail lives in [docs/PLAN.md](docs/PLAN.md) and [docs/a21s-power-battery-modem-plan.md](docs/a21s-power-battery-modem-plan.md); architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Last updated: 2026-11-15.
 
@@ -100,3 +100,7 @@
 | No thermal throttling (`/sys/class/thermal/` empty) under load | medium | high | Avoid sustained heavy 3D load until `TMU` is enabled (`M5`). |
 | `cp_shmem` memory reservation overlaps `wifibt_if` (`0xb0000000`) | medium | high | Audit vendor memory map before enabling `cpif` (`M6`). |
 | Stock `boot.img` / `vbmeta` restore needed | low | medium | Keep stock `SM-A217F` `AP` tar ready for Heimdall/Odin. |
+
+## Deferred
+
+- **Steam / SteamOS support** — fully uninstalled 2026-11-16 (client, nested Weston, gamescope, `steamos-session`, shell card, wrappers; 8 GB freed). Historic docs (`PLAN`, `a21s-game-results`, ARCHITECTURE ADR 8) describe the old setup. Re-add only after the CMA leak (`docs/FINDINGS-hw-render.md` F2) is fixed.

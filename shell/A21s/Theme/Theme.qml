@@ -37,7 +37,7 @@ QtObject {
     readonly property color tileOff:      light ? "#E9E9EF" : "#22252F"
     readonly property color tileOffText:  light ? "#4A4A55" : "#8B93A3"
 
-    // Apps retain software rendering; the shell uses the pinned Panfrost path when available.
+    // Shell and in-house apps use the pinned Panfrost path via a21s-qt-render when CMA allows, else software.
     readonly property color glass:        light ? "#B3FFFFFF" : "#B3131316"
     readonly property color glassHigh:    light ? "#D9FFFFFF" : "#D917171B"
     readonly property color glassLow:     light ? "#8CFFFFFF" : "#8C0F0F12"

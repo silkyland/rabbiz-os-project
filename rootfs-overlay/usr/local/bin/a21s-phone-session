@@ -53,4 +53,7 @@ export MOZ_ENABLE_WAYLAND=1
 export SDL_VIDEODRIVER=wayland
 
 # --- Start compositor (session leader) -----------------------------------
+# CMA leak fix (docs/FINDINGS-hw-render.md F2): Mesa kmsro frees imported buffers with DESTROY_DUMB on the
+# exynos render node, which the kernel refuses; the shim retries as GEM_CLOSE. Compositor only.
+[ -r /usr/local/lib/a21s-qt-scanout/dumb-destroy.so ] && export LD_PRELOAD="/usr/local/lib/a21s-qt-scanout/dumb-destroy.so${LD_PRELOAD:+:$LD_PRELOAD}"
 exec /usr/bin/labwc

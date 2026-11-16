@@ -1,0 +1,66 @@
+# Finding note: replacing software rendering with Panfrost (2026-11-16)
+
+For the next agent. Facts are measured on the SM-A217F (kernel `7.3.0-g14a425b3a7dc-dirty`, Mesa 26.2.6,
+Qt 6.12) unless marked **guess**. Background path: [a21s-qt-gpu-scanout.md](a21s-qt-gpu-scanout.md).
+
+## What was software, what is hardware now
+
+| Component | Before | Now |
+|---|---|---|
+| labwc compositor | GLES2 / Panfrost | unchanged (already HW) |
+| Shell (`a21s-shell`) | GPU via `a21s-qt-gpu` | unchanged |
+| In-house QML apps (calculator, clock, dialer, sms, settings, photos, music, notes, terminal) | `QT_QUICK_BACKEND=software` in each wrapper | `exec a21s-qt-render quickshell …` (new): GPU while CMA is healthy, software otherwise |
+| Elisa (launched from `Media.qml`) | software | `a21s-qt-render elisa` (same guard) |
+| Chrome (`a21s-browser`) | `--disable-gpu` | still `--disable-gpu` by default; `A21S_BROWSER_GPU=1` opts into GPU (works, but see F3) |
+| angelfish / qmlkonsole in `a21s-spotify-ctl`, Dolphin, other third-party Qt | software / wl_shm | **not changed** (F5) |
+| Session default (`labwc/environment`, `a21s-phone-session`, `.service`) | software | kept as the fail-closed fallback on purpose |
+
+`a21s-qt-render` (`rootfs-overlay/usr/local/bin/`) is the single decision point: `a21s-qt-gpu --check` ok **and**
+`CmaFree >= A21S_CMA_FLOOR_KB` (default 96 MiB) -> `exec a21s-qt-gpu "$@"`, else software. `A21S_FORCE_SOFTWARE=1` forces software.
+Verified: calculator reports `Mali-G52 MC1 (Panfrost)` via `QSG_INFO`; at 32 MiB free the wrapper picks software, at 197 MiB `rhi`.
+
+## F1 — GPU Qt apps render correctly next to the GPU shell
+Calculator on RHI/OpenGL started cleanly with the shell also on GPU: no Wayland protocol error, no import error in dmesg.
+Cost of one full-screen window: **~14 MiB CMA** (3 swapchain buffers of 4 780 032 B).
+
+## F2 — RESOLVED: CMA leak = labwc (Mesa kmsro) cannot free imported buffers on the exynos render node
+**Root cause (measured 2026-11-16):** `strace -f -e trace=ioctl -p $(pgrep -x labwc)` while a GPU app starts/exits shows labwc doing
+`PRIME_FD_TO_HANDLE` on `/dev/dri/renderD128` (exynos) for every client buffer, then `MODE_DESTROY_DUMB` on that fd -> **`-1 EACCES`**
+(the DRM core only allows `CREATE/DESTROY_DUMB` on the primary node; `GEM_CLOSE` is `DRM_RENDER_ALLOW`). The handle is never closed,
+so each 4.6 MiB CMA buffer stays pinned until labwc exits (matches: no fd holder, `Attached Devices: 0`, ~3 buffers per launch).
+Ruled out by `tools/cma-leak/leaktest.c` on the device: kernel dumb alloc/free, prime export, prime import into a second exynos file
+and into Panfrost, with/without closing the handle — all return CMA to the pool (0 kB delta over 40 iterations).
+**Fix (userspace, no kernel rebuild):** `tools/qt-scanout/dumb-destroy.c` is LD_PRELOADed into labwc only (`a21s-phone-session`); on
+`DESTROY_DUMB` + `EACCES` it retries as `GEM_CLOSE` on the same handle. Install: `scripts/setup_dumb_destroy_fix.sh`; active after labwc restarts.
+**Verified:** after reboot, 12 × (start `a21s-calculator`, 5 s, kill) -> `CmaFree` 218 228 kB -> 213 472 kB (before the fix: 197 -> 54 MiB in 6 cycles),
+0 `FB allocation failed`, shell still running. Not yet re-run for Chrome (F3) or with several apps open at once.
+**Kernel alternative (not built):** flag `DRM_IOCTL_MODE_DESTROY_DUMB` with `DRM_RENDER_ALLOW` in `drivers/gpu/drm/drm_ioctl.c`
+(it only deletes a handle the caller owns, same as `GEM_CLOSE`). No kernel tree/toolchain/boot-image tooling is in this checkout
+(`src/`, `build/` are empty besides a partial clone), so it was not needed nor built; revisit only if the shim proves insufficient.
+`a21s-qt-render`'s CMA floor is now only a safety net; it can stay.
+
+## F3 — Chrome on Panfrost works but is a CMA hog
+`a21s-qt-gpu /opt/google/chrome/google-chrome --ozone-platform=wayland --use-gl=angle --use-angle=gles --no-sandbox` renders the New Tab page
+(grim capture) and logs `Preferred drm_render_node not found, picking panfrost`; labwc does not kill it (the old Wayland error 7 is gone, same
+root cause/fix as Qt). **Not confirmed:** `chrome://gpu` GL_RENDERER (could not read it; use CDP `SystemInfo.getInfo` or a websocket client).
+Cost: 40 MiB at first run, but one cold start with a session to restore took CMA from 197 MiB to 16 MiB in 15 s. Needs a buffer-count/size
+study (try `--disable-gpu-memory-buffer-video-frames`, `--num-raster-threads=1`, smaller `--force-device-scale-factor`) before it can be the default.
+
+## F4 — Steam: removed
+Steam and its support (nested Weston, gamescope, session units, shell card) were uninstalled on 2026-11-16 to free resources; revisit after F2 is fixed. See ROADMAP "Deferred".
+
+## F5 — Not converted
+Third-party Qt Quick apps launched through `Appearance.appEnvironment` still get `QT_QUICK_BACKEND=software`; that map would have to drop the
+override and the `.desktop` `Exec` would need `a21s-qt-render` (only worth it after F2). angelfish (QtWebEngine, `--disable-gpu`) has the Chrome problem.
+QtWidgets apps (Dolphin) are wl_shm either way; the GPU only matters for Qt Quick/WebEngine.
+
+## Not deployed / not verified
+Only the changed wrappers + `Media.qml` were pushed with `scp` (not `deploy_shell.sh`). `apps/clock`, `notes`, `photos`, `music`, `terminal` QML
+is not on the device (`/usr/share/a21s-apps` has only `A21sKit` and `calculator`), so only the calculator was exercised. No FPS/thermal measurement.
+`scripts/cma_stat.sh` prints CMA free + dma-buf census (`ssh root@172.16.42.1 sh < scripts/cma_stat.sh`).
+
+## Boot splash (2026-11-16)
+`a21s-splash.service` (sysinit) paints `assets/branding/rabbizos-wordmark-on-cream.png` (pre-scaled to `rootfs-overlay/usr/share/a21s/rabbizos-splash.bmp`,
+640x225 top-down BGRA) centred on `/dev/fb0` and silences the console (`dmesg -n 1`, `kernel.printk`, `ShowStatus=no`, `getty@tty1` masked).
+Verified from a `/dev/fb0` dump 10 s after boot: logo on cream, no text. Limit: it starts after the rootfs mounts, so the kernel/initramfs lines
+before that are still visible; hiding those needs `quiet loglevel=3` in the boot image cmdline (kernel/boot-image rebuild, not done).

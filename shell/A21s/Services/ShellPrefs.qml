@@ -13,7 +13,6 @@ QtObject {
     property bool lightTheme: false           // false = dark (default)
     property string clockStyle: "editorial"   // editorial | classic | compact
     property bool use24h: true
-    property bool showSteamCard: true
     property bool dndEnabled: false
     property string iconStyle: "squircle"     // squircle | circle | glass
     property int sleepTimeoutSec: 120         // 30 | 60 | 120 | 300 | 0 (Never)
@@ -126,7 +125,6 @@ QtObject {
             if (d.lightTheme !== undefined) lightTheme = Boolean(d.lightTheme)
             if (d.clockStyle !== undefined) clockStyle = String(d.clockStyle)
             if (d.use24h !== undefined) use24h = Boolean(d.use24h)
-            if (d.showSteamCard !== undefined) showSteamCard = Boolean(d.showSteamCard)
             if (d.dndEnabled !== undefined) dndEnabled = Boolean(d.dndEnabled)
             if (d.iconStyle !== undefined) iconStyle = String(d.iconStyle)
             if (d.sleepTimeoutSec !== undefined) sleepTimeoutSec = Math.max(0, parseInt(d.sleepTimeoutSec) || 0)
@@ -149,7 +147,6 @@ QtObject {
             lightTheme: lightTheme,
             clockStyle: clockStyle,
             use24h: use24h,
-            showSteamCard: showSteamCard,
             dndEnabled: dndEnabled,
             iconStyle: iconStyle,
             sleepTimeoutSec: sleepTimeoutSec,

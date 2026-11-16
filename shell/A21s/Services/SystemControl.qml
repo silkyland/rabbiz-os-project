@@ -360,11 +360,6 @@ QtObject {
         onTriggered: root.refreshTelemetry()
     }
 
-    function switchToSteamOS() {
-        ShellState.powerMenuOpen = false
-        _runCmd(["sh", "-c", "a21s-steam >/dev/null 2>&1 &"])
-    }
-
     function reloadShell() {
         ShellState.powerMenuOpen = false
         _runCmd(["sh", "-c",

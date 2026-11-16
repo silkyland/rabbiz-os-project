@@ -11,7 +11,7 @@ import A21s.Windowing
 
 // Home screen — 720x1600 artwork wallpaper + parallax scale morph on drawer drag,
 // tappable morphing clock + telemetry At-a-Glance pill, 2x4 utility grid,
-// swipeable 3-card Hero Deck (SteamOS / MPRIS Media / System Boost),
+// swipeable 3-card Hero Deck (MPRIS Media / System Boost),
 // flying Search pill morph, frosted dock, AppDrawer & AppLaunchMorph overlay.
 PanelWindow {
     id: home
@@ -32,12 +32,6 @@ PanelWindow {
     SystemClock {
         id: clock
         precision: SystemClock.Minutes
-    }
-
-    Process {
-        id: steamFallbackProc
-        environment: Appearance.appEnvironment
-        command: ["a21s-session-switch", "steamos"]
     }
 
     Process {
@@ -62,9 +56,7 @@ PanelWindow {
         ? "Airplane"
         : (Network.wifiConnected ? Network.activeSsid : (Network.wifiEnabled ? "Wi-Fi" : "Offline"))
 
-    readonly property var heroDeckModel: ShellPrefs.showSteamCard
-        ? ["steam", "media", "system"]
-        : ["media", "system"]
+    readonly property var heroDeckModel: ["media", "system"]
 
     function cycleClockStyle() {
         var order = ["editorial", "classic", "compact"]
@@ -431,7 +423,7 @@ PanelWindow {
                 DesktopEntries.byId("a21s-dialer")   || ({ id: "a21s-dialer", name: "Phone", materialIcon: "call" }),
                 DesktopEntries.byId("a21s-sms")      || ({ id: "a21s-sms", name: "Messages", materialIcon: "sms" }),
                 DesktopEntries.byId("a21s-settings") || ({ id: "a21s-settings", name: "Settings", materialIcon: "settings" }),
-                DesktopEntries.byId("a21s-steam")    || DesktopEntries.byId("steam") || ({ id: "a21s-steam", name: "Steam", materialIcon: "sports_esports" })
+                DesktopEntries.byId("a21s-browser")  || ({ id: "a21s-browser", name: "Browser", materialIcon: "language" })
             ];
         }
 
@@ -466,7 +458,7 @@ PanelWindow {
             }
         }
 
-        // ---- Interactive 3-Card Hero Pager Deck (SteamOS / Media / System) ----
+        // ---- Interactive 3-Card Hero Pager Deck (Media / System) ----
         Item {
             id: heroDeckSection
             anchors {
@@ -498,143 +490,6 @@ PanelWindow {
                     required property string modelData
                     width: heroList.width
                     height: heroList.height
-
-                    // --- Card 0: SteamOS Gaming ---
-                    Rectangle {
-                        visible: deckDelegate.modelData === "steam"
-                        anchors {
-                            fill: parent
-                            leftMargin: Theme.spaceM
-                            rightMargin: Theme.spaceM
-                        }
-                        radius: Theme.radiusL
-                        color: Qt.alpha(Theme.card, 0.90)
-                        border.width: 1
-                        border.color: Qt.alpha(Theme.text, 0.10)
-                        clip: true
-                        scale: steamCardTap.pressed ? 0.97 : 1.0
-                        Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
-
-                        ColumnLayout {
-                            anchors { fill: parent; margins: Theme.spaceM }
-                            spacing: Theme.spaceS
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: Theme.spaceS
-
-                                Rectangle {
-                                    width: 40; height: 40; radius: 20
-                                    color: Theme.surfaceHigh
-                                    border.width: 1; border.color: Theme.separator
-                                    MaterialIcon {
-                                        anchors.centerIn: parent
-                                        name: "sports_esports"
-                                        size: 22; color: Theme.text
-                                    }
-                                }
-                                Text {
-                                    text: "STEAM OS"
-                                    color: Theme.textDim
-                                    font.pixelSize: Theme.fontStatus
-                                    font.family: Theme.fontFamily
-                                    font.weight: Font.DemiBold
-                                    font.letterSpacing: 1.5
-                                }
-                                Item { Layout.fillWidth: true }
-                                Rectangle {
-                                    implicitWidth: modeRow.implicitWidth + Theme.spaceM
-                                    implicitHeight: modeRow.implicitHeight + 10
-                                    radius: Theme.radiusPill
-                                    color: Theme.surface
-                                    border.width: 1; border.color: Theme.separator
-                                    RowLayout {
-                                        id: modeRow
-                                        anchors.centerIn: parent
-                                        spacing: 6
-                                        Rectangle {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            width: 7; height: 7; radius: 4
-                                            color: Theme.success
-                                        }
-                                        Text {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            text: "SteamOS"
-                                            color: Theme.textDim
-                                            font.pixelSize: Theme.fontStatus - 2
-                                            font.family: Theme.fontFamily
-                                        }
-                                    }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: Theme.spaceM
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: "SteamOS Gaming"
-                                        color: Theme.text
-                                        font.pixelSize: Theme.fontTitle
-                                        font.family: Theme.fontFamily
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                    }
-                                    Text {
-                                        text: "Big Picture · Panfrost Vulkan"
-                                        color: Theme.textDim
-                                        font.pixelSize: Theme.fontStatus
-                                        font.family: Theme.fontFamily
-                                    }
-                                }
-
-                                Rectangle {
-                                    implicitWidth: playRow.implicitWidth + Theme.spaceL + 8
-                                    implicitHeight: Theme.iconM + 4
-                                    radius: Theme.radiusPill
-                                    color: ShellPrefs.accentColor
-                                    RowLayout {
-                                        id: playRow
-                                        anchors.centerIn: parent
-                                        spacing: 6
-                                        Text {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            text: "Play"
-                                            color: ShellPrefs.onAccentColor
-                                            font.pixelSize: Theme.fontBody
-                                            font.family: Theme.fontFamily
-                                            font.weight: Font.DemiBold
-                                        }
-                                        MaterialIcon {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            name: "play_arrow"
-                                            size: Theme.fontBody
-                                            color: ShellPrefs.onAccentColor
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        TapHandler {
-                            id: steamCardTap
-                            onTapped: {
-                                var steamEntry = DesktopEntries.byId("a21s-steam") || DesktopEntries.byId("steam")
-                                if (steamEntry && typeof steamEntry.execute === "function") {
-                                    var sp = steamCardTap.parent.mapToItem(null, 0, 0)
-                                    Launcher.launchEntry(steamEntry, {
-                                        x: sp.x, y: sp.y, w: steamCardTap.parent.width, h: steamCardTap.parent.height,
-                                        radius: Theme.radiusL, name: "Steam", materialIcon: "sports_esports",
-                                        iconUrl: "", tint: "#1B6EF3" })
-                                } else if (!steamFallbackProc.running)
-                                    steamFallbackProc.running = true
-                            }
-                        }
-                    }
 
                     // --- Card 1: Now Playing Media Card (MPRIS + Morphing Play/Pause) ---
                     Rectangle {
