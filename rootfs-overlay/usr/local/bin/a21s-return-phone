@@ -1,11 +1,11 @@
 #!/bin/sh
 # a21s-return-phone — steamos-session.service ExecStopPost hook.
-# If the steam session was entered via a21s-session-switch (marker file),
-# hand the seat back to the phone shell. Also covers weston/steam
-# crashing outright (ExecStopPost runs on failure too, unit Restart=no).
-FLAG=/run/user/1001/a21s-in-steam
-if [ -f "$FLAG" ]; then
-    rm -f "$FLAG"
-    systemctl --no-block start a21s-phone-session.service 2>/dev/null || true
-fi
+# Kills any leftover weston (the session script may die by signal before
+# its own `kill $WESTON_PID` runs — weston keeps DRM master otherwise),
+# then hands the seat back to the phone shell unconditionally: a black
+# dead-end is never the right fallback on this device.
+pkill -9 -x weston 2>/dev/null || true
+sleep 1
+rm -f /run/user/1001/a21s-in-steam 2>/dev/null || true
+systemctl --no-block start a21s-phone-session.service 2>/dev/null || true
 exit 0

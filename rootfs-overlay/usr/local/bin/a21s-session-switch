@@ -4,13 +4,11 @@
 #
 # The actual stop+start is atomic inside PID1 via the units' Conflicts=,
 # so this helper may safely die together with the session that launched
-# it. The a21s-in-steam marker makes steamos-session's ExecStopPost
-# return to the phone shell when the steam session ends.
+# it. The a21s-in-steam marker (in the SEAT user's runtime dir — uid
+# 1001/gamer owns the seat, callers may be root) lets the `steam` shim
+# decide whether to exec the real client or stash args + switch.
 # Requires polkit rules.d/50-a21s-session.rules for the gamer user.
-# runuser/su callers inherit the parent's XDG_RUNTIME_DIR (e.g.
-# /run/user/0) — repoint at the dir owned by the current uid.
-RD="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-[ -O "$RD" ] || RD="/run/user/$(id -u)"
+RD=/run/user/1001
 
 case "${1:-}" in
 steamos)
@@ -19,14 +17,6 @@ steamos)
     ;;
 phone)
     rm -f "$RD/a21s-in-steam" 2>/dev/null
-    exec systemctl --no-block start a21s-phone-session.service
-    ;;
-steamos)
-    : > "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/a21s-in-steam" 2>/dev/null || true
-    exec systemctl --no-block start steamos-session.service
-    ;;
-phone)
-    rm -f "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/a21s-in-steam" 2>/dev/null
     exec systemctl --no-block start a21s-phone-session.service
     ;;
 *)

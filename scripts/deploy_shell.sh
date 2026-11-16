@@ -137,8 +137,10 @@ ssh "${TARGET}" "
     /usr/share/applications /usr/local/bin /etc/systemd/system \
     /etc/udev/rules.d /etc/modules-load.d /etc/systemd/logind.conf.d -maxdepth 3 -name '._*' -delete 2>/dev/null || true
   chown -R root:root /usr/share/a21s-shell
-  chown root:root /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/steamos-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/a21s-modem-init.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
-  chmod 644 /etc/systemd/system/a21s-phone-session.service /etc/systemd/system/steamos-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/a21s-modem-init.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
+  chown root:root /etc/systemd/system/a21s-*.service /etc/systemd/system/steamos-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
+  chmod 644 /etc/systemd/system/a21s-*.service /etc/systemd/system/steamos-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
+  systemctl enable a21s-display-pin.service 2>/dev/null || true
+  systemctl enable a21s-drm-keeper.service 2>/dev/null || true
   chown root:root /etc/polkit-1/rules.d/50-a21s-session.rules 2>/dev/null || true
   chmod 644 /etc/polkit-1/rules.d/50-a21s-session.rules 2>/dev/null || true
   chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/udev/rules.d/99-hide-system-partitions.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf

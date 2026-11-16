@@ -1,0 +1,16 @@
+[Unit]
+Description=Hold an open fd on exynos-drm card0 so drm_lastclose never fires
+# The exynos-drm fbdev-restore commit on drm_lastclose() wedges the DSI
+# pipeline permanently (flip_done/commit wait timeouts). Keeping one fd
+# open means the last-close path never runs during compositor switches.
+DefaultDependencies=no
+After=systemd-udev-settle.service
+Before=display-manager.service a21s-phone-session.service steamos-session.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/a21s-drm-keeper
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

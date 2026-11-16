@@ -1,0 +1,23 @@
+#!/usr/bin/python3
+# a21s-drm-keeper — hold an open fd on /dev/dri/card0 forever.
+#
+# The exynos-drm fbdev-restore commit on drm_lastclose() wedges the DSI
+# pipeline permanently (flip_done / commit wait timeouts, recoverable
+# only by reboot). Keeping one fd open means lastclose never runs during
+# compositor handoff (weston <-> labwc).
+#
+# The fd must NOT keep DRM master (first opener gets it implicitly) —
+# drop it so the compositor can take over. EINVAL just means we weren't
+# master; either way we keep the fd.
+import fcntl
+import os
+import time
+
+fd = os.open("/dev/dri/card0", os.O_RDWR)
+try:
+    fcntl.ioctl(fd, 0x641F, 0)  # DRM_IOCTL_DROP_MASTER
+except OSError:
+    pass
+
+while True:
+    time.sleep(3600)

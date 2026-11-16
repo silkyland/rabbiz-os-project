@@ -1,0 +1,18 @@
+[Unit]
+Description=Pin display pipeline runtime-PM on (prevents exynos-drm commit wedge)
+After=systemd-udev-settle.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# exynos-drm's commit tail goes through runtime PM; if the DSI/phy devices
+# autosuspend mid-commit (e.g. compositor handoff weston->labwc), vblank
+# never fires, the commit times out and the pipeline wedges for good.
+ExecStart=/bin/sh -c 'for d in exynos-drm 13060000.display-controller 13070000.dsi 135d0000.phy; do echo on > /sys/bus/platform/devices/$d/power/control 2>/dev/null || true; done'
+# Detach fbcon from the VT layer: seatd VT handling (unblank/KDSETMODE)
+# otherwise pokes drm_fb_helper_set_par/pan_display mid-handoff and queues
+# a commit that wedges the DSI link. vtcon0 (dummy) stays bound.
+ExecStartPost=/bin/sh -c 'echo 0 > /sys/class/vtconsole/vtcon1/bind 2>/dev/null || true'
+
+[Install]
+WantedBy=multi-user.target

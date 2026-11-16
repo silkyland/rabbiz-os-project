@@ -1,10 +1,41 @@
 # Engineering Handoff — Galaxy A21s (`SM-A217F` / Exynos 850)
 
-Last updated: 2026-11-15 (`exynos-drm` `DSI-1` display + PipeWire/Steam/`paplay` speaker playback **BOTH WORKING** on `#5` with `CONFIG_EXYNOS_IOMMU=y` and zero Calliope aborts + **`a21s-shell` Mobile Launcher (`labwc` + `quickshell` + `squeekboard` + 7 apps) deployed & verified on device**; next up is M5 power/battery)
+Last updated: 2026-11-16 (Session-switch works and returns to the phone shell, but compositor **teardown can wedge the DSI link** — root cause identified, mitigations partially deployed; see §0 below)
 
 ---
 
-## 0. Latest session — PipeWire/Steam audio integration (DONE)
+## 0. Latest session — SteamOS ⇄ phone session-switch + DSI underrun wedge (IN PROGRESS)
+
+**Goal:** tap "Play" on the phone shell → atomic switch into `steamos-session` (weston + `steam -gamepadui`) → exit Steam → return to the phone launcher **with a visible display**.
+
+### Working & verified on device
+
+- **Session switching itself works.** `a21s-session-switch steamos|phone` → `Conflicts=` in the two units makes PID1 stop+start atomically; `steamos-session.service` `ExecStopPost=/usr/local/bin/a21s-return-phone` hands the seat back whenever the steam session ends (marker `/run/user/1001/a21s-in-steam`, polkit rule `50-a21s-session.rules` lets `gamer` start both units). Round trip verified end-to-end; services land in the right state every time.
+- **Marker path must be `/run/user/1001` literally** — a root caller's `XDG_RUNTIME_DIR=/run/user/0` previously scattered markers/args in the wrong runtime dir.
+- **`steamos-session` waits for weston's X socket** (`/tmp/.X11-unix/X0`, 20 s) before launching steam, and waits for weston to exit + `kill -9` fallback before the script itself exits — a dead-but-alive weston keeps DRM master and black-screens the next compositor.
+- **Two mitigations deployed (`a21s-display-pin.service` + `a21s-drm-keeper.service`, both enabled):**
+  - Display-pin forces `power/control=on` on `exynos-drm`, `13060000.display-controller`, `13070000.dsi`, `135d0000.phy` so the commit tail can't hit a suspended device.
+  - DRM-keeper holds an fd on `/dev/dri/card0` forever so `drm_lastclose()` → `drm_client_dev_restore()` → fbdev-restore commit never runs mid-handoff. **The keeper MUST drop DRM master** (`DRM_IOCTL_DROP_MASTER`, `0x641F`) — the first version kept implicit master and `seatd` then failed `Could not make device fd drm master: Device or resource busy`, leaving labwc with no output. Verified after fix: keeper `master=n`, `labwc` `master=y`.
+- **fbcon poke vector found & mitigated manually:** `seatd`'s VT handling unblanks the console → `fbcon → drm_fb_helper_set_par/pan_display` → atomic commit racing the handoff. `echo 0 > /sys/class/vtconsole/vtcon1/bind` (frame-buffer console) removes it; the dummy console auto-binds vtcon0. **Not yet persisted in any unit.**
+
+### Open problem — the wedge itself
+
+**Symptom:** at the moment weston's fd closes (or the next compositor's first commit lands), `exynos850-dsi 13070000.dsi: underrun` fires once → `vblank wait timed out` on the next atomic commit → `exynos850-decon: DECON timeout` → the video-mode DSI link is permanently dead: panel commands (`0x39` brightness writes) time out, `grim` connects but screencopy never returns, screen black while every service reports `active`.
+
+**Chain (best current theory):** `drm_close_helper` on weston's fd → `drm_framebuffer_remove()` force-disables its still-attached planes → `decon850_disable_plane` clears `WIN_EN` mid-frame → video-mode DSIM FIFO starves → `DSIM_INT_UNDER_RUN` → link desyncs for good. `atomic_disable`/`post_disable` (the `bring-up:` dev_info lines) never run — there's no clean CRTC restart in the path.
+
+**Cannot be recovered in-band:** `echo 13070000.dsi > .../exynos850-dsi/unbind` blocks in-kernel (`dsim850_stop` waits on `VIDEO_MODE_ACTIVE`); same for `exynos-drm` unbind. Reboot only — and reboot can itself hang in shutdown when a task is D-state inside the wedged driver (needed a physical ~10 s power hold once).
+
+**Ruled out:** swiotlb/"Purging" spam is incidental noise (a clean cycle still wedged with zero swiotlb errors); `drm_client_dev_restore` only fires on `drm_lastclose` (already covered by the keeper); DSI link is never re-init'd anyway — both compositors adopt the bootloader link (`adopting boot state`).
+
+**Proposed fixes, cheapest first:**
+1. **weston nested inside labwc** — `weston --backend=wayland` as a fullscreen wayland window, steam inside its XWayland. labwc owns DRM master forever → no handoff → nothing can wedge. CEF previously asserted under labwc's *own* XWayland, but inside weston's XWM the GBM/dmabuf path differs (may fall back to EGL/software and work). Untested — next step.
+2. **Kernel patch in `exynos850_drm_dsi.c`:** on `DSIM_INT_UNDER_RUN` schedule a work item doing `dsim850_stop → dsim850_init_link → dsim850_start` (guard `dsim->lock` + `dsim->enabled`) to restart the link. Root fix regardless of trigger.
+3. **`drm_kms_helper.fbdev_emulation=0` on cmdline** (dtb `chosen/bootargs` in `boot-avb.img`) — kills the fbdev client entirely; only helps the fbcon vector, not the teardown vector.
+
+---
+
+## Previous session — PipeWire/Steam audio integration (DONE)
 
 **Goal:** unmask PipeWire, expose the ABOX speaker as the default sink for Steam, then M5 (battery/power) + M6 (modem).
 
