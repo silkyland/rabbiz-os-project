@@ -59,6 +59,20 @@ PanelWindow {
         function onShadeSnapRequested(value) { win.snapTo(value) }
     }
 
+    // 0 = notifications, 1 = controls. Draggable (follows the finger) and animated on
+    // tab taps / on release, so the page switch is not a hard snap any more.
+    property real pageShift: ShellState.shadeMode === "settings" ? 1.0 : 0.0
+    property bool pageDragging: false
+    property real pageDragStart: 0.0
+    Behavior on pageShift {
+        enabled: !win.pageDragging
+        NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutCubic }
+    }
+    function setPage(id) {
+        ShellState.shadeMode = id
+        win.pageShift = id === "settings" ? 1.0 : 0.0
+    }
+
     Item {
         anchors.fill: parent
         clip: true
@@ -81,16 +95,26 @@ PanelWindow {
                 pressY = mouse.y
                 pressX = mouse.x
                 pressProgress = ShellState.shadeProgress
-                if (ShellState.shadeProgress < 0.05)
+                win.pageDragging = false
+                win.pageDragStart = win.pageShift
+                if (ShellState.shadeProgress < 0.05) {
                     ShellState.shadeMode = mouse.x < win.width / 2 ? "notifications" : "settings"
+                    win.pageShift = ShellState.shadeMode === "settings" ? 1.0 : 0.0
+                }
             }
             onPositionChanged: function(mouse) {
                 if (!pressed)
                     return
                 const dy = mouse.y - pressY
                 const dx = mouse.x - pressX
-                if (Math.abs(dx) > 90 && Math.abs(dx) > 2 * Math.abs(dy))
-                    return                      // horizontal swipe: switch page on release
+                // Decide the axis once: once the gesture is clearly sideways the page
+                // follows the finger and the vertical progress is frozen.
+                if (!win.pageDragging && Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.2)
+                    win.pageDragging = true
+                if (win.pageDragging) {
+                    win.pageShift = Math.max(0, Math.min(1, win.pageDragStart - dx / win.width))
+                    return
+                }
                 const range = Math.max(1, win.fullH - Theme.shadeHandleZone)
                 ShellState.shadeProgress = Math.max(0, Math.min(1,
                     pressProgress + dy / range))
@@ -98,9 +122,13 @@ PanelWindow {
             onReleased: function(mouse) {
                 const dy = mouse.y - pressY
                 const dx = mouse.x - pressX
-                if (Math.abs(dx) > 90 && Math.abs(dx) > 2 * Math.abs(dy)) {
-                    ShellState.shadeMode = ShellState.shadeMode === "notifications"
-                        ? "settings" : "notifications"
+                if (win.pageDragging) {
+                    // past 35 % of the width (or a clear flick) commits the page
+                    const target = (Math.abs(dx) > win.width * 0.35)
+                        ? (dx < 0 ? 1.0 : 0.0)
+                        : (win.pageShift > 0.5 ? 1.0 : 0.0)
+                    win.pageDragging = false            // re-enable the Behavior
+                    win.setPage(target >= 0.5 ? "settings" : "notifications")
                     win.snapTo(1)
                     return
                 }
@@ -277,7 +305,8 @@ PanelWindow {
                         ]
                         delegate: Rectangle {
                             required property var modelData
-                            readonly property bool active: ShellState.shadeMode === modelData.id
+                            readonly property bool active: modelData.id === "settings"
+                                ? win.pageShift > 0.5 : win.pageShift <= 0.5
                             Layout.fillWidth: true
                             implicitHeight: 34
                             radius: 17
@@ -294,111 +323,130 @@ PanelWindow {
                                 font.weight: Font.Medium
                             }
                             TapHandler {
-                                onTapped: ShellState.shadeMode = modelData.id
+                                onTapped: win.setPage(modelData.id)
                             }
                         }
                     }
                 }
 
-                // --- Notifications page: media + notification list -----------------
-                ColumnLayout {
-                    visible: ShellState.shadeMode === "notifications"
+                // --- Pages: a real horizontal pager. Both pages sit side by side and the
+                // strip follows the finger (pageShift 0 = notifications, 1 = controls); the
+                // Behavior animates the settle on release and on tab taps.
+                Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    spacing: Theme.spaceM
+                    clip: true
 
-                    // Compact Now Playing card (same Media service as the home deck).
-                    Rectangle {
-                        visible: Media.hasRealPlayer
-                        Layout.fillWidth: true
-                        implicitHeight: mediaRow.implicitHeight + 2 * Theme.spaceM
-                        radius: Theme.radiusL
-                        color: Qt.alpha(Theme.card, 0.92)
-                        border.width: 1
-                        border.color: Qt.alpha(Theme.text, 0.08)
+                    Row {
+                        id: pagesRow
+                        width: parent.width * 2
+                        height: parent.height
+                        x: -win.pageShift * parent.width
 
-                        RowLayout {
-                            id: mediaRow
-                            anchors {
-                                left: parent.left
-                                right: parent.right
-                                top: parent.top
-                                margins: Theme.spaceM
-                            }
+                        ColumnLayout {
+                            id: notifPage
+                            width: parent.width / 2
+                            height: parent.height
+                            enabled: win.pageShift < 0.5
                             spacing: Theme.spaceM
 
-                            ColumnLayout {
+                            // Compact Now Playing card (same Media service as the home deck).
+                            Rectangle {
+                                visible: Media.hasRealPlayer
                                 Layout.fillWidth: true
-                                spacing: 2
-                                Text {
-                                    text: "NOW PLAYING"
-                                    color: Theme.textDim
-                                    font.pixelSize: Theme.fontCaption - 2
-                                    font.family: Theme.fontFamily
-                                    font.letterSpacing: 1.2
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: Media.title
-                                    color: Theme.text
-                                    font.pixelSize: Theme.fontBody
-                                    font.family: Theme.fontFamily
-                                    font.weight: Font.Medium
-                                    elide: Text.ElideRight
-                                }
-                                Text {
-                                    Layout.fillWidth: true
-                                    text: Media.artist
-                                    color: Theme.textDim
-                                    font.pixelSize: Theme.fontCaption
-                                    font.family: Theme.fontFamily
-                                    elide: Text.ElideRight
+                                implicitHeight: mediaRow.implicitHeight + 2 * Theme.spaceM
+                                radius: Theme.radiusL
+                                color: Qt.alpha(Theme.card, 0.92)
+                                border.width: 1
+                                border.color: Qt.alpha(Theme.text, 0.08)
+
+                                RowLayout {
+                                    id: mediaRow
+                                    anchors {
+                                        left: parent.left
+                                        right: parent.right
+                                        top: parent.top
+                                        margins: Theme.spaceM
+                                    }
+                                    spacing: Theme.spaceM
+
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 2
+                                        Text {
+                                            text: "NOW PLAYING"
+                                            color: Theme.textDim
+                                            font.pixelSize: Theme.fontCaption - 2
+                                            font.family: Theme.fontFamily
+                                            font.letterSpacing: 1.2
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: Media.title
+                                            color: Theme.text
+                                            font.pixelSize: Theme.fontBody
+                                            font.family: Theme.fontFamily
+                                            font.weight: Font.Medium
+                                            elide: Text.ElideRight
+                                        }
+                                        Text {
+                                            Layout.fillWidth: true
+                                            text: Media.artist
+                                            color: Theme.textDim
+                                            font.pixelSize: Theme.fontCaption
+                                            font.family: Theme.fontFamily
+                                            elide: Text.ElideRight
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        width: 44; height: 44; radius: Media.isPlaying ? 22 : 14
+                                        color: Media.isPlaying ? ShellPrefs.accentColor : Theme.surfaceHigh
+                                        border.width: Media.isPlaying ? 0 : 1
+                                        border.color: Qt.alpha(Theme.text, 0.12)
+                                        MaterialIcon {
+                                            anchors.centerIn: parent
+                                            name: Media.isPlaying ? "pause" : "play_arrow"
+                                            size: 22
+                                            color: Media.isPlaying ? ShellPrefs.onAccentColor : Theme.text
+                                        }
+                                        TapHandler { onTapped: Media.togglePlaying() }
+                                    }
+                                    Rectangle {
+                                        width: 40; height: 40; radius: 20
+                                        color: Theme.surfaceHigh
+                                        MaterialIcon {
+                                            anchors.centerIn: parent
+                                            name: "skip_next"
+                                            size: 20
+                                            color: Theme.text
+                                        }
+                                        TapHandler { onTapped: Media.next() }
+                                    }
                                 }
                             }
 
-                            Rectangle {
-                                width: 44; height: 44; radius: Media.isPlaying ? 22 : 14
-                                color: Media.isPlaying ? ShellPrefs.accentColor : Theme.surfaceHigh
-                                border.width: Media.isPlaying ? 0 : 1
-                                border.color: Qt.alpha(Theme.text, 0.12)
-                                MaterialIcon {
-                                    anchors.centerIn: parent
-                                    name: Media.isPlaying ? "pause" : "play_arrow"
-                                    size: 22
-                                    color: Media.isPlaying ? ShellPrefs.onAccentColor : Theme.text
-                                }
-                                TapHandler { onTapped: Media.togglePlaying() }
+                            NotificationCenter {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
                             }
-                            Rectangle {
-                                width: 40; height: 40; radius: 20
-                                color: Theme.surfaceHigh
-                                MaterialIcon {
-                                    anchors.centerIn: parent
-                                    name: "skip_next"
-                                    size: 20
-                                    color: Theme.text
+                        }
+
+                        Item {
+                            id: ctrlPage
+                            width: parent.width / 2
+                            height: parent.height
+                            enabled: win.pageShift >= 0.5
+
+                            QuickSettings {
+                                anchors {
+                                    left: parent.left
+                                    right: parent.right
+                                    top: parent.top
                                 }
-                                TapHandler { onTapped: Media.next() }
                             }
                         }
                     }
-
-                    NotificationCenter {
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                    }
-                }
-
-                // --- Controls page: quick settings (brightness, tiles, volume, media)
-                QuickSettings {
-                    visible: ShellState.shadeMode === "settings"
-                    Layout.fillWidth: true
-                }
-                Item {
-                    // absorbs the leftover height so the tiles keep their natural size
-                    visible: ShellState.shadeMode === "settings"
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
                 }
             }
 

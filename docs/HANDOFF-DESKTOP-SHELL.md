@@ -18,7 +18,7 @@
 | M7.5 form factor seam (`handset` only, D3) | not started |
 | M7.6 close morph via snapshot | **done, verified** (S1 answered: `ScreencopyView` works via the SHM fallback even without GL) |
 | M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Big Picture verified** (logged in, touch taps work, game launch reaches Proton/FEX); game renders black — ADR-8. Input (mouse/keyboard/gamepad) not started |
-| Shade split (owner request 2026-11-16) | **done, verified** — pull down on the left half of the status bar = notifications + media page, right half = quick-settings page, tabs + horizontal swipe also switch; open threshold lowered to 30 % (50 % made a normal pull feel dead) |
+| Shade split (owner request 2026-11-16) | **done, verified** — pull down on the left half of the status bar = notifications + media page, right half = quick-settings page; a real horizontal pager follows the finger (pageShift + Behavior) and settles with animation, tabs animate too; open threshold 30 % |
 | M7.8 Settings v2 (thin shell-owned panels; `plasma-settings` lacks Wi-Fi/BT/sound/battery) | **app ships and is wired** (pre-existing, not a rewrite): verified Wi-Fi list + join dialog, accent live update, volume slider, new light/dark switch; BT pair untested |
 | M7.10 **home editing** (long-press, drag & drop, snap/align, persisted layout) | **not started** — spec §7.1 |
 | M7.11 **clipboard system** | **not started** — spec §7.2 |
