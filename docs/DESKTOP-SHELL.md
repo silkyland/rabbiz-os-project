@@ -12,7 +12,7 @@
 4. The first screen is a **real desktop**.
 
 Answers: **D1** home = a *touch-first desktop* (wallpaper, icons/widgets, dock, drawer, real windows),
-inputs in priority order **touch → mouse/keyboard → gamepad**. **D3** (2026-11-16) Xiaomi Pad 7 Pro is *not planned now*. **D4** Steam is an ordinary app inside the desktop, not a separate session. **D2** replace all home-grown QML apps
+inputs in priority order **touch → mouse/keyboard → gamepad**. **D3** (2026-11-16) Xiaomi Pad 7 Pro is *not planned now*. **D4** Steam is an ordinary app inside the desktop, not a separate session. **D5** (2026-11-16) we may wrap/override app looks with our own theme, and `A21s.Theme` may be rewritten from scratch. **D2** replace all home-grown QML apps
 with real Linux apps.
 
 ## 2. Where the current code disagrees with the request (evidence)
@@ -154,3 +154,13 @@ Also found: device Wi-Fi (`wlan0`) is `disconnected`; USB is the only link; SSH 
 
 ### Disk action taken (2026-11-16, owner said "do it fully")
 `journalctl --vacuum-size=30M` (freed 0 B, journal is on tmpfs-backed `/run`), `pacman -Rdd linux-firmware-{intel,nvidia,atheros}` (PC GPU/Wi-Fi firmware, no Exynos hardware uses them; `mx140`/`calliope` firmware lives in `/usr/lib/firmware` and is untouched). Free space **377 MB → 1.2 GB (95 %)**. Side effect: the pacman hook ran `mkinitcpio` for the stale `linux-aarch64` preset and errored (`/lib/modules/7.3.4-1-aarch64-ARCH` missing) — harmless, our boot uses `boot-avb.img`, but that package is dead weight (386 MiB, required by nothing) — candidate for removal. **Do not remove `llvm-libs`: `mesa` requires it.** `gcc`/`clang` (≈ 190 MiB + clang-libs) are removable.
+
+## 9. Theme decision (D5) and what it changes
+
+Owner: apps that look bad may be themed over, and `Theme.qml` may be rewritten from the ground up.
+Evidence for doing it: Plasma Settings rendered light/default on our dark device (§8 S2). Plan for M7.2:
+
+1. **One palette definition** (`shell/A21s/Theme/palette` data: dark + light, accent, radii, motion) is the only source.
+2. **Generators** (run by `A21s.Services.Appearance` at session start and on change): a Qt/KDE colour scheme (`~/.local/share/color-schemes/A21s.colors` + `kdeglobals`), GTK 3/4 overrides (`gtk.css` + `gsettings`), cursor/icon/font settings; `QT_QPA_PLATFORMTHEME=kde` set once in the session env (fixes the light render).
+3. **Rewrite `Theme.qml`** as a thin reader of that palette (no literal colours), keeping today's token *names* as aliases until M7.0 moves are done, so nothing breaks mid-retrofit.
+4. Limits (honest): a colour scheme + Breeze style recolours Qt/KDE apps well; GTK4/libadwaita and Chromium only follow `color-scheme` + accent, not arbitrary shapes. Deep restyling of those is out of scope; per-app CSS only where it is ugly enough to matter (decide per app after M7.4 screenshots).
