@@ -217,17 +217,11 @@ PanelWindow {
                 font.weight: Font.Medium
             }
 
-            MaterialIcon {
+            BatteryMeter {
                 anchors.verticalCenter: parent.verticalCenter
-                name: !bar.batteryOk ? "power"
-                    : bar.batteryCharging ? "battery_charging_full"
-                    : bar.batteryPct <= 0.15 ? "battery_alert"
-                    : "battery_std"
-                size: Theme.fontBody - 2
-                color: !bar.batteryOk ? Theme.textDim
-                     : bar.batteryCharging ? Theme.success
-                     : bar.batteryPct <= 0.15 ? Theme.danger
-                     : Theme.text
+                present: bar.batteryOk
+                level: bar.batteryPct
+                charging: bar.batteryCharging
             }
         }
     }

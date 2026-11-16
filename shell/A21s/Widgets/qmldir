@@ -7,3 +7,4 @@ QSRowTile 1.0 QSRowTile.qml
 QSIconTile 1.0 QSIconTile.qml
 MaterialIcon 1.0 MaterialIcon.qml
 BackdropBlur 1.0 BackdropBlur.qml
+BatteryMeter 1.0 BatteryMeter.qml
