@@ -22,31 +22,6 @@ PanelWindow {
     implicitHeight: 240
     visible: SystemControl.volumeOsdVisible || SystemControl.screenshotToastVisible
 
-    property bool _flashActive: false
-
-    Connections {
-        target: SystemControl
-        function onScreenshotToastVisibleChanged() {
-            if (SystemControl.screenshotToastVisible) {
-                hud._flashActive = true
-                flashTimer.restart()
-            }
-        }
-    }
-
-    Timer {
-        id: flashTimer
-        interval: 160
-        onTriggered: hud._flashActive = false
-    }
-
-    Rectangle {
-        anchors.fill: parent
-        color: "#FFFFFF"
-        opacity: hud._flashActive ? 0.28 : 0.0
-        Behavior on opacity { NumberAnimation { duration: 140 } }
-    }
-
     ColumnLayout {
         anchors {
             left: parent.left

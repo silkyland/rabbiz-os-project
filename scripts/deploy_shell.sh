@@ -63,6 +63,9 @@ PACKAGES=(
   mpv                    # Media player for local/HTTP audio streams
   angelfish              # Plasma Mobile QtWebEngine browser (Spotify Web)
   grim                   # Wayland screenshot capture utility
+  python-evdev           # volume-keys.py (hardware keys + screenshot combo)
+  gcc                    # setup_qt_scanout.sh / setup_dumb_destroy_fix.sh compile their shims on the device
+  xdg-utils              # xdg-open (screenshot toast -> default image app)
   koko                   # KDE Plasma Mobile image gallery
   xorg-xwayland          # XWayland for gamescope/steam and X11 clients
   squashfuse             # FUSE-mounts the FEX x86 guestos .sqsh (kernel lacks squashfs zstd)
@@ -179,7 +182,16 @@ ssh "${TARGET}" "
   chown gamer:gamer /run/user/1001/a21s-power.cmd 2>/dev/null || true
   systemctl daemon-reload
   systemctl enable a21s-modem-init.service 2>/dev/null || true
+  # Boot splash + hardware volume/screenshot keys; no login prompt on the panel (getty@tty1 is a /dev/null symlink in the overlay).
+  systemctl enable a21s-splash.service volume-keys.service 2>/dev/null || true
+  sysctl -q --system 2>/dev/null || true
 "
+
+# --- GPU rendering support (built on the device from the checkout; both fail closed) ----------------
+echo ">> Qt/Panfrost scanout path + compositor CMA-leak fix"
+"${REPO_ROOT}/scripts/setup_qt_scanout.sh" "${TARGET}" || echo "   (a21s-qt-gpu unavailable: apps fall back to software rendering)"
+"${REPO_ROOT}/scripts/setup_dumb_destroy_fix.sh" "${TARGET}" || echo "   (dumb-destroy.so not installed: GPU apps will leak CMA!)"
+
 
 cat <<'EOF'
 
@@ -188,19 +200,14 @@ cat <<'EOF'
   1. Install packages (or run './scripts/deploy_shell.sh --packages'):
        pacman -Sy --needed labwc quickshell qt6-declarative qt6-svg \
          qt6-wayland dolphin calindori kclock kalk kweather krecorder \
-         marknote qmlkonsole elisa xorg-xwayland gamescope squeekboard \
+         marknote qmlkonsole elisa xorg-xwayland squeekboard \
          noto-fonts ttf-nerd-fonts-symbols upower brightnessctl
 
   2. Ensure seat access (once):
        usermod -aG seat,input,video,render gamer
 
-  3. Switch sessions (both stay installed; Conflicts= keeps them exclusive):
-       systemctl disable steamos-session.service
+  3. Start the phone session:
        systemctl enable --now a21s-phone-session.service
-
-     Revert to SteamOS session any time:
-       systemctl disable a21s-phone-session.service
-       systemctl enable --now steamos-session.service
 
   4. Logs:
        journalctl -u a21s-phone-session.service -b -f

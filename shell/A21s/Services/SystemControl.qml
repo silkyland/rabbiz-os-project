@@ -48,6 +48,7 @@ QtObject {
     property bool volumeOsdVisible: false
     property bool screenshotToastVisible: false
     property string lastScreenshotPath: ""
+    property int screenshotSerial: 0   // +1 per captured shot; drives the shutter flash
     property string lastScreenshotName: ""
 
     // --- Internals ---
@@ -613,6 +614,7 @@ QtObject {
         }
         if (nonce.length > 0 && nonce !== root._lastShotNonce) {
             root._lastShotNonce = nonce
+            root.screenshotSerial++
             root.screenshotToastVisible = true
             shotToastTimer.restart()
         }

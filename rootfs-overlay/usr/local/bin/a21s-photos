@@ -1,4 +1,6 @@
 #!/bin/sh
 # a21s-photos — in-house Photos (docs/BASE-APPS.md). Deployed by scripts/deploy_shell.sh.
+# `a21s-photos [file]`: with a file (xdg-open passes %f) the viewer opens on it.
+if [ -n "${1:-}" ] && [ -f "$1" ]; then export A21S_PHOTOS_OPEN="$(readlink -f "$1")"; shift; fi
 export QML_IMPORT_PATH=/usr/share/a21s-shell:/usr/share/a21s-apps
 exec a21s-qt-render quickshell -p /usr/share/a21s-apps/photos/Photos.qml "$@"

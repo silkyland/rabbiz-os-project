@@ -22,4 +22,5 @@ ShellRoot {
     ConnectivityPanel {}
     PowerMenu {}
     HudOverlay {}
+    CaptureFlash {}
 }
