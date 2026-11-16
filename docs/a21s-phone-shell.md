@@ -104,6 +104,75 @@ swaymsg / labwc --version; ls /usr/share/a21s-shell
 - `brightnessctl`/backlight and battery may report unavailable until the
   M5 power drivers land — shell degrades gracefully by contract.
 
+## Shade UI — notifications + quick settings (redesign 2026-11-16)
+
+The pull-down shade was rebuilt to the One UI 7 shape: **grouped cards** instead
+of one flat stream, sections that read top-down by importance, and a two-page
+pager with dots instead of the old "Notifications | Controls" tab bar.
+
+| Controls | Notifications |
+|---|---|
+| ![Controls sheet](shade-controls-preview.png) | ![Notification sheet](shade-notifications-preview.png) |
+
+*(Both are real QML renders of `QuickSettings.qml` / `NotificationCenter.qml` in
+the 720 px-wide phone frame, captured offscreen with stubbed `Quickshell` types —
+not device screenshots. The status bar is drawn by `StatusBar.qml`, so it is
+absent; host window decoration trims the height to 1579 px.)*
+
+### Composition
+
+| Page | Top to bottom |
+|---|---|
+| Notifications | clock (100 px) + date + bell (toggles DND) → **Conversations / Devices / Apps / Promotions** sections → floating clear-all button |
+| Controls | lock \| power, settings buttons → connections (2 pill tiles + 1 grouped share card) → media card + **vertical** brightness/volume sliders → device strip (CPU/disk + screenshot/gallery + settings) → 4×3 action grid |
+
+- Pages switch by sideways drag anywhere on the sheet, by tapping a page dot
+  (36×28 px hit area, no tab bar), or by pulling down from the left/right half of
+  the status bar (`ShellState.shadeMode`, unchanged contract).
+- The list/controls areas are `Flickable`s with `interactive: content > height`,
+  so in portrait the sheet's own pull-to-close still works; only an overflowing
+  sheet (landscape, short heights, long translations) takes the vertical drag.
+- Long-press on Wi-Fi / Bluetooth / Devices still opens the connectivity panel
+  (`ShellState.connPanelOpen` + `connPanelTab`), unchanged.
+
+### Notification grouping (`Panels/NotificationGroups.js`)
+
+Pure, testable transform (`shell/tests/notificationgroups.test.mjs`, wired into
+`scripts/check.sh`) — the QML only renders what it returns. One card per app,
+newest first, with a count; a card expands on tap (max 4 rows) and its ×
+dismisses the whole group. Category rules, in order:
+
+1. known marketing senders (`shopee`, `kbank`, `ais`, …) → **Promotions**
+2. known chat apps (`messenger`, `chatty`, `telegram`, …) → **Conversations**
+3. promo wording in the app name or newest text → **Promotions**
+4. system/device senders (`bluetooth`, `network`, `device share`, …) → **Devices**
+5. everything else → **Apps**
+
+Chat apps win over promo wording on purpose: a friend typing "ส่วนลด" is a
+conversation, not an ad. Promotions render dimmed and always last.
+
+### New tokens / widgets
+
+- `Theme`: `shadeCard`, `shadeCardOn`, `shadeWell`, `shadeLine`, `shadeFab`
+  (alpha layers over the captured backdrop; light theme flips to black alpha),
+  `radiusCard`, `shadeControlButton/TileHeight/IconWell/GroupWell/GridTile/`,
+  `shadeMediaHeight`, `shadeSliderWidth`, `fontClock`, `fontMicro`.
+- `ShellPrefs.accentInk` — the accent as a glyph colour on an **inverted** "on"
+  well (a near-white mono accent would vanish on a white well in dark mode).
+- `Widgets`: `QSTile` (large pill, restyled), `QSRowTile` (row inside a grouped
+  card), `QSIconTile` (grid circle + label), `QSSliderVertical` (tall pill slider).
+  ON state inverts the well to `Theme.text` with an accent glyph.
+- `Panels`: `NotificationCard` (replaces `NotificationItem`), `NotificationGroups.js`.
+
+### Verifying without the device
+
+`tools/shade-preview/preview.py` renders these pages offscreen with the real QML
+(stubbed `Quickshell` types) — see [its README](../tools/shade-preview/README.md).
+`qmllint -I shell <file>` (Qt 6.12) reports no syntax or missing-property errors
+on the new files. **On-device verification is still pending** — the A21s was
+unreachable (no `usb0`, no LAN host) when this landed; re-check the sheet on the
+phone, then refresh these previews if the fonts/metrics shift.
+
 ## App layer (added 2026-11-15)
 
 - **File managers**: `a21s-files` prefers `index` (index-fm, Maui — true

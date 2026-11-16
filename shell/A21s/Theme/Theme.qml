@@ -47,6 +47,16 @@ QtObject {
     readonly property color glassBlurHigh: light ? "#B3FFFFFF" : "#B317171B"
     readonly property int backdropBlurMax: 32
 
+    // Shade sheets (grouped notifications / quick settings). These sit on the
+    // captured, blurred screen, so cards are alpha layers rather than opaque
+    // surfaces: white alpha on the dark theme, black alpha on the light one.
+    readonly property color shadeCard:    light ? "#CCFFFFFF" : "#1AFFFFFF"
+    readonly property color shadeCardOn:  light ? "#F2FFFFFF" : "#26FFFFFF"
+    readonly property color shadeWell:    light ? "#14000000" : "#1AFFFFFF"
+    readonly property color shadeLine:    light ? "#24000000" : "#1FFFFFFF"
+    // Floating clear-all button; needs its own layer to stay legible over cards.
+    readonly property color shadeFab:     light ? "#F2FFFFFF" : "#B318181C"
+
     // Type (px @ 720x1600, scale=1)
     readonly property string fontFamily: "Noto Sans"
     readonly property int fontStatus:   20
@@ -54,6 +64,10 @@ QtObject {
     readonly property int fontBody:     28
     readonly property int fontTitle:    34
     readonly property int fontHeadline: 46
+    // Section labels ("CONVERSATIONS", timestamps) sit below fontStatus.
+    readonly property int fontMicro:    18
+    // Shade clock — the one oversized display number in the shell.
+    readonly property int fontClock:    100
 
     // Spacing
     readonly property int spaceXS: 6
@@ -80,6 +94,17 @@ QtObject {
     readonly property int navPillHeight:   8
     readonly property int navZoneHeight:   48
     readonly property int shadeHandleZone: 32
+
+    // Shade layout (720 px wide; One UI 7-style grouped sheets). Cards use
+    // radiusCard so every sheet element shares one corner language.
+    readonly property int radiusCard:        36
+    readonly property int shadeControlButton: 88   // round header button
+    readonly property int shadeTileHeight:    106  // large pill tile
+    readonly property int shadeIconWell:      90   // icon circle inside it
+    readonly property int shadeGroupWell:     64   // icon circle in a grouped row
+    readonly property int shadeGridTile:      124  // dense icon-tile circle
+    readonly property int shadeMediaHeight:   336
+    readonly property int shadeSliderWidth:   86   // vertical brightness/volume pill
 
     // Motion
     readonly property int animFast: 140

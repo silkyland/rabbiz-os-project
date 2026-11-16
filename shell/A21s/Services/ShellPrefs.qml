@@ -2,6 +2,7 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import A21s.Theme
 
 // Persistent launcher & theme preferences shared between the shell and
 // Settings.qml via ~/.config/a21s-shell/prefs.json.
@@ -109,6 +110,17 @@ QtObject {
     }
 
     readonly property color onAccentColor: accentId === "mono" ? "#09090B" : "#FFFFFF"
+
+    // Accent colour for glyphs drawn on an inverted "on" well (Theme.text fill)
+    // in the shade's tiles and vertical sliders. The mono accent is nearly white,
+    // so on the dark theme it would vanish on a light well — fall back to the
+    // shell background there. The light theme inverts the well (dark fill), so
+    // the accent itself is already legible.
+    readonly property color accentInk: {
+        var a = accentColor
+        var luma = 0.2126 * a.r + 0.7152 * a.g + 0.0722 * a.b
+        return (luma > 0.8 && !lightTheme) ? Theme.bg : a
+    }
 
     readonly property string prefsPath: {
         var home = Quickshell.env("HOME") || "/home/gamer"

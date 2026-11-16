@@ -1,6 +1,9 @@
 module A21s.Widgets
 
 QSSlider 1.0 QSSlider.qml
+QSSliderVertical 1.0 QSSliderVertical.qml
 QSTile 1.0 QSTile.qml
+QSRowTile 1.0 QSRowTile.qml
+QSIconTile 1.0 QSIconTile.qml
 MaterialIcon 1.0 MaterialIcon.qml
 BackdropBlur 1.0 BackdropBlur.qml

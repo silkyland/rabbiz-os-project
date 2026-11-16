@@ -1,14 +1,17 @@
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
-import Quickshell.Services.UPower
 import QtQuick
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
-import A21s.Widgets
 
 // Pull-down notification / quick-settings shade.
+//
+// Two pages share one pager: Notifications (clock + category-grouped cards) and
+// Controls (grouped quick settings). Dragging sideways anywhere on the sheet or
+// tapping a page dot switches them; pulling down from the left/right half of the
+// status bar opens on that page directly.
 //
 // Keep the GPU swapchain at a fixed size. Only the clipped content and input
 // region follow the drag; resizing a KMS-backed buffer every frame exhausts CMA.
@@ -51,6 +54,13 @@ PanelWindow {
     Connections {
         target: ShellState
         function onShadeSnapRequested(value) { win.snapTo(value) }
+        // Pulling down from the left/right half of the status bar (or `ipc shade
+        // open <page>`) chooses the page while the sheet is still closed; do it
+        // here too, otherwise pageShift keeps the last page after a manual switch.
+        function onShadeModeChanged() {
+            if (ShellState.shadeProgress < 0.05)
+                win.setPage(ShellState.shadeMode)
+        }
     }
 
     // 0 = notifications, 1 = controls. Draggable (follows the finger) and animated on
@@ -223,148 +233,46 @@ PanelWindow {
                     topMargin: Theme.statusBarHeight + Theme.spaceS
                     bottomMargin: Theme.spaceS
                 }
-                spacing: Theme.spaceM
+                spacing: Theme.spaceS
 
-                // Slim header: clock/date left, battery right (guarded —
-                // UPower device may not exist until drivers land).
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.spaceS
-
-                    Text {
-                        id: clockText
-                        color: Theme.textDim
-                        font.pixelSize: Theme.fontCaption
-                        text: Qt.formatTime(new Date(), "hh:mm")
-                              + "  ·  "
-                              + Qt.formatDate(new Date(), "ddd d MMM")
-                        Timer {
-                            interval: 1000
-                            running: true
-                            repeat: true
-                            onTriggered: clockText.text =
-                                Qt.formatTime(new Date(), "hh:mm")
-                                + "  ·  "
-                                + Qt.formatDate(new Date(), "ddd d MMM")
-                        }
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    Text {
-                        visible: UPower.displayDevice
-                                 && UPower.displayDevice.isLaptopBattery
-                        color: Theme.textDim
-                        font.pixelSize: Theme.fontCaption
-                        text: UPower.displayDevice
-                              ? Math.round(UPower.displayDevice.percentage * 100) + "%"
-                              : ""
-                    }
-
-                    // Screenshot, Sleep, Lock & Power Menu pills in shade header
-                    Rectangle {
-                        width: 40; height: 40; radius: 20
-                        color: Theme.surfaceHigh
-                        border.width: 1; border.color: Qt.alpha(Theme.text, 0.10)
-                        MaterialIcon {
-                            anchors.centerIn: parent
-                            name: "photo_camera"
-                            size: 20; color: "#A855F7"
-                        }
-                        TapHandler {
-                            onTapped: {
-                                win.snapTo(0)
-                                SystemControl.takeScreenshot(350)
-                            }
-                        }
-                    }
-
-                    Rectangle {
-                        width: 40; height: 40; radius: 20
-                        color: Theme.surfaceHigh
-                        border.width: 1; border.color: Qt.alpha(Theme.text, 0.10)
-                        MaterialIcon {
-                            anchors.centerIn: parent
-                            name: "bedtime"
-                            size: 20; color: ShellPrefs.accentColor
-                        }
-                        TapHandler {
-                            onTapped: SystemControl.sleep()
-                        }
-                    }
-
-                    Rectangle {
-                        width: 40; height: 40; radius: 20
-                        color: Theme.surfaceHigh
-                        border.width: 1; border.color: Qt.alpha(Theme.text, 0.10)
-                        MaterialIcon {
-                            anchors.centerIn: parent
-                            name: "lock"
-                            size: 20; color: Theme.textDim
-                        }
-                        TapHandler {
-                            onTapped: SystemControl.lockScreen()
-                        }
-                    }
-
-                    Rectangle {
-                        width: 40; height: 40; radius: 20
-                        color: Theme.surfaceHigh
-                        border.width: 1; border.color: Qt.alpha(Theme.text, 0.10)
-                        MaterialIcon {
-                            anchors.centerIn: parent
-                            name: "power_settings_new"
-                            size: 20; color: Theme.danger
-                        }
-                        TapHandler {
-                            onTapped: {
-                                win.snapTo(0)
-                                ShellState.powerMenuOpen = true
-                            }
-                        }
-                    }
-                }
-
-                // Page switch. Android 12+ has no tabs, but on 720 px the two pages need
-                // a visible affordance; tapping a tab and swiping sideways both work.
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.spaceXS
+                // Page dots. One UI has no tabs; two dots keep the second page
+                // discoverable, and the whole 36x28 cell is the tap target
+                // (swiping sideways anywhere on the sheet also switches pages).
+                Row {
+                    Layout.alignment: Qt.AlignHCenter
+                    spacing: 0
 
                     Repeater {
-                        model: [
-                            { id: "notifications", label: "Notifications" },
-                            { id: "settings", label: "Controls" }
-                        ]
-                        delegate: Rectangle {
-                            required property var modelData
-                            readonly property bool active: modelData.id === "settings"
-                                ? win.pageShift > 0.5 : win.pageShift <= 0.5
-                            Layout.fillWidth: true
-                            implicitHeight: 34
-                            radius: 17
-                            color: active ? ShellPrefs.accentColor : Theme.surfaceHigh
-                            border.width: active ? 0 : 1
-                            border.color: Qt.alpha(Theme.text, 0.10)
+                        model: ["notifications", "settings"]
 
-                            Text {
+                        delegate: Item {
+                            id: dotCell
+                            required property var modelData
+                            width: 36
+                            height: 28
+                            readonly property bool active: (dotCell.modelData === "settings")
+                                                            === (win.pageShift > 0.5)
+
+                            Rectangle {
                                 anchors.centerIn: parent
-                                text: modelData.label
-                                color: parent.active ? ShellPrefs.onAccentColor : Theme.textDim
-                                font.pixelSize: Theme.fontCaption
-                                font.family: Theme.fontFamily
-                                font.weight: Font.Medium
+                                width: dotCell.active ? 26 : 10
+                                height: 10
+                                radius: height / 2
+                                color: dotCell.active ? Theme.text : Qt.alpha(Theme.text, 0.26)
+
+                                Behavior on width {
+                                    NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutCubic }
+                                }
                             }
-                            TapHandler {
-                                onTapped: win.setPage(modelData.id)
-                            }
+
+                            TapHandler { onTapped: win.setPage(dotCell.modelData) }
                         }
                     }
                 }
 
                 // --- Pages: a real horizontal pager. Both pages sit side by side and the
                 // strip follows the finger (pageShift 0 = notifications, 1 = controls); the
-                // Behavior animates the settle on release and on tab taps.
+                // Behavior animates the settle on release and on dot taps.
                 Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
@@ -376,92 +284,14 @@ PanelWindow {
                         height: parent.height
                         x: -win.pageShift * parent.width
 
-                        ColumnLayout {
+                        Item {
                             id: notifPage
                             width: parent.width / 2
                             height: parent.height
                             enabled: win.pageShift < 0.5
-                            spacing: Theme.spaceM
-
-                            // Compact Now Playing card (same Media service as the home deck).
-                            Rectangle {
-                                visible: Media.hasRealPlayer
-                                Layout.fillWidth: true
-                                implicitHeight: mediaRow.implicitHeight + 2 * Theme.spaceM
-                                radius: Theme.radiusL
-                                color: Qt.alpha(Theme.card, 0.92)
-                                border.width: 1
-                                border.color: Qt.alpha(Theme.text, 0.08)
-
-                                RowLayout {
-                                    id: mediaRow
-                                    anchors {
-                                        left: parent.left
-                                        right: parent.right
-                                        top: parent.top
-                                        margins: Theme.spaceM
-                                    }
-                                    spacing: Theme.spaceM
-
-                                    ColumnLayout {
-                                        Layout.fillWidth: true
-                                        spacing: 2
-                                        Text {
-                                            text: "NOW PLAYING"
-                                            color: Theme.textDim
-                                            font.pixelSize: Theme.fontCaption - 2
-                                            font.family: Theme.fontFamily
-                                            font.letterSpacing: 1.2
-                                        }
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: Media.title
-                                            color: Theme.text
-                                            font.pixelSize: Theme.fontBody
-                                            font.family: Theme.fontFamily
-                                            font.weight: Font.Medium
-                                            elide: Text.ElideRight
-                                        }
-                                        Text {
-                                            Layout.fillWidth: true
-                                            text: Media.artist
-                                            color: Theme.textDim
-                                            font.pixelSize: Theme.fontCaption
-                                            font.family: Theme.fontFamily
-                                            elide: Text.ElideRight
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        width: 44; height: 44; radius: Media.isPlaying ? 22 : 14
-                                        color: Media.isPlaying ? ShellPrefs.accentColor : Theme.surfaceHigh
-                                        border.width: Media.isPlaying ? 0 : 1
-                                        border.color: Qt.alpha(Theme.text, 0.12)
-                                        MaterialIcon {
-                                            anchors.centerIn: parent
-                                            name: Media.isPlaying ? "pause" : "play_arrow"
-                                            size: 22
-                                            color: Media.isPlaying ? ShellPrefs.onAccentColor : Theme.text
-                                        }
-                                        TapHandler { onTapped: Media.togglePlaying() }
-                                    }
-                                    Rectangle {
-                                        width: 40; height: 40; radius: 20
-                                        color: Theme.surfaceHigh
-                                        MaterialIcon {
-                                            anchors.centerIn: parent
-                                            name: "skip_next"
-                                            size: 20
-                                            color: Theme.text
-                                        }
-                                        TapHandler { onTapped: Media.next() }
-                                    }
-                                }
-                            }
 
                             NotificationCenter {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
+                                anchors.fill: parent
                             }
                         }
 
@@ -472,11 +302,7 @@ PanelWindow {
                             enabled: win.pageShift >= 0.5
 
                             QuickSettings {
-                                anchors {
-                                    left: parent.left
-                                    right: parent.right
-                                    top: parent.top
-                                }
+                                anchors.fill: parent
                             }
                         }
                     }

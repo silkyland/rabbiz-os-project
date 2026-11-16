@@ -9,5 +9,6 @@ PowerMenu 1.0 PowerMenu.qml
 HudOverlay 1.0 HudOverlay.qml
 CaptureFlash 1.0 CaptureFlash.qml
 NotificationCenter 1.0 NotificationCenter.qml
-NotificationItem 1.0 NotificationItem.qml
+NotificationCard 1.0 NotificationCard.qml
+NotificationGroups 1.0 NotificationGroups.js
 NotificationServer 1.0 NotificationServer.qml

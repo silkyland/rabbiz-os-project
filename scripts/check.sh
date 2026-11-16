@@ -6,6 +6,7 @@ node scripts/check_shell_seams.mjs          # real tree
 node shell/tests/seams.test.mjs             # checker still fires on bad fixtures
 node shell/tests/launchflow.test.mjs        # LaunchFlow seam test (no Qt, no device)
 node shell/tests/gesture.test.mjs             # Gesture classifier (no Qt, no device)
+node shell/tests/notificationgroups.test.mjs  # Shade notification grouping (no Qt, no device)
 node tests/calc.test.mjs                      # Calculator expression evaluator (no Qt, no device)
 node tests/clock.test.mjs              # clock app logic (no Qt, no device)
 node tests/notes.test.mjs              # notes app logic (no Qt, no device)
