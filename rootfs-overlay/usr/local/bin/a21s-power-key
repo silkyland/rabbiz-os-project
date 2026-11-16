@@ -22,6 +22,16 @@ GAMER_UID="$(id -u gamer 2>/dev/null || echo 1001)"
 RUNTIME_DIR="/run/user/${GAMER_UID}"
 mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
 
+# Power + Volume Up/Down is the screenshot combo (volume-keys.py). The Power press arrives first or
+# second, so wait one combo window and drop the toggle if a volume key was pressed around it.
+if [ "$ACTION" = "toggle" ]; then
+  sleep 0.3
+  if [ -e "${RUNTIME_DIR}/a21s-key-combo" ]; then
+    age_ms=$(awk -v n="$(date +%s.%N)" -v m="$(stat -c %.3Y "${RUNTIME_DIR}/a21s-key-combo")" 'BEGIN{printf "%d", (n-m)*1000}')
+    [ "$age_ms" -le 800 ] && exit 0
+  fi
+fi
+
 CMD_FILE="${RUNTIME_DIR}/a21s-power.cmd"
 NONCE="$(date +%s%N 2>/dev/null || date +%s)-$$"
 

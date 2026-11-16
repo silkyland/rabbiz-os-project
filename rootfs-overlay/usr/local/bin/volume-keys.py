@@ -5,8 +5,11 @@ Watches all evdev devices advertising KEY_VOLUMEUP, KEY_VOLUMEDOWN, KEY_MUTE,
 or KEY_POWER (`gpio-keys` and `s2mpu12-pwrkey`).
 
 - Single KEY_VOLUMEUP / KEY_VOLUMEDOWN / KEY_MUTE -> `/usr/local/bin/a21s-volume`
-- Combo KEY_POWER + KEY_VOLUMEDOWN (or KEY_VOLUMEUP + KEY_VOLUMEDOWN) within 400ms
-  -> `/usr/local/bin/a21s-screenshot`
+- Combo KEY_POWER + KEY_VOLUMEUP (primary), KEY_POWER + KEY_VOLUMEDOWN, or KEY_VOLUMEUP +
+  KEY_VOLUMEDOWN within 400ms -> `/usr/local/bin/a21s-screenshot`
+- Every volume key press touches MARKER so a21s-power-key can tell that a Power press belongs to a
+  key combo and must not sleep/wake the screen (the A21s has no dedicated "action" button; the
+  combo uses the Power key).
 """
 import glob
 import subprocess
@@ -17,6 +20,7 @@ from evdev import InputDevice, ecodes
 
 COMBO_WINDOW_SEC = 0.40
 COMBO_COOLDOWN_SEC = 0.70
+MARKER = "/run/user/1001/a21s-key-combo"
 
 WATCH_KEYS = {
     ecodes.KEY_VOLUMEUP,
@@ -24,6 +28,14 @@ WATCH_KEYS = {
     ecodes.KEY_MUTE,
     ecodes.KEY_POWER,
 }
+
+
+def mark_volume_press():
+    try:
+        with open(MARKER, "w") as f:
+            f.write("1")
+    except OSError:
+        pass
 
 
 def run_async(argv):
@@ -94,10 +106,13 @@ while True:
                     or (now - last_press_ts.get(ecodes.KEY_VOLUMEDOWN, 0.0)) < COMBO_WINDOW_SEC
                 )
 
+                if e.code in (ecodes.KEY_VOLUMEUP, ecodes.KEY_VOLUMEDOWN):
+                    mark_volume_press()
+
                 is_combo = (
                     (e.code == ecodes.KEY_VOLUMEDOWN and (power_active or volup_active))
-                    or (e.code == ecodes.KEY_POWER and voldown_active)
-                    or (e.code == ecodes.KEY_VOLUMEUP and voldown_active)
+                    or (e.code == ecodes.KEY_VOLUMEUP and (power_active or voldown_active))
+                    or (e.code == ecodes.KEY_POWER and (volup_active or voldown_active))
                 )
 
                 if is_combo:
