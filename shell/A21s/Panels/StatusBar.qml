@@ -19,6 +19,7 @@ PanelWindow {
     // labwc gives the whole top strip back. The shade handle / power menu
     // / lock screen bring it back temporarily.
     visible: !ShellState.appOpen
+        || bar.toastActive
         || ShellState.shadeProgress > 0.02
         || ShellState.powerMenuOpen
         || ShellState.lockScreenOpen

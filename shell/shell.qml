@@ -13,7 +13,10 @@ ShellRoot {
     Binding { target: Theme; property: "light"; value: ShellPrefs.lightTheme }
 
     // instantiate the desktop-contract writer (singletons are lazy)
-    Component.onCompleted: Appearance.apply()
+    Component.onCompleted: {
+        Appearance.apply()
+        Power.start()
+    }
     StatusBar {}
     HomeScreen {}
     Shade {}

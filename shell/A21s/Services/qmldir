@@ -8,3 +8,5 @@ singleton ShellPrefs 1.0 ShellPrefs.qml
 singleton SystemControl 1.0 SystemControl.qml
 singleton Media 1.0 Media.qml
 singleton Appearance 1.0 Appearance.qml
+singleton Power 1.0 Power.qml
+ChargingEvents 1.0 ChargingEvents.js
