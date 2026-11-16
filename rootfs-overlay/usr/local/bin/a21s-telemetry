@@ -1,0 +1,54 @@
+#!/bin/bash
+# a21s-telemetry — one process, no child forks, for SystemControl.qml's 3 s poll.
+#
+# The shell used to run a long `sh -c` chain of `cat`/`grep`/`df`, which forked ~18
+# processes every 3 seconds (review finding "3 s telemetry fork storm"). Bash reads
+# files with the `$(<file)` builtin and `read`, so this script spawns nothing; only
+# `df` is an external command. Output keeps the exact section markers the QML parser
+# already understands, so shell/A21s/Services/SystemControl.qml needs no new parsing.
+set -u
+
+emit_file() {   # emit_file <path> <default>
+    if [ -r "$1" ]; then printf '%s\n' "$(<"$1")"; else printf '%s\n' "${2:-}"; fi
+}
+
+# cpu summary line
+read -r stat_line < /proc/stat || stat_line="cpu 0 0 0 0 0 0"
+printf '%s\n' "$stat_line"
+
+echo '=M='
+while IFS= read -r line; do
+    case "$line" in
+        MemTotal:*|MemAvailable:*) printf '%s\n' "$line" ;;
+    esac
+done < /proc/meminfo
+
+echo '=C='
+emit_file /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 0
+emit_file /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor schedutil
+
+echo '=D='
+df -h / 2>/dev/null | awk 'NR==2{print $4}'
+
+echo '=L='
+for led in /sys/class/leds/*torch* /sys/class/leds/*flash*; do
+    if [ -e "$led" ]; then printf '%s\n' "$led"; break; fi
+done
+
+echo '=FP='
+emit_file /sys/kernel/a21s_fp/chipid none
+emit_file /sys/kernel/a21s_fp/status offline
+emit_file /sys/kernel/a21s_fp/irq_count 0
+
+echo '=CP='
+nodes=""
+for n in /dev/umts_*; do
+    if [ -e "$n" ]; then nodes="$nodes$n "; fi
+done
+printf '%s\n' "${nodes% }"
+emit_file /sys/devices/platform/soc@0/14020000.cpif/modem_name none
+emit_file /sys/devices/platform/soc@0/14020000.cpif/phone_state OFFLINE
+emit_file /sys/devices/platform/soc@0/14020000.cpif/rmem_info none
+emit_file /sys/devices/platform/soc@0/14020000.cpif/toc_summary unloaded
+emit_file /sys/devices/platform/soc@0/14020000.cpif/mem_map_on_cp 0
+emit_file /sys/devices/platform/soc@0/14020000.cpif/regions_summary none

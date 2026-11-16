@@ -113,6 +113,18 @@ Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge
 - **Decision:** `handset` maximizes, `tablet`/`desktop` float (only `handset` built now; Pad 7 Pro deferred); the shell and apps are identical across modes.
 - **Why:** 720x1600 cannot host floating windows; Pad 7 Pro (phase 2) can. Rejected: separate phone/desktop shells.
 
+### 9. Polkit: the single phone user may control NetworkManager without auth (2026-11-16)
+- **Decision:** `/etc/polkit-1/rules.d/51-a21s-shell.rules` returns `YES` for subject `gamer` on every
+  `org.freedesktop.NetworkManager.*` action; nothing else is relaxed (seat handover stays in `50-a21s-session.rules`,
+  systemd/package actions still need auth).
+- **Why:** labwc has no polkit authentication agent, so NM answered "Insufficient privileges" for `nmcli device wifi
+  connect` and `nmcli connection add` (verified on the device); the Wi-Fi panel could not change anything. `gamer` is
+  the only interactive user on a single-user phone.
+- **Rejected:** a root helper or setuid wrapper (wider blast radius than a scoped polkit rule); running the shell as
+  root (defeats the session/seat model).
+- **Consequence:** the PSK can no longer be handed to root-only `nmcli connection load`; `a21s-wifi-connect` feeds
+  nmcli's `--ask` prompt on a pty with `stty -echo` so the secret never enters argv.
+
 ## Known constraints and sharp edges
 
 - **3 GB RAM ceiling (`2767544 kB`)**: Requires ZRAM + swapfile ([PLAN.md](PLAN.md#L46)).

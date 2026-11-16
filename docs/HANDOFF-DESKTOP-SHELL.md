@@ -55,6 +55,17 @@ AGENTS.md hard rules still apply).
   (metric 700) that wins over Wi-Fi, and it points at the Mac, which does not route. Check with
   `curl https://client-update.akamai.steamstatic.com/`; if Wi-Fi is disconnected, fix the route metric
   (`nmcli connection modify <ssid> ipv4.route-metric 50`) or the network looks "connected" but times out.
+  **Privileges:** the shell runs as `gamer` and labwc has no polkit agent, so without
+  `/etc/polkit-1/rules.d/51-a21s-shell.rules` every `nmcli` action fails with "Insufficient privileges" (radio
+  toggles only worked because NM's default allows `allow_active`). After adding/editing a rule run
+  `systemctl restart polkit`; `nmcli connection load` stays root-only no matter what.
+  **Never pre-fill a pty for a password prompt**: the tty echoes it before `nmcli` disables echo (this leaked a PSK
+  into a session log once). Use `stty -echo` first, as `a21s-wifi-connect` does, and never `cat` the helper's raw
+  output — grep only for `Error:`/`activated`.
+  **Wi-Fi devices:** `p2p0` is typed `wifi` too. Pass `ifname wlan0` to `nmcli device wifi connect`, and skip
+  `p2p*` when discovering the Wi-Fi device, or NM activates on p2p0 and fails with "ssid-not-found".
+  **Duplicate profiles:** `nmcli device wifi connect <ssid>` creates `<ssid> 1`, `<ssid> 2`... when a profile with
+  that name exists; `a21s-wifi-connect` looks profiles up by SSID to avoid that.
 - Disk is ~95 % full (1.2 GB free). Check `df -h /` before installing. `linux-aarch64` (386 MiB, dead weight) and
   `gcc`/`clang` (~190 MiB) are removable; **do not remove `llvm-libs` (mesa needs it)**.
 
@@ -66,11 +77,20 @@ AGENTS.md hard rules still apply).
    screen: `SDL_VIDEODRIVER=x11` in `a21s-steam` (the session exports `wayland`, which Steam's CEF/SDL cannot use).
    **Open:** the game itself is black (FEX ~100 % on one core, no frames) — likely panvk/Direct3D; also a FEX server is
    orphaned after exit, and a second `a21s-steam <url>` can start a second Weston. Needs Wi-Fi to be up (see §2).
-2. **Fix the 7 open review findings** (details in `git log` message of 89cdc3a and `docs/DESKTOP-SHELL.md` §10):
-   mobile data toggle disables the whole modem (`SystemControl.qml` ~146); single-slot pending command in
-   `Network.qml:95` / `Bluetooth.qml:85` (use a FIFO); 3 s telemetry fork storm (`SystemControl.qml` ~732, stop while
-   asleep, read static values once); airplane mode `rfkill unblock all` (~95); fake auto-rotate (~135); Wi-Fi password
-   in argv (`Network.qml:68`, use stdin/`--ask` or a keyfile); CPU governor default `performance` (~247).
+2. ~~**Fix the 7 open review findings.**~~ **Done 2026-11-16, two gaps open.** All seven changed, verified on the
+   device where a device check exists: mobile data now toggles the WWAN radio (`nmcli radio wwan`), not modem power;
+   airplane mode is `nmcli radio wifi/wwan` + BlueZ power and no longer calls `rfkill unblock all`; FIFO queues in
+   `Network`/`Bluetooth`/`SystemControl`; telemetry is one `a21s-telemetry` process (bash builtins, no per-value forks)
+   and stops while asleep; the rotation tile is honestly labelled "Rotate"; the governor defaults to `schedutil`;
+   the Wi-Fi PSK goes over stdin to `a21s-wifi-connect` (nmcli pty prompt, echo off) instead of argv.
+   **The blocker behind all of it:** labwc has no polkit agent, so `gamer` got "Insufficient privileges" for every NM
+   action. New `rootfs-overlay/etc/polkit-1/rules.d/51-a21s-shell.rules` allows *only* `gamer` and *only*
+   `org.freedesktop.NetworkManager.*` — recorded in `docs/ARCHITECTURE.md` ADR-9. Verified: `nmcli radio wifi off/on`
+   as gamer, joining an unsaved network through `a21s-wifi-connect` (connection up, `192.168.50.6`, HTTP 301),
+   `nmcli connection add` as gamer. Also fixed on the way: activate on `wlan0`, never `p2p0` (NM otherwise fails with
+   "association took too long / ssid-not-found"), and `Network.qml` no longer treats `p2p0` as the Wi-Fi device.
+   **Open:** updating the PSK of an *existing* profile via `nmcli --ask connection modify` hit the 45 s pty timeout in
+   one run (not verified); the Settings UI path (`Network.wifiConnect`) was not exercised end to end.
 3. **M7.8 Settings v2.** Keep `shell/apps/settings/Settings.qml` shell-owned but rebuild as thin panels over NM,
    BlueZ, PipeWire, UPower, appearance. Reuse `plasma-settings` pages for Colors/Fonts/Default apps/Keyboard only if
    they work when opened (they list fine; opening was not tested). Exit: Wi-Fi join, BT pair, volume, accent/dark
@@ -107,6 +127,9 @@ Handset only. Edge zones are 24 px (the labwc bottom margin already reserves it)
 ## 5. Rules that were changed or confirmed this session
 
 - `steamos-session` as a parallel session is no longer the Steam UX (ADR-8). Recovery only.
+- **2026-11-16 (security decision):** polkit now lets user `gamer`, and only `gamer`, control
+  `org.freedesktop.NetworkManager.*` without authentication (ADR-9). Reason: no auth agent exists under labwc, so
+  Wi-Fi/BT could not be changed from the shell at all. Scope is NM only; systemd/package actions still need auth.
 - "Never overwrite /lib", usb0 unmanaged, secrets, `clk_ignore_unused`, ABOX 768 KiB, `QT_QUICK_BACKEND=software`
   all still apply. `QT_IM_MODULE` stays unset.
 - Rules are hypotheses (owner's CLAUDE.md): if evidence says one is wrong, show it, propose the change, record an ADR.

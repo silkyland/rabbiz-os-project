@@ -88,10 +88,10 @@ Item {
             QSTile {
                 Layout.fillWidth: true
                 materialIcon: "screen_rotation"
-                label: "Auto-rotate"
-                secondary: SystemControl.autoRotate ? "Landscape" : "Portrait"
-                active: SystemControl.autoRotate
-                onTapped: SystemControl.toggleAutoRotate()
+                label: "Rotate"
+                secondary: SystemControl.screenLandscape ? "Landscape" : "Portrait"
+                active: SystemControl.screenLandscape
+                onTapped: SystemControl.toggleLandscape()
             }
 
             QSTile {

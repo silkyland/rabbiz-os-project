@@ -23,9 +23,9 @@ QtObject {
     property string btBusyMac: ""
     property string btLastError: ""        // "" = no error
 
-    property var _pendingArgv: null
-    property var _pendingOp: null
-    property string _pendingOpKind: ""
+    property var _queue: []                  // FIFO of pending one-shot commands
+    property var _opQueue: []                // FIFO of pending pair/connect ops
+    property var _opQueueKind: []
     property string _opKind: ""
     property string _opOut: ""
     property var _btMap: ({})              // mac -> btDevices entry (persists across cycles)
@@ -82,8 +82,8 @@ QtObject {
 
     function _runOp(kind, argv) {
         if (opProc.running) {
-            root._pendingOp = argv
-            root._pendingOpKind = kind
+            root._opQueue.push(argv)         // FIFO: no op is dropped
+            root._opQueueKind.push(kind)
             return
         }
         root._opKind = kind
@@ -269,7 +269,7 @@ QtObject {
     function _run(argv) {
         retryTimer.kick(retryTimer.ticks > 0 ? retryTimer.ticks : 2)
         if (cmdProc.running) {
-            root._pendingArgv = argv
+            root._queue.push(argv)
             return
         }
         cmdProc.command = argv
@@ -348,10 +348,8 @@ QtObject {
 
     property var cmdProc: Process {
         function _dispatch() {
-            if (root._pendingArgv !== null && !cmdProc.running) {
-                var argv = root._pendingArgv
-                root._pendingArgv = null
-                cmdProc.command = argv
+            if (root._queue.length > 0 && !cmdProc.running) {
+                cmdProc.command = root._queue.shift()
                 cmdProc.running = true
             }
         }
@@ -406,11 +404,9 @@ QtObject {
     // --- pair/trust/connect/disconnect/remove op (serialized, error-aware)
     property var opProc: Process {
         function _dispatch() {
-            if (root._pendingOp !== null && !opProc.running) {
-                var argv = root._pendingOp
-                root._pendingOp = null
-                root._opKind = root._pendingOpKind
-                opProc.command = argv
+            if (root._opQueue.length > 0 && !opProc.running) {
+                root._opKind = root._opQueueKind.shift()
+                opProc.command = root._opQueue.shift()
                 opProc.running = true
             }
         }
@@ -445,7 +441,7 @@ QtObject {
                 }
                 root.btLastError = err.length > 0 ? err : "Operation failed"
             }
-            root.btBusy = root._pendingOp !== null
+            root.btBusy = root._opQueue.length > 0
             if (!root.btBusy)
                 root.btBusyMac = ""
             root.refresh()
