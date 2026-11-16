@@ -9,6 +9,9 @@ import A21s.Theme
 QtObject {
     id: prefs
 
+    property bool loaded: false
+    property int brightnessLevel: -1          // -1 = migrate current backlight on first load
+
     property string wallpaperId: "aurora"     // aurora | nebula | sunset | emerald | oled
     property string accentId: "blue"          // mono | blue | emerald | amber | crimson
     property bool lightTheme: false           // false = dark (default)
@@ -109,6 +112,15 @@ QtObject {
         return accents[0].color
     }
 
+    // Glyph/text colour for content drawn ON the accent fill. Named
+    // "accentContent", never "on<Capitalized>": QML parses that shape as a signal
+    // handler for the sibling `accentColor` property, the declaration never gets
+    // its initialiser, and the value silently stays black — which is why
+    // `onAccentColor` below renders black to this day (Theme.qml documents the
+    // same trap for `primaryContent`). Fixing the remaining callers is a separate
+    // sweep across the legacy apps.
+    readonly property color accentContent: accentId === "mono" ? "#09090B" : "#FFFFFF"
+    // Legacy name kept for the apps that still bind it; do not use in new code.
     readonly property color onAccentColor: accentId === "mono" ? "#09090B" : "#FFFFFF"
 
     // Accent colour for glyphs drawn on an inverted "on" well (Theme.text fill)
@@ -132,6 +144,11 @@ QtObject {
             return
         try {
             var d = JSON.parse(raw)
+            if (d.brightnessLevel !== undefined) {
+                var savedLevel = Number(d.brightnessLevel)
+                if (isFinite(savedLevel) && savedLevel >= 0)
+                    brightnessLevel = Math.max(0, Math.min(100, Math.round(savedLevel)))
+            }
             if (d.wallpaperId !== undefined) wallpaperId = String(d.wallpaperId)
             if (d.accentId !== undefined) accentId = String(d.accentId)
             if (d.lightTheme !== undefined) lightTheme = Boolean(d.lightTheme)
@@ -154,6 +171,7 @@ QtObject {
 
     function save() {
         var payload = JSON.stringify({
+            brightnessLevel: brightnessLevel,
             wallpaperId: wallpaperId,
             accentId: accentId,
             lightTheme: lightTheme,
@@ -185,7 +203,10 @@ QtObject {
     property var fileWatcher: FileView {
         path: prefs.prefsPath
         watchChanges: true
-        onLoaded: prefs.applyJson(text())
+        onLoaded: {
+            prefs.applyJson(text())
+            prefs.loaded = true
+        }
         onFileChanged: reload()
     }
 }

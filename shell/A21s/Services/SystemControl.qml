@@ -120,12 +120,12 @@ QtObject {
                 root._savedBrightness = Brightness.level
                 root._hadSavedBrightness = true
                 if (Brightness.available)
-                    Brightness.setLevel(100)
+                    Brightness.setTransientLevel(100)
                 ShellState.torchOverlayOpen = true
             } else {
                 ShellState.torchOverlayOpen = false
                 if (root._hadSavedBrightness && Brightness.available)
-                    Brightness.setLevel(root._savedBrightness)
+                    Brightness.setTransientLevel(root._savedBrightness)
                 root._hadSavedBrightness = false
             }
         }
