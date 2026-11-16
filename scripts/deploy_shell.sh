@@ -153,7 +153,7 @@ ssh "${TARGET}" "
   # leaves /, /home and /home/gamer owned by a non-existent uid and breaks
   # runuser/su + systemd path-transition checks. Restore real owners.
   chown root:root / /home 2>/dev/null || true
-  chown gamer:gamer /home/gamer
+  chown gamer:gamer /home/gamer /home/gamer/.local /home/gamer/.local/share 2>/dev/null || true
   chown -R gamer:gamer /home/gamer/.config
   # squeekboard user layouts override the built-ins; keep gamer-owned.
   chown -R gamer:gamer /home/gamer/.local/share/squeekboard 2>/dev/null || true

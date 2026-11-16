@@ -9,7 +9,8 @@
 dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP &
 
 # The shell itself: status bar, home screen, shade, nav bar (layer-shell).
-quickshell -p /usr/share/a21s-shell/shell.qml &
+# The shell draws its own UI: keep it off the KDE platform theme / desktop QQC2 style.
+QT_QPA_PLATFORMTHEME= QT_QUICK_CONTROLS_STYLE=Basic quickshell -p /usr/share/a21s-shell/shell.qml &
 
 # On-screen keyboard (optional — skip silently if not installed).
 # Idempotent OSK defaults first: auto-show on text focus (im-v2 under
