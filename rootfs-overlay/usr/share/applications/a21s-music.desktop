@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=A21s Music
+GenericName=Music player
+Comment=In-house A21s Music
+Exec=a21s-music
+Icon=utilities-system-monitor
+Categories=Utility;
+Terminal=false
+StartupNotify=true
