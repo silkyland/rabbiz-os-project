@@ -15,7 +15,7 @@
 | M7.3 desktop surface (icons/widgets on the desktop, new dock) | **mostly there** — code-inspected 2026-11-16: wallpaper w/ parallax, morphing clock, swipeable hero deck (Steam + Now Playing MPRIS + telemetry), 2x4 grid, dock, drawer overlay. Not yet device-verified this session; free-position widgets and S5 frame-time numbers still open |
 | M7.4 base apps are real Linux apps; QML Calc/Clock/Notes/Gallery/Files/Spotify deleted | **done, verified** |
 | Status bar battery (owner request 2026-11-16) | **UI ready, no sensor** — bar shows the percentage + charging icon as soon as UPower reports a present battery; today `/sys/class/power_supply` is empty and UPower only has a fake DisplayDevice (`0%`, `battery-missing`), so it shows "AC". Real percentage needs the s2mu106 fuel-gauge/charger driver (not in the kernel tree, no DTS node) |
-| Theme: light/dark + glass (owner request 2026-11-16) | **done for the shell + Settings** — `Theme.light` palette, `glass/glassHigh/glassBorder` tokens, `onWallpaper` text tokens; app roots must bind `Theme.light` from `ShellPrefs.lightTheme` (Theme may not import Services). Real backdrop blur is impossible: software Qt Quick has no ShaderEffect |
+| Theme: light/dark + glass (owner request 2026-11-16) | **done for the shell + Settings** — `Theme.light` palette, `glass/glassHigh/glassBorder` tokens, `onWallpaper` text tokens; app roots must bind `Theme.light` from `ShellPrefs.lightTheme` (Theme may not import Services). Default software Qt Quick has no ShaderEffect. An opt-in Panfrost/SCANOUT experiment now renders real MultiEffect blur; see [GPU findings](a21s-qt-gpu-scanout.md). Shell backdrop integration remains pending |
 | M7.5 form factor seam (`handset` only, D3) | not started |
 | M7.6 close morph via snapshot | **done, verified** (S1 answered: `ScreencopyView` works via the SHM fallback even without GL) |
 | M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Big Picture verified** (logged in, touch taps work, game launch reaches Proton/FEX); game renders black — ADR-8. Input (mouse/keyboard/gamepad) not started |
@@ -84,8 +84,20 @@ AGENTS.md hard rules still apply).
   the script as a startup/one-shot latency check and judge smoothness by feel (the owner is the reference).
   Drawer stutter fixes 2026-11-16: the wallpaper no longer `scale`s with `drawerProgress` and the whole home subtree no
   longer scales down (both forced a full-screen bilinear resample every frame); the dim/opacity cues remain.
-- Disk is ~95 % full (1.2 GB free). Check `df -h /` before installing. `linux-aarch64` (386 MiB, dead weight) and
-  `gcc`/`clang` (~190 MiB) are removable; **do not remove `llvm-libs` (mesa needs it)**.
+- **Disk (investigated 2026-11-16):** the rootfs is a 22.3 GiB ext4 on `/dev/loop0p37`, which ends 5 MB before the
+  end of the eMMC — there is **no partition headroom**, `resize2fs` cannot grow it. Free went from 285 MB to 2.2 GB by
+  deleting only stale/unused data: `/home/gamer/.local/share/Steam-arm64` (1.4 GB duplicate Steam install, nothing
+  points at it: `.steam/steam` → `Steam/`), `/opt/build/box64` (364 MB build tree; the binary is `/usr/local/bin/box64`),
+  `Steam/appcache` (150 MB), pacman cache + journal. Big remaining consumers: Steam 7.8 GB, `/usr` 7.2 GB, `/opt` 1 GB,
+  Chrome profile 464 MB, opencode ~1 GB.
+  **Do not** `pacman -Rns linux-aarch64` blindly: it cascades to `mkinitcpio`, `mkinitcpio-busybox`, `diffutils` and
+  deletes the Arch initramfs from `/boot`. Booting is unaffected (the flashed `mmcblk0p18` carries its own initramfs —
+  verified by the `TRAILER!!!`/`initramfs` strings in the image), but the tools were reinstalled to keep initramfs
+  building possible. `pacman -Rns` also left `/usr` owned by uid 502 (a macOS tar artefact); fixed with
+  `chown -R root:root /usr` and removing `._*` AppleDouble files — do that after any tar push that touches `/usr`.
+  **Do not remove `llvm-libs` (mesa needs it).** The owner keeps `gcc`/`clang`/`cmake`/`git` on the device on purpose
+  (they build there), so the ~690 MB toolchain, the ~300 MB unused linux-firmware splits, qt5/mgba and
+  plasma-workspace/portal-kde were examined and **deliberately not removed** (owner decision 2026-11-16).
 
 ## 3. Task backlog (priority order, each with exit criteria)
 
