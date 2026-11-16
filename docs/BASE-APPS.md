@@ -79,8 +79,9 @@ re-coordinated after the keyboard appears; `~/Music` was created by root during 
 be `chown gamer:gamer` before ffmpeg could write into it.
 
 ### KDE originals removed (same session)
-`pacman -Rns kalk kclock marknote elisa qmlkonsole` (pix was not installed) — all had no
-dependents. The home grid's `byId("org.kde.x") || fallback` pattern now resolves to the in-house
+`pacman -Rns kalk kclock marknote elisa qmlkonsole`, then `koko` and `maui-pix` (the photo
+apps behind `org.kde.pix.desktop` / `org.kde.koko.desktop`; the "pix" package name did not exist,
+the entry belonged to maui-pix). All had no dependents. The home grid's `byId("org.kde.x") || fallback` pattern now resolves to the in-house
 apps for Clock/Calculator/Notes; Gallery and Terminal fall back to ids that no longer existed, so
 two `NoDisplay=true` compatibility entries were added: `a21s-gallery.desktop` (→ `a21s-photos`)
 and `org.kde.qmlkonsole.desktop` (→ `a21s-terminal`). Replace them with real ids the next time
