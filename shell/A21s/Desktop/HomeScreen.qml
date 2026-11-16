@@ -46,6 +46,65 @@ PanelWindow {
     readonly property string minStr: Qt.formatDateTime(clock.date, "mm")
     readonly property string ampmStr: ShellPrefs.use24h ? "" : Qt.formatDateTime(clock.date, "ap").toUpperCase()
 
+    // Clock tick: the minute text (and the hour, when it rolls over) slides up
+    // and fades back in instead of snapping to the new digits.
+    readonly property int hourNumber: clock.date.getHours()
+    readonly property int minuteNumber: clock.date.getMinutes()
+    property real minuteTickShift: 0
+    property real minuteTickOpacity: 1
+    property real hourTickShift: 0
+    property real hourTickOpacity: 1
+
+    onMinuteNumberChanged: tickMinute()
+    onHourNumberChanged: tickHour()
+
+    function tickMinute() {
+        minuteTickShift = 12
+        minuteTickOpacity = 0
+        minuteTickIn.restart()
+        minuteTickFade.restart()
+    }
+
+    function tickHour() {
+        hourTickShift = 12
+        hourTickOpacity = 0
+        hourTickIn.restart()
+        hourTickFade.restart()
+    }
+
+    NumberAnimation {
+        id: minuteTickIn
+        target: home
+        property: "minuteTickShift"
+        to: 0
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+        id: minuteTickFade
+        target: home
+        property: "minuteTickOpacity"
+        to: 1
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+        id: hourTickIn
+        target: home
+        property: "hourTickShift"
+        to: 0
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+        id: hourTickFade
+        target: home
+        property: "hourTickOpacity"
+        to: 1
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+
     readonly property bool batteryOk: UPower.displayDevice !== null
         && UPower.displayDevice.ready
         && UPower.displayDevice.isLaptopBattery
@@ -284,7 +343,10 @@ PanelWindow {
                             spacing: 4
 
                             Text {
+                                id: editorialHour
                                 text: home.hourStr
+                                opacity: home.hourTickOpacity
+                                transform: Translate { y: home.hourTickShift }
                                 color: Theme.onWallpaper
                                 font.pixelSize: 120
                                 font.family: Theme.fontFamily
@@ -298,7 +360,10 @@ PanelWindow {
                                 font.weight: Font.ExtraLight
                             }
                             Text {
+                                id: editorialMinute
                                 text: home.minStr
+                                opacity: home.minuteTickOpacity
+                                transform: Translate { y: home.minuteTickShift }
                                 color: ShellPrefs.accentColor
                                 font.pixelSize: 120
                                 font.family: Theme.fontFamily
@@ -322,6 +387,8 @@ PanelWindow {
                             visible: ShellPrefs.clockStyle === "classic"
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: Qt.formatDateTime(clock.date, home.timeFormatStr)
+                            opacity: home.minuteTickOpacity
+                            transform: Translate { y: home.minuteTickShift }
                             color: Theme.onWallpaper
                             font.pixelSize: 114
                             font.family: Theme.fontFamily
@@ -334,6 +401,8 @@ PanelWindow {
                             visible: ShellPrefs.clockStyle === "compact"
                             width: parent.width
                             text: Qt.formatDateTime(clock.date, home.timeFormatStr)
+                            opacity: home.minuteTickOpacity
+                            transform: Translate { y: home.minuteTickShift }
                             color: Theme.onWallpaper
                             font.pixelSize: 82
                             font.family: Theme.fontFamily
@@ -1089,4 +1158,5 @@ PanelWindow {
         target: ShellState
         function onGoHome() { ShellState.drawerOpen = false; }
     }
+
 }

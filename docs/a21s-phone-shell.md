@@ -235,17 +235,28 @@ the shade and Settings read as one product.
 
 ### Home icons + unlock entrance
 
-- Full-bleed RabbizOS artwork no longer sits on a card tile: the old
-  `Theme.card` well + 1 px border drew a dark (white in light theme) frame
-  around every icon. The well is now only used for generic/fallback glyphs and
-  for the explicit glass style; artwork fills its tile.
+- RabbizOS artwork no longer sits on a card tile: the old `Theme.card` well +
+  1 px border drew a dark (white in light theme) frame around every icon. The
+  well is now only used for generic/fallback glyphs and the explicit glass
+  style. The artwork keeps its original 90 % inset so the 4-column grid keeps
+  the spacing it was designed around (full-bleed artwork made it feel cramped).
+- App labels are a single line with a right ellipsis; long names no longer wrap
+  into the row below. The drawer's cell height follows the single line.
 
 ![Home icons without tile frames](home-icons-preview.png)
 
 - After unlocking, the grid and dock tiles rise, scale and fade in **together**
-  as one motion (`AppIcon.entrance`, 520 ms, OutCubic). The tiles are armed
+  as one motion (`AppIcon.entrance`, 650 ms, OutCubic, 32 px rise). The tiles are armed
   while the lock screen is up, so the home surface cannot flash its settled
   grid for a frame when the lock layer unmaps.
+
+### Clock tick
+
+When the minute rolls over, the clock digits slide up 12 px and fade back in
+over 260 ms (`outCubic`) instead of snapping. On the home screen the minute and
+hour are split (editorial style), so only the minute ticks every minute and the
+hour ticks on rollover; classic/compact animate the whole time. The lock
+screen's header clock gets the same tick via `LockScreen.tickClock()`.
 
 ### Files
 
@@ -255,6 +266,7 @@ the shade and Settings read as one product.
 - `Panels/NotificationCard.qml` — `actionsEnabled` (default `true`).
 - `Panels/qmldir` — registers `LockScreen`.
 - `Desktop/AppIcon.qml` — bare artwork tiles + the shared unlock entrance.
+- `Panels/LockScreen.qml` / `Desktop/HomeScreen.qml` — minute-tick clock animation.
 - `Desktop/HomeScreen.qml` — arm/play the entrance from `ShellState.lockScreenOpen`.
 - `Theme.qml` — `onWallpaperFaint` / `onWallpaperLine` for ink and hairlines on
   the always-dark lock wallpaper (`shadeLine` flips to black in light mode).

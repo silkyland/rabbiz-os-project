@@ -35,6 +35,37 @@ Item {
     // Bumped every 30 s so "now"/"5m" ages while the screen is locked.
     property int minuteTick: 0
 
+    // Clock tick: slide/fade the time in when the minute rolls over.
+    readonly property int minuteNumber: lockClock.date.getMinutes()
+    property real clockTickShift: 0
+    property real clockTickOpacity: 1
+
+    onMinuteNumberChanged: tickClock()
+
+    function tickClock() {
+        clockTickShift = 12
+        clockTickOpacity = 0
+        clockTickIn.restart()
+        clockTickFade.restart()
+    }
+
+    NumberAnimation {
+        id: clockTickIn
+        target: root
+        property: "clockTickShift"
+        to: 0
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+        id: clockTickFade
+        target: root
+        property: "clockTickOpacity"
+        to: 1
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+
     NotificationServer { id: notifs }
     SystemClock { id: lockClock; precision: SystemClock.Minutes }
 
@@ -244,7 +275,10 @@ Item {
             spacing: Theme.spaceS
 
             Text {
+                id: lockClockText
                 Layout.alignment: Qt.AlignBottom
+                opacity: root.clockTickOpacity
+                transform: Translate { y: root.clockTickShift }
                 text: Qt.formatTime(lockClock.date, ShellPrefs.use24h ? "HH:mm" : "h:mm")
                 color: Theme.onWallpaper
                 font.pixelSize: Theme.fontClock

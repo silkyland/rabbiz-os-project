@@ -479,7 +479,7 @@ Item {
             }
             clip: true
             cellWidth: Math.floor(width / 4)
-            cellHeight: Theme.iconApp + Theme.fontCaption * 2 + Theme.spaceM + 8
+            cellHeight: Theme.iconApp + Theme.fontCaption + Theme.spaceM + 8
             model: drawer.filteredApps
 
             delegate: AppIcon {

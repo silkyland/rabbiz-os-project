@@ -25,8 +25,8 @@ Item {
     property real entrance: 1.0
 
     opacity: entrance
-    scale: 0.86 + 0.14 * entrance
-    transform: Translate { y: (1.0 - entrance) * 26 }
+    scale: 0.82 + 0.18 * entrance
+    transform: Translate { y: (1.0 - entrance) * 32 }
 
     onEntranceKeyChanged: playEntrance()
 
@@ -49,7 +49,7 @@ Item {
         target: appIcon
         property: "entrance"
         to: 1.0
-        duration: 520
+        duration: 650
         easing.type: Easing.OutCubic
     }
 
@@ -200,7 +200,7 @@ Item {
     }
 
     implicitWidth: tileSize + Theme.spaceL
-    implicitHeight: tileSize + (labelVisible ? Theme.fontCaption * 2 : 0) + Theme.spaceS
+    implicitHeight: tileSize + (labelVisible ? Theme.fontCaption : 0) + Theme.spaceS
 
     Connections {
         target: ShellState
@@ -223,10 +223,11 @@ Item {
         height: appIcon.tileSize
         radius: appIcon.isCircle ? width / 2 : (Theme.radiusM + 4)
 
-        // RabbizOS artwork is a full-bleed rounded tile of its own. Drawing a
-        // card behind it left a dark (or white, in light theme) frame around
-        // every icon, so the built-in artwork now sits on nothing. Generic
-        // fallback glyphs still need a well; glass is an explicit style.
+        // RabbizOS artwork is a rounded tile of its own. Drawing a card behind
+        // it left a dark (or white, in light theme) frame around every icon, so
+        // the built-in artwork now sits on nothing. It keeps a 90% inset to
+        // preserve the grid rhythm the 4-column layout was designed around.
+        // Generic fallback glyphs still need a well; glass is an explicit style.
         readonly property bool artworkFillsTile: appIcon.hasBuiltinIcon
         readonly property bool needsWell: !appIcon.isGlass && !artworkFillsTile
 
@@ -258,8 +259,8 @@ Item {
         Image {
             id: image
             anchors.centerIn: parent
-            width: Math.round(parent.width * (appIcon.hasBuiltinIcon ? 1.0 : 0.60))
-            height: Math.round(parent.height * (appIcon.hasBuiltinIcon ? 1.0 : 0.60))
+            width: Math.round(parent.width * (appIcon.hasBuiltinIcon ? 0.90 : 0.60))
+            height: Math.round(parent.height * (appIcon.hasBuiltinIcon ? 0.90 : 0.60))
             source: appIcon.iconUrl
             fillMode: Image.PreserveAspectFit
             asynchronous: true
@@ -323,8 +324,8 @@ Item {
         font.weight: Font.Medium
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
+        wrapMode: Text.NoWrap
+        maximumLineCount: 1
     }
 
     // Running-app indicator pill (morphs width between 0 and 16px).
