@@ -39,12 +39,17 @@ and into Panfrost, with/without closing the handle — all return CMA to the poo
 (`src/`, `build/` are empty besides a partial clone), so it was not needed nor built; revisit only if the shim proves insufficient.
 `a21s-qt-render`'s CMA floor is now only a safety net; it can stay.
 
-## F3 — Chrome on Panfrost works but is a CMA hog
-`a21s-qt-gpu /opt/google/chrome/google-chrome --ozone-platform=wayland --use-gl=angle --use-angle=gles --no-sandbox` renders the New Tab page
-(grim capture) and logs `Preferred drm_render_node not found, picking panfrost`; labwc does not kill it (the old Wayland error 7 is gone, same
-root cause/fix as Qt). **Not confirmed:** `chrome://gpu` GL_RENDERER (could not read it; use CDP `SystemInfo.getInfo` or a websocket client).
-Cost: 40 MiB at first run, but one cold start with a session to restore took CMA from 197 MiB to 16 MiB in 15 s. Needs a buffer-count/size
-study (try `--disable-gpu-memory-buffer-video-frames`, `--num-raster-threads=1`, smaller `--force-device-scale-factor`) before it can be the default.
+## F3 — Chrome on Panfrost: works, no longer leaks (retested 2026-11-16 after the F2 fix)
+`A21S_BROWSER_GPU=1 a21s-browser` -> `a21s-qt-gpu chrome --use-gl=angle --use-angle=gles`; the gpu-process runs with `use-gl=angle use-angle=gles`
+and a WebGL probe page reports an `ANGLE (Mesa …, OpenGL ES 3.1)` renderer (readable faintly through the lock-screen fade in a grim capture;
+exact device string not captured — read it with `WEBGL_debug_renderer_info` on a screen that stays awake).
+CMA, three start/kill cycles of 20 s each: free 123 -> 16 (cold start) -> closed 113 | 95 -> 116 | 71 -> 118 MiB, i.e. returns to the pool and does
+not accumulate; later runs 140 -> 93 -> 123 MiB. 0 `FB allocation failed`, 0 Panfrost faults, shell alive. A software-Chrome control run
+(140 -> 90 MiB running) used about as much CMA, so the cost is not specific to the GPU path and was **not isolated** (candidates: Chrome's own
+window buffers through labwc, wake/unlock redraws during the test).
+Still unmeasured: frame rate / scroll smoothness / thermals vs `--disable-gpu`, video decode, several tabs. Default stays `--disable-gpu`
+(opt-in via `A21S_BROWSER_GPU=1`; its CMA floor is 128 MiB). Flip the default only after a smoothness comparison shows a gain.
+Note: the main Chrome process shows no `LD_PRELOAD` of the shim in `/proc/<pid>/environ` (Chrome re-execs); rendering still works.
 
 ## F4 — Steam: removed
 Steam and its support (nested Weston, gamescope, session units, shell card) were uninstalled on 2026-11-16 to free resources; revisit after F2 is fixed. See ROADMAP "Deferred".
