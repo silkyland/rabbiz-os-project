@@ -112,3 +112,32 @@ another task's DEMO-badge removal, and scripts/check.sh has another task's
 appcatalog test and executable-bit change. Preserve those when staging the
 charging feature. The HTTP image-transfer servers from this session were
 stopped. Build logs/probes/screenshots are under build/usb-investigation/.
+
+
+## Repository snapshot requested before travel
+
+The owner requested committing and pushing all remaining source, assets and
+findings, including unfinished work. Included in the snapshot:
+
+- RabbizOS/Rabbiz brand assets and notes; desktop icons, greeting card and
+  preferred-app/deduplication policy with its host tests.
+- Native Rabbiz Mirror Swift sources, icons, build/setup/verification scripts
+  and the existing mirror findings. `swift build -c release --package-path
+  tools/a21s-mirror` passed in this session; no new hardware mirror test was
+  run while the owner was travelling.
+- `docs/PLAN-keyboard.md`: retained as **plan only**, with its verified,
+  unverified and decision tags. `tools/a21s-osk/spikes/s2-render/Cargo.toml`
+  is only a dependency manifest: no Rust target/source exists yet, so the
+  spike is not runnable and is not represented as implemented.
+- Browser benchmark HTML and shell performance comparison tooling; their
+  presence is not evidence of new benchmark results.
+
+Host `scripts/check.sh` passed before this snapshot. Candidate text files
+were scanned for secret patterns with no matches. Swift build products,
+device package caches and Python bytecode are excluded. The stray root
+`-I` file was a generated qmllint JSON report, preserved locally at
+`build/usb-investigation/qmllint-report.json` rather than shipped as source.
+
+Still pending: physical charging notification verification, centre plug icon
+and looping charging bars, high-speed USB root cause, fuel-gauge average
+channels/calibration, and the keyboard plan's spikes/implementation.

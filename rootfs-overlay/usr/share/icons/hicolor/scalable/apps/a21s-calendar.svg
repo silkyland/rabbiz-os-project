@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Calendar</title>
+  <desc id="desc">Calendar symbol on a softly graded rounded tile.</desc>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF736D"/><stop offset="1" stop-color="#D93C48"/></linearGradient></defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <rect x="25" y="30" width="78" height="75" rx="10" fill="#FFFFFF"/><path d="M25 51h78" stroke="#F7D8DA" stroke-width="3"/><path d="M43 25v14m42-14v14" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/><g fill="#CC3E4B"><rect x="39" y="61" width="10" height="10" rx="3"/><rect x="59" y="61" width="10" height="10" rx="3"/><rect x="79" y="61" width="10" height="10" rx="3"/><rect x="39" y="80" width="10" height="10" rx="3"/><rect x="59" y="80" width="10" height="10" rx="3"/><rect x="79" y="80" width="10" height="10" rx="3"/></g>
+</svg>

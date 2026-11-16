@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import vm from 'node:vm';
+const context = vm.createContext({});
+vm.runInContext(readFileSync(new URL('../A21s/Desktop/AppCatalog.js', import.meta.url), 'utf8').replace(/^\.pragma library\s*/, ''), context);
+const entry = (id, extra = {}) => ({ id, name: id, ...extra });
+const ids = entries => Array.from(context.visibleEntries(entries), e => e.id);
+assert.deepEqual(ids([entry('google-chrome'), entry('a21s-browser'), entry('com.google.Chrome')]), ['a21s-browser']);
+assert.deepEqual(ids([entry('org.kde.calindori'), entry('org.kde.merkuro.calendar')]), ['org.kde.merkuro.calendar']);
+assert.deepEqual(ids([entry('a21s-photos'), entry('a21s-gallery', { noDisplay: true }), entry('org.kde.pix')]), ['a21s-photos']);
+assert.deepEqual(ids([entry('a21s-terminal', { noDisplay: true }), entry('xterm'), entry('org.kde.station')]), ['org.kde.station']);
+assert.deepEqual(ids([entry('a21s-notes', { hidden: true }), entry('org.kde.buho')]), ['org.kde.buho']);
+assert.deepEqual(ids([null, entry(''), entry('ai.opencode'), entry('ai.opencode'), entry('other', { name: 'ai.opencode' })]), ['ai.opencode', 'other']);
+assert.deepEqual(ids([]), []);
+const native = ['a21s-clock', 'a21s-calculator', 'a21s-notes', 'a21s-music', 'a21s-terminal', 'a21s-photos'];
+assert.deepEqual(ids(native.map(id => entry(id)).concat(['org.kde.kclock', 'org.kde.kalk', 'org.kde.marknote', 'org.kde.elisa', 'org.kde.qmlkonsole', 'org.kde.koko'].map(id => entry(id)))), native);
+console.log('app catalog: preferred apps, fallbacks, hidden entries and duplicate IDs: ok');

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="360" viewBox="0 0 1024 360" role="img" aria-labelledby="title desc">
+<title id="title">RabbizOS</title>
+<desc id="desc">The rabbit R symbol beside the RabbizOS name in plum and copper.</desc>
+<g transform="translate(-18 0) scale(1.35)"><path d="M50 58C82 49 106 73 134 91l43 29c-37-7-70-10-94-29C68 79 58 68 50 58Z" fill="#302135"/>
+<path d="M177 120c29 17 33 38 11 51-13 8-30 11-49 13l72 50h-51l-45-45v45H71v-33c0-32 11-54 33-68 13-8 28-13 48-15Z" fill="#302135"/>
+<path d="M114 28c35 11 59 36 62 77-35-16-60-37-62-77Z" fill="#A55C32"/></g>
+<text x="302" y="246" font-family="Arial, Helvetica, sans-serif" font-size="147" font-weight="700" letter-spacing="-6" fill="#302135">Rabbiz<tspan fill="#A55C32">OS</tspan></text>
+</svg>

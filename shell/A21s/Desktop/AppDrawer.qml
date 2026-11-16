@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
 import A21s.Theme
+import A21s.Desktop
 import A21s.Services
 import A21s.Widgets
 
@@ -25,6 +26,12 @@ Item {
         target: "drawer"
         function open(): void { ShellState.drawerOpen = true }
         function close(): void { ShellState.drawerOpen = false }
+        function apps(): string {
+            drawer.rebuildFilter()
+            return JSON.stringify(drawer.filteredApps.map(function(entry) {
+                return { id: entry.id, name: entry.name }
+            }))
+        }
         function state(): string {
             return JSON.stringify({ open: drawer.open, progress: drawer.progress,
                 gpu: drawer.GraphicsInfo.api === GraphicsInfo.OpenGL,
@@ -86,7 +93,7 @@ Item {
 
     function rebuildFilter() {
         var query = searchInput.text.trim().toLowerCase();
-        var source = DesktopEntries.applications ? DesktopEntries.applications.values : [];
+        var source = AppCatalog.visibleEntries(DesktopEntries.applications ? DesktopEntries.applications.values : []);
         var result = [];
         for (var i = 0; i < source.length; ++i) {
             var entry = source[i];

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Weather</title>
+  <desc id="desc">Weather symbol on a softly graded rounded tile.</desc>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#5AC7F5"/><stop offset="1" stop-color="#2879DD"/></linearGradient></defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <g stroke="#FFE59B" stroke-width="4" stroke-linecap="round"><path d="M47 23v7m-27 20h7m0-20 5 5m36-5-5 5m10 15h7"/></g><circle cx="47" cy="50" r="19" fill="#FFD56B"/><path d="M38 98a18 18 0 0 1-1-36 25 25 0 0 1 48-3 20 20 0 0 1 7 39Z" fill="#FFFFFF"/>
+</svg>

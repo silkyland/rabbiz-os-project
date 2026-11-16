@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Phone</title>
+  <desc id="desc">A white telephone handset on a green rounded tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#36CD71"/>
+      <stop offset="1" stop-color="#15964A"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <path d="M39 27c-3-1-6 0-8 3l-7 10c-3 5-2 13 2 21 10 19 25 34 44 43 8 4 15 5 20 2l11-8c3-2 4-5 2-8l-9-14c-2-3-5-4-8-2l-10 6c-2 1-4 1-6 0-9-5-17-13-22-22-1-2-1-4 0-6l6-9c2-3 1-6-2-8Z" fill="#FFFFFF"/>
+</svg>

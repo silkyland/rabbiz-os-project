@@ -1,0 +1,42 @@
+<!doctype html>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>bench-running</title>
+<style>
+ body{margin:0;background:#101018;color:#fff;font:20px sans-serif}
+ #hud{position:fixed;top:0;left:0;right:0;padding:6px;background:#000a;z-index:9}
+ #layers{position:fixed;top:60px;left:0;right:0;height:300px;overflow:hidden}
+ .l{position:absolute;width:180px;height:180px;border-radius:24px;box-shadow:0 8px 24px #0008;will-change:transform,opacity}
+ #cv{position:fixed;top:380px;left:0;width:100%;height:300px}
+ #page{position:absolute;top:700px;left:0;right:0}
+ .row{height:120px;margin:8px;border-radius:16px;background:linear-gradient(90deg,#3a7bd5,#00d2ff);box-shadow:0 4px 16px #0006;padding:20px;box-sizing:border-box}
+</style>
+<div id=hud>phase: <span id=ph>-</span></div>
+<div id=layers></div><canvas id=cv width=720 height=300></canvas>
+<div id=page></div>
+<script>
+const PH=[['css-layers',4000],['canvas2d',4000],['scroll',4000]];
+const ls=document.getElementById('layers');
+for(let i=0;i<14;i++){const d=document.createElement('div');d.className='l';d.style.background=`hsl(${i*25},70%,55%)`;d.style.left=(i*40%520)+'px';d.style.top=(i*20%120)+'px';ls.appendChild(d)}
+const pg=document.getElementById('page');
+for(let i=0;i<80;i++){const r=document.createElement('div');r.className='row';r.textContent='row '+i;pg.appendChild(r)}
+const cv=document.getElementById('cv'),cx=cv.getContext('2d');
+let res={},pi=0,t0=0,last=0,dts=[];
+function pct(a,p){a=a.slice().sort((x,y)=>x-y);return a[Math.min(a.length-1,Math.floor(a.length*p))]}
+function endPhase(){
+  const n=dts.length,tot=dts.reduce((a,b)=>a+b,0);
+  res[PH[pi][0]]={fps:+(n/(tot/1000)).toFixed(1),p50:+pct(dts,.5).toFixed(1),p95:+pct(dts,.95).toFixed(1),max:+Math.max(...dts).toFixed(0),janky:dts.filter(x=>x>25).length,frames:n};
+  dts=[];pi++;t0=0;last=0;
+  if(pi>=PH.length){document.title='BENCH '+JSON.stringify(res);document.getElementById('ph').textContent='done';return}
+}
+function frame(t){
+  if(!t0){t0=t;last=t;document.getElementById('ph').textContent=PH[pi][0]}
+  else{dts.push(t-last);last=t}
+  const e=t-t0,ph=PH[pi][0];
+  if(ph==='css-layers'){[...ls.children].forEach((d,i)=>{d.style.transform=`translate(${Math.sin(e/400+i)*120}px,${Math.cos(e/500+i)*60}px) rotate(${e/10+i*20}deg) scale(${1+Math.sin(e/300+i)*.2})`;d.style.opacity=.6+.4*Math.sin(e/350+i)})}
+  else if(ph==='canvas2d'){cx.clearRect(0,0,720,300);for(let i=0;i<260;i++){cx.fillStyle=`hsl(${(i*7+e/8)%360},70%,55%)`;cx.fillRect((i*37+e/3)%700,(i*53)%280,36,18)}}
+  else{window.scrollTo(0,(e/4)%4000)}
+  if(e>=PH[pi][1]){endPhase(); if(pi>=PH.length)return}
+  requestAnimationFrame(frame)
+}
+requestAnimationFrame(frame);
+</script>

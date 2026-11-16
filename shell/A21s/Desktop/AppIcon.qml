@@ -75,9 +75,62 @@ Item {
     }
     // Keep our app artwork independent of the selected system icon theme, including
     // home-screen placeholders whose DesktopEntry has not been discovered yet.
-    readonly property bool hasRabbizIcon: ["a21s-dialer", "a21s-sms", "a21s-settings"].indexOf(entryId) >= 0
-    readonly property url iconUrl: hasRabbizIcon
-        ? "file:///usr/share/icons/hicolor/scalable/apps/" + entryId + ".svg"
+    readonly property string builtinIconName: {
+        var icons = {
+            "a21s-dialer": "a21s-dialer",
+            "org.gnome.Calls": "a21s-dialer",
+            "a21s-sms": "a21s-sms",
+            "sm.puri.Chatty": "a21s-sms",
+            "a21s-settings": "a21s-settings",
+            "org.kde.mobile.plasmasettings": "a21s-settings",
+            "a21s-files": "a21s-files",
+            "org.kde.index": "a21s-files",
+            "org.kde.dolphin": "a21s-files",
+            "a21s-calendar": "a21s-calendar",
+            "org.kde.merkuro.calendar": "a21s-calendar",
+            "org.kde.merkuro": "a21s-calendar",
+            "org.kde.calindori": "a21s-calendar",
+            "a21s-clock": "a21s-clock",
+            "org.kde.kclock": "a21s-clock",
+            "a21s-calculator": "a21s-calculator",
+            "org.kde.kalk": "a21s-calculator",
+            "a21s-weather": "a21s-weather",
+            "org.kde.kweather": "a21s-weather",
+            "a21s-notes": "a21s-notes",
+            "org.kde.marknote": "a21s-notes",
+            "org.kde.buho": "a21s-notes",
+            "a21s-gallery": "a21s-gallery",
+            "a21s-photos": "a21s-gallery",
+            "org.kde.pix": "a21s-gallery",
+            "org.kde.koko": "a21s-gallery",
+            "a21s-terminal": "a21s-terminal",
+            "org.kde.qmlkonsole": "a21s-terminal",
+            "org.kde.konsole": "a21s-terminal",
+            "a21s-browser": "a21s-browser",
+            "google-chrome": "a21s-browser",
+            "chromium": "a21s-browser",
+            "org.kde.angelfish": "a21s-browser",
+            "a21s-music": "a21s-music",
+            "org.kde.elisa": "a21s-music",
+            "org.kde.vvave": "a21s-music",
+            "a21s-recorder": "a21s-recorder",
+            "org.kde.krecorder": "a21s-recorder",
+            "a21s-contacts": "a21s-contacts",
+            "org.gnome.Contacts": "a21s-contacts",
+            "org.kde.merkuro.contact": "a21s-contacts",
+            "org.kde.merkuro.contacts": "a21s-contacts",
+            "a21s-mail": "a21s-mail",
+            "org.kde.merkuro.mail": "a21s-mail",
+            "org.gnome.Geary": "a21s-mail",
+            "a21s-video": "a21s-video",
+            "mpv": "a21s-video",
+            "vlc": "a21s-video"
+        }
+        return icons[entryId] || ""
+    }
+    readonly property bool hasBuiltinIcon: builtinIconName.length > 0
+    readonly property url iconUrl: hasBuiltinIcon
+        ? "file:///usr/share/icons/hicolor/scalable/apps/" + builtinIconName + ".svg"
         : ((entryIconName.length > 0 && resolvedMaterialIcon.length === 0 && !entryGlyph)
             ? Quickshell.iconPath(entryIconName, true) : "")
     readonly property bool isGlass: ShellPrefs.iconStyle === "glass"
@@ -160,8 +213,8 @@ Item {
         Image {
             id: image
             anchors.centerIn: parent
-            width: Math.round(parent.width * (appIcon.hasRabbizIcon ? 0.90 : 0.60))
-            height: Math.round(parent.height * (appIcon.hasRabbizIcon ? 0.90 : 0.60))
+            width: Math.round(parent.width * (appIcon.hasBuiltinIcon ? 0.90 : 0.60))
+            height: Math.round(parent.height * (appIcon.hasBuiltinIcon ? 0.90 : 0.60))
             source: appIcon.iconUrl
             fillMode: Image.PreserveAspectFit
             asynchronous: true

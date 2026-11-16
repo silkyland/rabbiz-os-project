@@ -56,7 +56,13 @@ PanelWindow {
         ? "Airplane"
         : (Network.wifiConnected ? Network.activeSsid : (Network.wifiEnabled ? "Wi-Fi" : "Offline"))
 
-    readonly property var heroDeckModel: ["media", "system"]
+    // The media card only exists while something is really playing / a player is open; otherwise the
+    // deck leads with the RabbizOS greeting card instead of an empty placeholder player.
+    readonly property var heroDeckModel: Media.hasRealPlayer ? ["media", "system"] : ["welcome", "system"]
+    readonly property string greeting: {
+        var h = clock.date.getHours()
+        return h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"
+    }
 
     function cycleClockStyle() {
         var order = ["editorial", "classic", "compact"]
@@ -412,12 +418,12 @@ PanelWindow {
             homeApps = [
                 DesktopEntries.byId("org.kde.index")   || DesktopEntries.byId("org.kde.dolphin") || ({ id: "a21s-files", name: "Files", materialIcon: "folder" }),
                 DesktopEntries.byId("org.kde.merkuro.calendar") || DesktopEntries.byId("org.kde.merkuro") || DesktopEntries.byId("org.kde.calindori") || ({ id: "org.kde.calindori", name: "Calendar", materialIcon: "calendar_month" }),
-                DesktopEntries.byId("org.kde.kclock") || ({ id: "a21s-clock", name: "Clock", materialIcon: "schedule" }),
-                DesktopEntries.byId("org.kde.kalk") || ({ id: "a21s-calculator", name: "Calculator", materialIcon: "calculate" }),
+                DesktopEntries.byId("a21s-clock") || DesktopEntries.byId("org.kde.kclock") || ({ id: "a21s-clock", name: "Clock", materialIcon: "schedule" }),
+                DesktopEntries.byId("a21s-calculator") || DesktopEntries.byId("org.kde.kalk") || ({ id: "a21s-calculator", name: "Calculator", materialIcon: "calculate" }),
                 DesktopEntries.byId("org.kde.kweather") || ({ id: "org.kde.kweather", name: "Weather", materialIcon: "wb_sunny" }),
-                DesktopEntries.byId("org.kde.marknote") || ({ id: "a21s-notes", name: "Notes", materialIcon: "edit_note" }),
-                DesktopEntries.byId("org.kde.pix")     || DesktopEntries.byId("org.kde.koko") || ({ id: "a21s-gallery", name: "Gallery", materialIcon: "photo_library" }),
-                DesktopEntries.byId("org.kde.qmlkonsole") || ({ id: "org.kde.qmlkonsole", name: "Terminal", materialIcon: "terminal" })
+                DesktopEntries.byId("a21s-notes") || DesktopEntries.byId("org.kde.marknote") || ({ id: "a21s-notes", name: "Notes", materialIcon: "edit_note" }),
+                DesktopEntries.byId("a21s-photos") || DesktopEntries.byId("org.kde.pix")     || DesktopEntries.byId("org.kde.koko") || ({ id: "a21s-gallery", name: "Gallery", materialIcon: "photo_library" }),
+                DesktopEntries.byId("a21s-terminal") || DesktopEntries.byId("org.kde.qmlkonsole") || ({ id: "org.kde.qmlkonsole", name: "Terminal", materialIcon: "terminal" })
             ];
             dockApps = [
                 DesktopEntries.byId("a21s-dialer")   || ({ id: "a21s-dialer", name: "Phone", materialIcon: "call" }),
@@ -436,21 +442,24 @@ PanelWindow {
 
         Grid {
             id: homeGridRow
-            anchors {
-                horizontalCenter: parent.horizontalCenter
-                top: clockBlock.bottom
-                topMargin: Theme.spaceM + 4
-            }
+            readonly property real cellW: Theme.iconApp - 4 + Theme.spaceM
+            readonly property real sideMargin: Theme.spaceL
+            anchors.horizontalCenter: parent.horizontalCenter
+            // Upper third of the free space between the clock and the hero deck: reads as one group
+            // with the clock and keeps the labels clear of the wallpaper's bright sun below.
+            y: clockBlock.y + clockBlock.height
+               + Math.max(Theme.spaceM, (heroDeckSection.y - (clockBlock.y + clockBlock.height) - height) / 3)
             columns: 4
-            columnSpacing: Theme.spaceM + 4
-            rowSpacing: Theme.spaceM
+            columnSpacing: Math.max(Theme.spaceS,
+                (homeContent.width - 2 * sideMargin - columns * cellW) / (columns - 1))
+            rowSpacing: Theme.spaceL
 
             Repeater {
                 model: homeContent.homeApps
                 delegate: AppIcon {
                     required property var modelData
                     tileSize: Theme.iconApp - 4
-                    width: tileSize + Theme.spaceM
+                    width: homeGridRow.cellW
                     height: tileSize + Theme.fontCaption + Theme.spaceS + 4
                     entry: modelData
                     labelVisible: true
@@ -484,12 +493,73 @@ PanelWindow {
                 boundsBehavior: Flickable.StopAtBounds
                 clip: true
                 model: home.heroDeckModel
+                // The deck's first card changes with the media state; always land on the first card.
+                onModelChanged: { currentIndex = 0; positionViewAtBeginning() }
 
                 delegate: Item {
                     id: deckDelegate
                     required property string modelData
                     width: heroList.width
                     height: heroList.height
+
+                    // --- Card 0: RabbizOS welcome (shown while no media player is active) ---
+                    Rectangle {
+                        visible: deckDelegate.modelData === "welcome"
+                        anchors {
+                            fill: parent
+                            leftMargin: Theme.spaceM
+                            rightMargin: Theme.spaceM
+                        }
+                        radius: Theme.radiusL
+                        color: Qt.alpha(Theme.card, 0.90)
+                        border.width: 1
+                        border.color: Qt.alpha(Theme.text, 0.10)
+                        clip: true
+
+                        RowLayout {
+                            anchors { fill: parent; margins: Theme.spaceM }
+                            spacing: Theme.spaceM
+
+                            Image {
+                                source: "../Assets/rabbiz-mark.png"
+                                Layout.preferredWidth: 96
+                                Layout.preferredHeight: 96
+                                sourceSize: Qt.size(192, 192)
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 4
+                                Text {
+                                    text: "RabbizOS"
+                                    color: ShellPrefs.accentColor
+                                    font.pixelSize: Theme.fontCaption
+                                    font.family: Theme.fontFamily
+                                    font.letterSpacing: 2
+                                    font.weight: Font.DemiBold
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: home.greeting
+                                    color: Theme.text
+                                    font.pixelSize: Theme.fontTitle
+                                    font.family: Theme.fontFamily
+                                    font.weight: Font.DemiBold
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: "Swipe up for all apps"
+                                    color: Theme.textDim
+                                    font.pixelSize: Theme.fontCaption
+                                    font.family: Theme.fontFamily
+                                    elide: Text.ElideRight
+                                }
+                            }
+                        }
+                    }
 
                     // --- Card 1: Now Playing Media Card (MPRIS + Morphing Play/Pause) ---
                     Rectangle {

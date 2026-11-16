@@ -21,3 +21,12 @@ Module.symvers
 modules.order
 .tmp_versions/
 
+
+# A21s Mirror: SwiftPM build products, cached device packages, bundled .app
+tools/a21s-mirror/.build/
+tools/a21s-mirror/.cache/
+dist/
+
+# Python bytecode
+__pycache__/
+*.py[cod]

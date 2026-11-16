@@ -1,4 +1,4 @@
-# Build & Patch Guide (Galaxy A21s `SM-A217F`)
+# RabbizOS Build & Patch Guide (Galaxy A21s `SM-A217F`)
 
 Because `src/` and `build/` are gitignored, a fresh clone only contains tracked driver sources (`drivers/scsc/`), kernel patches (`patches/linux/`), and the kernel defconfig (`configs/a21s_linux_defconfig`).
 

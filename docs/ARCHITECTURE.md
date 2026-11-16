@@ -1,11 +1,11 @@
-# Architecture
+# RabbizOS Architecture
 
 > Maintained by deep-plan-ingest from [PLAN.md](PLAN.md) and verified implementation up to commit `cc6eb14`. Last ingested: 2026-11-14.
 > Facts carry citations; if a citation no longer matches the code, re-verify before relying on it.
 
 ## System overview
 
-`android-arm-linux` boots **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`)** directly on unlocked Samsung Galaxy A21s (`SM-A217F`, Exynos 850 / `S5E3830`) hardware with zero Android runtime.
+**RabbizOS** (checkout: `android-arm-linux`) boots **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`)** directly on unlocked Samsung Galaxy A21s (`SM-A217F`, Exynos 850 / `S5E3830`) hardware with zero Android runtime.
 
 ```text
 Samsung S-Boot (BL1/BL2, locked by e-fuse)

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Music</title>
+  <desc id="desc">Music symbol on a softly graded rounded tile.</desc>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FF7C9A"/><stop offset="1" stop-color="#DB365C"/></linearGradient></defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <path d="M55 81V40l40-8v41" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/><path d="M55 50l40-8" stroke="#FFFFFF" stroke-width="7"/><ellipse cx="43" cy="85" rx="15" ry="11" transform="rotate(-18 43 85)" fill="#FFFFFF"/><ellipse cx="83" cy="77" rx="15" ry="11" transform="rotate(-18 83 77)" fill="#FFFFFF"/>
+</svg>

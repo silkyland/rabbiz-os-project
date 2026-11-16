@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Rabbiz, the RabbizOS mascot</title>
+  <desc id="desc">A plump plum rabbit with a single bean-shaped body, warm cream face, one folded ear, tiny feet and a waving paw.</desc>
+  <g id="rabbiz">
+    <ellipse cx="721" cy="742" rx="59" ry="62" fill="#D7A373"/>
+    <ellipse cx="414" cy="844" rx="64" ry="28" fill="#A55C32"/>
+    <ellipse cx="609" cy="844" rx="64" ry="28" fill="#A55C32"/>
+    <path d="M347 427c-30-61-59-173-46-229 7-30 31-43 54-24 43 34 74 145 86 227Z" fill="#38263D"/>
+    <path d="M573 408c-2-89 17-180 57-201 40-22 98 32 112 68 11 29-7 49-34 34l-30-23c-10 36-11 83-10 133Z" fill="#38263D"/>
+    <path d="M353 351c-18-47-34-105-28-132 24 28 44 83 57 132Z" fill="#D7A373"/>
+    <path d="M609 363c0-44 8-88 23-105 13-10 35 3 46 16-32-5-35 45-36 89Z" fill="#D7A373"/>
+    <path d="M289 591c-41-14-67 6-67 49 0 53 32 96 61 78 25-15 44-77 6-127Z" fill="#38263D"/>
+    <path d="M706 608c35-5 50-36 60-74 10-35 34-40 48-16 28-18 48 8 34 37-22 59-65 107-126 122Z" fill="#38263D"/>
+    <path d="M270 628c0-180 74-284 235-284 164 0 249 111 249 284 0 160-72 223-242 223-171 0-242-63-242-223Z" fill="#38263D"/>
+    <path d="M338 496c15-48 75-65 174-65 104 0 161 21 174 71 12 45 12 85-6 115-21 34-79 40-168 40-91 0-148-7-169-41-18-29-19-76-5-120Z" fill="#F4EDE1"/>
+    <ellipse cx="425" cy="535" rx="17" ry="26" fill="#302135"/>
+    <ellipse cx="597" cy="535" rx="17" ry="26" fill="#302135"/>
+    <path d="M494 575q18-14 36 0c0 10-12 19-18 19s-18-9-18-19Z" fill="#302135"/>
+    <path d="M512 594v8m-25 0q12 14 25 0 13 14 25 0" fill="none" stroke="#302135" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
