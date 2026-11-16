@@ -46,7 +46,8 @@ Environment=LIBSEAT_BACKEND=seatd
 Environment=QT_QPA_PLATFORM=wayland
 Environment=QT_QUICK_BACKEND=software
 Environment=QT_QUICK_CONTROLS_MOBILE=1
-Environment=QT_QPA_PLATFORMTHEME=
+Environment=QT_QPA_PLATFORMTHEME=kde
+Environment=PLASMA_PLATFORM=phone:handset
 ExecStart=/usr/local/bin/a21s-phone-session
 # Phone UX: if the compositor dies, bring the shell back instead of
 # stranding the user on a black screen.

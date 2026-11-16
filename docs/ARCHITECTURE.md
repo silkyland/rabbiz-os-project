@@ -100,10 +100,14 @@ Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge
 - **Why:** Settings edits state the shell owns (appearance contract, Wi-Fi/BT panel, session switch); `plasma-settings` KCMs expect Plasma daemons we do not run (unverified — spike S2). Disk ~99 % full forbids carrying two toolkits.
 - **Rejected:** replacing Settings outright (breaks the contract); GTK/Qt mix (disk).
 
-### 8. Steam is an ordinary desktop app, not a session (2026-11-16)
-- **Decision:** `a21s-steam` (gamescope inside labwc) is launched like any app; `steamos-session.service` stays installed only as a recovery boot. Session-switch tooling is no longer a UX feature.
-- **Why:** owner decision D4; one session removes the DRM/DSI wedge risk of seat hand-over that the last commits were mitigating. Risk: Steam perf inside a nested compositor is unmeasured.
-- **Supersedes:** the "phone session parallel to Steam session" rule in `shell/README.md` / `docs/a21s-phone-shell.md` (update those in M7.7).
+### 8. Steam is an ordinary desktop app, not a session — **BLOCKED, interim = session hand-over** (2026-11-16)
+- **Decision (D4):** Steam should be launched like any app. **Evidence from the device (2026-11-16) that it cannot be yet:**
+  1. Steam on labwc's XWayland dies right after start: `DRM_IOCTL_MODE_CREATE_DUMB failed: Permission denied` / `MESA: Failed to create scanout resource` (Mesa opens `card0` while labwc holds DRM master).
+  2. `a21s-steam --gamescope` (nested): `vulkan: failed to find physical device` / `Failed to create backend` (panvk is non-conformant; gamescope needs a real Vulkan device).
+  3. The shim `steam` / `steam.desktop` currently run `a21s-session-switch steamos`, which stops the phone session; killing that session by hand left labwc up with no usable display until a reboot.
+- **Interim rule:** keep the verified session hand-over (`a21s-session-switch steamos`) behind the normal Steam icon; the Launcher shows the morph and times out after 8 s. Do not run `steamos-session` from a shell/SSH while the phone session owns the seat.
+- **Next experiments (not done):** force the render node for Mesa under Xwayland (`MESA_LOADER_DRIVER_OVERRIDE`, `DRI_PRIME`, render-node-only EGL); nested `weston --backend=wayland` as a labwc client with Steam inside; `LIBGL_ALWAYS_SOFTWARE` as a last resort for the launcher UI only.
+- **Supersedes the "parallel session" text only once** one of those works; `shell/README.md` still describes the parallel session and is correct today.
 
 ### 7. One shell, window policy per form factor (2026-11-16)
 - **Decision:** `handset` maximizes, `tablet`/`desktop` float (only `handset` built now; Pad 7 Pro deferred); the shell and apps are identical across modes.

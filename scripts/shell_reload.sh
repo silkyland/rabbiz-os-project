@@ -9,13 +9,14 @@ COPYFILE_DISABLE=1 tar -C shell --exclude tests -cf - . | ssh "$HOST" "tar -C /u
 ssh "$HOST" 'bash -s' <<'REMOTE'
 set -e
 LW=$(pgrep -x labwc | head -1)
-ENVF="XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-0 $(tr '\0' '\n' < /proc/$LW/environ | grep -E '^(XDG_|WAYLAND_DISPLAY|DBUS_|QT_|QML|LIBSEAT|MOZ_|SDL_|LANG)' | tr '\n' ' ')"
+WD=$(ls -t /run/user/1001/wayland-[0-9]* 2>/dev/null | grep -v "\.lock$" | head -1 | xargs -r basename)  # newest socket = the live labwc
+ENVF="XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=${WD:-wayland-0} $(tr '\0' '\n' < /proc/$LW/environ | grep -E '^(XDG_|WAYLAND_DISPLAY|DBUS_|QT_|QML|LIBSEAT|MOZ_|SDL_|LANG)' | tr '\n' ' ')"
 pkill -f 'quickshell -p /usr/share/a21s-shell/shell.qml' || true
 sleep 1
 runuser -u gamer -- env $ENVF QT_QPA_PLATFORMTHEME= QT_QUICK_CONTROLS_STYLE=Basic setsid quickshell -p /usr/share/a21s-shell/shell.qml >/tmp/shell.log 2>&1 </dev/null &
 sleep 6
 pgrep -af 'quickshell -p /usr/share/a21s-shell/shell.qml' | head -1 || echo "SHELL NOT RUNNING"
 echo "--- errors/warnings:"; grep -iE "error|warn|fail|not (a )?type|unavailable|undefined" /tmp/shell.log | sort | uniq -c | sort -rn | head -15 || true
-runuser -u gamer -- env $ENVF grim /tmp/a21s-shot.png
+timeout 10 runuser -u gamer -- env $ENVF grim /tmp/a21s-shot.png
 REMOTE
 scp -q "$HOST:/tmp/a21s-shot.png" "$OUT" && echo "screenshot: $OUT"
