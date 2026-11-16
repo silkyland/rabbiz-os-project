@@ -14,3 +14,5 @@ node tests/photos.test.mjs             # photos app logic (no Qt, no device)
 node tests/music.test.mjs              # music app logic (no Qt, no device)
 node tests/terminal.test.mjs           # terminal app logic (no Qt, no device)
 python3 -B -m unittest discover -s tools/qt-scanout/tests  # Mesa version gate (no device)
+python3 -B tests/test_holdmenu.py                           # Vol Down + Power hold-to-menu (no evdev, no device)
+python3 -B tests/test_volume_keys.py                       # Actual key loop with deterministic evdev events

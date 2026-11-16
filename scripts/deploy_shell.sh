@@ -160,8 +160,8 @@ ssh "${TARGET}" "
   chmod 644 /etc/polkit-1/rules.d/50-a21s-session.rules 2>/dev/null || true
   chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/udev/rules.d/99-hide-system-partitions.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
   chmod 644 /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/udev/rules.d/99-hide-system-partitions.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
-  chown root:root /usr/local/bin/a21s-*  /usr/local/bin/volume-keys.py
-  chmod 755 /usr/local/bin/a21s-*  /usr/local/bin/volume-keys.py
+  chown root:root /usr/local/bin/a21s-* /usr/local/bin/a21s_holdmenu.py /usr/local/bin/volume-keys.py
+  chmod 755 /usr/local/bin/a21s-* /usr/local/bin/a21s_holdmenu.py /usr/local/bin/volume-keys.py
   chown root:root /usr/share/applications/a21s-*.desktop
   chmod 644 /usr/share/applications/a21s-*.desktop
   # tar preserves the macOS uids baked into the archive (501/20), which

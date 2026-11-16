@@ -149,7 +149,8 @@
     <keybind key="XF86MonBrightnessDown">
       <action name="Execute" command="brightnessctl set 10%-"/>
     </keybind>
-    <keybind key="XF86PowerOff">
+    <!-- Release avoids repeating Power toggles while a hardware combo is held. -->
+    <keybind key="XF86PowerOff" onRelease="yes">
       <action name="Execute" command="a21s-power-key toggle"/>
     </keybind>
   </keyboard>

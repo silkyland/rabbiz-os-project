@@ -5,8 +5,10 @@ Watches all evdev devices advertising KEY_VOLUMEUP, KEY_VOLUMEDOWN, KEY_MUTE,
 or KEY_POWER (`gpio-keys` and `s2mpu12-pwrkey`).
 
 - Single KEY_VOLUMEUP / KEY_VOLUMEDOWN / KEY_MUTE -> `/usr/local/bin/a21s-volume`
-- Combo KEY_POWER + KEY_VOLUMEUP (primary), KEY_POWER + KEY_VOLUMEDOWN, or KEY_VOLUMEUP +
-  KEY_VOLUMEDOWN within 400ms -> `/usr/local/bin/a21s-screenshot`
+- Combo KEY_POWER + KEY_VOLUMEUP (primary) or KEY_VOLUMEUP + KEY_VOLUMEDOWN held together ->
+  `/usr/local/bin/a21s-screenshot` immediately.
+- Combo KEY_POWER + KEY_VOLUMEDOWN: a tap takes a screenshot on release; holding both for 3 s
+  opens the power menu (`a21s-power-key menu`) instead (see a21s_holdmenu.py).
 - A lone volume press is delayed 200 ms; if Power/another volume key joins in that time it is a combo
   and the volume is NOT changed (no OSD).
 - Every volume key press touches MARKER so a21s-power-key can tell that a Power press belongs to a
@@ -20,7 +22,8 @@ from select import select
 
 from evdev import InputDevice, ecodes
 
-COMBO_WINDOW_SEC = 0.40
+from a21s_holdmenu import HoldMenu
+
 COMBO_COOLDOWN_SEC = 0.70
 VOLUME_DELAY_SEC = 0.20   # hold a lone volume press this long; a combo cancels it (no volume change / OSD)
 MARKER = "/run/user/1001/a21s-key-combo"
@@ -62,8 +65,8 @@ devs = volume_devices()
 print("watching:", [d.name for d in devs.values()], flush=True)
 
 held_keys = set()
-last_press_ts = {}
 last_combo_ts = 0.0
+hold = HoldMenu()
 pending = None   # (deadline, argv) of a volume press waiting to see whether it is a combo
 
 
@@ -76,8 +79,16 @@ def flush_pending(force=False):
 
 while True:
     wait = 5.0 if not pending else max(0.0, pending[0] - time.monotonic())
+    hold_deadline = hold.deadline()
+    if hold_deadline is not None:
+        wait = min(wait, max(0.0, hold_deadline - time.monotonic()))
     readable, _, _ = select(list(devs), [], [], wait)
     flush_pending()
+    if hold.tick(time.monotonic(),
+                 ecodes.KEY_VOLUMEDOWN in held_keys,
+                 ecodes.KEY_POWER in held_keys) == "menu":
+        last_combo_ts = time.monotonic()
+        run_async(["/usr/local/bin/a21s-power-key", "menu"])
     if not readable:
         # Periodically rescan for hotplugged USB/BT keyboards
         new_devs = volume_devices()
@@ -91,6 +102,7 @@ while True:
         except OSError:
             devs = volume_devices()
             held_keys.clear()
+            hold.cancel()
             break
 
         for e in events:
@@ -100,25 +112,25 @@ while True:
             now = time.monotonic()
 
             if e.value == 0:
+                # Power is bound on release in labwc. Refresh the combo marker
+                # so a long hold cannot turn into a delayed screen toggle.
+                if e.code in (ecodes.KEY_VOLUMEUP, ecodes.KEY_VOLUMEDOWN) or (
+                    e.code == ecodes.KEY_POWER
+                    and held_keys & {ecodes.KEY_VOLUMEUP, ecodes.KEY_VOLUMEDOWN}
+                ):
+                    mark_volume_press()
                 held_keys.discard(e.code)
+                if e.code in (ecodes.KEY_POWER, ecodes.KEY_VOLUMEDOWN) and hold.release():
+                    last_combo_ts = now
+                    run_async(["/usr/local/bin/a21s-screenshot"])
                 continue
 
             if e.value == 1:
                 held_keys.add(e.code)
-                last_press_ts[e.code] = now
 
-                power_active = (
-                    ecodes.KEY_POWER in held_keys
-                    or (now - last_press_ts.get(ecodes.KEY_POWER, 0.0)) < COMBO_WINDOW_SEC
-                )
-                volup_active = (
-                    ecodes.KEY_VOLUMEUP in held_keys
-                    or (now - last_press_ts.get(ecodes.KEY_VOLUMEUP, 0.0)) < COMBO_WINDOW_SEC
-                )
-                voldown_active = (
-                    ecodes.KEY_VOLUMEDOWN in held_keys
-                    or (now - last_press_ts.get(ecodes.KEY_VOLUMEDOWN, 0.0)) < COMBO_WINDOW_SEC
-                )
+                power_active = ecodes.KEY_POWER in held_keys
+                volup_active = ecodes.KEY_VOLUMEUP in held_keys
+                voldown_active = ecodes.KEY_VOLUMEDOWN in held_keys
 
                 if e.code in (ecodes.KEY_VOLUMEUP, ecodes.KEY_VOLUMEDOWN):
                     mark_volume_press()
@@ -131,11 +143,24 @@ while True:
 
                 if is_combo:
                     pending = None   # the volume press was part of the combo: no volume change
-                    if (now - last_combo_ts) >= COMBO_COOLDOWN_SEC:
+                    down_power = (
+                        power_active
+                        and (e.code == ecodes.KEY_VOLUMEDOWN or voldown_active)
+                        and not volup_active
+                    )
+                    if down_power:
+                        # Tap = screenshot on release, 3 s hold = power menu.
+                        hold.arm(now)
+                    elif (now - last_combo_ts) >= COMBO_COOLDOWN_SEC:
+                        hold.cancel()
                         last_combo_ts = now
                         run_async(["/usr/local/bin/a21s-screenshot"])
                     continue
 
+            # Autorepeat belongs to the held combo, not to the volume control.
+            if len(held_keys & {ecodes.KEY_POWER, ecodes.KEY_VOLUMEUP,
+                               ecodes.KEY_VOLUMEDOWN}) > 1:
+                continue
             if (now - last_combo_ts) < COMBO_COOLDOWN_SEC:
                 continue
 
