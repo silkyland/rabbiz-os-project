@@ -49,4 +49,9 @@ QtObject {
     signal triggerLaunchMorph(real ox, real oy, real ow, real oh, real orad,
                               string name, string matIcon, url iconUrl, color tint)
     signal triggerCloseMorph()
+    // gesture navigation (Windowing/EdgeBack, Panels/NavBar): action = home | back | recents | prev | next
+    signal navAction(string action)
+    // 0..1 live progress of an in-flight gesture, for visual feedback
+    property real gestureProgress: 0.0
+    property string gestureKind: ""
 }

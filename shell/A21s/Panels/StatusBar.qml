@@ -26,7 +26,7 @@ PanelWindow {
     // Pure overlay: never reserves space (labwc margin top=0), so apps
     // stay edge-to-edge and don't reflow when the bar appears/disappears.
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.layer: WlrLayer.Top
+    WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "a21s-statusbar"
     color: "transparent"
 

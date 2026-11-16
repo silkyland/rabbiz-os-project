@@ -152,18 +152,66 @@ PanelWindow {
     // 56px row (expanded or on the home screen, where the strip is free).
     implicitHeight: (ShellState.appOpen && !bar.expanded) ? 24 : 56
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.layer: WlrLayer.Top
+    WlrLayershell.layer: WlrLayer.Overlay
     color: "transparent"
 
-    // Collapsed gesture zone: tap or swipe up reveals the button row.
-    // Covers the whole bar but only exists while collapsed.
+    // Gesture navigation (modern Android feel): ONE continuous swipe from the bottom edge.
+    //   swipe up / flick -> Home (with the close morph); swipe up and hold -> Recents;
+    //   swipe along the bar -> previous/next app. Decisions live in Windowing/Gesture.js (node-tested).
+    // Works over fullscreen windows too because this surface is on the Overlay layer.
     MouseArea {
+        id: navGesture
         anchors.fill: parent
         enabled: !bar.expanded
         preventStealing: true
+        property real pressX: 0
         property real pressY: 0
-        onPressed: (mouse) => { pressY = mouse.y; }
-        onReleased: bar.showTemporarily()
+        property real lastY: 0
+        property real lastT: 0
+        property real vy: 0
+        property double downAt: 0
+        property bool recentsFired: false
+        onPressed: (mouse) => {
+            pressX = mouse.x; pressY = mouse.y; lastY = mouse.y; lastT = Date.now(); vy = 0
+            downAt = Date.now(); recentsFired = false
+            ShellState.gestureKind = "home"; ShellState.gestureProgress = 0
+            holdCheck.restart()
+        }
+        onPositionChanged: (mouse) => {
+            var now = Date.now()
+            if (now > lastT) vy = (mouse.y - lastY) / ((now - lastT) / 1000)
+            lastY = mouse.y; lastT = now
+            ShellState.gestureProgress = Gesture.bottomProgress(mouse.y - pressY)
+        }
+        onReleased: (mouse) => {
+            holdCheck.stop()
+            var act = Gesture.endBottom(mouse.x - pressX, mouse.y - pressY, vy, recentsFired)
+            ShellState.gestureProgress = 0; ShellState.gestureKind = ""
+            if (act !== "none") ShellState.navAction(act)
+        }
+        onCanceled: { holdCheck.stop(); ShellState.gestureProgress = 0; ShellState.gestureKind = "" }
+        Timer {
+            id: holdCheck
+            interval: 60; repeat: true
+            onTriggered: {
+                if (!navGesture.pressed || navGesture.recentsFired) return
+                if (Gesture.duringBottom(0, navGesture.lastY - navGesture.pressY, Date.now() - navGesture.downAt) === "recents") {
+                    navGesture.recentsFired = true
+                    ShellState.navAction("recents")
+                }
+            }
+        }
+    }
+
+    Connections {
+        target: ShellState
+        function onNavAction(action) {
+            if (action === "home") bar.goHome()
+            else if (action === "back") bar.goBack()
+            else if (action === "recents") bar.toggleRecents()
+            else if (action === "prev") bar.switchAdjacentApp(-1)
+            else if (action === "next") bar.switchAdjacentApp(1)
+        }
     }
 
     // Slim gesture hint, always rendered (brighter when expanded).
@@ -172,9 +220,9 @@ PanelWindow {
         anchors {
             horizontalCenter: parent.horizontalCenter
             bottom: parent.bottom
-            bottomMargin: ShellState.appOpen ? 9 : 10
+            bottomMargin: (ShellState.appOpen ? 9 : 10) + (ShellState.gestureKind === "home" ? ShellState.gestureProgress * 36 : 0)
         }
-        width: 140
+        width: 140 + (ShellState.gestureKind === "home" ? ShellState.gestureProgress * 60 : 0)
         height: 6
         radius: Theme.radiusPill
         color: Qt.alpha(Theme.text, 0.45)

@@ -25,7 +25,7 @@ PanelWindow {
 
     anchors { top: true; left: true; right: true }
     exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.layer: WlrLayer.Top
+    WlrLayershell.layer: WlrLayer.Overlay
     WlrLayershell.namespace: "a21s-shade"
     color: "transparent"
 

@@ -18,7 +18,7 @@
 | M7.6 close morph via snapshot (S1: `ScreencopyView` exists, untested) | not started |
 | M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Steam splash works** (ADR-8), input not started |
 | M7.8 Settings v2 (thin shell-owned panels; `plasma-settings` lacks Wi-Fi/BT/sound/battery) | not started |
-| M7.9 **gesture system** (owner asked; was missing from the plan) | not started — spec in §4 |
+| M7.9 **gesture system** (Android-style) | **core done, verified with injected touch** (§4): bottom swipe-up=home, swipe-up+hold=recents, swipe along bar=prev/next app, side-edge swipe=back; all work over fullscreen windows (surfaces moved to the Overlay layer). Missing: back-arrow chip + live card following the finger, reverse morph from a window snapshot, Steam resume matching |
 
 Owner decisions (2026-11-16): home = touch-first desktop; replace home-grown apps with real Linux apps (Settings,
 Dialer, SMS stay ours); Pad 7 Pro is **not** planned now; Steam is a normal app; may override app looks with our own
@@ -76,7 +76,12 @@ AGENTS.md hard rules still apply).
    `linux-aarch64`, keep `docs/ARCHITECTURE.md` seam table and `scripts/check_shell_seams.mjs` rules in sync when
    adding a module, update `shell/README.md` (still describes the old layout and the parallel Steam session), push.
 
-## 4. Gesture system spec (M7.9, proposed — owner has not approved details)
+## 4. Gesture system (M7.9) — implemented core + remaining polish
+
+**Implemented (2026-11-16, verified on the device with `scripts/touch_swipe.py` -> `/usr/local/bin/a21s-touch`):** `Windowing/Gesture.js` (pure classifier, `tests/gesture.test.mjs`), `Windowing/EdgeBack.qml` (side strips), `Panels/NavBar.qml` bottom MouseArea (continuous swipe), `ShellState.navAction/gestureProgress`. NavBar/Shade/StatusBar are layer `Overlay` so a fullscreen window (nested Weston/Steam) no longer hides them (root cause of "no gestures inside Steam"). Verified: Kalk swipe-up -> home; Steam fullscreen swipe-up -> home (Steam keeps running); left-edge swipe closes the app; swipe-up+hold shows Recents.
+**Still to do:** back-arrow chip + card that follows the finger (use `ShellState.gestureProgress/gestureKind`), proper reverse morph (S1 snapshot), tune thresholds on a real finger (injected swipes are perfectly straight), conflict check with Kirigami edge gestures, and resuming a minimized Steam from its icon (`Launcher.findToplevel` cannot match the nested Weston window: empty app_id, title "Weston Compositor - wayland-fullscreen").
+
+Original proposal kept below for reference.
 
 Handset only. Edge zones are 24 px (the labwc bottom margin already reserves it).
 - Swipe up from bottom edge in an app -> go home with reverse morph (M7.6); in home -> open the drawer.
