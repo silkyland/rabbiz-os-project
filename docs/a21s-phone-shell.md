@@ -233,6 +233,20 @@ the shade and Settings read as one product.
   layer; the previous translucent "glass" backdrop is what made the lock screen
   look crooked and duplicated.
 
+### Home icons + unlock entrance
+
+- Full-bleed RabbizOS artwork no longer sits on a card tile: the old
+  `Theme.card` well + 1 px border drew a dark (white in light theme) frame
+  around every icon. The well is now only used for generic/fallback glyphs and
+  for the explicit glass style; artwork fills its tile.
+
+![Home icons without tile frames](home-icons-preview.png)
+
+- After unlocking, the grid and dock tiles rise, scale and fade in **together**
+  as one motion (`AppIcon.entrance`, 520 ms, OutCubic). The tiles are armed
+  while the lock screen is up, so the home surface cannot flash its settled
+  grid for a frame when the lock layer unmaps.
+
 ### Files
 
 - `Panels/LockScreen.qml` (new) — surface + interactions. `PowerMenu.qml` now
@@ -240,6 +254,8 @@ the shade and Settings read as one product.
   curtain (1118 → 348 lines).
 - `Panels/NotificationCard.qml` — `actionsEnabled` (default `true`).
 - `Panels/qmldir` — registers `LockScreen`.
+- `Desktop/AppIcon.qml` — bare artwork tiles + the shared unlock entrance.
+- `Desktop/HomeScreen.qml` — arm/play the entrance from `ShellState.lockScreenOpen`.
 - `Theme.qml` — `onWallpaperFaint` / `onWallpaperLine` for ink and hairlines on
   the always-dark lock wallpaper (`shadeLine` flips to black in light mode).
 - This section + `docs/lock-screen-preview.png`.

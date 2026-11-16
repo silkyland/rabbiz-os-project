@@ -17,6 +17,42 @@ Item {
     property bool menuOpen: false
     signal launched()
 
+    // Home unlock entrance: HomeScreen bumps `entranceKey` once per unlock and
+    // every tile (grid + dock) rises/fades in together as one motion. Hosts
+    // other than the home leave the defaults and are unaffected.
+    property int entranceKey: 0
+    property int entranceArmKey: 0
+    property real entrance: 1.0
+
+    opacity: entrance
+    scale: 0.86 + 0.14 * entrance
+    transform: Translate { y: (1.0 - entrance) * 26 }
+
+    onEntranceKeyChanged: playEntrance()
+
+    // Arm while the lock is up: the home surface is composited under the lock,
+    // so hiding the tiles there removes the one-frame flash of the settled grid
+    // that would otherwise appear before the entrance starts.
+    onEntranceArmKeyChanged: {
+        entranceAnim.stop()
+        entrance = 0.0
+    }
+
+    function playEntrance() {
+        entranceAnim.stop()
+        entrance = 0.0
+        entranceAnim.start()
+    }
+
+    NumberAnimation {
+        id: entranceAnim
+        target: appIcon
+        property: "entrance"
+        to: 1.0
+        duration: 520
+        easing.type: Easing.OutCubic
+    }
+
     readonly property string entryId: (entry && entry.id) ? String(entry.id) : ""
     readonly property string entryName: (entry && entry.name) ? String(entry.name) : ""
     readonly property string entryIconName: (entry && entry.icon) ? String(entry.icon) : ""
@@ -187,11 +223,20 @@ Item {
         height: appIcon.tileSize
         radius: appIcon.isCircle ? width / 2 : (Theme.radiusM + 4)
 
+        // RabbizOS artwork is a full-bleed rounded tile of its own. Drawing a
+        // card behind it left a dark (or white, in light theme) frame around
+        // every icon, so the built-in artwork now sits on nothing. Generic
+        // fallback glyphs still need a well; glass is an explicit style.
+        readonly property bool artworkFillsTile: appIcon.hasBuiltinIcon
+        readonly property bool needsWell: !appIcon.isGlass && !artworkFillsTile
+
         color: appIcon.isGlass
             ? Qt.alpha(Theme.surfaceHigh, 0.62)
-            : Theme.card
+            : (needsWell
+                ? (appIcon.isCircle ? Qt.alpha(Theme.text, 0.05) : Theme.card)
+                : "transparent")
 
-        border.width: 1
+        border.width: appIcon.menuOpen || appIcon.isGlass || needsWell ? 1 : 0
         border.color: appIcon.menuOpen
             ? ShellPrefs.accentColor
             : (appIcon.isGlass ? Qt.alpha(Theme.text, 0.16) : Qt.alpha(Theme.text, 0.08))
@@ -203,7 +248,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
-            visible: !appIcon.isGlass
+            visible: !appIcon.isGlass && parent.needsWell
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Qt.alpha(Theme.text, 0.04) }
                 GradientStop { position: 1.0; color: "transparent" }
@@ -213,8 +258,8 @@ Item {
         Image {
             id: image
             anchors.centerIn: parent
-            width: Math.round(parent.width * (appIcon.hasBuiltinIcon ? 0.90 : 0.60))
-            height: Math.round(parent.height * (appIcon.hasBuiltinIcon ? 0.90 : 0.60))
+            width: Math.round(parent.width * (appIcon.hasBuiltinIcon ? 1.0 : 0.60))
+            height: Math.round(parent.height * (appIcon.hasBuiltinIcon ? 1.0 : 0.60))
             source: appIcon.iconUrl
             fillMode: Image.PreserveAspectFit
             asynchronous: true
@@ -224,7 +269,8 @@ Item {
 
         MaterialIcon {
             anchors.centerIn: parent
-            visible: image.status !== Image.Ready && appIcon.resolvedMaterialIcon.length > 0
+            visible: !appIcon.hasBuiltinIcon && image.status !== Image.Ready
+                     && appIcon.resolvedMaterialIcon.length > 0
             name: appIcon.resolvedMaterialIcon
             size: Math.round(appIcon.tileSize * 0.46)
             color: Theme.text
@@ -232,7 +278,8 @@ Item {
 
         Text {
             anchors.centerIn: parent
-            visible: image.status !== Image.Ready && appIcon.resolvedMaterialIcon.length === 0
+            visible: !appIcon.hasBuiltinIcon && image.status !== Image.Ready
+                     && appIcon.resolvedMaterialIcon.length === 0
             text: appIcon.entryGlyph.length > 0
                 ? appIcon.entryGlyph
                 : (appIcon.entryName.length > 0 ? appIcon.entryName.charAt(0).toUpperCase() : "?")

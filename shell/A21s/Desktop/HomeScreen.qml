@@ -64,6 +64,29 @@ PanelWindow {
         return h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"
     }
 
+    // Bumped on every unlock so the grid + dock tiles play their staggered
+    // entrance (AppIcon.entranceKey). Never bump on boot or on app close.
+    property int unlockEntranceKey: 0
+    // Bumped while the lock is up so the tiles are hidden underneath it; the
+    // home surface is composited under the lock and would otherwise flash its
+    // settled grid for one frame when the lock unmaps.
+    property int entranceArmKey: 0
+
+    Connections {
+        target: ShellState
+        function onLockScreenOpenChanged() {
+            if (ShellState.lockScreenOpen)
+                home.entranceArmKey += 1
+            else
+                home.unlockEntranceKey += 1
+        }
+    }
+
+    Component.onCompleted: {
+        if (ShellState.lockScreenOpen)
+            home.entranceArmKey += 1
+    }
+
     function cycleClockStyle() {
         var order = ["editorial", "classic", "compact"]
         var idx = order.indexOf(ShellPrefs.clockStyle)
@@ -463,6 +486,8 @@ PanelWindow {
                     height: tileSize + Theme.fontCaption + Theme.spaceS + 4
                     entry: modelData
                     labelVisible: true
+                    entranceKey: home.unlockEntranceKey
+                    entranceArmKey: home.entranceArmKey
                 }
             }
         }
@@ -1034,6 +1059,8 @@ PanelWindow {
                         height: tileSize + 8
                         entry: modelData
                         labelVisible: false
+                        entranceKey: home.unlockEntranceKey
+                        entranceArmKey: home.entranceArmKey
                     }
                 }
             }
