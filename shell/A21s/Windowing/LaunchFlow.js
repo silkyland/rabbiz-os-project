@@ -5,7 +5,8 @@
 // TODO(M7.1): drive from ToplevelManager.toplevels (QML side) and render in A21s.Windowing.
 
 var LAUNCH_TIMEOUT_MS = 8000;
-var MAPPED_HOLD_MS = 140; // keep overlay until the first frame is likely drawn
+var MAPPED_HOLD_MS = 140;
+var CLOSE_MS = 600; // close morph budget; overlay is released after this even if never acknowledged // keep overlay until the first frame is likely drawn
 
 function create() {
     return { state: "idle", appId: "", origin: null, startedAt: 0, mappedAt: 0 };
@@ -31,6 +32,7 @@ function close(s, now) {
 function tick(s, now) {
     if (s.state === "launching" && now - s.startedAt >= LAUNCH_TIMEOUT_MS) return create();
     if (s.state === "mapped" && now - s.mappedAt >= MAPPED_HOLD_MS) return create();
+    if (s.state === "closing" && now - s.startedAt >= CLOSE_MS) return create();
     return s;
 }
 
@@ -52,4 +54,4 @@ function matches(toplevelAppId, entryId, startupClass) {
 
 function overlayVisible(s) { return s.state === "launching" || s.state === "closing"; }
 
-if (typeof module !== "undefined") module.exports = { matches, create, launch, toplevelMapped, close, tick, overlayVisible, LAUNCH_TIMEOUT_MS, MAPPED_HOLD_MS };
+if (typeof module !== "undefined") module.exports = { matches, create, launch, toplevelMapped, close, tick, overlayVisible, LAUNCH_TIMEOUT_MS, MAPPED_HOLD_MS, CLOSE_MS };

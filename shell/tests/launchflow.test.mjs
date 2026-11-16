@@ -31,3 +31,9 @@ assert.ok(f.matches("Foo", "x.desktop", "foo"), "startup class");
 assert.ok(!f.matches("org.kde.kclock", "org.kde.kalk", ""));
 assert.ok(!f.matches("", "kalk", ""));
 console.log("launchflow matches: ok");
+// closing must time out too (review finding: it used to stay forever)
+let k = f.close(f.toplevelMapped(f.launch(f.create(), "a", null, 0), "a", 1), 10);
+assert.equal(k.state, "closing");
+assert.equal(f.tick(k, 10 + f.CLOSE_MS - 1).state, "closing");
+assert.equal(f.tick(k, 10 + f.CLOSE_MS).state, "idle", "closing releases the overlay");
+console.log("launchflow closing: ok");

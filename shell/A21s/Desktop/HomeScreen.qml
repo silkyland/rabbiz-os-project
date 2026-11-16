@@ -612,9 +612,13 @@ PanelWindow {
                             id: steamCardTap
                             onTapped: {
                                 var steamEntry = DesktopEntries.byId("a21s-steam") || DesktopEntries.byId("steam")
-                                if (steamEntry && typeof steamEntry.execute === "function")
-                                    steamEntry.execute()
-                                else if (!steamFallbackProc.running)
+                                if (steamEntry && typeof steamEntry.execute === "function") {
+                                    var sp = steamCardTap.parent.mapToItem(null, 0, 0)
+                                    Launcher.launchEntry(steamEntry, {
+                                        x: sp.x, y: sp.y, w: steamCardTap.parent.width, h: steamCardTap.parent.height,
+                                        radius: Theme.radiusL, name: "Steam", materialIcon: "sports_esports",
+                                        iconUrl: "", tint: "#1B6EF3" })
+                                } else if (!steamFallbackProc.running)
                                     steamFallbackProc.running = true
                             }
                         }

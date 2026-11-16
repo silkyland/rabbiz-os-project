@@ -32,6 +32,24 @@ Singleton {
         if (entry && typeof entry.execute === "function") entry.execute()
     }
 
+    // The running window of a desktop entry, or null. Generic: no per-app table.
+    function findToplevel(entry) {
+        if (!entry) return null
+        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []
+        var name = String(entry.name || "").toLowerCase()
+        for (var i = 0; i < tops.length; ++i) {
+            var t = tops[i]
+            if (!t) continue
+            if (Flow.matches(t.appId, entry.id, entry.startupClass)) return t
+            if (name.length > 0 && String(t.title || "").toLowerCase() === name) return t
+        }
+        return null
+    }
+
+    function launchEntry(entry, origin) {
+        launch(entry, origin, findToplevel(entry))
+    }
+
     function _scan() {
         if (root.flow.state !== "launching" || !root.currentEntry) return
         var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : []

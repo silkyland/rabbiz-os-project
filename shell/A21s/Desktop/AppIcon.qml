@@ -89,29 +89,7 @@ Item {
         return palette[h % palette.length]
     }
 
-    function findRunningToplevel() {
-        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
-        var idLow = appIcon.entryId.toLowerCase();
-        var nameLow = appIcon.entryName.toLowerCase();
-        for (var i = 0; i < tops.length; ++i) {
-            var t = tops[i];
-            if (!t)
-                continue;
-            var tid = String(t.appId || "").toLowerCase();
-            var ttitle = String(t.title || "").toLowerCase();
-            if ((idLow.length > 0 && (tid === idLow || tid.indexOf(idLow) >= 0))
-                    || (nameLow.length > 0 && (ttitle === nameLow || ttitle.indexOf(nameLow) >= 0))
-                    || (idLow === "a21s-files" && (tid.indexOf("dolphin") >= 0 || ttitle.indexOf("dolphin") >= 0))
-                    || (idLow === "a21s-calculator" && (tid.indexOf("kalk") >= 0 || ttitle.indexOf("kalk") >= 0))
-                    || (idLow === "a21s-clock" && (tid.indexOf("kclock") >= 0 || ttitle.indexOf("clock") >= 0))
-                    || (idLow === "a21s-notes" && (tid.indexOf("marknote") >= 0 || ttitle.indexOf("marknote") >= 0))
-                    || (idLow === "a21s-spotify" && (tid.indexOf("spotify") >= 0 || ttitle.indexOf("spotify") >= 0))
-                    || (idLow === "a21s-gallery" && (tid.indexOf("gallery") >= 0 || tid.indexOf("koko") >= 0 || ttitle.indexOf("gallery") >= 0 || ttitle.indexOf("คลังภาพ") >= 0))) {
-                return t;
-            }
-        }
-        return null;
-    }
+    function findRunningToplevel() { return Launcher.findToplevel(appIcon.entry) }
 
     readonly property var runningToplevel: findRunningToplevel()
     readonly property bool isRunning: runningToplevel !== null
