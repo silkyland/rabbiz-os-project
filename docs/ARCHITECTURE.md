@@ -113,6 +113,17 @@ Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge
 - **Decision:** `handset` maximizes, `tablet`/`desktop` float (only `handset` built now; Pad 7 Pro deferred); the shell and apps are identical across modes.
 - **Why:** 720x1600 cannot host floating windows; Pad 7 Pro (phase 2) can. Rejected: separate phone/desktop shells.
 
+### 10. Base apps are first-party QML again (2026-11-16)
+- **Decision (owner):** the six base apps — photos, music, notes, clock, calculator, terminal — are written in-house under
+  `apps/<name>/` and share `apps/A21sKit` (one tone, Theme tokens only), instead of KDE/Maui apps pulled from Arch.
+- **Why:** reduce third-party dependence and get one consistent, phone-first UI (the KDE apps each bring their own
+  desktop assumptions); this narrows D2 rather than reversing it — Settings/Dialer/SMS were already ours, and
+  GTK/Chromium/Steam stay third-party.
+- **How:** each app is one `ApplicationWindow` QML file launched by `quickshell -p /usr/share/a21s-apps/<app>/<App>.qml`
+  through an `a21s-<app>` wrapper; pure logic lives in a plain `.js` with a node test (e.g. `apps/calculator/Calc.js`);
+  deployed by `scripts/deploy_shell.sh`. Tone rules and per-app MVP live in [BASE-APPS.md](BASE-APPS.md).
+- **Rejected:** patching/upstreaming the KDE apps (not our code, slow), a single monolithic "apps" QML file (no ownership).
+
 ### 9. Polkit: the single phone user may control NetworkManager without auth (2026-11-16)
 - **Decision:** `/etc/polkit-1/rules.d/51-a21s-shell.rules` returns `YES` for subject `gamer` on every
   `org.freedesktop.NetworkManager.*` action; nothing else is relaxed (seat handover stays in `50-a21s-session.rules`,

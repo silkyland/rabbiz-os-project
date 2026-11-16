@@ -126,10 +126,18 @@ COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/shell" -cf - . \
 
 # --- prune files that were replaced by real Linux apps (tar never deletes) ---
 echo ">> pruning replaced apps"
+# calculator, clock and notes are in-house base apps again (apps/), so only the really removed
+# wrappers are pruned here.
 ssh "${TARGET}" "rm -rf /usr/share/a21s-shell/apps/{calculator,clock,notes,gallery,files,spotify} \
   /usr/share/a21s-shell/A21s/Components \
-  /usr/local/bin/a21s-{calculator,clock,notes,gallery,files,spotify} \
-  /usr/share/applications/a21s-{calculator,clock,notes,gallery,files,spotify}.desktop"
+  /usr/local/bin/a21s-{gallery,files,spotify} \
+  /usr/share/applications/a21s-{gallery,files,spotify}.desktop"
+
+# --- deploy the in-house base apps (docs/BASE-APPS.md) --------------------
+echo ">> apps/ -> /usr/share/a21s-apps/"
+ssh "${TARGET}" "mkdir -p /usr/share/a21s-apps"
+COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/apps" -cf - . \
+  | ssh "${TARGET}" "tar -C /usr/share/a21s-apps --no-same-owner -xf - && chmod -R a+rX /usr/share/a21s-apps"
 
 # --- deploy rootfs overlay (merge into /) --------------------------------
 echo ">> rootfs-overlay/ -> /"
