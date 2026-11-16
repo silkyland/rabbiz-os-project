@@ -14,6 +14,7 @@
 | M7.2 desktop contract v1 (`a21s-appearance`, `Appearance` service, kde platform theme) | **done for Qt apps, verified**; GTK/Chromium unchecked |
 | M7.3 desktop surface (icons/widgets on the desktop, new dock) | **mostly there** — code-inspected 2026-11-16: wallpaper w/ parallax, morphing clock, swipeable hero deck (Steam + Now Playing MPRIS + telemetry), 2x4 grid, dock, drawer overlay. Not yet device-verified this session; free-position widgets and S5 frame-time numbers still open |
 | M7.4 base apps are real Linux apps; QML Calc/Clock/Notes/Gallery/Files/Spotify deleted | **done, verified** |
+| Theme: light/dark + glass (owner request 2026-11-16) | **done for the shell + Settings** — `Theme.light` palette, `glass/glassHigh/glassBorder` tokens, `onWallpaper` text tokens; app roots must bind `Theme.light` from `ShellPrefs.lightTheme` (Theme may not import Services). Real backdrop blur is impossible: software Qt Quick has no ShaderEffect |
 | M7.5 form factor seam (`handset` only, D3) | not started |
 | M7.6 close morph via snapshot | **done, verified** (S1 answered: `ScreencopyView` works via the SHM fallback even without GL) |
 | M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Big Picture verified** (logged in, touch taps work, game launch reaches Proton/FEX); game renders black — ADR-8. Input (mouse/keyboard/gamepad) not started |

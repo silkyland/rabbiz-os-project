@@ -134,7 +134,8 @@ PanelWindow {
                     top: parent.top
                 }
                 height: Math.max(0, panel.height - win.tailH)
-                color: Theme.surface
+                color: Theme.glassHigh          // frosted sheet over the app/home
+                border.width: 0
             }
 
             // Continuation of the background over the handle strip.
@@ -146,7 +147,7 @@ PanelWindow {
                     top: bgMain.bottom
                 }
                 height: win.tailH
-                color: Theme.surface
+                color: Theme.glassHigh
                 opacity: ShellState.shadeProgress
             }
 

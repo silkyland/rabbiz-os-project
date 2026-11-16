@@ -256,7 +256,7 @@ PanelWindow {
 
                             Text {
                                 text: home.hourStr
-                                color: Theme.text
+                                color: Theme.onWallpaper
                                 font.pixelSize: 120
                                 font.family: Theme.fontFamily
                                 font.weight: Font.Light
@@ -278,7 +278,7 @@ PanelWindow {
                             Text {
                                 visible: home.ampmStr.length > 0
                                 text: home.ampmStr
-                                color: Theme.textDim
+                                color: Theme.onWallpaperDim
                                 font.pixelSize: Theme.fontCaption
                                 font.family: Theme.fontFamily
                                 font.weight: Font.DemiBold
@@ -293,7 +293,7 @@ PanelWindow {
                             visible: ShellPrefs.clockStyle === "classic"
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: Qt.formatDateTime(clock.date, home.timeFormatStr)
-                            color: Theme.text
+                            color: Theme.onWallpaper
                             font.pixelSize: 114
                             font.family: Theme.fontFamily
                             font.weight: Font.Light
@@ -305,7 +305,7 @@ PanelWindow {
                             visible: ShellPrefs.clockStyle === "compact"
                             width: parent.width
                             text: Qt.formatDateTime(clock.date, home.timeFormatStr)
-                            color: Theme.text
+                            color: Theme.onWallpaper
                             font.pixelSize: 82
                             font.family: Theme.fontFamily
                             font.weight: Font.DemiBold
@@ -321,7 +321,7 @@ PanelWindow {
                     Layout.alignment: ShellPrefs.clockStyle === "compact"
                         ? Qt.AlignLeft : Qt.AlignHCenter
                     text: Qt.formatDateTime(clock.date, "dddd, MMMM d")
-                    color: Theme.textDim
+                    color: Theme.onWallpaperDim
                     font.pixelSize: Theme.fontBody
                     font.family: Theme.fontFamily
                     font.weight: Font.Medium
@@ -1082,9 +1082,9 @@ PanelWindow {
             }
             height: Theme.iconApp + Theme.spaceM
             radius: Theme.radiusL + 10
-            color: Qt.alpha(Theme.surfaceHigh, 0.74)
+            color: Theme.glass
             border.width: 1
-            border.color: Qt.alpha(Theme.text, 0.12)
+            border.color: Theme.glassBorder
 
             Row {
                 anchors.centerIn: parent

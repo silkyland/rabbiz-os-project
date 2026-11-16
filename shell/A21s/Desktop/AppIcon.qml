@@ -73,8 +73,13 @@ Item {
             return iconMap[entryId]
         return ""
     }
-    readonly property url iconUrl: (entryIconName.length > 0 && resolvedMaterialIcon.length === 0 && !entryGlyph)
-        ? Quickshell.iconPath(entryIconName, true) : ""
+    // Keep our app artwork independent of the selected system icon theme, including
+    // home-screen placeholders whose DesktopEntry has not been discovered yet.
+    readonly property bool hasRabbizIcon: ["a21s-dialer", "a21s-sms", "a21s-settings"].indexOf(entryId) >= 0
+    readonly property url iconUrl: hasRabbizIcon
+        ? "file:///usr/share/icons/hicolor/scalable/apps/" + entryId + ".svg"
+        : ((entryIconName.length > 0 && resolvedMaterialIcon.length === 0 && !entryGlyph)
+            ? Quickshell.iconPath(entryIconName, true) : "")
     readonly property bool isGlass: ShellPrefs.iconStyle === "glass"
     readonly property bool isCircle: ShellPrefs.iconStyle === "circle"
 
@@ -155,8 +160,8 @@ Item {
         Image {
             id: image
             anchors.centerIn: parent
-            width: Math.round(parent.width * 0.60)
-            height: Math.round(parent.height * 0.60)
+            width: Math.round(parent.width * (appIcon.hasRabbizIcon ? 0.90 : 0.60))
+            height: Math.round(parent.height * (appIcon.hasRabbizIcon ? 0.90 : 0.60))
             source: appIcon.iconUrl
             fillMode: Image.PreserveAspectFit
             asynchronous: true
@@ -212,7 +217,7 @@ Item {
         }
         visible: appIcon.labelVisible
         text: appIcon.entryName
-        color: Theme.text
+        color: Theme.onWallpaper
         font.pixelSize: Theme.fontCaption
         font.family: Theme.fontFamily
         font.weight: Font.Medium

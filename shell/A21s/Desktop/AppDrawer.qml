@@ -20,9 +20,6 @@ Item {
     signal launched()
 
     readonly property real progress: ShellState.drawerProgress
-    visible: open || progress > 0.005
-    opacity: Math.max(0, Math.min(1, progress * 1.15))
-
     NumberAnimation {
         id: snapAnim
         target: ShellState
@@ -136,7 +133,7 @@ Item {
                 topMargin: Theme.statusBarHeight
             }
             radius: Theme.radiusL
-            color: Qt.alpha(Theme.surface, 0.96)
+            color: Theme.glassHigh
             border.width: 1
             border.color: Qt.alpha(Theme.text, 0.08)
 

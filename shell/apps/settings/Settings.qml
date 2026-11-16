@@ -17,6 +17,7 @@ ApplicationWindow {
     height: Screen.height > 0 ? Screen.height : 1600
     title: "Settings"
     color: Theme.bg
+    Binding { target: Theme; property: "light"; value: ShellPrefs.lightTheme }
     font.family: Theme.fontFamily
     font.pixelSize: Theme.fontBody
 
