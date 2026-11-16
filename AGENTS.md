@@ -47,3 +47,16 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 - Full research and decisions record: [docs/PLAN.md](docs/PLAN.md)
 - Wi-Fi & Bluetooth bring-up details: [docs/a21s-wifi-bluetooth.md](docs/a21s-wifi-bluetooth.md)
 - Battery, power & modem plan: [docs/a21s-power-battery-modem-plan.md](docs/a21s-power-battery-modem-plan.md)
+
+## Where shell code goes (`shell/A21s/`, checked by `scripts/check.sh`)
+
+| New thing | Put it in | Copy |
+|---|---|---|
+| Wrapper over a system backend (D-Bus, CLI, file) | `Services/<Concept>.qml` singleton, no UI | `Services/Network.qml` |
+| Design token | `Theme/Theme.qml` only; no literal colors elsewhere | `Theme/Theme.qml` |
+| App launch / morph / window policy logic | `Windowing/`; state logic in plain `.js` with a node test | `Windowing/LaunchFlow.js` + `tests/launchflow.test.mjs` |
+| Home surface (grid, dock, drawer, widgets) | `Desktop/` (today still `Components/HomeScreen.qml`) | `Components/HomeScreen.qml` |
+| Status/nav bar, shade, quick settings, power, HUD | `Panels/` (today `Components/`) | `Components/Shade.qml` |
+
+Dependency direction: `Theme ← Services ← Windowing/Widgets ← Desktop/Panels`; never sideways between Desktop and Panels. Do **not** add apps to `shell/apps/` (legacy, being replaced by real Linux apps — `docs/DESKTOP-SHELL.md`). Anti-homes: `utils`, `helpers`, `common`, `misc`, `_v2` — name the concept. Nothing fits? Propose the module, justify it by dependency direction, add a row and a rule in `scripts/check_shell_seams.mjs`.
+Vocabulary: *form factor* = handset/tablet/desktop; *desktop contract* = the appearance/env/portal settings every app obeys; *starting window* = shell-drawn morph overlay until the app's toplevel maps.

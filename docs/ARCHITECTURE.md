@@ -54,6 +54,25 @@ Samsung S-Boot (BL1/BL2, locked by e-fuse)
 | BlueZ `hci_h4` (`h4_recv_skb`) | Mainline 7.3 H4 RX path replacing vendor `hci_recv_frame` wrapper | [drivers/scsc/bt/scsc_bluez.c](../drivers/scsc/bt/scsc_bluez.c) |
 | `systemd-networkd` | Dedicated management of `usb0` (`172.16.42.1/24`) | [a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md) |
 
+## Shell seams (`shell/`, M7 v2 — plan in [DESKTOP-SHELL.md](DESKTOP-SHELL.md))
+
+Dependency direction is enforced by `scripts/check_shell_seams.mjs` (run `scripts/check.sh`).
+`shell.qml` is wiring only and may import anything; nothing imports it.
+
+| Module (`shell/A21s/<X>`) | Owns | May import | Status |
+|---|---|---|---|
+| `Theme` | design tokens, derived from the appearance source of truth | — | exists |
+| `Services` | singletons over system backends (NM, BlueZ, UPower, audio, telephony, Appearance writer); no UI | `Theme` | exists |
+| `Windowing` | launch flow, morph overlay, task switcher, window policy by form factor | `Theme`, `Services` | `LaunchFlow.js` exists; rest moves in M7.0 |
+| `Widgets` | small shared controls (tile, slider, icon) | `Theme`, `Services` | planned (today part of `Components`) |
+| `Desktop` | wallpaper, icon grid, widgets, dock, app drawer | `Theme`, `Services`, `Widgets`, `Windowing` | planned (today `HomeScreen`, `AppDrawer`) |
+| `Panels` | status bar, nav/gesture bar, shade, quick settings, power menu, HUD, notifications UI | `Theme`, `Services`, `Widgets`, `Windowing` | planned |
+| `Components` | **legacy** flat bucket, split by M7.0 | `Theme`, `Services` | exists, shrinking |
+| `shell/apps/*` | **legacy** home-grown apps, deleted in M7.4 (Dialer/SMS last, after M6) | `Theme`, `Services`, `Components` | exists, shrinking |
+
+Not checked (stated gap): `Loader { source: }` / `Qt.createComponent` paths and runtime string imports.
+Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge location, Settings split (spike S2).
+
 ## Decision records
 
 ### 1. `uniLoader` in `boot.img` as Native Linux Bootloader (2026-11-14, R1)
@@ -76,6 +95,15 @@ Samsung S-Boot (BL1/BL2, locked by e-fuse)
 ### 5. NetworkManager for `wlan0` with `wifi.scan-rand-mac-address=no` (2026-11-14)
 - **Decision:** Use `NetworkManager` on `wlan0` instead of `wpa_supplicant@wlan0` + `systemd-networkd`.
 - **Why:** Steam UI requires `org.freedesktop.NetworkManager` D-Bus; disabling MAC randomization prevents `scsc_wlan` `WPS-CANCEL` during scan/connect.
+
+### 6. Settings stays shell-owned; every other base app is a real Linux app (2026-11-16)
+- **Decision:** Replace Calculator/Files/Notes/Clock/Gallery/Music with Qt/KDE-first real apps; keep Settings as thin shell-owned panels over NM/BlueZ/portal/gsettings. Dialer/SMS stay ours until M6.
+- **Why:** Settings edits state the shell owns (appearance contract, Wi-Fi/BT panel, session switch); `plasma-settings` KCMs expect Plasma daemons we do not run (unverified — spike S2). Disk ~99 % full forbids carrying two toolkits.
+- **Rejected:** replacing Settings outright (breaks the contract); GTK/Qt mix (disk).
+
+### 7. One shell, window policy per form factor (2026-11-16)
+- **Decision:** `handset` maximizes, `tablet`/`desktop` float; the shell and apps are identical across modes.
+- **Why:** 720x1600 cannot host floating windows; Pad 7 Pro (phase 2) can. Rejected: separate phone/desktop shells.
 
 ## Known constraints and sharp edges
 
