@@ -139,3 +139,15 @@ Still open:
 | Disk full blocks installs | S4 before any package wave |
 | Overlay stays on screen if app never maps | LaunchFlow timeout (tested on host) |
 | Retrofit breaks the booting shell | one module per commit, moves only, device smoke test between |
+
+## 8. Spike results (2026-11-16, device `7.3.0-g14a425b3a7dc-dirty`, labwc 0.20.2, Quickshell 0.3.2)
+
+| Spike | Result | Evidence / what is still unverified |
+|---|---|---|
+| S4 disk + apps | **All target Qt apps already installed**: `kalk kclock marknote buho index-fm dolphin maui-pix vvave merkuro plasma-settings xdg-desktop-portal(-kde)`. **Not packaged**: `plasma-dialer`, `spacebar` (keep `gnome-calls` + `chatty`). **Disk is the blocker: 377 MB free of 22 G (99 %)**. | `scripts/verify_apps.sh`. Biggest installed packages: `linux-firmware-intel` 414 MiB, `linux-aarch64` 386 MiB, `qt6-webengine` 273 MiB, `gcc` 189 MiB, `llvm-libs` 164 MiB, `webkit2gtk-4.1` 159 MiB, `linux-firmware-nvidia` 153 MiB, `linux-firmware-atheros` 141 MiB. Steam data in `~gamer/.local` = 8.8 G. Nothing removed yet — needs owner OK (see §6). |
+| S1 close-morph snapshot | **Likely feasible.** `labwc` binary contains `ext_image_copy_capture` + `ext_foreign_toplevel_image_capture` + `ext_foreign_toplevel_list`; Quickshell contains `ScreencopyView` backed by `ext_image_copy_capture`. | Found by `strings`, **not run**. Next: a 20-line QML test that captures a Kalk toplevel into `ScreencopyView`. |
+| S3 portals | `xdg-desktop-portal` + `-gtk` + `-kde` backends are running on the user bus; `labwc-portals.conf` prefers `wlr` (no `xdg-desktop-portal-wlr` installed) with `*` fallback. | FileChooser **not tested**. `XDG_CURRENT_DESKTOP=labwc` (not `a21s-shell` as `labwc/environment` sets — the live session value differs, to investigate in M7.2). |
+| S2 plasma-settings | **Inconclusive.** Starts under labwc with no plasmashell, no stderr, 144 MB RSS, ~90 MB RAM drop; the device was on the lock screen so the window could not be seen. | Rerun with the phone unlocked; then list which KCMs open. |
+| S5 frame time | Not run. Free RAM ≈ 1.0 GB with the shell up. | Needs the desktop surface (M7.3) or a synthetic QML load. |
+
+Also found: device Wi-Fi (`wlan0`) is `disconnected`; USB is the only link; SSH needs the passphrase-protected key loaded in `ssh-agent`.
