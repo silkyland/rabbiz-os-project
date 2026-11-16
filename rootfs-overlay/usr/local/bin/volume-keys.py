@@ -46,7 +46,16 @@ def volume_devices():
 devs = volume_devices()
 print("watching:", [d.name for d in devs.values()], flush=True)
 
-held_keys = set()
+def held_now():
+    held = set()
+    for d in devs.values():
+        try:
+            held |= set(d.active_keys())
+        except OSError:
+            pass
+    return held
+
+
 last_press_ts = {}
 last_combo_ts = 0.0
 
@@ -64,7 +73,6 @@ while True:
             events = devs[fd].read()
         except OSError:
             devs = volume_devices()
-            held_keys.clear()
             break
 
         for e in events:
@@ -74,12 +82,11 @@ while True:
             now = time.monotonic()
 
             if e.value == 0:
-                held_keys.discard(e.code)
                 continue
 
             if e.value == 1:
-                held_keys.add(e.code)
                 last_press_ts[e.code] = now
+                held_keys = held_now()
 
                 power_active = (
                     ecodes.KEY_POWER in held_keys
