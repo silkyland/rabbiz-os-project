@@ -880,9 +880,17 @@ ApplicationWindow {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: wifiDialog.open(
-                                modelData.inUse ? "disconnect" : "connect",
-                                modelData.ssid)
+                            onClicked: {
+                                // A saved network already has its PSK in NetworkManager: connect straight
+                                // away instead of asking for the password again (a21s-wifi-connect then
+                                // just activates the stored profile). Dialog only for new networks.
+                                var saved = Network.savedSsids.indexOf(modelData.ssid) >= 0
+                                if (!modelData.inUse && saved)
+                                    Network.connectTo(modelData.ssid, "")
+                                else
+                                    wifiDialog.open(modelData.inUse ? "disconnect" : "connect",
+                                                    modelData.ssid)
+                            }
                         }
                     }
                 }
