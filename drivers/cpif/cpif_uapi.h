@@ -63,17 +63,19 @@ struct cpif_sec_req {
 
 #define CPIF_IOC_REQ_SECURITY		_IOW(CPIF_IOCTL_MAGIC, 0x53, struct cpif_sec_req)
 
-/* modem phone_state values returned by CPIF_IOC_GET_CP_STATUS.
- * TODO: keep in sync with vendor enum modem_state in modem_prj.h. */
+/* modem phone_state values returned by CPIF_IOC_GET_CP_STATUS;
+ * identical to vendor enum modem_state in modem_prj.h. */
 enum cpif_modem_state {
 	CPIF_STATE_OFFLINE,
+	CPIF_STATE_CRASH_RESET,
+	CPIF_STATE_CRASH_EXIT,
+	CPIF_STATE_BOOTING,
 	CPIF_STATE_ONLINE,
 	CPIF_STATE_NV_REBUILDING,
-	CPIF_STATE_CRASH_EXIT,
+	CPIF_STATE_LOADER_DONE,
 	CPIF_STATE_SIM_ATTACH,
 	CPIF_STATE_SIM_DETACH,
-	CPIF_STATE_DUMP_ACTIVE,
-	CPIF_STATE_URC_PENDING,
+	CPIF_STATE_CRASH_WATCHDOG,
 	CPIF_STATE_MAX
 };
 

@@ -23,8 +23,28 @@
 
 static int cpif_ipc_open(struct inode *inode, struct file *filp)
 {
-	/* TODO: bind file -> channel context (tx/rx rings in IPC shmem) */
+	struct miscdevice *m = filp->private_data;
+	struct cpif_dev *c = dev_get_drvdata(m->parent);
+	atomic_t *opened;
+
+	if (!c)
+		return -ENODEV;
+	opened = (m == &c->rfs_dev) ? &c->rfs_opened : &c->fmt_opened;
+	atomic_inc(opened);
+	filp->private_data = opened;
 	return 0;
+}
+
+static int cpif_ipc_release(struct inode *inode, struct file *filp)
+{
+	atomic_dec((atomic_t *)filp->private_data);
+	return 0;
+}
+
+bool cpif_rild_ready(struct cpif_dev *c)
+{
+	return atomic_read(&c->fmt_opened) > 0 &&
+	       atomic_read(&c->rfs_opened) > 0;
 }
 
 static ssize_t cpif_ipc_read(struct file *filp, char __user *buf,
@@ -52,6 +72,7 @@ static long cpif_ipc_ioctl(struct file *filp, unsigned int cmd,
 static const struct file_operations cpif_ipc_fops = {
 	.owner		= THIS_MODULE,
 	.open		= cpif_ipc_open,
+	.release	= cpif_ipc_release,
 	.read		= cpif_ipc_read,
 	.write		= cpif_ipc_write,
 	.unlocked_ioctl	= cpif_ipc_ioctl,

@@ -15,12 +15,43 @@
  *     userspace locate IPC queues without hardcoding offsets.
  */
 #include <linux/io.h>
+#include <linux/mm.h>
 #include <linux/of.h>
 #include <linux/of_address.h>
 #include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/vmalloc.h>
 
 #include "cpif.h"
+
+/* Vendor cp_shmem_get_nc_region(): vmap() the region's struct pages
+ * with write-combining protection instead of ioremap. The CP "secure"
+ * window (first secure_size bytes of cp_rmem) silently drops AP writes
+ * through device/WC ioremap mappings on this SoC. */
+static void __iomem *cpif_vmap_wc(phys_addr_t phys, size_t size)
+{
+	unsigned int i, npages = PAGE_ALIGN(size) >> PAGE_SHIFT;
+	struct page **pages;
+	void *v;
+
+	pages = kvmalloc_array(npages, sizeof(*pages), GFP_KERNEL);
+	if (!pages)
+		return NULL;
+
+	for (i = 0; i < npages; i++) {
+		unsigned long pfn = (phys >> PAGE_SHIFT) + i;
+
+		if (!pfn_valid(pfn)) {
+			kvfree(pages);
+			return NULL;
+		}
+		pages[i] = pfn_to_page(pfn);
+	}
+
+	v = vmap(pages, npages, VM_MAP, pgprot_writecombine(PAGE_KERNEL));
+	kvfree(pages);
+	return (void __iomem *)v;
+}
 
 /* ---- structures identical to vendor shm_ipc.c ---- */
 
@@ -130,11 +161,27 @@ static int cpif_shmem_parse_dt(struct cpif_dev *c)
 		else
 			r->cached = false;
 
-		/* Map every region as write-combining normal memory so
-		 * ARM64 unaligned copies and memcpy_toio do not fault. */
-		r->map = ioremap_wc(r->phys, r->size);
-		if (!r->map)
+		/* Vendor shm_ipc.c mapping: cached regions use the linear
+		 * map (phys_to_virt); non-cached regions vmap() the struct
+		 * pages with write-combining. ioremap_wc on this SoC does
+		 * not reach the CP "secure" window correctly, so prefer the
+		 * page-based map and keep ioremap only as a fallback. */
+		if (r->cached) {
+			if (pfn_valid(r->phys >> PAGE_SHIFT))
+				r->map = (void __iomem *)phys_to_virt(r->phys);
+		} else {
+			r->map = cpif_vmap_wc(r->phys, r->size);
+			if (r->map)
+				r->vmapped = true;
+		}
+		if (!r->map) {
+			r->map = ioremap_wc(r->phys, r->size);
+			r->ioremapped = r->map != NULL;
+		}
+		if (!r->map) {
 			r->map = ioremap(r->phys, r->size);
+			r->ioremapped = r->map != NULL;
+		}
 		if (!r->map) {
 			dev_err(c->dev, "ioremap %s@0x%llx failed\n",
 				region_name, (u64)r->phys);
@@ -165,7 +212,10 @@ void cpif_shmem_exit(struct cpif_dev *c)
 
 	for (i = 0; i < CPIF_SHMEM_MAX; i++) {
 		if (c->shmem[i].map) {
-			iounmap(c->shmem[i].map);
+			if (c->shmem[i].vmapped)
+				vunmap((void *)c->shmem[i].map);
+			else if (c->shmem[i].ioremapped)
+				iounmap(c->shmem[i].map);
 			c->shmem[i].map = NULL;
 		}
 		kfree(c->shmem[i].name);

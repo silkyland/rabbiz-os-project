@@ -45,9 +45,11 @@ enum cpif_shmem_idx {
 struct cpif_shmem_region {
 	const char	*name;
 	phys_addr_t	phys;	/* absolute DRAM address */
-	void __iomem	*map;	/* ioremap'ed (non-cacheable) */
+	void __iomem	*map;
 	size_t		size;
 	bool		cached;
+	bool		vmapped;	/* map came from vmap(): needs vunmap */
+	bool		ioremapped;	/* map came from ioremap(): needs iounmap */
 };
 
 struct cpif_dev {
@@ -56,6 +58,16 @@ struct cpif_dev {
 	struct regmap		*pmu;	/* CP power-control regs */
 	void __iomem		*vgpio;	/* VGPIO_TX_MONITOR wait block */
 	void __iomem		*ap2cp_cfg;
+	void __iomem		*mbox;		/* cp_mailbox 0x11920000 */
+	int			mbox_irq;
+	u32			cp2ap_events;	/* bitmask of mailbox ints seen */
+	u32			cp2ap_last_cmd;
+	bool			phone_started;	/* CP sent PHONE_START */
+	bool			sbd_ready;	/* SBD v1 descriptors published */
+	atomic_t		fmt_opened;	/* umts_ipc* open count (rild_ready) */
+	atomic_t		rfs_opened;	/* umts_rfs0 open count (rild_ready) */
+	struct completion	init_cmpl;
+	int			ds_detect;	/* 1 = single SIM, 2 = dual SIM */
 
 	phys_addr_t		cp_base;	/* cp_rmem base (0xd0000000) */
 	size_t			cp_size;	/* cp_rmem size  (0x8800000) */
@@ -78,11 +90,41 @@ struct cpif_dev {
 /* cpif_core.c */
 extern struct cpif_dev *cpif_dev_get(void);
 
+/* cpif_mbox.c - cp_mailbox (mcu_ipc) */
+#define CPIF_MBX_AP2CP_MSG	0	/* ISSR0 */
+#define CPIF_MEM_IPC_MAGIC	0x000000aa
+#define CPIF_MBX_CP2AP_MSG	1	/* ISSR1 */
+#define CPIF_MBX_AP2CP_UNITED	2	/* ISSR2 */
+#define CPIF_MBX_CP2AP_UNITED	3	/* ISSR3 */
+#define CPIF_INT_AP2CP_MSG	0
+#define CPIF_INT_AP2CP_WAKEUP	1
+#define CPIF_INT_AP2CP_STATUS	2
+#define CPIF_INT_AP2CP_ACTIVE	3
+int  cpif_mbox_init(struct cpif_dev *c);
+void cpif_mbox_exit(struct cpif_dev *c);
+u32  cpif_mbox_get(struct cpif_dev *c, u32 mbx);
+void cpif_mbox_set(struct cpif_dev *c, u32 mbx, u32 val);
+void cpif_mbox_update(struct cpif_dev *c, u32 mbx, u32 val, u32 mask, u32 pos);
+u32  cpif_mbox_extract(struct cpif_dev *c, u32 mbx, u32 mask, u32 pos);
+void cpif_mbox_raise(struct cpif_dev *c, u32 int_num);
+void cpif_mbox_sw_reset(struct cpif_dev *c);
+void cpif_mbox_dump(struct cpif_dev *c, const char *tag);
+
 /* cpif_power.c - pmucal-equivalent CP power sequences */
+#define CPIF_SMC_ID		0x82000700
+unsigned long cpif_smc(unsigned long a0, unsigned long a1,
+		       unsigned long a2, unsigned long a3);
 int cpif_power_on(struct cpif_dev *c);
 int cpif_power_off(struct cpif_dev *c);
 int cpif_power_reset(struct cpif_dev *c, u32 mode);
 int cpif_cp_status(struct cpif_dev *c);
+int cpif_power_step(struct cpif_dev *c, int idx);
+int cpif_reg_peek(struct cpif_dev *c, int which, u32 off, u32 *val);
+int cpif_lin_peek(struct cpif_dev *c, u32 off, u32 *val);
+int cpif_lin_poke(struct cpif_dev *c, u32 off, u32 val);
+int cpif_legacy_init_now(struct cpif_dev *c);
+int cpif_legacy_start_ipc(struct cpif_dev *c);
+int cpif_sbd_bootstrap(struct cpif_dev *c);
 
 /* cpif_shmem.c */
 int  cpif_shmem_init(struct cpif_dev *c);
@@ -100,5 +142,6 @@ void cpif_boot_unregister(struct cpif_dev *c);
 /* cpif_ipc.c - /dev/umts_ipc0, /dev/umts_ipc1, /dev/umts_rfs0 stubs */
 int cpif_ipc_register(struct cpif_dev *c);
 void cpif_ipc_unregister(struct cpif_dev *c);
+bool cpif_rild_ready(struct cpif_dev *c);
 
 #endif /* __CPIF_H__ */
