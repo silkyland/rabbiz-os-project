@@ -66,6 +66,14 @@ AGENTS.md hard rules still apply).
   `p2p*` when discovering the Wi-Fi device, or NM activates on p2p0 and fails with "ssid-not-found".
   **Duplicate profiles:** `nmcli device wifi connect <ssid>` creates `<ssid> 1`, `<ssid> 2`... when a profile with
   that name exists; `a21s-wifi-connect` looks profiles up by SSID to avoid that.
+  **USB link drops under load**: `en18` lost `172.16.42.2` and `ssh root@172.16.42.1` hung twice in one session
+  (device stayed up, no reboot). The phone also listens on Wi-Fi: `ssh root@192.168.50.6` kept working, `shell_reload.sh
+  root@192.168.50.6` too — use it when USB is flaky.
+  **ShellPrefs only reloads on the atomic save**: writing `~/.config/a21s-shell/prefs.json` in place (truncate) is
+  not picked up by the shell; `printf > tmp && mv` is (that is what `ShellPrefs.save()` does). To test a pref live,
+  change it through the Settings UI, not with a text edit.
+  **Gestures:** a slow swipe-up (300 ms) opens Recents ("swipe up and hold"); a fast one (~120 ms, start y>=1590)
+  goes home.
 - Disk is ~95 % full (1.2 GB free). Check `df -h /` before installing. `linux-aarch64` (386 MiB, dead weight) and
   `gcc`/`clang` (~190 MiB) are removable; **do not remove `llvm-libs` (mesa needs it)**.
 
