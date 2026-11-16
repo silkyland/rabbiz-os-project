@@ -141,6 +141,11 @@ AGENTS.md hard rules still apply).
 the home screen. S1 answered: on this device Qt Quick runs software (`No GL context`), Quickshell falls back to SHM
 buffers and the capture still works (`MORPH close snapshot=true hasContent=true`); a frame arrives well inside the
 200 ms fallback timer. Launch morphs are unchanged (no snapshot).
+**Back semantics (owner request 2026-11-16):** the system back gesture now *minimizes* the focused app
+(`toplevel.minimized = true` + `activeAppId` cleared) instead of `toplevel.close()`. The process keeps running and
+Recents resumes it; a deliberate kill is still the swipe-up on a Recents card (`TaskSwitcher` calls `close()`).
+Verified: after back on Kalk the app count was unchanged and the previously open app was revealed.
+
 **Also done:** the back-arrow chip. `Windowing/EdgeBack.qml` keeps 22 px input strips and maps a display-only
 chip surface per side only while a back gesture is in flight (the pointer is already grabbed, so it cannot steal a
 fresh touch); it follows the finger's Y, slides in with progress and turns accent-filled at the trigger distance.

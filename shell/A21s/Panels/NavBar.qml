@@ -61,8 +61,10 @@ PanelWindow {
         bar.expanded = false;
     }
 
-    // Back action: dismiss shell overlays first; otherwise close the active
-    // (or top non-minimized) app toplevel.
+    // Back action: dismiss shell overlays first; otherwise send the active app to the
+    // background. Android-style: back must not kill the app (owner request) — the window is
+    // minimized, the process keeps running and Recents resumes it. Killing is still possible
+    // on purpose by swiping the card up in Recents (TaskSwitcher calls toplevel.close()).
     function goBack() {
         if (bar.switcherOpen) {
             bar.switcherOpen = false;
@@ -94,7 +96,8 @@ PanelWindow {
                 target = t;
         }
         if (target) {
-            target.close();
+            target.minimized = true;      // background, not closed
+            ShellState.activeAppId = "";
             bar.expanded = false;
         }
     }
