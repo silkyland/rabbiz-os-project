@@ -147,7 +147,7 @@ ssh root@172.16.42.1 a21s-mirror restart
 ```bash
 ./scripts/verify_mirror.sh
 # selftest: connected 720x1600
-# selftest: ok — 20 frames ... 
+# selftest: ok — 20 frames ...
 # mirror verified: 720x1600 → /tmp/a21s-mirror-verify.png
 ```
 
