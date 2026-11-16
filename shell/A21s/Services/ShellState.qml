@@ -6,6 +6,10 @@ import Quickshell.Wayland
 QtObject {
     // 0..1 drag progress of the notification/quick-settings shade
     property real shadeProgress: 0
+    // Android 12+ shade split: left pull = notifications + media, right pull = quick settings.
+    property string shadeMode: "notifications"   // notifications | settings
+    // emitted by the status bar / shade gestures; the shade animates the snap itself
+    signal shadeSnapRequested(real value)
     readonly property bool shadeOpen: shadeProgress > 0.5
     // true while an app grid/drawer page is shown on the home screen
     property bool drawerOpen: false

@@ -54,6 +54,11 @@ PanelWindow {
         snap.restart()
     }
 
+    Connections {
+        target: ShellState
+        function onShadeSnapRequested(value) { win.snapTo(value) }
+    }
+
     Item {
         anchors.fill: parent
         clip: true
@@ -68,23 +73,37 @@ PanelWindow {
             preventStealing: true
 
             property real pressY: 0
+            property real pressX: 0
             property real pressProgress: 0
 
             onPressed: function(mouse) {
                 snap.stop()
                 pressY = mouse.y
+                pressX = mouse.x
                 pressProgress = ShellState.shadeProgress
+                if (ShellState.shadeProgress < 0.05)
+                    ShellState.shadeMode = mouse.x < win.width / 2 ? "notifications" : "settings"
             }
             onPositionChanged: function(mouse) {
                 if (!pressed)
                     return
                 const dy = mouse.y - pressY
+                const dx = mouse.x - pressX
+                if (Math.abs(dx) > 90 && Math.abs(dx) > 2 * Math.abs(dy))
+                    return                      // horizontal swipe: switch page on release
                 const range = Math.max(1, win.fullH - Theme.shadeHandleZone)
                 ShellState.shadeProgress = Math.max(0, Math.min(1,
                     pressProgress + dy / range))
             }
             onReleased: function(mouse) {
                 const dy = mouse.y - pressY
+                const dx = mouse.x - pressX
+                if (Math.abs(dx) > 90 && Math.abs(dx) > 2 * Math.abs(dy)) {
+                    ShellState.shadeMode = ShellState.shadeMode === "notifications"
+                        ? "settings" : "notifications"
+                    win.snapTo(1)
+                    return
+                }
                 const tap = Math.abs(dy) < Theme.spaceS
                 if (tap) {
                     if (!ShellState.shadeOpen)
@@ -92,7 +111,7 @@ PanelWindow {
                     else if (mouse.y > win.height - win.tailH)
                         win.snapTo(0)   // tap on bottom grab zone -> close
                 } else {
-                    win.snapTo(ShellState.shadeProgress > 0.5 ? 1 : 0)
+                    win.snapTo(ShellState.shadeProgress > 0.3 ? 1 : 0)
                 }
             }
         }
@@ -244,14 +263,139 @@ PanelWindow {
                     }
                 }
 
-                QuickSettings {
+                // Page switch. Android 12+ has no tabs, but on 720 px the two pages need
+                // a visible affordance; tapping a tab and swiping sideways both work.
+                RowLayout {
                     Layout.fillWidth: true
+                    spacing: Theme.spaceXS
+
+                    Repeater {
+                        model: [
+                            { id: "notifications", label: "Notifications" },
+                            { id: "settings", label: "Controls" }
+                        ]
+                        delegate: Rectangle {
+                            required property var modelData
+                            readonly property bool active: ShellState.shadeMode === modelData.id
+                            Layout.fillWidth: true
+                            implicitHeight: 34
+                            radius: 17
+                            color: active ? ShellPrefs.accentColor : Theme.surfaceHigh
+                            border.width: active ? 0 : 1
+                            border.color: Qt.alpha(Theme.text, 0.10)
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: parent.active ? ShellPrefs.onAccentColor : Theme.textDim
+                                font.pixelSize: Theme.fontCaption
+                                font.family: Theme.fontFamily
+                                font.weight: Font.Medium
+                            }
+                            TapHandler {
+                                onTapped: ShellState.shadeMode = modelData.id
+                            }
+                        }
+                    }
                 }
 
-                // Notification list — implemented by W6 as
-                // shell/components/NotificationCenter.qml (plain Item API,
-                // no required props). Missing file is expected until W6 lands.
-                NotificationCenter {
+                // --- Notifications page: media + notification list -----------------
+                ColumnLayout {
+                    visible: ShellState.shadeMode === "notifications"
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: Theme.spaceM
+
+                    // Compact Now Playing card (same Media service as the home deck).
+                    Rectangle {
+                        visible: Media.hasRealPlayer
+                        Layout.fillWidth: true
+                        implicitHeight: mediaRow.implicitHeight + 2 * Theme.spaceM
+                        radius: Theme.radiusL
+                        color: Qt.alpha(Theme.card, 0.92)
+                        border.width: 1
+                        border.color: Qt.alpha(Theme.text, 0.08)
+
+                        RowLayout {
+                            id: mediaRow
+                            anchors {
+                                left: parent.left
+                                right: parent.right
+                                top: parent.top
+                                margins: Theme.spaceM
+                            }
+                            spacing: Theme.spaceM
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 2
+                                Text {
+                                    text: "NOW PLAYING"
+                                    color: Theme.textDim
+                                    font.pixelSize: Theme.fontCaption - 2
+                                    font.family: Theme.fontFamily
+                                    font.letterSpacing: 1.2
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: Media.title
+                                    color: Theme.text
+                                    font.pixelSize: Theme.fontBody
+                                    font.family: Theme.fontFamily
+                                    font.weight: Font.Medium
+                                    elide: Text.ElideRight
+                                }
+                                Text {
+                                    Layout.fillWidth: true
+                                    text: Media.artist
+                                    color: Theme.textDim
+                                    font.pixelSize: Theme.fontCaption
+                                    font.family: Theme.fontFamily
+                                    elide: Text.ElideRight
+                                }
+                            }
+
+                            Rectangle {
+                                width: 44; height: 44; radius: Media.isPlaying ? 22 : 14
+                                color: Media.isPlaying ? ShellPrefs.accentColor : Theme.surfaceHigh
+                                border.width: Media.isPlaying ? 0 : 1
+                                border.color: Qt.alpha(Theme.text, 0.12)
+                                MaterialIcon {
+                                    anchors.centerIn: parent
+                                    name: Media.isPlaying ? "pause" : "play_arrow"
+                                    size: 22
+                                    color: Media.isPlaying ? ShellPrefs.onAccentColor : Theme.text
+                                }
+                                TapHandler { onTapped: Media.togglePlaying() }
+                            }
+                            Rectangle {
+                                width: 40; height: 40; radius: 20
+                                color: Theme.surfaceHigh
+                                MaterialIcon {
+                                    anchors.centerIn: parent
+                                    name: "skip_next"
+                                    size: 20
+                                    color: Theme.text
+                                }
+                                TapHandler { onTapped: Media.next() }
+                            }
+                        }
+                    }
+
+                    NotificationCenter {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                    }
+                }
+
+                // --- Controls page: quick settings (brightness, tiles, volume, media)
+                QuickSettings {
+                    visible: ShellState.shadeMode === "settings"
+                    Layout.fillWidth: true
+                }
+                Item {
+                    // absorbs the leftover height so the tiles keep their natural size
+                    visible: ShellState.shadeMode === "settings"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                 }

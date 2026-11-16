@@ -219,11 +219,48 @@ PanelWindow {
         }
     }
 
-    // Tap anywhere on the bar -> toggle the shade
+    // Pull down on the status bar to open the shade (Android 12+ split): the half you start
+    // on picks the page — left = notifications + media, right = quick settings. A plain tap
+    // still toggles the shade. Before this, the bar only had onClicked, so dragging from the
+    // top bar did nothing at all.
     MouseArea {
         id: tapArea
         anchors.fill: parent
-        onClicked: ShellState.shadeProgress = ShellState.shadeOpen ? 0 : 1
+        property real pressY: 0
+        property real pressProgress: 0
+        property bool dragging: false
+
+        onPressed: (m) => {
+            pressY = m.y
+            pressProgress = ShellState.shadeProgress
+            dragging = false
+            if (ShellState.shadeProgress < 0.05)
+                ShellState.shadeMode = m.x < width / 2 ? "notifications" : "settings"
+        }
+        onPositionChanged: (m) => {
+            if (!pressed)
+                return
+            var dy = m.y - pressY
+            if (!dragging && Math.abs(dy) > 8)
+                dragging = true
+            if (dragging) {
+                var range = Math.max(1, (bar.screen ? bar.screen.height : 1600)
+                                        - Theme.shadeHandleZone)
+                ShellState.shadeProgress = Math.max(0, Math.min(1, pressProgress + dy / range))
+            }
+        }
+        onReleased: (m) => {
+            if (!dragging) {
+                // Plain tap: same instant toggle the bar always had.
+                ShellState.shadeProgress = ShellState.shadeOpen ? 0 : 1
+            } else {
+                ShellState.shadeSnapRequested(ShellState.shadeProgress > 0.3 ? 1 : 0)
+            }
+        }
+        onCanceled: {
+            if (dragging)
+                ShellState.shadeSnapRequested(ShellState.shadeProgress > 0.3 ? 1 : 0)
+        }
     }
 
     // ---- CENTER: Dynamic Island / Heads-Up Notification Capsule ----------
