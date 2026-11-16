@@ -53,7 +53,7 @@ case "$GESTURE" in
 esac
 sleep "$SECONDS_TO_RUN"
 
-ssh "$HOST" 'grep -a "Frame rendered" /tmp/shell.log | tail -400' > /tmp/frames.raw || true
+ssh "$HOST" 'grep -aiE "frame rendered in" /tmp/shell.log | tail -600' > /tmp/frames.raw || true
 COUNT=$(wc -l < /tmp/frames.raw | tr -d ' ')
 if [ "$COUNT" -eq 0 ]; then
     echo "No frame timings captured. Check that QSG_RENDER_TIMING prints on this Qt build:"
@@ -64,7 +64,7 @@ python3 - "$COUNT" <<'PY'
 import re, sys
 vals = []
 for line in open("/tmp/frames.raw"):
-    m = re.search(r"in ([0-9.]+) ms", line)
+    m = re.search(r"frame rendered in ([0-9.]+) ?ms", line)
     if m:
         vals.append(float(m.group(1)))
 vals.sort()

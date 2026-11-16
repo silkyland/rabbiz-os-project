@@ -76,10 +76,12 @@ AGENTS.md hard rules still apply).
   **Gestures:** a slow swipe-up (300 ms) opens Recents ("swipe up and hold"); a fast one (~120 ms, start y>=1590)
   goes home.
   **Frame time (S5):** `./scripts/frame_time.sh [user@host] [--gesture drawer|shade|none]` restarts the shell with
-  `QSG_RENDER_TIMING=1`, drives a gesture and prints p50/p90/max from Qt's "Frame rendered ... in X ms" lines.
-  The owner reports the drawer slide is not 60 fps; the prime suspects are the wallpaper `scale` tied to
-  `drawerProgress` (bilinear resample of a full-screen image every frame under software Qt Quick), the full-screen
-  drawer `opacity` blend, and the whole home scene repainting behind it. Measure before changing anything.
+  `QSG_RENDER_TIMING=1`, drives a gesture and prints p50/p90/max from Qt's "frame rendered in N ms" lines. On this
+  Qt/Quickshell build under `QT_QUICK_BACKEND=software` that profiler only emits a handful of lines (3 for a whole
+  gesture) and `PanelWindow` exposes no `frameSwapped` signal to QML, so per-frame fps cannot be read directly — treat
+  the script as a startup/one-shot latency check and judge smoothness by feel (the owner is the reference).
+  Drawer stutter fixes 2026-11-16: the wallpaper no longer `scale`s with `drawerProgress` and the whole home subtree no
+  longer scales down (both forced a full-screen bilinear resample every frame); the dim/opacity cues remain.
 - Disk is ~95 % full (1.2 GB free). Check `df -h /` before installing. `linux-aarch64` (386 MiB, dead weight) and
   `gcc`/`clang` (~190 MiB) are removable; **do not remove `llvm-libs` (mesa needs it)**.
 

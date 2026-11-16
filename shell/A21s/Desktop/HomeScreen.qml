@@ -79,7 +79,10 @@ PanelWindow {
 
         Item {
             anchors.fill: parent
-            scale: 1.0 + 0.04 * ShellState.drawerProgress
+            // No scale here: a full-screen image resampled every frame is the most
+            // expensive thing the software renderer can do during the drawer slide
+            // (owner: "drawer stutters, not 60 fps"). The drawer dim below still gives
+            // the depth cue without touching the bitmap.
 
             Rectangle {
                 anchors.fill: parent
@@ -164,7 +167,9 @@ PanelWindow {
     Item {
         id: homeContent
         anchors.fill: parent
-        scale: 1.0 - 0.07 * ShellState.drawerProgress
+        // Fade only. Scaling the whole home subtree (icons, cards, text) every frame
+        // forces the software renderer to resample everything, which is what made the
+        // drawer slide stutter; the dim alone still reads as "pushed back".
         opacity: 1.0 - 0.55 * ShellState.drawerProgress
 
         // ---- Gesture layer: interactive vertical drag to open the App Drawer ----
