@@ -49,7 +49,7 @@ Item {
     function categoryForEntry(entry) {
         var eid = String(entry.id || "").toLowerCase()
         var ename = String(entry.name || "").toLowerCase()
-        if (eid === "a21s-settings" || eid === "a21s-files" || eid.indexOf("dolphin") >= 0
+        if (eid === "a21s-settings" || eid.indexOf("dolphin") >= 0 || eid === "org.kde.index" || eid === "org.kde.mobile.plasmasettings"
                 || eid.indexOf("gparted") >= 0 || eid.indexOf("htop") >= 0
                 || eid.indexOf("btop") >= 0 || eid.indexOf("nm-") >= 0
                 || ename.indexOf("settings") >= 0 || ename.indexOf("file") >= 0)
@@ -80,11 +80,6 @@ Item {
             if (!entry || entry.noDisplay)
                 continue;
             var eid = String(entry.id || "");
-            if ((eid === "org.kde.dolphin" && DesktopEntries.byId("a21s-files"))
-                    || (eid === "org.kde.kalk" && DesktopEntries.byId("a21s-calculator"))
-                    || (eid === "org.kde.kclock" && DesktopEntries.byId("a21s-clock"))
-                    || (eid === "org.kde.marknote" && DesktopEntries.byId("a21s-notes")))
-                continue;
             if (eid.indexOf("kcm_") === 0 || eid.indexOf("-geo-handler") >= 0
                     || eid === "org.kde.kiod6" || eid === "ktelnetservice6"
                     || eid === "org.kde.knewstuff-dialog6" || eid === "org.kde.ksecretd"

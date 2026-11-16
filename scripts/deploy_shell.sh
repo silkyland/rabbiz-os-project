@@ -124,6 +124,13 @@ ssh "${TARGET}" "mkdir -p /usr/share/a21s-shell"
 COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/shell" -cf - . \
   | ssh "${TARGET}" "tar -C /usr/share/a21s-shell -xf -"
 
+# --- prune files that were replaced by real Linux apps (tar never deletes) ---
+echo ">> pruning replaced apps"
+ssh "${TARGET}" "rm -rf /usr/share/a21s-shell/apps/{calculator,clock,notes,gallery,files,spotify} \
+  /usr/share/a21s-shell/A21s/Components \
+  /usr/local/bin/a21s-{calculator,clock,notes,gallery,files} \
+  /usr/share/applications/a21s-{calculator,clock,notes,gallery,files}.desktop"
+
 # --- deploy rootfs overlay (merge into /) --------------------------------
 echo ">> rootfs-overlay/ -> /"
 COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/rootfs-overlay" -cf - . \

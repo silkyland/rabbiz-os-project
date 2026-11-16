@@ -1,8 +1,0 @@
-#!/bin/sh
-# a21s-clock — launch Plasma Mobile KClock when installed, else Clock.qml.
-if command -v kclock >/dev/null 2>&1; then
-    exec env QT_QPA_PLATFORM=wayland QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_MOBILE=1 kclock "$@"
-fi
-export QML_IMPORT_PATH=/usr/share/a21s-shell
-export QT_QUICK_BACKEND=software
-exec quickshell -p /usr/share/a21s-shell/apps/clock/Clock.qml "$@"

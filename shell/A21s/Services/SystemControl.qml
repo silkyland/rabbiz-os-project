@@ -578,7 +578,7 @@ QtObject {
     function openGallery(imagePath) {
         root.screenshotToastVisible = false
         var p = imagePath || ""
-        _runCmd(["sh", "-c", "a21s-gallery \"$1\" >/dev/null 2>&1 &", "_", p])
+        _runCmd(["sh", "-c", "xdg-open \"$1\" >/dev/null 2>&1 &", "_", p])
     }
 
     function _handleVolState(raw) {

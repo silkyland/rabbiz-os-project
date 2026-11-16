@@ -8,3 +8,4 @@ Icon=spotify
 Categories=AudioVideo;Audio;Music;Player;
 Terminal=false
 StartupNotify=true
+StartupWMClass=chrome-open.spotify.com__-Default

@@ -1,8 +1,0 @@
-#!/bin/sh
-# a21s-calculator — launch Plasma Mobile Kalk when installed, else Calculator.qml.
-if command -v kalk >/dev/null 2>&1; then
-    exec env QT_QPA_PLATFORM=wayland QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_MOBILE=1 kalk "$@"
-fi
-export QML_IMPORT_PATH=/usr/share/a21s-shell
-export QT_QUICK_BACKEND=software
-exec quickshell -p /usr/share/a21s-shell/apps/calculator/Calculator.qml "$@"
