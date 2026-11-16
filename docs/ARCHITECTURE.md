@@ -101,8 +101,13 @@ Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge
 - **Why:** Settings edits state the shell owns (appearance contract, Wi-Fi/BT panel, session switch); `plasma-settings` KCMs expect Plasma daemons we do not run (unverified — spike S2). Disk ~99 % full forbids carrying two toolkits.
 - **Rejected:** replacing Settings outright (breaks the contract); GTK/Qt mix (disk).
 
+### 8. Steam is an ordinary desktop app, not a session (2026-11-16)
+- **Decision:** `a21s-steam` (gamescope inside labwc) is launched like any app; `steamos-session.service` stays installed only as a recovery boot. Session-switch tooling is no longer a UX feature.
+- **Why:** owner decision D4; one session removes the DRM/DSI wedge risk of seat hand-over that the last commits were mitigating. Risk: Steam perf inside a nested compositor is unmeasured.
+- **Supersedes:** the "phone session parallel to Steam session" rule in `shell/README.md` / `docs/a21s-phone-shell.md` (update those in M7.7).
+
 ### 7. One shell, window policy per form factor (2026-11-16)
-- **Decision:** `handset` maximizes, `tablet`/`desktop` float; the shell and apps are identical across modes.
+- **Decision:** `handset` maximizes, `tablet`/`desktop` float (only `handset` built now; Pad 7 Pro deferred); the shell and apps are identical across modes.
 - **Why:** 720x1600 cannot host floating windows; Pad 7 Pro (phase 2) can. Rejected: separate phone/desktop shells.
 
 ## Known constraints and sharp edges

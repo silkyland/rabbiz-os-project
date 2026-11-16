@@ -12,7 +12,7 @@
 4. The first screen is a **real desktop**.
 
 Answers: **D1** home = a *touch-first desktop* (wallpaper, icons/widgets, dock, drawer, real windows),
-inputs in priority order **touch → mouse/keyboard → gamepad**. **D2** replace all home-grown QML apps
+inputs in priority order **touch → mouse/keyboard → gamepad**. **D3** (2026-11-16) Xiaomi Pad 7 Pro is *not planned now*. **D4** Steam is an ordinary app inside the desktop, not a separate session. **D2** replace all home-grown QML apps
 with real Linux apps.
 
 ## 2. Where the current code disagrees with the request (evidence)
@@ -102,9 +102,9 @@ keeps native pad handling. Shell QML uses `KeyNavigation`/`activeFocus`, never t
 | M7.2 | Desktop Contract v1: Appearance service + env unification + portals | change dark/accent once → Kalk, Dolphin, Chrome all follow (screenshots) |
 | M7.3 | Desktop surface: wallpaper, icon grid, widgets, dock, drawer | home screen is a desktop, 60 fps-ish on software Qt Quick (**H5**, measure) |
 | M7.4 | Replace base apps (Calc, Files, Notes, Clock, Gallery, Music) and delete their QML | `verify_apps.sh` green; `shell/apps/*` removed except Dialer/SMS |
-| M7.5 | Form-factor policy (handset/tablet/desktop) + labwc rules per mode | external display or rotation flips mode without restart |
+| M7.5 | Form-factor seam, `handset` only (tablet/desktop deferred, D3) | one `formFactor` property drives window rules |
 | M7.6 | Close morph via snapshot (S1) | window shrinks to its icon, fallback works |
-| M7.7 | Mouse/keyboard + gamepad navigation | whole shell usable without touch |
+| M7.7 | Mouse/keyboard + gamepad navigation; Steam as a normal drawer app (D4) | whole shell usable without touch; Steam launches via the morph path |
 | M7.8 | Settings v2 (thin panels) | Wi-Fi/BT/Appearance/Session switch all work from it |
 
 ## 5. Spikes (do first on device, each ≤ half a day)
@@ -117,10 +117,19 @@ keeps native pad handling. Shell QML uses `KeyNavigation`/`activeFocus`, never t
 
 ## 6. Questions only the owner / customer can answer
 
+Answered: Pad 7 Pro → not now (D3); Steam → normal app (D4). Consequences:
+- `tablet` mode drops out of M7.5 scope; `handset` is the only mode built now. `desktop` mode stays
+  only as far as mouse/keyboard + external display are wanted (still open, see below). The form-factor
+  seam stays (one `formFactor` property) so adding modes later is cheap.
+- Steam = `a21s-steam` (gamescope window in labwc) listed in the drawer like any app, same launch/morph
+  path. `steamos-session.service` + `a21s-session-switch` are no longer part of the UX (ADR-8); keep the unit
+  file installed as a recovery boot only, and stop investing in session-switch hardening.
+
+Still open:
 1. Which widgets matter on the home screen (clock, weather, media, calendar)? Each costs frame time (S5).
-2. Does Steam stay a separate session switch, or a normal app in the desktop? (Today: both exist.)
-3. Is the Pad 7 Pro (phase 2) a hard requirement now? It drives how much `tablet` mode is worth now.
-4. Is losing the Material-You look of our current Settings/Spotify acceptable? Real apps look like KDE.
+2. Is an external display + mouse/keyboard (`desktop` mode) a real use case on the A21s, or touch only?
+3. Is losing the Material-You look of our current Settings/Spotify acceptable? Real apps look like KDE.
+4. Is Steam launched from a gamescope window good enough (needs perf check), or does it need a dedicated game mode later?
 
 ## 7. Risks
 
