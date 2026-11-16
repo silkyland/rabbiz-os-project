@@ -1,4 +1,6 @@
 import QtQuick
+import Quickshell
+import Quickshell.Wayland
 import A21s.Theme
 import A21s.Services
 import A21s.Widgets
@@ -48,6 +50,9 @@ Item {
             ShellState.morphTint = tint
             ShellState.morphClosing = false
             ShellState.morphActive = true
+            ShellState.morphSnapshot = false
+            root._snapWanted = false
+            root._closeStarted = false
             root.t = 0.0
             root.fadeOpacity = 1.0
             launchAnim.start()
@@ -62,9 +67,38 @@ Item {
             ShellState.morphClosing = true
             ShellState.morphActive = true
             root.t = 1.0
-            root.fadeOpacity = 0.92
-            closeAnim.start()
+            // Do not fade in yet: try to grab the frame that is still on screen, so the
+            // shrink starts from the app's real pixels (M7.6). The fallback timer
+            // guarantees the morph runs even when capture is unavailable.
+            root.fadeOpacity = 0.0
+            root._snapWanted = true
+            snap.screen = Quickshell.screens.length > 0 ? Quickshell.screens[0] : null
+            snap.captureFrame()
+            snapFallback.restart()
         }
+    }
+
+    // --- close morph snapshot -------------------------------------------------
+    // A single wlr-screencopy frame of the current output, frozen and then shrunk with the
+    // container. If the compositor refuses (no area/backbuffer) hasContent stays false and
+    // the plain container gradient is used instead.
+    property bool _snapWanted: false
+    property bool _closeStarted: false
+
+    function _beginClose(useSnapshot) {
+        if (root._closeStarted)
+            return
+        root._closeStarted = true
+        snapFallback.stop()
+        ShellState.morphSnapshot = useSnapshot
+        root.fadeOpacity = 0.92
+        closeAnim.start()
+    }
+
+    property var snapFallback: Timer {
+        interval: 200
+        repeat: false
+        onTriggered: root._beginClose(snap.hasContent)
     }
 
     // The overlay stays fully expanded until the app's toplevel has mapped (Launcher.holding
@@ -129,6 +163,9 @@ Item {
             script: {
                 ShellState.morphActive = false
                 ShellState.morphClosing = false
+                ShellState.morphSnapshot = false
+                root._snapWanted = false
+                root._closeStarted = false
             }
         }
     }
@@ -146,19 +183,35 @@ Item {
         border.width: Math.max(0, 1.0 - root.t)
         border.color: Qt.alpha(ShellPrefs.accentColor, 0.35)
 
+        ScreencopyView {
+            id: snap
+            anchors.fill: parent
+            visible: root._snapWanted && root._closeStarted && hasContent
+            live: false
+            paintCursor: false
+            property var screen: null
+            captureSource: screen
+            onHasContentChanged: {
+                if (hasContent && root._snapWanted && !root._closeStarted)
+                    root._beginClose(true)
+            }
+        }
+
         // Subtle radial-like accent bloom inside the splash container
         Rectangle {
+            visible: root.t > 0.05 && !ShellState.morphSnapshot
             anchors.centerIn: parent
             width: Math.min(parent.width * 0.9, 340)
             height: width
             radius: width / 2
             color: Qt.alpha(ShellState.morphTint, 0.14 * root.t)
-            visible: root.t > 0.05
         }
 
         Column {
             anchors.centerIn: parent
             spacing: Theme.spaceM
+            // With a live screenshot as the content, the icon+name would sit on top of the app.
+            visible: !ShellState.morphSnapshot
 
             Item {
                 anchors.horizontalCenter: parent.horizontalCenter

@@ -15,7 +15,7 @@
 | M7.3 desktop surface (icons/widgets on the desktop, new dock) | **not started** (old HomeScreen kept) |
 | M7.4 base apps are real Linux apps; QML Calc/Clock/Notes/Gallery/Files/Spotify deleted | **done, verified** |
 | M7.5 form factor seam (`handset` only, D3) | not started |
-| M7.6 close morph via snapshot (S1: `ScreencopyView` exists, untested) | not started |
+| M7.6 close morph via snapshot | **done, verified** (S1 answered: `ScreencopyView` works via the SHM fallback even without GL) |
 | M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Big Picture verified** (logged in, touch taps work, game launch reaches Proton/FEX); game renders black — ADR-8. Input (mouse/keyboard/gamepad) not started |
 | M7.8 Settings v2 (thin shell-owned panels; `plasma-settings` lacks Wi-Fi/BT/sound/battery) | **app ships and is wired** (pre-existing, not a rewrite): verified Wi-Fi list + join dialog, accent live update, volume slider, new light/dark switch; BT pair untested |
 | M7.10 **home editing** (long-press, drag & drop, snap/align, persisted layout) | **not started** — spec §7.1 |
@@ -127,7 +127,16 @@ AGENTS.md hard rules still apply).
 ## 4. Gesture system (M7.9) — implemented core + remaining polish
 
 **Implemented (2026-11-16, verified on the device with `scripts/touch_swipe.py` -> `/usr/local/bin/a21s-touch`):** `Windowing/Gesture.js` (pure classifier, `tests/gesture.test.mjs`), `Windowing/EdgeBack.qml` (side strips), `Panels/NavBar.qml` bottom MouseArea (continuous swipe), `ShellState.navAction/gestureProgress`. NavBar/Shade/StatusBar are layer `Overlay` so a fullscreen window (nested Weston/Steam) no longer hides them (root cause of "no gestures inside Steam"). Verified: Kalk swipe-up -> home; Steam fullscreen swipe-up -> home (Steam keeps running); left-edge swipe closes the app; swipe-up+hold shows Recents.
-**Still to do:** back-arrow chip + card that follows the finger (use `ShellState.gestureProgress/gestureKind`), proper reverse morph (S1 snapshot), tune thresholds on a real finger (injected swipes are perfectly straight), conflict check with Kirigami edge gestures, and resuming a minimized Steam from its icon (`Launcher.findToplevel` cannot match the nested Weston window: empty app_id, title "Weston Compositor - wayland-fullscreen").
+**Done since (2026-11-16, second session):** the reverse/close morph now shrinks a real screenshot of the app
+(`ScreencopyView` of the output, one frozen frame) onto its home icon, with the gradient+icon morph as fallback.
+`NavBar.goHome()` requests the capture *before* minimizing toplevels (140 ms later) so the snapshot sees the app, not
+the home screen. S1 answered: on this device Qt Quick runs software (`No GL context`), Quickshell falls back to SHM
+buffers and the capture still works (`MORPH close snapshot=true hasContent=true`); a frame arrives well inside the
+200 ms fallback timer. Launch morphs are unchanged (no snapshot).
+**Still to do:** back-arrow chip (the comment in `EdgeBack.qml` claims one; no chip is drawn), card that follows the
+finger in Recents, tune thresholds on a real finger (injected swipes are perfectly straight), conflict check with
+Kirigami edge gestures, and resuming a minimized Steam from its icon (`Launcher.findToplevel` cannot match the nested
+Weston window: empty app_id, title "Weston Compositor - wayland-fullscreen").
 
 Original proposal kept below for reference.
 

@@ -24,16 +24,31 @@ PanelWindow {
 
     // Go home: close overlays/drawers, minimize ALL open app toplevels so
     // the HomeScreen beneath is always revealed, and trigger reverse morph.
+    function minimizeAll() {
+        var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
+        for (var i = 0; i < tops.length; ++i) {
+            if (tops[i])
+                tops[i].minimized = true;
+        }
+    }
+
+    // Minimize only AFTER the close morph has requested its frame: the snapshot must show
+    // the app, not the home screen (M7.6). The morph overlay covers the screen when they go.
+    Timer {
+        id: minimizeTimer
+        interval: 140
+        onTriggered: bar.minimizeAll()
+    }
+
     function goHome() {
         var hadOpenApp = ShellState.activeAppId.length > 0;
         var tops = ToplevelManager.toplevels ? ToplevelManager.toplevels.values : [];
         for (var i = 0; i < tops.length; ++i) {
-            if (tops[i]) {
-                if (!tops[i].minimized)
-                    hadOpenApp = true;
-                tops[i].minimized = true;
-            }
+            if (tops[i] && !tops[i].minimized)
+                hadOpenApp = true;
         }
+        if (hadOpenApp)
+            ShellState.triggerCloseMorph();   // capture while the app is still drawn
         bar.switcherOpen = false;
         ShellState.drawerOpen = false;
         ShellState.shadeProgress = 0;
@@ -41,7 +56,7 @@ PanelWindow {
         ShellState.connPanelOpen = false;
         ShellState.activeAppId = "";
         if (hadOpenApp)
-            ShellState.triggerCloseMorph();
+            minimizeTimer.restart();
         ShellState.goHome();
         bar.expanded = false;
     }

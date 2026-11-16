@@ -44,6 +44,9 @@ QtObject {
     property url morphIconUrl: ""
     property color morphTint: "#3B82F6"
 
+    // true while the close morph shows a frozen screen snapshot instead of the flat splash
+    property bool morphSnapshot: false
+
     // set by task switcher / nav gesture to return home
     signal goHome()
     signal triggerLaunchMorph(real ox, real oy, real ow, real oh, real orad,
