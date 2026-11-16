@@ -36,6 +36,7 @@ Item {
         function onTriggerLaunchMorph(ox, oy, ow, oh, orad, name, matIcon, iconUrl, tint) {
             closeAnim.stop()
             launchAnim.stop()
+            fadeOut.stop()
             ShellState.morphOriginX = ox
             ShellState.morphOriginY = oy
             ShellState.morphOriginW = Math.max(40, ow)
@@ -56,6 +57,7 @@ Item {
             if (root.width <= 0 || root.height <= 0)
                 return
             launchAnim.stop()
+            fadeOut.stop()
             closeAnim.stop()
             ShellState.morphClosing = true
             ShellState.morphActive = true
@@ -65,8 +67,21 @@ Item {
         }
     }
 
+    // The overlay stays fully expanded until the app's toplevel has mapped (Launcher.holding
+    // goes false) -- the LaunchFlow timeout guarantees it can never stay up forever.
+    property bool expanded: false
+    function _maybeFinish() {
+        if (root.expanded && !Launcher.holding && ShellState.morphActive && !ShellState.morphClosing)
+            fadeOut.start()
+    }
+    Connections {
+        target: Launcher
+        function onHoldingChanged() { root._maybeFinish() }
+    }
+
     SequentialAnimation {
         id: launchAnim
+        ScriptAction { script: root.expanded = false }
         NumberAnimation {
             target: root
             property: "t"
@@ -75,7 +90,11 @@ Item {
             duration: 320
             easing.type: Easing.OutQuint
         }
-        PauseAnimation { duration: 140 }
+        ScriptAction { script: { root.expanded = true; root._maybeFinish() } }
+    }
+
+    SequentialAnimation {
+        id: fadeOut
         NumberAnimation {
             target: root
             property: "fadeOpacity"
@@ -83,9 +102,7 @@ Item {
             duration: 180
             easing.type: Easing.OutCubic
         }
-        ScriptAction {
-            script: ShellState.morphActive = false
-        }
+        ScriptAction { script: { ShellState.morphActive = false; root.expanded = false } }
     }
 
     SequentialAnimation {

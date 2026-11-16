@@ -34,6 +34,22 @@ function tick(s, now) {
     return s;
 }
 
+// Does a toplevel's appId belong to a desktop entry? Generic (no per-app table):
+// exact id, reverse-DNS suffix ("org.kde.kalk" vs "kalk"), or the entry's startup class.
+function matches(toplevelAppId, entryId, startupClass) {
+    var t = String(toplevelAppId || "").toLowerCase().replace(/\.desktop$/, "");
+    if (!t) return false;
+    var ids = [entryId, startupClass];
+    for (var i = 0; i < ids.length; i++) {
+        var e = String(ids[i] || "").toLowerCase().replace(/\.desktop$/, "");
+        if (!e) continue;
+        if (t === e) return true;
+        var tl = t.split(".").pop(), el = e.split(".").pop();
+        if (tl.length >= 3 && tl === el) return true;
+    }
+    return false;
+}
+
 function overlayVisible(s) { return s.state === "launching" || s.state === "closing"; }
 
-if (typeof module !== "undefined") module.exports = { create, launch, toplevelMapped, close, tick, overlayVisible, LAUNCH_TIMEOUT_MS, MAPPED_HOLD_MS };
+if (typeof module !== "undefined") module.exports = { matches, create, launch, toplevelMapped, close, tick, overlayVisible, LAUNCH_TIMEOUT_MS, MAPPED_HOLD_MS };

@@ -3,6 +3,8 @@ import Quickshell
 import Quickshell.Wayland
 import A21s.Theme
 import A21s.Services
+import A21s.Windowing
+import A21s.Widgets
 
 // Reusable launcher tile: squircle/circle/glass icon + label,
 // running-app indicator pill, container-morph launch origin, and
@@ -116,25 +118,12 @@ Item {
 
     function triggerLaunch() {
         var p = tile.mapToItem(null, 0, 0);
-        ShellState.triggerLaunchMorph(
-            p.x, p.y, tile.width, tile.height, tile.radius,
-            appIcon.entryName, appIcon.resolvedMaterialIcon,
-            appIcon.iconUrl, appIcon.fallbackTint
-        );
-
-        var t = findRunningToplevel();
-        if (t) {
-            t.minimized = false;
-            t.activate();
-            ShellState.activeAppId = t.appId || appIcon.entryId;
-            appIcon.launched();
-            return;
-        }
         ShellState.activeAppId = appIcon.entryId || appIcon.entryName;
-        if (appIcon.entry && typeof appIcon.entry.execute === "function")
-            appIcon.entry.execute();
-        else if (appIcon.entry && typeof appIcon.entry.onActivate === "function")
-            appIcon.entry.onActivate();
+        Launcher.launch(appIcon.entry, {
+            x: p.x, y: p.y, w: tile.width, h: tile.height, radius: tile.radius,
+            name: appIcon.entryName, materialIcon: appIcon.resolvedMaterialIcon,
+            iconUrl: appIcon.iconUrl, tint: appIcon.fallbackTint
+        }, findRunningToplevel());
         appIcon.launched();
     }
 

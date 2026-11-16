@@ -23,3 +23,11 @@ assert.equal(f.tick(c, f.LAUNCH_TIMEOUT_MS).state, "idle");
 // close path
 assert.equal(f.close(f.create(), 0).state, "idle", "nothing to close");
 console.log("launchflow: ok");
+// matching real desktop entries to toplevel appIds, no per-app table
+assert.ok(f.matches("org.kde.kalk", "org.kde.kalk.desktop", ""));
+assert.ok(f.matches("kalk", "org.kde.kalk", ""), "short id vs reverse-DNS");
+assert.ok(f.matches("dolphin", "org.kde.dolphin", ""));
+assert.ok(f.matches("Foo", "x.desktop", "foo"), "startup class");
+assert.ok(!f.matches("org.kde.kclock", "org.kde.kalk", ""));
+assert.ok(!f.matches("", "kalk", ""));
+console.log("launchflow matches: ok");
