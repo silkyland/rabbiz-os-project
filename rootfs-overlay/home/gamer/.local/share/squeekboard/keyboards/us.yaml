@@ -26,46 +26,53 @@ views:
         - "q w e r t y u i o p"
         - "a s d f g h j k l"
         - "show_upper z x c v b n m BackSpace"
-        - "show_numbers lang_th prefs space . Return"
+        - "show_numbers emoji lang_th prefs space . Return"
     upper:
         - "Q W E R T Y U I O P"
         - "A S D F G H J K L"
         - "show_upper Z X C V B N M BackSpace"
-        - "show_numbers lang_th prefs space . Return"
+        - "show_numbers emoji lang_th prefs space . Return"
     numbers:
         - "1 2 3 4 5 6 7 8 9 0"
         - "@ # $ % & - _ + ( )"
         - "show_symbols , \" ' : ; ! ? BackSpace"
-        - "show_letters lang_th prefs space . Return"
+        - "show_letters emoji lang_th prefs space . Return"
     symbols:
         - "~ ` | · √ π τ ÷ × ¶"
         - "© ® £ € ¥ ^ ° * { }"
         - "show_numbers_from_symbols \\ / < > = [ ] BackSpace"
-        - "show_letters lang_th prefs space . Return"
+        - "show_letters emoji lang_th prefs space . Return"
 
-    # ---- Thai (rows copied from squeekboard's data/keyboards/th.yaml) ----
+    # ---- Thai: Gboard-like full layout (11 keys per row, tone marks, Thai space) ----
     thai_base:
-        - "ๅ / _ ภ ถ ุ ึ ค ต จ ข ช"
+        - "ฑ ฒ ณ ฯ ญ ฐ ฅ ฃ ฬ ฦ ฌ"
         - "ๆ ไ ำ พ ะ ั ี ร น ย บ ล"
-        - "ฟ ห ก ด เ ้ ่ า ส ว ง ฃ"
+        - "ฟ ห ก ด เ ้ ่ า ส ว ง"
         - "th_show_upper ผ ป แ อ ิ ื ท ม ใ ฝ BackSpace"
-        - "th_show_numbers lang_en prefs space . Return"
+        - "th_show_numbers emoji prefs lang_en th_space , . Return"
     thai_upper:
+        - "ๅ / _ ภ ถ ุ ึ ค ต จ ข ช"
         - "+ ๑ ๒ ๓ ๔ ู ฿ ๕ ๖ ๗ ๘ ๙"
         - "๐ \" ฎ ฑ ธ ํ ๊ ณ ฯ ญ ฐ ,"
-        - "ฤ ฆ ฏ โ ฌ ็ ๋ ษ ศ ซ . ฅ"
-        - "th_show_upper ( ) ฉ ฮ ฺ ์ ? ฒ ฬ ฦ BackSpace"
-        - "th_show_numbers lang_en prefs space . Return"
+        - "th_show_upper ฤ ฆ ฏ โ ฌ ็ ๋ ษ ศ ซ ฅ BackSpace"
+        - "th_show_numbers emoji prefs lang_en th_space , . Return"
     thai_numbers:
         - "๑ ๒ ๓ ๔ ๕ ๖ ๗ ๘ ๙ ๐"
         - "@ # $ % & - _ + ( )"
         - "th_show_symbols , \" ' : ; ! ? BackSpace"
-        - "th_show_letters lang_en prefs space . Return"
+        - "th_show_letters emoji prefs lang_en th_space , . Return"
     thai_symbols:
         - "© ® £ € ¥ ^ ° * { }"
         - "~ ` | · √ π τ ÷ × ¶"
         - "th_show_numbers \\ / < > = [ ] BackSpace"
-        - "th_show_letters lang_en prefs space . Return"
+        - "th_show_letters emoji prefs lang_en th_space , . Return"
+    # Static emoji page (squeekboard cannot host a dynamic clipboard, so this is a fixed
+    # palette; tapping a key submits the emoji as text).
+    emoji:
+        - "😀 😂 😍 🥰 😎 🤔 😭 😡 👍 👎"
+        - "❤️ 🔥 ✨ 🎉 🎂 🌹 ☀️ 🌙 ⭐ 💯"
+        - "🙏 👋 🤝 💪 🙌 👌 ✌️ 🤞 🫶 🤙"
+        - "emoji_back prefs lang_th th_space . Return"
 
 buttons:
     show_upper:
@@ -140,6 +147,20 @@ buttons:
     space:
         outline: "spaceline"
         text: " "
+    th_space:
+        outline: "spaceline"
+        label: "ไทย"
+        text: " "
+    emoji:
+        action:
+            set_view: "emoji"
+        outline: "change-view-2"
+        label: "☺"
+    emoji_back:
+        action:
+            set_view: "thai_base"
+        outline: "change-view-2"
+        label: "abc"
     Return:
         outline: "special-3"
         icon: "key-enter"
