@@ -133,8 +133,12 @@ AGENTS.md hard rules still apply).
 the home screen. S1 answered: on this device Qt Quick runs software (`No GL context`), Quickshell falls back to SHM
 buffers and the capture still works (`MORPH close snapshot=true hasContent=true`); a frame arrives well inside the
 200 ms fallback timer. Launch morphs are unchanged (no snapshot).
-**Still to do:** back-arrow chip (the comment in `EdgeBack.qml` claims one; no chip is drawn), card that follows the
-finger in Recents, tune thresholds on a real finger (injected swipes are perfectly straight), conflict check with
+**Also done:** the back-arrow chip. `Windowing/EdgeBack.qml` keeps 22 px input strips and maps a display-only
+chip surface per side only while a back gesture is in flight (the pointer is already grabbed, so it cannot steal a
+fresh touch); it follows the finger's Y, slides in with progress and turns accent-filled at the trigger distance.
+Verified: at ~40 % a neutral circle with the arrow sits under the finger, at 100 % it is accent-filled, and releasing
+closes the app. Recents cards already follow the finger (a `DragHandler` on each card closes past a quarter height).
+**Still to do:** tune thresholds on a real finger (injected swipes are perfectly straight), conflict check with
 Kirigami edge gestures, and resuming a minimized Steam from its icon (`Launcher.findToplevel` cannot match the nested
 Weston window: empty app_id, title "Weston Compositor - wayland-fullscreen").
 

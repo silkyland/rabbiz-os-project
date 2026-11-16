@@ -57,4 +57,7 @@ QtObject {
     // 0..1 live progress of an in-flight gesture, for visual feedback
     property real gestureProgress: 0.0
     property string gestureKind: ""
+    // screen-space Y of the finger and the edge in use, for the back chip
+    property real gestureY: 0.0
+    property string gestureSide: ""
 }
