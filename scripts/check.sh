@@ -6,3 +6,5 @@ node scripts/check_shell_seams.mjs          # real tree
 node shell/tests/seams.test.mjs             # checker still fires on bad fixtures
 node shell/tests/launchflow.test.mjs        # LaunchFlow seam test (no Qt, no device)
 node shell/tests/gesture.test.mjs             # Gesture classifier (no Qt, no device)
+node tests/calc.test.mjs                      # Calculator expression evaluator (no Qt, no device)
+python3 -B -m unittest discover -s tools/qt-scanout/tests  # Mesa version gate (no device)
