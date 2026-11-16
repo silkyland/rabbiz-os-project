@@ -3,6 +3,9 @@
 # runs as one labwc toplevel and the native ARM64 Steam client runs inside it.
 # Why nested Weston: Steam directly on labwc's XWayland dies (DRM_IOCTL_MODE_CREATE_DUMB EACCES) and
 # gamescope has no usable Vulkan device on panvk. Verified 2026-11-16: Steam reaches "Logging in...".
+# SDL_VIDEODRIVER=x11 is required: a21s-phone-session exports SDL_VIDEODRIVER=wayland, and Steam's
+# CEF/SDL cannot load a Wayland video driver inside the nested Weston ("SDL_Init failed: wayland not
+# available"), which black-screens Big Picture. XWayland :1 in the nested Weston is what works.
 # `--fullscreen` (no fixed size) is required: a fixed --width/--height renders black inside labwc.
 # Closing the Weston window (or Steam exiting) tears the other down. Args are passed to steam
 # (e.g. steam://rungameid/433950). Never touches the DRM seat.
@@ -35,7 +38,7 @@ for _ in $(seq 1 30); do
 done
 [ -n "$DISP" ] || { echo "a21s-steam: no XWayland display" >&2; exit 1; }
 
-WAYLAND_DISPLAY="$SOCK" DISPLAY="$DISP" dbus-run-session -- "$STEAM_BIN" \
+WAYLAND_DISPLAY="$SOCK" DISPLAY="$DISP" dbus-run-session -- env SDL_VIDEODRIVER=x11 "$STEAM_BIN" \
     -noverifyfiles -nobootstrapupdate -skipinitialbootstrap -gamepadui \
     -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing "$@" \
     >"$RD/a21s-steam.log" 2>&1 &
