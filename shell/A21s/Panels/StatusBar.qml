@@ -60,9 +60,12 @@ PanelWindow {
     readonly property bool muted: Pipewire.defaultAudioSink !== null
         && Pipewire.defaultAudioSink.audio !== null
         && Pipewire.defaultAudioSink.audio.muted
+    // A phone battery also counts: UPower's DisplayDevice is a battery when the kernel
+    // exposes one, and `isPresent` is false while nothing is wired (which is the current
+    // A21s state: no fuel-gauge driver yet, /sys/class/power_supply is empty).
     readonly property bool batteryOk: UPower.displayDevice !== null
         && UPower.displayDevice.ready
-        && UPower.displayDevice.isLaptopBattery
+        && UPower.displayDevice.isPresent
     readonly property real batteryPct: batteryOk ? UPower.displayDevice.percentage : 0
     readonly property bool batteryCharging: batteryOk
         && (!UPower.onBattery
@@ -193,6 +196,16 @@ PanelWindow {
         Row {
             Layout.alignment: Qt.AlignVCenter
             spacing: 4
+
+            Text {
+                visible: !bar.batteryOk
+                anchors.verticalCenter: parent.verticalCenter
+                text: "AC"
+                color: Theme.textFaint
+                font.family: Theme.fontFamily
+                font.pixelSize: bar.smallFont
+                font.weight: Font.Medium
+            }
 
             Text {
                 visible: bar.batteryOk
