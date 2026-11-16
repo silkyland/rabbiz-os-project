@@ -1,6 +1,7 @@
 import QtQuick
 import A21s.Theme
 import A21s.Services
+import A21s.Widgets
 
 // Accent pill. Disabled state dims instead of removing the label.
 Rectangle {
