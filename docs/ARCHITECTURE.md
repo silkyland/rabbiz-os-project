@@ -54,6 +54,24 @@ Samsung S-Boot (BL1/BL2, locked by e-fuse)
 | BlueZ `hci_h4` (`h4_recv_skb`) | Mainline 7.3 H4 RX path replacing vendor `hci_recv_frame` wrapper | [drivers/scsc/bt/scsc_bluez.c](../drivers/scsc/bt/scsc_bluez.c) |
 | `systemd-networkd` | Dedicated management of `usb0` (`172.16.42.1/24`) | [a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md) |
 
+## Shell seams (`shell/`, M7 v2 — plan in [DESKTOP-SHELL.md](DESKTOP-SHELL.md))
+
+Dependency direction is enforced by `scripts/check_shell_seams.mjs` (run `scripts/check.sh`).
+`shell.qml` is wiring only and may import anything; nothing imports it.
+
+| Module (`shell/A21s/<X>`) | Owns | May import | Status |
+|---|---|---|---|
+| `Theme` | design tokens, derived from the appearance source of truth | — | exists |
+| `Services` | singletons over system backends (NM, BlueZ, UPower, audio, telephony, Appearance writer); no UI | `Theme` | exists |
+| `Windowing` | launch flow, morph overlay, task switcher, app gesture layer, window policy by form factor | `Theme`, `Services`, `Widgets` | exists (M7.0 done) |
+| `Widgets` | small shared controls (tile, slider, icon) | `Theme`, `Services` | exists (M7.0 done) |
+| `Desktop` | wallpaper, icon grid, widgets, dock, app drawer | `Theme`, `Services`, `Widgets`, `Windowing` | exists (`HomeScreen`, `AppDrawer`) |
+| `Panels` | status bar, nav/gesture bar, shade, quick settings, power menu, HUD, notifications UI | `Theme`, `Services`, `Widgets`, `Windowing` | exists |
+| `shell/apps/*` | **legacy** home-grown apps, deleted in M7.4 (Dialer/SMS last, after M6) | `Theme`, `Services`, `Widgets`, `Windowing` | exists, shrinking |
+
+Not checked (stated gap): `Loader { source: }` / `Qt.createComponent` paths and runtime string imports.
+Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge location, Settings split (spike S2).
+
 ## Decision records
 
 ### 1. `uniLoader` in `boot.img` as Native Linux Bootloader (2026-11-14, R1)
@@ -76,6 +94,47 @@ Samsung S-Boot (BL1/BL2, locked by e-fuse)
 ### 5. NetworkManager for `wlan0` with `wifi.scan-rand-mac-address=no` (2026-11-14)
 - **Decision:** Use `NetworkManager` on `wlan0` instead of `wpa_supplicant@wlan0` + `systemd-networkd`.
 - **Why:** Steam UI requires `org.freedesktop.NetworkManager` D-Bus; disabling MAC randomization prevents `scsc_wlan` `WPS-CANCEL` during scan/connect.
+
+### 6. Settings stays shell-owned; every other base app is a real Linux app (2026-11-16)
+- **Decision:** Replace Calculator/Files/Notes/Clock/Gallery/Music with Qt/KDE-first real apps; keep Settings as thin shell-owned panels over NM/BlueZ/portal/gsettings. Dialer/SMS stay ours until M6.
+- **Why:** Settings edits state the shell owns (appearance contract, Wi-Fi/BT panel, session switch); `plasma-settings` KCMs expect Plasma daemons we do not run (unverified — spike S2). Disk ~99 % full forbids carrying two toolkits.
+- **Rejected:** replacing Settings outright (breaks the contract); GTK/Qt mix (disk).
+
+### 8. Steam is an ordinary desktop app, not a session — **nested Weston; Big Picture verified, game frames open** (2026-11-16)
+- **Decision (D4):** Steam launches like any app: `a21s-steam` runs `weston --backend=wayland --renderer=pixman --fullscreen --shell=kiosk --xwayland` as ONE labwc toplevel and the native ARM64 Steam client inside it (`dbus-run-session`, `-gamepadui`, CEF GPU off).
+- **Why not the obvious ways (device evidence):** Steam on labwc's XWayland dies (`DRM_IOCTL_MODE_CREATE_DUMB failed: Permission denied`); `gamescope` nested: `vulkan: failed to find physical device`; the old `steam` shim ran `a21s-session-switch steamos`, which stops the phone session.
+- **Verified 2026-11-16 (second session, launched via `ipc call launcher launch steam`, captured with grim):** Big Picture home renders, logged in, with online content (What's New / Friends / Trending) after ~2 min; a `a21s-touch` tap on a game tile opens that game's page, so touch reaches the nested compositor; `steam://rungameid/433950` logs "Adding process for gameID 433950", creates the Proton prefix and runs FEX + `winedevice.exe`; `steam -shutdown` removes Steam and Weston in <=14 s; RAM 82 MB free / 547 MB available at Big Picture, 100-120 MB free during the game attempt; the starting-window morph releases as before.
+- **Still broken / not verified:** the game itself renders black inside the nested Weston (FEX on one core at ~100 %, no frames after 2 min), no gamepad input test, and a FEX server process is orphaned after Steam exits. A second `a21s-steam <url>` can start another Weston before it notices Steam is already running.
+- **Gotchas:** `SDL_VIDEODRIVER=x11` is mandatory — the session exports `wayland` (a21s-phone-session) and Steam's CEF/SDL then dies with `SDL_Init failed: wayland not available`, black-screening Big Picture; fixed `--width/--height` renders black inside labwc, use `--fullscreen` only; Weston publishes no `app_id` (title "Weston Compositor - wayland-fullscreen"); never run `steamos-session` while the phone session owns the seat (killing it left labwc with no usable display until reboot); Steam needs working Wi-Fi — without it the client sits at "Logging in..." forever and the webhelper respawn-loops.
+- **Open finding:** exporting `LD_LIBRARY_PATH` before `dbus-run-session` makes dbus-activated services inherit Steam's bundled libcurl, so `xdg-desktop-portal-kde` exits 127 (`undefined symbol: nghttp2_option_set_no_rfc9113_leading_and_trailing_ws_validation`). A scoped-LD variant (`env LD_LIBRARY_PATH=...` after `--`) removed the portal crash but the client bootstrap then failed to find its runtime service; not resolved.
+- `steamos-session.service` / `a21s-session-switch` stay installed as a recovery path only.
+
+### 7. One shell, window policy per form factor (2026-11-16)
+- **Decision:** `handset` maximizes, `tablet`/`desktop` float (only `handset` built now; Pad 7 Pro deferred); the shell and apps are identical across modes.
+- **Why:** 720x1600 cannot host floating windows; Pad 7 Pro (phase 2) can. Rejected: separate phone/desktop shells.
+
+### 10. Base apps are first-party QML again (2026-11-16)
+- **Decision (owner):** the six base apps — photos, music, notes, clock, calculator, terminal — are written in-house under
+  `apps/<name>/` and share `apps/A21sKit` (one tone, Theme tokens only), instead of KDE/Maui apps pulled from Arch.
+- **Why:** reduce third-party dependence and get one consistent, phone-first UI (the KDE apps each bring their own
+  desktop assumptions); this narrows D2 rather than reversing it — Settings/Dialer/SMS were already ours, and
+  GTK/Chromium/Steam stay third-party.
+- **How:** each app is one `ApplicationWindow` QML file launched by `quickshell -p /usr/share/a21s-apps/<app>/<App>.qml`
+  through an `a21s-<app>` wrapper; pure logic lives in a plain `.js` with a node test (e.g. `apps/calculator/Calc.js`);
+  deployed by `scripts/deploy_shell.sh`. Tone rules and per-app MVP live in [BASE-APPS.md](BASE-APPS.md).
+- **Rejected:** patching/upstreaming the KDE apps (not our code, slow), a single monolithic "apps" QML file (no ownership).
+
+### 9. Polkit: the single phone user may control NetworkManager without auth (2026-11-16)
+- **Decision:** `/etc/polkit-1/rules.d/51-a21s-shell.rules` returns `YES` for subject `gamer` on every
+  `org.freedesktop.NetworkManager.*` action; nothing else is relaxed (seat handover stays in `50-a21s-session.rules`,
+  systemd/package actions still need auth).
+- **Why:** labwc has no polkit authentication agent, so NM answered "Insufficient privileges" for `nmcli device wifi
+  connect` and `nmcli connection add` (verified on the device); the Wi-Fi panel could not change anything. `gamer` is
+  the only interactive user on a single-user phone.
+- **Rejected:** a root helper or setuid wrapper (wider blast radius than a scoped polkit rule); running the shell as
+  root (defeats the session/seat model).
+- **Consequence:** the PSK can no longer be handed to root-only `nmcli connection load`; `a21s-wifi-connect` feeds
+  nmcli's `--ask` prompt on a pty with `stty -echo` so the secret never enters argv.
 
 ## Known constraints and sharp edges
 

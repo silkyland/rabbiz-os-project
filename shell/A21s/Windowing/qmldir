@@ -1,0 +1,9 @@
+module A21s.Windowing
+
+AppGestureLayer 1.0 AppGestureLayer.qml
+AppLaunchMorph 1.0 AppLaunchMorph.qml
+TaskSwitcher 1.0 TaskSwitcher.qml
+LaunchFlow 1.0 LaunchFlow.js
+singleton Launcher 1.0 Launcher.qml
+Gesture 1.0 Gesture.js
+EdgeBack 1.0 EdgeBack.qml

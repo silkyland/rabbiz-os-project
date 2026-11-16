@@ -1,0 +1,57 @@
+.pragma library
+// LaunchFlow — pure state machine for "tap icon -> starting window -> app maps -> done".
+// No Qt, no Quickshell: runs under node for tests (see shell/tests/launchflow.test.mjs).
+// States: idle -> launching -> mapped -> (idle) ; launching -> timedOut -> idle ; mapped -> closing -> idle
+// TODO(M7.1): drive from ToplevelManager.toplevels (QML side) and render in A21s.Windowing.
+
+var LAUNCH_TIMEOUT_MS = 8000;
+var MAPPED_HOLD_MS = 140;
+var CLOSE_MS = 600; // close morph budget; overlay is released after this even if never acknowledged // keep overlay until the first frame is likely drawn
+
+function create() {
+    return { state: "idle", appId: "", origin: null, startedAt: 0, mappedAt: 0 };
+}
+
+// origin = {x, y, w, h, radius} of the tapped icon, so the morph can start there.
+function launch(s, appId, origin, now) {
+    if (s.state === "launching") return s; // ignore double tap
+    return { state: "launching", appId: appId, origin: origin, startedAt: now, mappedAt: 0 };
+}
+
+function toplevelMapped(s, appId, now) {
+    if (s.state !== "launching" || s.appId !== appId) return s;
+    return { state: "mapped", appId: s.appId, origin: s.origin, startedAt: s.startedAt, mappedAt: now };
+}
+
+function close(s, now) {
+    if (s.state !== "mapped" && s.state !== "launching") return s;
+    return { state: "closing", appId: s.appId, origin: s.origin, startedAt: now, mappedAt: s.mappedAt };
+}
+
+// Called on a timer. Returns the next state; never leaves a stuck overlay.
+function tick(s, now) {
+    if (s.state === "launching" && now - s.startedAt >= LAUNCH_TIMEOUT_MS) return create();
+    if (s.state === "mapped" && now - s.mappedAt >= MAPPED_HOLD_MS) return create();
+    if (s.state === "closing" && now - s.startedAt >= CLOSE_MS) return create();
+    return s;
+}
+
+// Does a toplevel's appId belong to a desktop entry? Generic (no per-app table):
+// exact id, reverse-DNS suffix ("org.kde.kalk" vs "kalk"), or the entry's startup class.
+function matches(toplevelAppId, entryId, startupClass) {
+    var t = String(toplevelAppId || "").toLowerCase().replace(/\.desktop$/, "");
+    if (!t) return false;
+    var ids = [entryId, startupClass];
+    for (var i = 0; i < ids.length; i++) {
+        var e = String(ids[i] || "").toLowerCase().replace(/\.desktop$/, "");
+        if (!e) continue;
+        if (t === e) return true;
+        var tl = t.split(".").pop(), el = e.split(".").pop();
+        if (tl.length >= 3 && tl === el) return true;
+    }
+    return false;
+}
+
+function overlayVisible(s) { return s.state === "launching" || s.state === "closing"; }
+
+if (typeof module !== "undefined") module.exports = { matches, create, launch, toplevelMapped, close, tick, overlayVisible, LAUNCH_TIMEOUT_MS, MAPPED_HOLD_MS, CLOSE_MS };

@@ -3,7 +3,8 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
-import A21s.Components as Components
+import A21s.Widgets as Components
+import A21s.Windowing as Windowing
 
 // a21s-sms — Google-Messages-style SMS app for the A21s shell.
 // Launched by the `a21s-sms` wrapper under `quickshell -p` (labwc
@@ -553,7 +554,7 @@ ApplicationWindow {
         }
     }
 
-    Components.AppGestureLayer {
+    Windowing.AppGestureLayer {
         anchors.fill: parent
         z: 50
         enabled: !newChatDialog.visible && !msgMenu.visible && !threadMenu.visible

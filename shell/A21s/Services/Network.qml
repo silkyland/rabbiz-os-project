@@ -25,8 +25,9 @@ QtObject {
 
     // --- internals -------------------------------------------------------
     property string _wifiDevice: ""
-    property var _pendingArgv: null
-    property var _pendingConn: null
+    property var _queue: []                  // FIFO of pending one-shot commands
+    property var _connQueue: []              // FIFO of pending connects
+    property string _connPsk: ""
     property string _connOut: ""
 
     // Split an nmcli -t line on ':' honoring backslash escapes (\: and \\).
@@ -63,14 +64,20 @@ QtObject {
     }
 
     function wifiConnect(ssid, password) {
-        var cmd = "timeout 40 nmcli device wifi connect " + _shq(ssid)
-        if (password && password.length > 0)
-            cmd += " password " + _shq(password)
+        // The PSK goes to a21s-wifi-connect on stdin: nmcli's `password` argument would
+        // expose it in the process list for the whole 40 s connect (review finding).
         root._connOut = ""
+        root._connPsk = password || ""
         root.wifiConnecting = true
         root.wifiConnectingSsid = ssid
         root.wifiLastError = ""
-        _runConn(["sh", "-c", cmd])
+        _runConn(["a21s-wifi-connect", ssid])
+    }
+
+    // Mobile data is the WWAN radio state, not the modem power: powering the modem down
+    // with `mmcli --disable` also kills voice/SMS (review finding).
+    function setWwanEnabled(on) {
+        _run(["nmcli", "radio", "wwan", on ? "on" : "off"])
     }
 
     // Back-compat alias (Settings app uses connectTo).
@@ -92,7 +99,7 @@ QtObject {
     function _run(argv) {
         retryTimer.kick(retryTimer.ticks > 0 ? retryTimer.ticks : 2)
         if (cmdProc.running) {
-            root._pendingArgv = argv         // serialize: run after current
+            root._queue.push(argv)           // FIFO: earlier commands are never dropped
             return
         }
         cmdProc.command = argv
@@ -128,6 +135,10 @@ QtObject {
                 var dl = devLines.split("\n")
                 for (var i = 0; i < dl.length; ++i) {
                     var f = root._splitNm(dl[i].trim())
+                    // p2p0 is also typed "wifi" but is the P2P device: activating through
+                    // it fails with "association took too long / ssid-not-found".
+                    if (f[0].indexOf("p2p") === 0)
+                        continue
                     if (f.length >= 3 && f[1] === "wifi") {
                         root._wifiDevice = f[0]
                         devState = f[2]
@@ -214,10 +225,8 @@ QtObject {
     // --- one-shot commands (radio, rescan, connect, disconnect) ------------
     property var cmdProc: Process {
         function _dispatch() {
-            if (root._pendingArgv !== null && !cmdProc.running) {
-                var argv = root._pendingArgv
-                root._pendingArgv = null
-                cmdProc.command = argv
+            if (root._queue.length > 0 && !cmdProc.running) {
+                cmdProc.command = root._queue.shift()
                 cmdProc.running = true
             }
         }
@@ -232,7 +241,7 @@ QtObject {
     // --- connect process (captures stdout+stderr+exit for error UI) ------
     function _runConn(argv) {
         if (connProc.running) {
-            root._pendingConn = argv
+            root._connQueue.push(argv)
             return
         }
         connProc.command = argv
@@ -240,11 +249,12 @@ QtObject {
     }
 
     property var connProc: Process {
+        stdinEnabled: true
+        // a21s-wifi-connect reads the PSK from stdin (never argv) and joins the network.
+        onStarted: connProc.write((root._connPsk.length > 0 ? root._connPsk : "") + "\n")
         function _dispatch() {
-            if (root._pendingConn !== null && !connProc.running) {
-                var argv = root._pendingConn
-                root._pendingConn = null
-                connProc.command = argv
+            if (root._connQueue.length > 0 && !connProc.running) {
+                connProc.command = root._connQueue.shift()
                 connProc.running = true
             }
         }

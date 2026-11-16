@@ -1,0 +1,14 @@
+From: RabbizOS experiments
+Subject: [EXPERIMENT] egl/wayland: opt in to scanout allocations on Exynos kmsro
+
+Source equivalent of the version-pinned EGL binary experiment. Not upstreamed
+or built here. The kmsro primary-node fix is ALSO required: CREATE_DUMB cannot
+run on the Exynos render node. See docs/a21s-qt-gpu-scanout.md.
+
+--- a/src/egl/drivers/dri2/platform_wayland.c
++++ b/src/egl/drivers/dri2/platform_wayland.c
+@@ -1332 +1332,4 @@ get_back_bo(struct dri2_egl_surface *dri2_surf,
+    use_flags = __DRI_IMAGE_USE_SHARE | __DRI_IMAGE_USE_BACKBUFFER;
++
++   if (getenv("RABBIZ_EGL_SCANOUT"))
++      use_flags |= __DRI_IMAGE_USE_SCANOUT;

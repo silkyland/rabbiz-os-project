@@ -1,0 +1,4 @@
+#!/bin/sh
+# a21s-terminal — in-house Terminal (docs/BASE-APPS.md). Deployed by scripts/deploy_shell.sh.
+export QML_IMPORT_PATH=/usr/share/a21s-shell:/usr/share/a21s-apps
+exec a21s-qt-render quickshell -p /usr/share/a21s-apps/terminal/Terminal.qml "$@"

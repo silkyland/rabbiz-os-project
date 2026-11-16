@@ -2,7 +2,7 @@
 Type=Application
 Name=Calculator
 GenericName=Calculator
-Comment=Basic calculator (a21s-shell)
+Comment=In-house A21s calculator
 Exec=a21s-calculator
 Icon=accessories-calculator
 Categories=Utility;

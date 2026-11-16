@@ -22,7 +22,7 @@ QtObject {
     readonly property bool dndEnabled: ShellPrefs.dndEnabled
     property bool flashlightOn: false
     property bool flashlightHardware: false
-    property bool autoRotate: false
+    property bool screenLandscape: false
     property bool mobileData: true
 
     // --- Biometric fingerprint (ET520) & Shannon CP modem (s318ap) ---
@@ -80,6 +80,8 @@ QtObject {
     }
 
     function refreshTelemetry() {
+        if (ShellState.sleeping)                  // do not fork anything while asleep
+            return
         if (!telemetryProc.running)
             telemetryProc.running = true
     }
@@ -88,11 +90,11 @@ QtObject {
         root.airplaneMode = Boolean(on)
         Network.setWifiEnabled(!root.airplaneMode)
         Bluetooth.setPowered(!root.airplaneMode)
-        if (root.airplaneMode)
-            root.mobileData = false
+        // Radios by name, never `rfkill unblock all`: that also silently unblocks every
+        // other rfkill switch on the device, and gamer cannot open /dev/rfkill anyway.
+        Network.setWwanEnabled(!root.airplaneMode)
+        root.mobileData = !root.airplaneMode
         syncTelephonyState()
-        _runCmd(["sh", "-c",
-            "rfkill " + (root.airplaneMode ? "block" : "unblock") + " all 2>/dev/null || true"])
     }
 
     function setDndEnabled(on) {
@@ -128,11 +130,13 @@ QtObject {
         }
     }
 
-    function toggleAutoRotate() {
-        root.autoRotate = !root.autoRotate
+    // There is no accelerometer driver, so this is a manual screen rotation, not
+    // auto-rotate; the UI labels it that way (review finding "fake auto-rotate").
+    function toggleLandscape() {
+        root.screenLandscape = !root.screenLandscape
         _runCmd(["sh", "-c",
             "if command -v wlr-randr >/dev/null 2>&1; then "
-          + "wlr-randr --output DSI-1 --transform " + (root.autoRotate ? "90" : "normal") + " 2>/dev/null || true; "
+          + "wlr-randr --output DSI-1 --transform " + (root.screenLandscape ? "90" : "normal") + " 2>/dev/null || true; "
           + "fi"])
     }
 
@@ -141,10 +145,9 @@ QtObject {
             return
         root.mobileData = !root.mobileData
         syncTelephonyState()
-        if (Telephony.modemAvailable) {
-            _runCmd(["sh", "-c",
-                "mmcli -m 0 " + (root.mobileData ? "--enable" : "--disable") + " 2>/dev/null || true"])
-        }
+        // `mmcli --disable` powers the whole modem down (no voice, no SMS). The radio
+        // switch only takes the data bearer away.
+        Network.setWwanEnabled(root.mobileData)
     }
 
     function syncTelephonyState() {
@@ -244,7 +247,7 @@ QtObject {
 
     function wake() {
         var restoreLvl = root._preSleepBrightness > 5 ? root._preSleepBrightness : 75
-        var restoreGov = root._preSleepGovernor.length > 0 ? root._preSleepGovernor : "performance"
+        var restoreGov = root._preSleepGovernor.length > 0 ? root._preSleepGovernor : "schedutil"
         ShellState.sleeping = false
         ShellState.lockScreenOpen = true
         root.cpuGovernor = restoreGov
@@ -366,9 +369,9 @@ QtObject {
         ShellState.powerMenuOpen = false
         _runCmd(["sh", "-c",
             "OLD=$PPID; (sleep 0.15; kill \"$OLD\" 2>/dev/null || true; sleep 0.30; "
-          + "exec env QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_MOBILE=1 "
+          + "exec env QT_QUICK_CONTROLS_MOBILE=1 "
           + "QML_IMPORT_PATH=/usr/share/a21s-shell QML2_IMPORT_PATH=/usr/share/a21s-shell "
-          + "setsid -f quickshell -p /usr/share/a21s-shell/shell.qml >/dev/null 2>&1 </dev/null) &"])
+          + "setsid -f a21s-shell >/dev/null 2>&1 </dev/null) &"])
     }
 
     function reboot() {
@@ -386,17 +389,17 @@ QtObject {
             actionProc.command = argv
             actionProc.running = true
         } else {
-            _queuedCmd = argv
+            _cmdQueue.push(argv)             // FIFO: earlier commands are not dropped
         }
     }
 
-    property var _queuedCmd: null
+    property var _cmdQueue: []
 
     property var actionProc: Process {
+        environment: Appearance.appEnvironment
         function _drain() {
-            if (root._queuedCmd !== null && !actionProc.running) {
-                var argv = root._queuedCmd
-                root._queuedCmd = null
+            if (root._cmdQueue.length > 0 && !actionProc.running) {
+                var argv = root._cmdQueue.shift()
                 actionProc.command = argv
                 actionProc.running = true
             }
@@ -406,29 +409,9 @@ QtObject {
     }
 
     property var telemetryProc: Process {
-        command: ["sh", "-c",
-            "head -n1 /proc/stat 2>/dev/null; "
-          + "echo '=M='; "
-          + "grep -E '^(MemTotal|MemAvailable):' /proc/meminfo 2>/dev/null; "
-          + "echo '=C='; "
-          + "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null || echo 0; "
-          + "cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || echo performance; "
-          + "echo '=D='; "
-          + "df -h / 2>/dev/null | awk 'NR==2{print $4}'; "
-          + "echo '=L='; "
-          + "ls -d /sys/class/leds/*torch* /sys/class/leds/*flash* 2>/dev/null | head -n1; "
-          + "echo '=FP='; "
-          + "cat /sys/kernel/a21s_fp/chipid 2>/dev/null || echo none; "
-          + "cat /sys/kernel/a21s_fp/status 2>/dev/null || echo offline; "
-          + "cat /sys/kernel/a21s_fp/irq_count 2>/dev/null || echo 0; "
-          + "echo '=CP='; "
-          + "ls /dev/umts_* 2>/dev/null | tr '\\n' ' '; echo; "
-          + "cat /sys/devices/platform/soc@0/14020000.cpif/modem_name 2>/dev/null || echo none; "
-          + "cat /sys/devices/platform/soc@0/14020000.cpif/phone_state 2>/dev/null || echo OFFLINE; "
-          + "cat /sys/devices/platform/soc@0/14020000.cpif/rmem_info 2>/dev/null || echo none; "
-          + "cat /sys/devices/platform/soc@0/14020000.cpif/toc_summary 2>/dev/null || echo unloaded; "
-          + "cat /sys/devices/platform/soc@0/14020000.cpif/mem_map_on_cp 2>/dev/null || echo 0; "
-          + "cat /sys/devices/platform/soc@0/14020000.cpif/regions_summary 2>/dev/null || echo none"]
+        // a21s-telemetry reads procfs/sysfs with bash builtins only: one process, no
+        // per-value forks (the old sh -c chain forked ~18 processes every 3 s).
+        command: ["a21s-telemetry"]
 
         stdout: StdioCollector {
             onStreamFinished: {
@@ -578,7 +561,7 @@ QtObject {
     function openGallery(imagePath) {
         root.screenshotToastVisible = false
         var p = imagePath || ""
-        _runCmd(["sh", "-c", "a21s-gallery \"$1\" >/dev/null 2>&1 &", "_", p])
+        _runCmd(["sh", "-c", "xdg-open \"$1\" >/dev/null 2>&1 &", "_", p])
     }
 
     function _handleVolState(raw) {
@@ -646,7 +629,7 @@ QtObject {
                 volSetTimer.restart()
         }
     }
-    property var shotProc: Process {}
+    property var shotProc: Process { environment: Appearance.appEnvironment }
 
     property var volSetTimer: Timer {
         interval: 80
@@ -730,9 +713,18 @@ QtObject {
 
     property var _pollTimer: Timer {
         interval: 3000
-        running: true
+        running: !ShellState.sleeping        // no polling while the phone sleeps
         repeat: true
         onTriggered: root.refreshTelemetry()
+    }
+
+    // QtObject has no default property, so the watcher must be a property.
+    property var _sleepWatch: Connections {
+        target: ShellState
+        function onSleepingChanged() {
+            if (!ShellState.sleeping)
+                root.refreshTelemetry()      // resume polling at wake
+        }
     }
 
     Component.onCompleted: {

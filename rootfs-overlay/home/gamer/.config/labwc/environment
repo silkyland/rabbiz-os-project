@@ -18,7 +18,10 @@ QT_QPA_PLATFORM=wayland
 QT_QUICK_BACKEND=software
 QT_QUICK_CONTROLS_MOBILE=1
 QT_SCALE_FACTOR=1
-QT_QPA_PLATFORMTHEME=
+# Desktop contract (docs/DESKTOP-SHELL.md 3.2): real Qt/KDE apps follow kdeglobals + the A21s
+# colour scheme written by a21s-appearance. The shell itself overrides this in autostart.
+QT_QPA_PLATFORMTHEME=kde
+PLASMA_PLATFORM=phone:handset
 
 # a21s-shell QML modules (A21s.Theme, A21s.Services, apps).
 QML_IMPORT_PATH=/usr/share/a21s-shell

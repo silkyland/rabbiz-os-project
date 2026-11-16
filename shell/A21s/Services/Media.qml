@@ -175,8 +175,8 @@ QtObject {
         var entry = DesktopEntries.byId("a21s-spotify")
             || DesktopEntries.byId("org.kde.elisa")
             || DesktopEntries.byId("elisa")
-        if (entry && typeof entry.execute === "function")
-            entry.execute()
+        if (entry)
+            Appearance.launchDesktopEntry(entry)
         else if (!spotifyProc.running)
             spotifyProc.running = true
     }
@@ -203,6 +203,7 @@ QtObject {
     }
 
     property var ctlActionProc: Process {
+        environment: Appearance.appEnvironment
         stdout: StdioCollector {
             onStreamFinished: {
                 eventWatcher.reload()
@@ -230,11 +231,13 @@ QtObject {
     }
 
     property var spotifyProc: Process {
+        environment: Appearance.appEnvironment
         command: ["sh", "-c",
             "QT_QPA_PLATFORM=wayland QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_MOBILE=1 a21s-spotify >/dev/null 2>&1 &"]
     }
 
     property var elisaProc: Process {
+        environment: Appearance.appEnvironment
         command: ["sh", "-c",
             "QT_QPA_PLATFORM=wayland QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_MOBILE=1 elisa >/dev/null 2>&1 &"]
     }

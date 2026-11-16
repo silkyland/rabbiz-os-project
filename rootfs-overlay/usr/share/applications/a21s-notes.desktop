@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=Notes
-GenericName=Quick Notes
-Comment=Take quick notes (a21s-shell)
+Name=A21s Notes
+GenericName=Notes
+Comment=In-house A21s Notes
 Exec=a21s-notes
-Icon=accessories-text-editor
+Icon=utilities-system-monitor
 Categories=Utility;
 Terminal=false
 StartupNotify=true

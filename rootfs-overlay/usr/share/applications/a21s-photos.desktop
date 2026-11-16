@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=A21s Photos
+GenericName=Photo viewer
+Comment=In-house A21s Photos
+Exec=a21s-photos
+Icon=utilities-system-monitor
+Categories=Utility;
+Terminal=false
+StartupNotify=true

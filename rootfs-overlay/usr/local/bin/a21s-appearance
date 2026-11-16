@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+"""a21s-appearance — write the desktop contract (docs/DESKTOP-SHELL.md §3.2) from one palette.
+
+Usage: a21s-appearance --accent '#3B82F6' [--light] [--bg '#0A0A0C' --surface '#131316'
+                         --card '#17171B' --text '#F4F4F5' --dim '#A1A1AA'] [--no-gsettings]
+Writes (idempotent, as the invoking user):
+  ~/.local/share/color-schemes/A21s.colors   KDE/Qt colour scheme (Breeze style recoloured)
+  ~/.config/kdeglobals                       [General] ColorScheme=A21s, [Icons], fonts kept
+  gsettings org.gnome.desktop.interface      color-scheme / accent-color for GTK4, libadwaita, Chromium
+"""
+import argparse, configparser, os, subprocess, sys
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--accent", default="#3B82F6")
+ap.add_argument("--light", action="store_true")
+ap.add_argument("--bg", default="#0A0A0C"); ap.add_argument("--surface", default="#131316")
+ap.add_argument("--card", default="#17171B"); ap.add_argument("--text", default="#F4F4F5")
+ap.add_argument("--dim", default="#A1A1AA"); ap.add_argument("--no-gsettings", action="store_true")
+a = ap.parse_args()
+
+def rgb(h):
+    h = h.lstrip("#")[-6:]
+    return ",".join(str(int(h[i:i+2], 16)) for i in (0, 2, 4))
+
+if a.light:  # light variant derived from the same accent
+    a.bg, a.surface, a.card, a.text, a.dim = "#F6F6F8", "#FFFFFF", "#FFFFFF", "#1B1B1F", "#5B5B66"
+
+home = os.path.expanduser("~")
+def view(bg, alt, fg, dim, accent):
+    return {"BackgroundNormal": rgb(bg), "BackgroundAlternate": rgb(alt), "ForegroundNormal": rgb(fg),
+            "ForegroundInactive": rgb(dim), "ForegroundActive": rgb(accent), "ForegroundLink": rgb(accent),
+            "ForegroundVisited": rgb(dim), "ForegroundNegative": "255,92,108", "ForegroundNeutral": "255,200,87",
+            "ForegroundPositive": "87,211,141", "DecorationFocus": rgb(accent), "DecorationHover": rgb(accent)}
+sections = {
+    "Colors:View": view(a.bg, a.surface, a.text, a.dim, a.accent),
+    "Colors:Window": view(a.surface, a.card, a.text, a.dim, a.accent),
+    "Colors:Button": view(a.card, a.surface, a.text, a.dim, a.accent),
+    "Colors:Tooltip": view(a.card, a.surface, a.text, a.dim, a.accent),
+    "Colors:Complementary": view(a.surface, a.card, a.text, a.dim, a.accent),
+    "Colors:Header": view(a.surface, a.card, a.text, a.dim, a.accent),
+    "Colors:Selection": {**view(a.accent, a.accent, "#FFFFFF", "#DDDDDD", "#FFFFFF"),
+                          "BackgroundNormal": rgb(a.accent), "BackgroundAlternate": rgb(a.accent),
+                          "ForegroundNormal": "255,255,255"},
+}
+cs = os.path.join(home, ".local/share/color-schemes"); os.makedirs(cs, exist_ok=True)
+with open(os.path.join(cs, "A21s.colors"), "w") as f:
+    f.write("[General]\nName=A21s\nColorScheme=A21s\n\n")
+    for s, kv in sections.items():
+        f.write(f"[{s}]\n" + "".join(f"{k}={v}\n" for k, v in kv.items()) + "\n")
+    f.write(f"[WM]\nactiveBackground={rgb(a.surface)}\nactiveForeground={rgb(a.text)}\n"
+            f"inactiveBackground={rgb(a.bg)}\ninactiveForeground={rgb(a.dim)}\n")
+
+kg = os.path.join(home, ".config/kdeglobals"); os.makedirs(os.path.dirname(kg), exist_ok=True)
+cp = configparser.RawConfigParser(); cp.optionxform = str
+cp.read(kg)
+for s in ("General", "Icons", "KDE"):
+    if not cp.has_section(s): cp.add_section(s)
+cp.set("General", "ColorScheme", "A21s")
+cp.set("Icons", "Theme", "breeze" if a.light else "breeze-dark")
+cp.set("KDE", "widgetStyle", "Breeze")
+cp.set("KDE", "AccentColor", rgb(a.accent))
+# KColorScheme reads colours from kdeglobals itself ([Colors:*]); `ColorScheme=` is only the name.
+for sec, kv in sections.items():
+    if not cp.has_section(sec): cp.add_section(sec)
+    for k, v in kv.items(): cp.set(sec, k, v)
+cp.set("WM", "activeBackground", rgb(a.surface)) if cp.has_section("WM") else None
+with open(kg + ".tmp", "w") as f: cp.write(f, space_around_delimiters=False)
+os.replace(kg + ".tmp", kg)
+
+if not a.no_gsettings:
+    scheme = "prefer-light" if a.light else "prefer-dark"
+    subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", scheme],
+                   stderr=subprocess.DEVNULL, check=False)
+    # GTK4/libadwaita (and Chromium) pick their accent from a fixed set of names, not a hex:
+    # map our accent to the nearest one. Without this the shell accent reached Qt apps only
+    # (verified: kdeglobals changed, `gsettings get ... accent-color` stayed "blue").
+    adw = {"blue": "#3584e4", "teal": "#2190a4", "green": "#3a944a", "yellow": "#e5a50a",
+           "orange": "#ed5b00", "red": "#e01b24", "pink": "#d56199", "purple": "#9141ac",
+           "slate": "#6f8396"}
+    hx = a.accent.lstrip("#")
+    rgb_acc = tuple(int(hx[i:i + 2], 16) for i in (0, 2, 4)) if len(hx) == 6 else (59, 130, 246)
+    def dist(hex2):
+        r = tuple(int(hex2.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+        return sum((x - y) ** 2 for x, y in zip(rgb_acc, r))
+    nearest = min(adw, key=lambda k: dist(adw[k]))
+    subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "accent-color", nearest],
+                   stderr=subprocess.DEVNULL, check=False)
+print("a21s-appearance: ok", "light" if a.light else "dark", a.accent)

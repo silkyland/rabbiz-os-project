@@ -4,12 +4,16 @@ import QtQuick
 // A21s shell design tokens — One UI / Material dark.
 // All UI MUST consume these; no magic colors/numbers in components.
 QtObject {
-    // Palette — neutral matte graphite (no blue/purple tint).
-    readonly property color bg:           "#0A0A0C"
-    readonly property color surface:      "#131316"
-    readonly property color surfaceHigh:  "#1C1C20"
-    readonly property color card:         "#17171B"
-    readonly property color separator:    "#27272B"
+    // Light/dark switch. Theme cannot import A21s.Services (dependency direction: Theme is
+    // the bottom layer), so the shell/app roots bind this from ShellPrefs.lightTheme.
+    property bool light: false
+
+    // Palette — neutral graphite (dark) / soft paper (light). No blue/purple tint.
+    readonly property color bg:           light ? "#F4F4F7" : "#0A0A0C"
+    readonly property color surface:      light ? "#FFFFFF" : "#131316"
+    readonly property color surfaceHigh:  light ? "#ECECF1" : "#1C1C20"
+    readonly property color card:         light ? "#FFFFFF" : "#17171B"
+    readonly property color separator:    light ? "#DCDCE3" : "#27272B"
     readonly property color scrim:        "#B3000000"
     readonly property color primary:      "#3B82F6"
     // NB: named "primaryContent", not "onPrimary" — QML parses "on<Capitalized>"
@@ -17,16 +21,31 @@ QtObject {
     // exists, which makes the singleton fail to load at runtime.
     readonly property color primaryContent: "#FFFFFF"
     readonly property color accent:       "#E4E4E7"
-    readonly property color text:         "#F4F4F5"
-    readonly property color textDim:      "#A1A1AA"
-    readonly property color textFaint:    "#63636E"
+    readonly property color text:         light ? "#101014" : "#F4F4F5"
+    readonly property color textDim:      light ? "#57575F" : "#A1A1AA"
+    readonly property color textFaint:    light ? "#8E8E98" : "#63636E"
     readonly property color danger:       "#FF5C6C"
     readonly property color success:      "#57D38D"
     readonly property color warn:         "#FFC857"
-    readonly property color tileOn:       "#2E4470"
-    readonly property color tileOnText:   "#DCE8FF"
-    readonly property color tileOff:      "#22252F"
-    readonly property color tileOffText:  "#8B93A3"
+    readonly property color tileOn:       light ? "#D8E6FF" : "#2E4470"
+    readonly property color tileOnText:   light ? "#12305C" : "#DCE8FF"
+    // Text drawn straight on the wallpaper (clock, date, app labels). Every bundled
+    // wallpaper is dark, so this stays light in BOTH themes; using Theme.text here made the
+    // clock nearly invisible in light mode.
+    readonly property color onWallpaper:     "#F4F4F5"
+    readonly property color onWallpaperDim:  "#C9FFFFFF"
+    readonly property color tileOff:      light ? "#E9E9EF" : "#22252F"
+    readonly property color tileOffText:  light ? "#4A4A55" : "#8B93A3"
+
+    // Apps retain software rendering; the shell uses the pinned Panfrost path when available.
+    readonly property color glass:        light ? "#B3FFFFFF" : "#B3131316"
+    readonly property color glassHigh:    light ? "#D9FFFFFF" : "#D917171B"
+    readonly property color glassLow:     light ? "#8CFFFFFF" : "#8C0F0F12"
+    readonly property color glassBorder:  light ? "#33FFFFFF" : "#1FFFFFFF"
+    readonly property color glassShadow:  light ? "#14000000" : "#33000000"
+    readonly property color glassBlur:     light ? "#80FFFFFF" : "#80131316"
+    readonly property color glassBlurHigh: light ? "#B3FFFFFF" : "#B317171B"
+    readonly property int backdropBlurMax: 32
 
     // Type (px @ 720x1600, scale=1)
     readonly property string fontFamily: "Noto Sans"

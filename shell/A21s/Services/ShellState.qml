@@ -6,6 +6,10 @@ import Quickshell.Wayland
 QtObject {
     // 0..1 drag progress of the notification/quick-settings shade
     property real shadeProgress: 0
+    // Android 12+ shade split: left pull = notifications + media, right pull = quick settings.
+    property string shadeMode: "notifications"   // notifications | settings
+    // emitted by the status bar / shade gestures; the shade animates the snap itself
+    signal shadeSnapRequested(real value)
     readonly property bool shadeOpen: shadeProgress > 0.5
     // true while an app grid/drawer page is shown on the home screen
     property bool drawerOpen: false
@@ -44,9 +48,20 @@ QtObject {
     property url morphIconUrl: ""
     property color morphTint: "#3B82F6"
 
+    // true while the close morph shows a frozen screen snapshot instead of the flat splash
+    property bool morphSnapshot: false
+
     // set by task switcher / nav gesture to return home
     signal goHome()
     signal triggerLaunchMorph(real ox, real oy, real ow, real oh, real orad,
                               string name, string matIcon, url iconUrl, color tint)
     signal triggerCloseMorph()
+    // gesture navigation (Windowing/EdgeBack, Panels/NavBar): action = home | back | recents | prev | next
+    signal navAction(string action)
+    // 0..1 live progress of an in-flight gesture, for visual feedback
+    property real gestureProgress: 0.0
+    property string gestureKind: ""
+    // screen-space Y of the finger and the edge in use, for the back chip
+    property real gestureY: 0.0
+    property string gestureSide: ""
 }

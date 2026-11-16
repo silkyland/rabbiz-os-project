@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Shell-only GPU entry point. The compositor and app session stay software.
+set -euo pipefail
+export QT_QPA_PLATFORMTHEME="" QT_QUICK_CONTROLS_STYLE=Basic
+# Qt window buffers use the pinned allocator; Quickshell screencopy buffers use
+# SHM upload, avoiding its separate, unpatched GBM dmabuf allocation path.
+export QS_DISABLE_DMABUF=1
+# A complete GPU shell restart needs fresh contiguous swapchains. Exited GPU
+# clients currently retain CMA (docs/a21s-qt-gpu-scanout.md); do not crash-loop.
+free_kb=0
+if [[ -r /proc/meminfo ]]; then
+    free_kb=$(awk '/^CmaFree:/{print $2}' /proc/meminfo)
+fi
+floor_kb=${A21S_SHELL_CMA_FLOOR_KB:-98304}
+if [[ "$floor_kb" =~ ^[0-9]+$ && "${free_kb:-0}" -ge "$floor_kb" ]] && a21s-qt-gpu --check; then
+    exec a21s-qt-gpu quickshell -p /usr/share/a21s-shell/shell.qml "$@"
+fi
+echo "a21s-shell: GPU path unavailable; using software glass fallback" >&2
+unset LD_PRELOAD __EGL_VENDOR_LIBRARY_FILENAMES DRI_PRIME QSG_RHI_BACKEND
+unset RABBIZ_EXYNOS_RENDER RABBIZ_EXYNOS_PRIMARY
+export QT_QUICK_BACKEND=software
+exec quickshell -p /usr/share/a21s-shell/shell.qml "$@"

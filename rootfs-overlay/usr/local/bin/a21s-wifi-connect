@@ -1,0 +1,51 @@
+#!/bin/bash
+# a21s-wifi-connect — join a Wi-Fi network without exposing the PSK in argv.
+#
+# usage: a21s-wifi-connect <SSID>          # WPA PSK on stdin (empty line = open network)
+#
+# Why a helper: `nmcli device wifi connect SSID password <psk>` leaves the secret in
+# /proc/<pid>/cmdline for the whole connect. Here the PSK arrives on stdin and nmcli
+# reads it from a pty prompt (`--ask`), echoed off; it never appears in an argument list.
+# A keyfile would be cleaner but NetworkManager's `connection load` is root-only
+# regardless of polkit (verified: "failed to load connection: access denied").
+#
+# Requires rootfs-overlay/etc/polkit-1/rules.d/51-a21s-shell.rules: without it nmcli
+# answers "Insufficient privileges" because labwc has no polkit auth agent.
+set -u
+
+SSID="${1:-}"
+[ -n "$SSID" ] || { echo "Error: missing SSID" >&2; exit 2; }
+IFS= read -r PSK || PSK=""
+
+# The pty prompt masks input; --ask connection modify / device connect keep the PSK out
+# of argv. `stty -echo` is set first because stdin is pre-filled (npm-style echo race).
+ask() {
+    local what="$1"; shift
+    ( sleep 2; printf '%s\n' "$PSK" ) \
+        | timeout 45 script -qec "stty -echo; nmcli --ask $what" /dev/null
+}
+
+# 1) Find an existing profile for this SSID: `nmcli device wifi connect` otherwise
+#    creates "SSID 1", "SSID 2"... on every join.
+PROFILE=""
+for name in $(nmcli -t -f NAME,TYPE connection show 2>/dev/null \
+        | awk -F: '$2 == "802-11-wireless" { print $1 }'); do
+    if [ "$(nmcli -t -g 802-11-wireless.ssid connection show "$name" 2>/dev/null)" = "$SSID" ]; then
+        PROFILE="$name"
+        break
+    fi
+done
+
+if [ -n "$PROFILE" ]; then
+    if [ -n "$PSK" ]; then
+        ask "connection modify \"$PROFILE\" wifi-sec.psk" || true
+    fi
+    exec timeout 40 nmcli connection up id "$PROFILE"
+fi
+
+# 2) No profile yet. Bind to wlan0: without `ifname`, NetworkManager picks p2p0 (its
+#    P2P device) and fails with "association took too long / ssid-not-found".
+nmcli device wifi rescan >/dev/null 2>&1 || true   # a radio toggle empties the list
+sleep 1
+QSSID="$(printf '%s' "$SSID" | sed "s/'/'\\\\''/g")"
+ask "device wifi connect '$QSSID' ifname wlan0"

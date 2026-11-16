@@ -1,8 +1,4 @@
 #!/bin/sh
-# a21s-notes — launch KDE Marknote when installed, else Notes.qml.
-if command -v marknote >/dev/null 2>&1; then
-    exec env QT_QPA_PLATFORM=wayland QT_QUICK_BACKEND=software QT_QUICK_CONTROLS_MOBILE=1 marknote "$@"
-fi
-export QML_IMPORT_PATH=/usr/share/a21s-shell
-export QT_QUICK_BACKEND=software
-exec quickshell -p /usr/share/a21s-shell/apps/notes/Notes.qml "$@"
+# a21s-notes — in-house Notes (docs/BASE-APPS.md). Deployed by scripts/deploy_shell.sh.
+export QML_IMPORT_PATH=/usr/share/a21s-shell:/usr/share/a21s-apps
+exec a21s-qt-render quickshell -p /usr/share/a21s-apps/notes/Notes.qml "$@"

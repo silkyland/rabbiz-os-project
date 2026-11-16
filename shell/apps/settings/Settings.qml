@@ -4,7 +4,8 @@ import QtQuick.Layouts
 import Quickshell.Io
 import A21s.Theme
 import A21s.Services
-import A21s.Components as Components
+import A21s.Widgets as Components
+import A21s.Windowing as Windowing
 
 // Standalone Settings app — launched by the `a21s-settings` wrapper
 // (QML2_IMPORT_PATH=/usr/share/a21s-shell exec qml6 Settings.qml).
@@ -16,6 +17,7 @@ ApplicationWindow {
     height: Screen.height > 0 ? Screen.height : 1600
     title: "Settings"
     color: Theme.bg
+    Binding { target: Theme; property: "light"; value: ShellPrefs.lightTheme }
     font.family: Theme.fontFamily
     font.pixelSize: Theme.fontBody
 
@@ -211,7 +213,7 @@ ApplicationWindow {
         initialItem: mainPage
     }
 
-    Components.AppGestureLayer {
+    Windowing.AppGestureLayer {
         anchors.fill: parent
         enabled: !wifiDialog.visible
         onBackTriggered: {
@@ -633,6 +635,24 @@ ApplicationWindow {
                     }
                 }
 
+                SectionTitle { text: "THEME" }
+                RowLayout {
+                    Layout.fillWidth: true
+                    Text {
+                        Layout.fillWidth: true
+                        text: "Light theme"
+                        color: Theme.text
+                        font.pixelSize: Theme.fontBody
+                    }
+                    PillSwitch {
+                        checked: ShellPrefs.lightTheme
+                        onToggled: function(on) {
+                            ShellPrefs.lightTheme = on
+                            ShellPrefs.save()
+                        }
+                    }
+                }
+
                 // Clock style segmented selector
                 SectionTitle { text: "CLOCK STYLE" }
                 RowLayout {
@@ -861,9 +881,17 @@ ApplicationWindow {
                         }
                         MouseArea {
                             anchors.fill: parent
-                            onClicked: wifiDialog.open(
-                                modelData.inUse ? "disconnect" : "connect",
-                                modelData.ssid)
+                            onClicked: {
+                                // A saved network already has its PSK in NetworkManager: connect straight
+                                // away instead of asking for the password again (a21s-wifi-connect then
+                                // just activates the stored profile). Dialog only for new networks.
+                                var saved = Network.savedSsids.indexOf(modelData.ssid) >= 0
+                                if (!modelData.inUse && saved)
+                                    Network.connectTo(modelData.ssid, "")
+                                else
+                                    wifiDialog.open(modelData.inUse ? "disconnect" : "connect",
+                                                    modelData.ssid)
+                            }
                         }
                     }
                 }
