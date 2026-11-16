@@ -34,6 +34,11 @@ QtObject {
     // clock nearly invisible in light mode.
     readonly property color onWallpaper:     "#F4F4F5"
     readonly property color onWallpaperDim:  "#C9FFFFFF"
+    // Faint ink and hairlines drawn on the wallpaper (lock-screen section labels
+    // and rules); the shade's Theme.shadeLine flips to black in light mode and
+    // would disappear on the lock screen's always-dark wallpaper.
+    readonly property color onWallpaperFaint: "#8CFFFFFF"
+    readonly property color onWallpaperLine:  "#33FFFFFF"
     readonly property color tileOff:      light ? "#E9E9EF" : "#22252F"
     readonly property color tileOffText:  light ? "#4A4A55" : "#8B93A3"
 

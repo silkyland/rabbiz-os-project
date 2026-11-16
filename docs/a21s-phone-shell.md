@@ -197,6 +197,65 @@ still scroll, move sliders and pull the sheet closed.
 `qmllint -I shell <file>` (Qt 6.12) catches syntax and missing properties. Neither
 excuses checking the phone: both device defects above passed both tools.
 
+## Lock screen — sheet language (2026-11-16)
+
+The lock screen was rebuilt *from the shade*, not from the home screen. The old
+overlay copied the home screen's editorial clock and drew itself on a 97 %-opaque
+wallpaper: the home clock, icons and dock ghosted through it, the system status
+bar and a second lock top bar overlapped, and the fingerprint pad, sleep pill and
+corner buttons shared no baseline.
+
+![Lock screen preview](lock-screen-preview.png)
+
+### Composition
+
+| Zone | Content |
+|---|---|
+| Status line | Wi-Fi/SSID or carrier (left) and battery (right). The system `StatusBar` is under this opaque layer, so the lock draws the only status readout that is visible |
+| Header | the notification page's oversized clock + date and the round DND button (`Theme.fontClock`, `Theme.shadeControlButton`) |
+| Preview | `NotificationGroups.js` sections (Conversations / Devices / Apps / Promotions) rendered with the same `NotificationCard`s as the shade, capped at 3 cards plus "+N more" |
+| Dock | the controls page's media card (`Theme.radiusCard` / `shadeCard`) and three labelled circular actions: Flashlight · Touch to unlock · Power |
+| Bottom | the slim home hint (the system `NavBar` is also under this layer) |
+
+Everything shares the sheet's 20 px insets and card language, so the lock screen,
+the shade and Settings read as one product.
+
+### Behaviour
+
+- Swipe up anywhere that has no handler (the background `MouseArea`), touch the
+  fingerprint pad, or tap the hint — all end in `SystemControl.unlockScreen()`.
+- Grouped cards expand/collapse on tap and dismiss with ×. **Action chips are
+  hidden on the lock** (`NotificationCard.actionsEnabled: false`): an action can
+  launch a window, so it belongs behind the unlock.
+- The bell toggles DND, the torch button opens the OLED torch, Power opens the
+  session menu.
+- The backdrop is opaque by contract. The home screen is drawn underneath this
+  layer; the previous translucent "glass" backdrop is what made the lock screen
+  look crooked and duplicated.
+
+### Files
+
+- `Panels/LockScreen.qml` (new) — surface + interactions. `PowerMenu.qml` now
+  only owns the overlay layer, idle monitors, power menu, torch and sleep
+  curtain (1118 → 348 lines).
+- `Panels/NotificationCard.qml` — `actionsEnabled` (default `true`).
+- `Panels/qmldir` — registers `LockScreen`.
+- `Theme.qml` — `onWallpaperFaint` / `onWallpaperLine` for ink and hairlines on
+  the always-dark lock wallpaper (`shadeLine` flips to black in light mode).
+- This section + `docs/lock-screen-preview.png`.
+
+### Verification
+
+Device 2026-11-16, shell restarted with a clean log. Injected four notifications
+through `notify-send` (two Messenger items to exercise per-app grouping, plus
+Bluetooth, Clock and a KBank promotion) and a paused track through the
+`a21s-spotify` event file. With `a21s-touch` + `grim`: group expand/collapse,
+DND toggle, power menu, OLED torch and swipe-up unlock all confirmed; the empty
+state was checked with no notifications. An action-bearing notification
+(`gdbus ... Notify` with an `open` action) showed its chip in the shade but not
+on the lock, as intended. The status line, battery readout and media card are
+live services (`Network`, `UPower`, `Media`), not mocks.
+
 ## App layer (added 2026-11-15)
 
 - **File managers**: `a21s-files` prefers `index` (index-fm, Maui — true

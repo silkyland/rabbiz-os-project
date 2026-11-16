@@ -19,6 +19,9 @@ Rectangle {
     property NotificationServer server: null
     // Bumped by the sheet every minute so the relative time re-evaluates.
     property int refreshToken: 0
+    // Lock-screen preview: action chips can launch a window, so they stay behind
+    // the unlock. Dismissing and expanding a group remain available.
+    property bool actionsEnabled: true
 
     readonly property var items: modelData && modelData.items ? modelData.items : []
     readonly property int count: items.length
@@ -202,7 +205,7 @@ Rectangle {
             // a collapsed group must stay one glanceable line.
             RowLayout {
                 Layout.fillWidth: true
-                visible: !card.grouped && actionRepeater.count > 0
+                visible: card.actionsEnabled && !card.grouped && actionRepeater.count > 0
                 spacing: Theme.spaceS
 
                 Repeater {
