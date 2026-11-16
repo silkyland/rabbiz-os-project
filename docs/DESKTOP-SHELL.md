@@ -176,7 +176,7 @@ Evidence for doing it: Plasma Settings rendered light/default on our dark device
 | M7.4 swap base apps | **done** | home/drawer use `org.kde.*`; Calculator/Clock/Notes/Gallery/Files/Spotify QML + wrappers deleted (~4 k lines); Spotify removed entirely (owner request; Widevine is unavailable so the web player could not play anyway). Dialer/SMS/Settings QML kept (D1/ADR-6) |
 | M7.5 form factors | not started | only `handset` is in scope (D3) |
 | M7.6 close morph | not started | S1 says ScreencopyView is available, untested |
-| M7.7 input + Steam | **Steam in a window works to the splash** (nested Weston), input not started | ADR-8; Big Picture home + game launch unverified |
+| M7.7 input + Steam | **Big Picture verified** (logged in, online, touch taps land), game launch reaches Proton/FEX but the game renders black | ADR-8; fixed `SDL_VIDEODRIVER=x11` (was black screen); RAM 82 MB free / 547 MB available; teardown <=14 s |
 | M7.8 Settings v2 | not started | S2: plasma-settings lacks Wi-Fi/BT/sound/battery |
 | M7.10 home editing (drag & drop, align) | not started | `HANDOFF-DESKTOP-SHELL.md` §7.1 |
 | M7.11 clipboard system | not started | §7.2; `wl-clipboard`/`cliphist` not installed, labwc has data-control |

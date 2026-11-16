@@ -16,7 +16,7 @@
 | M7.4 base apps are real Linux apps; QML Calc/Clock/Notes/Gallery/Files/Spotify deleted | **done, verified** |
 | M7.5 form factor seam (`handset` only, D3) | not started |
 | M7.6 close morph via snapshot (S1: `ScreencopyView` exists, untested) | not started |
-| M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Steam splash works** (ADR-8), input not started |
+| M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Big Picture verified** (logged in, touch taps work, game launch reaches Proton/FEX); game renders black — ADR-8. Input (mouse/keyboard/gamepad) not started |
 | M7.8 Settings v2 (thin shell-owned panels; `plasma-settings` lacks Wi-Fi/BT/sound/battery) | not started |
 | M7.10 **home editing** (long-press, drag & drop, snap/align, persisted layout) | **not started** — spec §7.1 |
 | M7.11 **clipboard system** | **not started** — spec §7.2 |
@@ -48,15 +48,24 @@ AGENTS.md hard rules still apply).
   not always `wayland-0` after a session restart; never run `steamos-session` from SSH while labwc owns the seat;
   the shell process must run with `QT_QPA_PLATFORMTHEME=` + `QT_QUICK_CONTROLS_STYLE=Basic` but apps must NOT
   inherit that (the `Launcher` starts apps with the contract env via `Quickshell.execDetached`).
+  `SDL_VIDEODRIVER=wayland` is exported session-wide by `a21s-phone-session`, and Steam's CEF dies on it — see ADR-8.
+  There is no `fp-unlock` binary: it is `a21s-power-key fp-unlock`, and the screen re-locks after ~2 min, so unlock
+  before every grim.
+  **The phone needs Wi-Fi for anything online** (Steam login, package installs): `usb0` has a default route
+  (metric 700) that wins over Wi-Fi, and it points at the Mac, which does not route. Check with
+  `curl https://client-update.akamai.steamstatic.com/`; if Wi-Fi is disconnected, fix the route metric
+  (`nmcli connection modify <ssid> ipv4.route-metric 50`) or the network looks "connected" but times out.
 - Disk is ~95 % full (1.2 GB free). Check `df -h /` before installing. `linux-aarch64` (386 MiB, dead weight) and
   `gcc`/`clang` (~190 MiB) are removable; **do not remove `llvm-libs` (mesa needs it)**.
 
 ## 3. Task backlog (priority order, each with exit criteria)
 
-1. **Verify Steam end to end** (ADR-8). Wait ~90 s after launch; screenshot must show Big Picture, not black/splash.
-   Then: touch works inside nested Weston, a game starts (`steam://rungameid/433950` Bit Blaster XL), free RAM stays
-   > 100 MB, closing the window kills Weston+Steam (`pgrep -u gamer weston` empty). If touch is dead, forward input
-   (weston `--xwayland` + seat) or try `--renderer=gl`. Update ADR-8 "Not verified" list.
+1. ~~**Verify Steam end to end** (ADR-8).~~ **Done 2026-11-16, one gap open.** Verified on the device: Big Picture
+   renders logged-in with online content, a touch tap opens a game page, `steam://rungameid/433950` reaches Proton/FEX,
+   `steam -shutdown` kills Steam+Weston in <=14 s, RAM 82 MB free / 547 MB available at Big Picture. Fixed the black
+   screen: `SDL_VIDEODRIVER=x11` in `a21s-steam` (the session exports `wayland`, which Steam's CEF/SDL cannot use).
+   **Open:** the game itself is black (FEX ~100 % on one core, no frames) — likely panvk/Direct3D; also a FEX server is
+   orphaned after exit, and a second `a21s-steam <url>` can start a second Weston. Needs Wi-Fi to be up (see §2).
 2. **Fix the 7 open review findings** (details in `git log` message of 89cdc3a and `docs/DESKTOP-SHELL.md` §10):
    mobile data toggle disables the whole modem (`SystemControl.qml` ~146); single-slot pending command in
    `Network.qml:95` / `Bluetooth.qml:85` (use a FIFO); 3 s telemetry fork storm (`SystemControl.qml` ~732, stop while
