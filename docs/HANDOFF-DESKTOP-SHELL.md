@@ -74,6 +74,11 @@ AGENTS.md hard rules still apply).
   change it through the Settings UI, not with a text edit.
   **Gestures:** a slow swipe-up (300 ms) opens Recents ("swipe up and hold"); a fast one (~120 ms, start y>=1590)
   goes home.
+  **Frame time (S5):** `./scripts/frame_time.sh [user@host] [--gesture drawer|shade|none]` restarts the shell with
+  `QSG_RENDER_TIMING=1`, drives a gesture and prints p50/p90/max from Qt's "Frame rendered ... in X ms" lines.
+  The owner reports the drawer slide is not 60 fps; the prime suspects are the wallpaper `scale` tied to
+  `drawerProgress` (bilinear resample of a full-screen image every frame under software Qt Quick), the full-screen
+  drawer `opacity` blend, and the whole home scene repainting behind it. Measure before changing anything.
 - Disk is ~95 % full (1.2 GB free). Check `df -h /` before installing. `linux-aarch64` (386 MiB, dead weight) and
   `gcc`/`clang` (~190 MiB) are removable; **do not remove `llvm-libs` (mesa needs it)**.
 
