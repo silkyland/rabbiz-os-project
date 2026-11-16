@@ -120,24 +120,6 @@ PanelWindow {
         opacity: bar.toastActive ? 0.25 : 1.0
         Behavior on opacity { NumberAnimation { duration: Theme.animFast } }
 
-        Rectangle {
-            visible: Telephony.demoMode && !SystemControl.airplaneMode
-            Layout.preferredWidth: demoText.implicitWidth + Theme.spaceS
-            Layout.preferredHeight: demoText.implicitHeight + Theme.spaceXS
-            Layout.alignment: Qt.AlignVCenter
-            radius: Theme.radiusPill
-            color: Theme.warn
-
-            Text {
-                id: demoText
-                anchors.centerIn: parent
-                text: "DEMO"
-                color: Theme.bg
-                font.pixelSize: Math.round(Theme.fontStatus * 0.55)
-                font.weight: Font.Bold
-            }
-        }
-
         // Airplane indicator
         MaterialIcon {
             Layout.alignment: Qt.AlignVCenter
