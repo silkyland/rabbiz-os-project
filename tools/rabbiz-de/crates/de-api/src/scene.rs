@@ -90,6 +90,14 @@ pub enum DrawOp {
         text: String,
         style: TextStyle,
     },
+    /// Google Font Icon (`Material Symbols Rounded`), centered at `center`.
+    Icon {
+        center: Point,
+        size: f32,
+        codepoint: char,
+        color: Color,
+        filled: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -119,6 +127,23 @@ impl Layer {
             origin,
             text: text.into(),
             style,
+        });
+    }
+
+    pub fn icon(
+        &mut self,
+        center: Point,
+        size: f32,
+        codepoint: char,
+        color: Color,
+        filled: bool,
+    ) {
+        self.ops.push(DrawOp::Icon {
+            center,
+            size,
+            codepoint,
+            color,
+            filled,
         });
     }
 }
