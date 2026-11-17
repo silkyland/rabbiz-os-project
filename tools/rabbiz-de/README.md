@@ -11,9 +11,13 @@ scripts/de_test_host.sh
 # or, by hand:
 cargo run --manifest-path tools/rabbiz-de/Cargo.toml -p de-sim -- \
   --scene brand --out build/de/brand.png
+cargo run --manifest-path tools/rabbiz-de/Cargo.toml -p de-sim -- \
+  --scene lock --out build/de/lock.png
 ```
 
-Output is a 720×1600 PNG of the P0 boot frame.
+Output is a 720×1600 PNG: the P0 boot frame (`--scene brand`) or the P1 lock
+screen skeleton (`--scene lock`). Without `--out`, the file is named after the
+scene (`build/de/<scene>.png`).
 
 ## Shape
 

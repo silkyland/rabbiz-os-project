@@ -148,7 +148,7 @@ crates arrive with their milestones (M0-T3 on device, M1/M2).
 | `de-api` | `Point`, `Rect`, `Size`, `Color`, `DrawOp`, `Scene`, `TextStyle` | — | renderer, fonts, Wayland, OS |
 | `de-design` | `DARK: Tokens`, `contrast_ratio` | `de-api` | screens, renderer |
 | `de-paint` | `Renderer::{new,render}`, `save_png` | `de-api`, tiny-skia, cosmic-text | screens, Wayland, config |
-| `de-ui` | `boot::build(Size) -> Scene` | `de-api`, `de-design` | tiny-skia, cosmic-text, files, OS |
+| `de-ui` | `boot::build(Size) -> Scene`, `lock::build(Size) -> Scene` | `de-api`, `de-design` | tiny-skia, cosmic-text, files, OS |
 | `de-sim` | `de-sim` binary | all of the above | business/screen logic |
 
 **Dependency direction**: `de-api ← de-design ← de-ui ← de-sim` and
