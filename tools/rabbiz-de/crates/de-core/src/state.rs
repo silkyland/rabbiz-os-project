@@ -60,7 +60,10 @@ pub struct FrameStatsLine {
     pub frames: u64,
     pub cpu_ms: CpuStats,
     pub gpu_ms: Option<f64>,
-    pub damage_px: u64,
+    /// Pixels actually composited this window: sum of each element's
+    /// `visible_area` from `RenderElementStates`. This is a measured value,
+    /// not an assumed full-frame count.
+    pub visible_px: u64,
     pub layers: usize,
     pub textures_mb: f64,
     pub cma_free_kb: u64,
@@ -81,6 +84,16 @@ pub struct StatsSummary {
     pub missed_frames: u64,
     pub rss_kb_peak: u64,
     pub cma_free_min_kb: u64,
+    /// Cumulative frames where smithay assigned the toplevel to the primary
+    /// plane directly (`PrimaryPlaneElement::Element`).
+    pub direct_scanout: u64,
+    /// Cumulative frames composited onto the primary plane via the swapchain
+    /// (`PrimaryPlaneElement::Swapchain`).
+    pub primary_composite: u64,
+    /// Free-form note when direct scanout was probed but never selected,
+    /// so a reader can tell "0 means structurally impossible" apart from
+    /// "0 means never measured".
+    pub scanout_probe: Option<String>,
     pub renderer: &'static str,
 }
 
@@ -163,4 +176,55 @@ pub fn read_rss_kb() -> u64 {
         }
     }
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn summary_serializes_scanout_fields() {
+        let summary = StatsSummary {
+            scenario: "m1-calc".to_string(),
+            duration_ms: 5000,
+            frames: 12,
+            cpu_ms: CpuStats { p50: 1.0, p95: 2.0, max: 3.0 },
+            gpu_ms: None,
+            missed_frames: 0,
+            rss_kb_peak: 100,
+            cma_free_min_kb: 200,
+            direct_scanout: 0,
+            primary_composite: 12,
+            scanout_probe: Some("structural".to_string()),
+            renderer: "gl",
+        };
+        let json = serde_json::to_value(&summary).unwrap();
+        assert_eq!(json["direct_scanout"], 0);
+        assert_eq!(json["primary_composite"], 12);
+        assert_eq!(json["scanout_probe"], "structural");
+        assert_eq!(json["renderer"], "gl");
+        assert!(json.get("damage_px").is_none());
+    }
+
+    #[test]
+    fn stats_line_reports_visible_px_not_damage() {
+        let line = FrameStatsLine {
+            t_ms: 1000,
+            frames: 3,
+            cpu_ms: CpuStats { p50: 1.0, p95: 2.0, max: 3.0 },
+            gpu_ms: None,
+            visible_px: 720 * 1600,
+            layers: 4,
+            textures_mb: 1.5,
+            cma_free_kb: 10,
+            rss_kb: 20,
+            direct_scanout: 0,
+            primary_composite: 3,
+            missed_frames: 0,
+            renderer: "gl",
+        };
+        let json = serde_json::to_value(&line).unwrap();
+        assert_eq!(json["visible_px"], 720 * 1600);
+        assert!(json.get("damage_px").is_none());
+    }
 }

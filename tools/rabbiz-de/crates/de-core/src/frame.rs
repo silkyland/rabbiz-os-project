@@ -32,6 +32,7 @@ use smithay::backend::renderer::{
     Bind, Color32F, ExportMem, Frame, ImportAll, ImportDma, Offscreen, Renderer, RendererSuper, Texture,
 };
 use smithay::desktop::utils::send_frames_surface_tree;
+use smithay::desktop::PopupManager;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
@@ -79,8 +80,10 @@ struct LoopState {
     window_frames: u64,
     window_cpu_ms: Vec<f64>,
     all_cpu_ms: Vec<f64>,
-    damage_px_window: u64,
-    frame_damage_px: u64,
+    visible_px_window: u64,
+    /// When an empty frame left pending `wl_callback`s behind, deliver them
+    /// once this deadline passes (~one retrace), instead of stalling forever.
+    frame_cb_due: Option<std::time::Instant>,
     layers_count: usize,
     textures_bytes: u64,
     rss_kb_peak: u64,
@@ -212,14 +215,20 @@ pub fn run(config: RunConfig) -> i32 {
     };
 
     let refresh_mhz = (setup.refresh_hz * 1000.0).round() as i32;
-    let protocols = ProtocolState::new(
+    let protocols = match ProtocolState::new(
         &display_handle,
         &setup.info.connector,
         setup.width,
         setup.height,
         refresh_mhz,
         drm_dev_id,
-    );
+    ) {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("protocol state init failed: {err}");
+            return 75;
+        }
+    };
 
     let libinput_backend = match create_libinput_backend(&session, &protocols.seat.name()) {
         Ok(b) => Some(b),
@@ -265,7 +274,12 @@ pub fn run(config: RunConfig) -> i32 {
                 }
                 st.last_vblank = Some(now);
                 st.vblank_pending = false;
-                let _ = st.compositor.frame_submitted();
+                if let Err(err) = st.compositor.frame_submitted() {
+                    // Without frame_submitted the swapchain's submitted slot
+                    // never frees; once slots run out every render fails, so
+                    // this error must not stay silent.
+                    eprintln!("frame_submitted failed: {err:?}");
+                }
                 if !st.ready_written {
                     write_ready_file();
                     st.ready_written = true;
@@ -301,11 +315,18 @@ pub fn run(config: RunConfig) -> i32 {
         return 75;
     }
 
-    if let Ok(poll_fd) = display.backend().poll_fd().as_fd().try_clone_to_owned() {
-        let _ = event_loop.handle().insert_source(
-            Generic::new(poll_fd, Interest::READ, Mode::Level),
-            |_, _, _| Ok(PostAction::Continue),
-        );
+    match display.backend().poll_fd().as_fd().try_clone_to_owned() {
+        Ok(poll_fd) => {
+            if let Err(err) = event_loop.handle().insert_source(
+                Generic::new(poll_fd, Interest::READ, Mode::Level),
+                |_, _, _| Ok(PostAction::Continue),
+            ) {
+                // Without this source client requests can go unread until
+                // another event wakes the loop - log rather than ignore.
+                eprintln!("insert display poll_fd source failed: {err}");
+            }
+        }
+        Err(err) => eprintln!("clone display poll_fd failed: {err}"),
     }
 
     if let Some(libinput) = libinput_backend {
@@ -359,8 +380,8 @@ pub fn run(config: RunConfig) -> i32 {
         window_frames: 0,
         window_cpu_ms: Vec::with_capacity(128),
         all_cpu_ms: Vec::with_capacity(1024),
-        damage_px_window: 0,
-        frame_damage_px: u64::from(setup.width) * u64::from(setup.height),
+        visible_px_window: 0,
+        frame_cb_due: None,
         layers_count,
         textures_bytes,
         rss_kb_peak: initial_rss,
@@ -381,7 +402,11 @@ pub fn run(config: RunConfig) -> i32 {
             }
         }
 
-        let _ = state.display.dispatch_clients(&mut state.protocols);
+        if let Err(err) = state.display.dispatch_clients(&mut state.protocols) {
+            // A dead client is normal (its socket just closed); other errors
+            // mean the wayland server loop is broken, so they must be visible.
+            eprintln!("dispatch_clients failed: {err}");
+        }
         process_pending_dmabufs(&mut state);
         state.protocols.space.refresh();
 
@@ -406,8 +431,21 @@ pub fn run(config: RunConfig) -> i32 {
             }
         }
 
-        let _ = state.display.flush_clients();
-        let _ = event_loop.dispatch(Some(Duration::from_millis(16)), &mut state);
+        if let Err(err) = state.display.flush_clients() {
+            eprintln!("flush_clients failed: {err}");
+        }
+        if let Err(err) = event_loop.dispatch(Some(Duration::from_millis(16)), &mut state) {
+            eprintln!("event_loop dispatch failed: {err}");
+        }
+
+        // Deliver deferred frame callbacks (~one retrace after an empty
+        // frame). Bounded: the flag is set only when callbacks were pending.
+        if let Some(due) = state.frame_cb_due {
+            if Instant::now() >= due {
+                state.frame_cb_due = None;
+                send_frame_callbacks(&mut state);
+            }
+        }
 
         if state.last_window_instant.elapsed() >= Duration::from_secs(1) {
             flush_stats_window(&mut state);
@@ -424,6 +462,16 @@ pub fn run(config: RunConfig) -> i32 {
         missed_frames: state.missed_frames,
         rss_kb_peak: state.rss_kb_peak,
         cma_free_min_kb: state.cma_free_min_kb,
+        direct_scanout: state.direct_scanout,
+        primary_composite: state.primary_composite,
+        scanout_probe: if state.total_frames > 0 && state.direct_scanout == 0 {
+            Some(
+                "probed every frame; direct scanout never selected (shell elements                  above the toplevel block smithay's plane assignment; see §11 waiver)"
+                    .to_string(),
+            )
+        } else {
+            None
+        },
         renderer: renderer_label(state.render_target.kind()),
     };
 
@@ -530,8 +578,10 @@ where
 {
     let mut elements: Vec<OutputElement<R>> = Vec::new();
 
-    // 32 px bottom gesture bar overlay (pill on translucent plum bar).
-    if !protocols.space.elements().next().is_none() {
+    // 32 px bottom gesture bar overlay (pill on translucent plum bar). Toplevels
+    // enter `space` only after their first buffer commit, so the bar can never
+    // appear over a window with nothing to show.
+    if protocols.space.elements().next().is_some() {
         let pill_w = 140;
         let pill_h = 5;
         let pill_rect: Rectangle<i32, Physical> =
@@ -555,12 +605,31 @@ where
         )));
     }
 
-    // Mapped xdg_toplevel windows (front-to-back).
+    // Mapped xdg_toplevel windows (front-to-back), each with its popups drawn
+    // above it (menus, dropdowns, tooltips).
     for window in protocols.space.elements().rev() {
         if let Some(toplevel) = window.toplevel() {
+            let wl_surface = toplevel.wl_surface();
+            for (popup, location) in PopupManager::popups_for_surface(wl_surface) {
+                // Same offset formula smithay uses for window popups:
+                // window origin + popup offset inside the toplevel tree -
+                // the popup's own window-geometry origin.
+                // Output scale is 1:1, so logical and physical points coincide.
+                let offset = (window.geometry().loc + location - popup.geometry().loc)
+                    .to_physical(1);
+                let popup_elems: Vec<OutputElement<R>> = render_elements_from_surface_tree(
+                    renderer,
+                    popup.wl_surface(),
+                    offset,
+                    1.0,
+                    1.0,
+                    Kind::Unspecified,
+                );
+                elements.extend(popup_elems);
+            }
             let win_elems: Vec<OutputElement<R>> = render_elements_from_surface_tree(
                 renderer,
-                toplevel.wl_surface(),
+                wl_surface,
                 (0, 0),
                 1.0,
                 1.0,
@@ -578,6 +647,28 @@ where
     elements
 }
 
+fn send_frame_callbacks(state: &mut LoopState) {
+    let now_dur = state.start_instant.elapsed();
+    let output = &state.protocols.output;
+    let mut surfaces: Vec<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface> =
+        Vec::new();
+    for window in state.protocols.space.elements() {
+        if let Some(toplevel) = window.toplevel() {
+            surfaces.push(toplevel.wl_surface().clone());
+        }
+    }
+    surfaces.extend(state.protocols.mapped_popup_surfaces());
+    for surface in surfaces {
+        send_frames_surface_tree(
+            &surface,
+            output,
+            now_dur,
+            Some(Duration::ZERO),
+            |_, _| Some(output.clone()),
+        );
+    }
+}
+
 fn submit_frame(state: &mut LoopState) -> Result<(), String> {
     let t0 = Instant::now();
     let clear = Color32F::new(0.086, 0.063, 0.102, 1.0);
@@ -585,7 +676,9 @@ fn submit_frame(state: &mut LoopState) -> Result<(), String> {
     let w = state.output_width as i32;
     let h = state.output_height as i32;
 
-    let used_direct_scanout = match &mut state.render_target {
+    // (direct_scanout, visible_px) observed from render_frame's element
+    // states - measured, not assumed.
+    let (used_direct_scanout, visible_px) = match &mut state.render_target {
         RenderTarget::Gl {
             renderer,
             scene_tex,
@@ -604,9 +697,17 @@ fn submit_frame(state: &mut LoopState) -> Result<(), String> {
                 .render_frame(renderer, &elements, clear, flags)
                 .map_err(|err| format!("render_frame(gl) failed: {err:?}"))?;
             if res.is_empty {
+                defer_frame_callbacks(state);
                 return Ok(());
             }
-            matches!(res.primary_element, PrimaryPlaneElement::Element(_))
+            (
+                matches!(res.primary_element, PrimaryPlaneElement::Element(_)),
+                res.states
+                    .states
+                    .values()
+                    .map(|s| s.visible_area as u64)
+                    .sum::<u64>(),
+            )
         }
         RenderTarget::Soft {
             renderer,
@@ -626,31 +727,29 @@ fn submit_frame(state: &mut LoopState) -> Result<(), String> {
                 .render_frame(renderer, &elements, clear, flags)
                 .map_err(|err| format!("render_frame(soft) failed: {err:?}"))?;
             if res.is_empty {
+                defer_frame_callbacks(state);
                 return Ok(());
             }
-            matches!(res.primary_element, PrimaryPlaneElement::Element(_))
+            (
+                matches!(res.primary_element, PrimaryPlaneElement::Element(_)),
+                res.states
+                    .states
+                    .values()
+                    .map(|s| s.visible_area as u64)
+                    .sum::<u64>(),
+            )
         }
     };
 
-    let now_dur = state.start_instant.elapsed();
-    let output = &state.protocols.output;
-    for window in state.protocols.space.elements() {
-        if let Some(toplevel) = window.toplevel() {
-            send_frames_surface_tree(
-                toplevel.wl_surface(),
-                output,
-                now_dur,
-                Some(Duration::ZERO),
-                |_, _| Some(output.clone()),
-            );
-        }
-    }
+    send_frame_callbacks(state);
 
     state
         .compositor
         .queue_frame(())
         .map_err(|err| format!("queue_frame failed: {err:?}"))?;
     state.vblank_pending = true;
+    // A real frame was queued: any deferred callback deadline is superseded.
+    state.frame_cb_due = None;
 
     let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
     state.total_frames += 1;
@@ -660,10 +759,25 @@ fn submit_frame(state: &mut LoopState) -> Result<(), String> {
     } else {
         state.primary_composite += 1;
     }
-    state.damage_px_window += state.frame_damage_px;
+    state.visible_px_window += visible_px;
     state.window_cpu_ms.push(elapsed_ms);
     state.all_cpu_ms.push(elapsed_ms);
     Ok(())
+}
+
+/// An empty frame means no page flip is queued and no vblank is coming.
+/// Clients that committed unchanged content while holding a `wl_surface.frame`
+/// request would wait forever, so schedule the callback delivery for roughly
+/// one retrace from now (smithay's documented re-scheduling strategy). When
+/// nothing waits, nothing is scheduled and the idle loop stays cheap.
+fn defer_frame_callbacks(state: &mut LoopState) {
+    if !state.protocols.has_pending_frame_callbacks() {
+        return;
+    }
+    if state.frame_cb_due.is_none() {
+        state.frame_cb_due =
+            Some(Instant::now() + Duration::from_secs_f64(state.expected_interval_ms / 1000.0));
+    }
 }
 
 fn flush_stats_window(state: &mut LoopState) {
@@ -681,7 +795,7 @@ fn flush_stats_window(state: &mut LoopState) {
         frames: state.window_frames,
         cpu_ms: summarize_cpu_ms(&state.window_cpu_ms),
         gpu_ms: None,
-        damage_px: state.damage_px_window,
+        visible_px: state.visible_px_window,
         layers: state.layers_count,
         textures_mb: round2(state.textures_bytes as f64 / (1024.0 * 1024.0)),
         cma_free_kb: cma,
@@ -700,7 +814,7 @@ fn flush_stats_window(state: &mut LoopState) {
 
     state.window_frames = 0;
     state.window_cpu_ms.clear();
-    state.damage_px_window = 0;
+    state.visible_px_window = 0;
     state.last_window_instant = Instant::now();
 }
 

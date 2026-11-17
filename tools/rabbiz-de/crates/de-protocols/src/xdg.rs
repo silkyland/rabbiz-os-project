@@ -1,8 +1,8 @@
-use smithay::desktop::Window;
+use smithay::desktop::{PopupKind, PopupManager, Window};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1::Mode;
 use smithay::reexports::wayland_protocols::xdg::shell::server::xdg_toplevel::State;
 use smithay::reexports::wayland_server::protocol::wl_seat::WlSeat;
-use smithay::utils::{Serial, SERIAL_COUNTER};
+use smithay::utils::{Rectangle, Serial, SERIAL_COUNTER};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
     PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState,
@@ -26,24 +26,80 @@ impl XdgShellHandler for ProtocolState {
         });
         surface.send_configure();
 
+        // The window is NOT mapped yet: it enters `space`, rendering and the
+        // focus stack only on its first buffer commit (CompositorHandler::commit).
         let window = Window::new_wayland_window(surface);
-        self.space.map_element(window, (0, 0), true);
-        self.focus_top_window(SERIAL_COUNTER.next_serial());
+        self.uncommitted_windows.push(window);
     }
 
-    fn new_popup(&mut self, _surface: PopupSurface, _positioner: PositionerState) {}
+    fn new_popup(&mut self, surface: PopupSurface, positioner: PositionerState) {
+        // Constrain the requested geometry into the output so popups cannot
+        // land offscreen (menus/dropdowns get slide/flip adjustments applied
+        // per xdg_positioner.constraint_adjustment).
+        let (w, h) = self.output_size;
+        let bounds: Rectangle<i32, smithay::utils::Logical> =
+            Rectangle::from_size((w, h).into());
+        let geometry = positioner.get_unconstrained_geometry(bounds);
+        surface.with_pending_state(|state| {
+            state.geometry = geometry;
+            state.positioner = positioner;
+        });
+        if let Err(err) = surface.send_configure() {
+            eprintln!("popup send_configure failed: {err:?}");
+        }
+        if let Err(err) = self.popup_manager.track_popup(PopupKind::Xdg(surface)) {
+            eprintln!("track_popup failed: {err:?}");
+        }
+    }
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: WlSeat, _serial: Serial) {}
+    fn grab(&mut self, surface: PopupSurface, _seat: WlSeat, _serial: Serial) {
+        // smithay's PopupManager::grab_popup requires SeatHandler focus types
+        // that can represent popups (KeyboardFocus: From<PopupKind>); the
+        // shared input lane forwards WlSurface focus only, so we track the
+        // grab ourselves: while set, focus_surface() hands input to the
+        // popup's wl_surface.
+        self.popup_grab = Some(surface.wl_surface().clone());
+        self.refocus(SERIAL_COUNTER.next_serial());
+    }
 
     fn reposition_request(
         &mut self,
-        _surface: PopupSurface,
-        _positioner: PositionerState,
-        _token: u32,
+        surface: PopupSurface,
+        positioner: PositionerState,
+        token: u32,
     ) {
+        let (w, h) = self.output_size;
+        let bounds: Rectangle<i32, smithay::utils::Logical> =
+            Rectangle::from_size((w, h).into());
+        let geometry = positioner.get_unconstrained_geometry(bounds);
+        surface.with_pending_state(|state| {
+            state.geometry = geometry;
+            state.positioner = positioner;
+        });
+        surface.send_repositioned(token);
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        let wl_surface = surface.wl_surface().clone();
+
+        // Queued-but-never-committed window: just drop it.
+        self.uncommitted_windows
+            .retain(|w| w.toplevel().map(|t| t != &surface).unwrap_or(false));
+
+        // Dismiss popups owned by the dying toplevel.
+        for (popup, _) in PopupManager::popups_for_surface(&wl_surface) {
+            let _ = PopupManager::dismiss_popup(&wl_surface, &popup);
+            if self
+                .popup_grab
+                .as_ref()
+                .map(|grab| grab == popup.wl_surface())
+                .unwrap_or(false)
+            {
+                self.popup_grab = None;
+            }
+        }
+        self.popup_manager.cleanup();
+
         let window = self
             .space
             .elements()
@@ -52,7 +108,23 @@ impl XdgShellHandler for ProtocolState {
         if let Some(window) = window {
             self.space.unmap_elem(&window);
         }
-        self.focus_top_window(SERIAL_COUNTER.next_serial());
+        self.focus_stack_remove(&wl_surface);
+        // Fall back to the previous window in the stack, not just "last space
+        // element".
+        self.refocus(SERIAL_COUNTER.next_serial());
+    }
+
+    fn popup_destroyed(&mut self, surface: PopupSurface) {
+        if self
+            .popup_grab
+            .as_ref()
+            .map(|grab| grab == surface.wl_surface())
+            .unwrap_or(false)
+        {
+            self.popup_grab = None;
+            self.refocus(SERIAL_COUNTER.next_serial());
+        }
+        self.popup_manager.cleanup();
     }
 }
 
