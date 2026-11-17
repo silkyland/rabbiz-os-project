@@ -4,9 +4,9 @@
 //! Authored on the 720×1600 reference panel and mapped onto the requested
 //! [`Size`] with `sx`/`sy`, like every other screen. Only [`DARK`] tokens are
 //! used: the plum ground is quiet, a low ember glow replaces a busy wallpaper,
-//! and every icon is drawn from rounded rects.
+//! and system UI icons use Material Symbols Rounded.
 
-use de_api::{Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
 
 /// Reference panel the composition was authored on.
@@ -46,13 +46,13 @@ pub fn build(size: Size) -> Scene {
             200.0 * f.sx,
         ),
     );
-    layer.rect(
-        f.rect(644.0, 36.0, 52.0, 26.0),
-        f.len(8.0),
-        DARK.surface_high,
+    layer.icon(
+        f.at(670.0, 49.0),
+        f.len(30.0),
+        icons::BATTERY_FULL,
+        DARK.success,
+        true,
     );
-    layer.rect(f.rect(648.0, 40.0, 40.0, 18.0), f.len(5.0), DARK.success);
-    layer.rect(f.rect(697.0, 42.0, 5.0, 14.0), f.len(2.0), DARK.success);
     centred(
         &mut layer,
         &f,
@@ -169,18 +169,15 @@ pub fn build(size: Size) -> Scene {
         ),
     );
     layer.rect(f.rect(608.0, 1166.0, 64.0, 64.0), f.len(32.0), DARK.accent);
-    layer.rect(
-        f.rect(626.0, 1184.0, 8.0, 28.0),
-        f.len(4.0),
+    layer.icon(
+        f.at(640.0, 1198.0),
+        f.len(34.0),
+        icons::PAUSE,
         DARK.accent_ink,
-    );
-    layer.rect(
-        f.rect(646.0, 1184.0, 8.0, 28.0),
-        f.len(4.0),
-        DARK.accent_ink,
+        true,
     );
 
-    // Bottom row: three 96 px action tiles, each icon built from rects.
+    // Bottom row: three 96 px action tiles with Material Symbols Rounded icons.
     let tile_y = 1352.0;
     for (x, fill) in [
         (96.0, DARK.surface),
@@ -189,9 +186,27 @@ pub fn build(size: Size) -> Scene {
     ] {
         layer.rect(f.rect(x, tile_y, 96.0, 96.0), f.len(DARK.radius_l), fill);
     }
-    draw_flashlight(&mut layer, &f, 144.0, 1400.0);
-    draw_unlock(&mut layer, &f, 360.0, 1400.0);
-    draw_power(&mut layer, &f, 576.0, 1400.0);
+    layer.icon(
+        f.at(144.0, 1400.0),
+        f.len(44.0),
+        icons::FLASHLIGHT_ON,
+        DARK.accent,
+        false,
+    );
+    layer.icon(
+        f.at(360.0, 1400.0),
+        f.len(50.0),
+        icons::FINGERPRINT,
+        DARK.accent_ink,
+        true,
+    );
+    layer.icon(
+        f.at(576.0, 1400.0),
+        f.len(44.0),
+        icons::POWER_SETTINGS_NEW,
+        DARK.text_dim,
+        false,
+    );
 
     let label_size = f.len(DARK.label_px);
     for (cx, label, ink) in [
@@ -218,74 +233,6 @@ pub fn build(size: Size) -> Scene {
 
     scene.push(layer);
     scene
-}
-
-/// Torch: a wide head over a narrow body.
-fn draw_flashlight(layer: &mut Layer, f: &Frame, cx: f32, cy: f32) {
-    layer.rect(
-        f.rect(cx - 24.0, cy - 30.0, 48.0, 18.0),
-        f.len(6.0),
-        DARK.accent,
-    );
-    layer.rect(
-        f.rect(cx - 12.0, cy - 12.0, 24.0, 42.0),
-        f.len(10.0),
-        DARK.accent_hi,
-    );
-}
-
-/// Rear-sensor fingerprint: copper tile with concentric rings.
-fn draw_unlock(layer: &mut Layer, f: &Frame, cx: f32, cy: f32) {
-    layer.rect(
-        f.rect(cx - 24.0, cy - 24.0, 48.0, 48.0),
-        f.len(24.0),
-        DARK.accent_ink,
-    );
-    layer.rect(
-        f.rect(cx - 18.0, cy - 18.0, 36.0, 36.0),
-        f.len(18.0),
-        DARK.accent,
-    );
-    layer.rect(
-        f.rect(cx - 12.0, cy - 12.0, 24.0, 24.0),
-        f.len(12.0),
-        DARK.accent_ink,
-    );
-    layer.rect(
-        f.rect(cx - 6.0, cy - 6.0, 12.0, 12.0),
-        f.len(6.0),
-        DARK.accent,
-    );
-    // Break the outer loop at the bottom so the rings read as a fingerprint.
-    layer.rect(
-        f.rect(cx - 10.0, cy + 16.0, 20.0, 10.0),
-        f.len(5.0),
-        DARK.accent,
-    );
-}
-
-/// Power: a broken ring with a stem through the gap.
-fn draw_power(layer: &mut Layer, f: &Frame, cx: f32, cy: f32) {
-    layer.rect(
-        f.rect(cx - 22.0, cy - 20.0, 44.0, 44.0),
-        f.len(22.0),
-        DARK.text_dim,
-    );
-    layer.rect(
-        f.rect(cx - 15.0, cy - 13.0, 30.0, 30.0),
-        f.len(15.0),
-        DARK.surface,
-    );
-    layer.rect(
-        f.rect(cx - 7.0, cy - 28.0, 14.0, 14.0),
-        f.len(6.0),
-        DARK.surface,
-    );
-    layer.rect(
-        f.rect(cx - 4.0, cy - 32.0, 8.0, 24.0),
-        f.len(4.0),
-        DARK.text_dim,
-    );
 }
 
 /// Reference-space frame: `sx`/`sy` map 720×1600 onto the output, `s` keeps
@@ -351,7 +298,23 @@ mod tests {
                     text,
                     style,
                 } => Some((text.as_str(), *origin, style)),
-                DrawOp::Rect { .. } => None,
+                DrawOp::Rect { .. } | DrawOp::Icon { .. } => None,
+            })
+    }
+
+    fn icon_ops(scene: &Scene) -> impl Iterator<Item = (char, bool, Color)> + '_ {
+        scene
+            .layers
+            .iter()
+            .flat_map(|layer| layer.ops.iter())
+            .filter_map(|op| match op {
+                DrawOp::Icon {
+                    codepoint,
+                    filled,
+                    color,
+                    ..
+                } => Some((*codepoint, *filled, *color)),
+                DrawOp::Rect { .. } | DrawOp::Text { .. } => None,
             })
     }
 
@@ -369,6 +332,7 @@ mod tests {
             .flat_map(|op| match op {
                 DrawOp::Rect { color, .. } => vec![*color],
                 DrawOp::Text { style, .. } => vec![style.color],
+                DrawOp::Icon { color, .. } => vec![*color],
             })
             .collect()
     }
@@ -444,6 +408,13 @@ mod tests {
             }
         }
         assert_eq!(tiles, 3, "three 96 px action tiles");
+
+        let icons_list: Vec<_> = icon_ops(&scene).collect();
+        assert!(icons_list.contains(&(icons::BATTERY_FULL, true, DARK.success)));
+        assert!(icons_list.contains(&(icons::PAUSE, true, DARK.accent_ink)));
+        assert!(icons_list.contains(&(icons::FLASHLIGHT_ON, false, DARK.accent)));
+        assert!(icons_list.contains(&(icons::FINGERPRINT, true, DARK.accent_ink)));
+        assert!(icons_list.contains(&(icons::POWER_SETTINGS_NEW, false, DARK.text_dim)));
 
         match &scene.layers[0].ops.last().unwrap() {
             DrawOp::Rect {

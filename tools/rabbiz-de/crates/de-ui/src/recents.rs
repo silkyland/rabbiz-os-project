@@ -21,26 +21,36 @@ const NEIGHBOUR_ALPHA: u8 = 153;
 const CARD_H: f32 = 360.0;
 const CARD_Y: [f32; 3] = [180.0, 580.0, 980.0];
 
+/// Codepoints verified against `assets/fonts/MaterialSymbolsRounded.codepoints`.
+const ICON_CHAT: char = '\u{e0c9}';
+const ICON_EDIT_NOTE: char = '\u{e745}';
+
+#[derive(Clone, Copy)]
+enum TileGlyph {
+    Icon(char),
+    Letter(&'static str),
+}
+
 /// The three windows, oldest first; the last one is the active card.
 const CARDS: [Card; 3] = [
     Card {
         title: "Notes",
         subtitle: "Edited · 2m",
-        glyph: "N",
+        glyph: TileGlyph::Icon(ICON_EDIT_NOTE),
         y: CARD_Y[0],
         active: false,
     },
     Card {
         title: "Chrome",
         subtitle: "3 tabs · rabbiz.os",
-        glyph: "C",
+        glyph: TileGlyph::Letter("C"),
         y: CARD_Y[1],
         active: false,
     },
     Card {
         title: "Messages",
         subtitle: "Nok · now",
-        glyph: "M",
+        glyph: TileGlyph::Icon(ICON_CHAT),
         y: CARD_Y[2],
         active: true,
     },
@@ -49,7 +59,7 @@ const CARDS: [Card; 3] = [
 struct Card {
     title: &'static str,
     subtitle: &'static str,
-    glyph: &'static str,
+    glyph: TileGlyph,
     y: f32,
     active: bool,
 }
@@ -116,19 +126,32 @@ pub fn build(size: Size) -> Scene {
         );
         let icon = f.rect(48.0, card.y + 24.0, 64.0, 64.0);
         layer.rect(icon, f.len(DARK.radius_m), tone(icon_fill));
-        centred(
-            &mut layer,
-            &f,
-            80.0,
-            card.y + 24.0 + (64.0 - DARK.label_px * 1.25) / 2.0,
-            card.glyph,
-            TextStyle::new(
-                f.len(DARK.label_px),
-                Weight::SemiBold,
-                tone(icon_ink),
-                icon.w,
-            ),
-        );
+        match card.glyph {
+            TileGlyph::Icon(codepoint) => {
+                layer.icon(
+                    f.at(80.0, card.y + 56.0),
+                    f.len(32.0),
+                    codepoint,
+                    tone(icon_ink),
+                    card.active,
+                );
+            }
+            TileGlyph::Letter(letter) => {
+                centred(
+                    &mut layer,
+                    &f,
+                    80.0,
+                    card.y + 24.0 + (64.0 - DARK.label_px * 1.25) / 2.0,
+                    letter,
+                    TextStyle::new(
+                        f.len(DARK.label_px),
+                        Weight::SemiBold,
+                        tone(icon_ink),
+                        icon.w,
+                    ),
+                );
+            }
+        }
         layer.text(
             f.at(128.0, card.y + 20.0),
             card.title,
@@ -257,7 +280,23 @@ mod tests {
                     text,
                     style,
                 } => Some((text.as_str(), *origin, style)),
-                DrawOp::Rect { .. } => None,
+                DrawOp::Rect { .. } | DrawOp::Icon { .. } => None,
+            })
+    }
+
+    fn icon_ops(scene: &Scene) -> impl Iterator<Item = (char, bool, Color)> + '_ {
+        scene
+            .layers
+            .iter()
+            .flat_map(|layer| layer.ops.iter())
+            .filter_map(|op| match op {
+                DrawOp::Icon {
+                    codepoint,
+                    filled,
+                    color,
+                    ..
+                } => Some((*codepoint, *filled, *color)),
+                DrawOp::Rect { .. } | DrawOp::Text { .. } => None,
             })
     }
 
@@ -275,6 +314,7 @@ mod tests {
             .flat_map(|op| match op {
                 DrawOp::Rect { color, .. } => vec![*color],
                 DrawOp::Text { style, .. } => vec![style.color],
+                DrawOp::Icon { color, .. } => vec![*color],
             })
             .collect()
     }
@@ -342,6 +382,8 @@ mod tests {
         for card in CARDS {
             find_text(&scene, card.title);
         }
+        assert!(icon_ops(&scene).any(|(cp, filled, _)| cp == ICON_EDIT_NOTE && !filled));
+        assert!(icon_ops(&scene).any(|(cp, filled, _)| cp == ICON_CHAT && filled));
     }
 
     #[test]

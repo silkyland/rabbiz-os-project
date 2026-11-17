@@ -5,7 +5,7 @@
 //! labels, and the bottom handle. Authored on 720×1600 and scaled like every
 //! other screen, with colours and sizes from [`DARK`] only.
 
-use de_api::{Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
 
 /// Reference panel the composition was authored on.
@@ -15,36 +15,54 @@ const REF_H: f32 = 1600.0;
 /// A drawer is one layer, named for the screen.
 const LAYER: &str = "drawer";
 
+/// Codepoints verified against `assets/fonts/MaterialSymbolsRounded.codepoints`.
+const ICON_CHAT: char = '\u{e0c9}';
+const ICON_CONTACTS: char = '\u{e0ba}';
+const ICON_EDIT_NOTE: char = '\u{e745}';
+const ICON_MAIL: char = '\u{e159}';
+const ICON_MAP: char = '\u{e55b}';
+const ICON_MOVIE: char = '\u{e404}';
+const ICON_MUSIC_NOTE: char = '\u{e405}';
+const ICON_PHOTO_LIBRARY: char = '\u{e413}';
+const ICON_PODCASTS: char = '\u{f048}';
+const ICON_STORE: char = '\u{e8d1}';
+
+#[derive(Clone, Copy)]
+enum TileGlyph {
+    Icon(char),
+    Letter(&'static str),
+}
+
 /// The 4×5 all-apps grid: label, glyph, tile fill, glyph ink.
-const APPS: [(&str, &str, Color, Color); 20] = [
-    ("Phone", "P", DARK.surface, DARK.text),
-    ("Messages", "M", DARK.surface, DARK.text),
-    ("Settings", "S", DARK.surface, DARK.text),
-    ("Chrome", "C", DARK.surface, DARK.text),
-    ("Files", "F", DARK.surface, DARK.text),
-    ("Calendar", "C", DARK.surface, DARK.text),
-    ("Notes", "N", DARK.surface, DARK.text),
-    ("Camera", "C", DARK.surface, DARK.text),
-    ("Clock", "C", DARK.surface, DARK.text),
-    ("Weather", "W", DARK.surface, DARK.text),
-    ("Photos", "P", DARK.surface, DARK.text),
-    ("Music", "M", DARK.surface, DARK.text),
-    ("Calculator", "C", DARK.surface, DARK.text),
-    ("Terminal", "T", DARK.surface, DARK.text),
-    ("Maps", "M", DARK.surface, DARK.text),
-    ("Mail", "M", DARK.surface, DARK.text),
-    ("Contacts", "C", DARK.surface, DARK.text),
-    ("Store", "S", DARK.surface, DARK.text),
-    ("Podcasts", "P", DARK.surface, DARK.text),
-    ("Videos", "V", DARK.surface, DARK.text),
+const APPS: [(&str, TileGlyph, Color, Color); 20] = [
+    ("Phone", TileGlyph::Icon(icons::PHONE), DARK.surface, DARK.text),
+    ("Messages", TileGlyph::Icon(ICON_CHAT), DARK.surface, DARK.text),
+    ("Settings", TileGlyph::Icon(icons::SETTINGS), DARK.surface, DARK.text),
+    ("Chrome", TileGlyph::Letter("C"), DARK.surface, DARK.text),
+    ("Files", TileGlyph::Icon(icons::FOLDER), DARK.surface, DARK.text),
+    ("Calendar", TileGlyph::Icon(icons::CALENDAR_TODAY), DARK.surface, DARK.text),
+    ("Notes", TileGlyph::Icon(ICON_EDIT_NOTE), DARK.surface, DARK.text),
+    ("Camera", TileGlyph::Icon(icons::PHOTO_CAMERA), DARK.surface, DARK.text),
+    ("Clock", TileGlyph::Icon(icons::SCHEDULE), DARK.surface, DARK.text),
+    ("Weather", TileGlyph::Icon(icons::WB_SUNNY), DARK.surface, DARK.text),
+    ("Photos", TileGlyph::Icon(ICON_PHOTO_LIBRARY), DARK.surface, DARK.text),
+    ("Music", TileGlyph::Icon(ICON_MUSIC_NOTE), DARK.surface, DARK.text),
+    ("Calculator", TileGlyph::Icon(icons::CALCULATE), DARK.surface, DARK.text),
+    ("Terminal", TileGlyph::Icon(icons::TERMINAL), DARK.surface, DARK.text),
+    ("Maps", TileGlyph::Icon(ICON_MAP), DARK.surface, DARK.text),
+    ("Mail", TileGlyph::Icon(ICON_MAIL), DARK.surface, DARK.text),
+    ("Contacts", TileGlyph::Icon(ICON_CONTACTS), DARK.surface, DARK.text),
+    ("Store", TileGlyph::Icon(ICON_STORE), DARK.surface, DARK.text),
+    ("Podcasts", TileGlyph::Icon(ICON_PODCASTS), DARK.surface, DARK.text),
+    ("Videos", TileGlyph::Icon(ICON_MOVIE), DARK.surface, DARK.text),
 ];
 
 /// The four most recent apps: label, glyph.
-const RECENT: [(&str, &str); 4] = [
-    ("Phone", "P"),
-    ("Chrome", "C"),
-    ("Notes", "N"),
-    ("Camera", "C"),
+const RECENT: [(&str, TileGlyph); 4] = [
+    ("Phone", TileGlyph::Icon(icons::PHONE)),
+    ("Chrome", TileGlyph::Letter("C")),
+    ("Notes", TileGlyph::Icon(ICON_EDIT_NOTE)),
+    ("Camera", TileGlyph::Icon(icons::PHOTO_CAMERA)),
 ];
 
 pub fn build(size: Size) -> Scene {
@@ -58,15 +76,19 @@ pub fn build(size: Size) -> Scene {
     // The drawer itself is a full-screen canvas sheet.
     layer.rect(Rect::new(0.0, 0.0, f.w, f.h), 0.0, DARK.canvas);
 
-    // Search field: copper magnifier ring and a faint placeholder.
+    // Search field: copper magnifier icon and a faint placeholder.
     layer.rect(
         f.rect(24.0, 40.0, 672.0, 72.0),
         f.len(DARK.radius_pill),
         DARK.surface,
     );
-    layer.rect(f.rect(52.0, 62.0, 28.0, 28.0), f.len(14.0), DARK.accent);
-    layer.rect(f.rect(57.0, 67.0, 18.0, 18.0), f.len(9.0), DARK.surface);
-    layer.rect(f.rect(76.0, 84.0, 10.0, 6.0), f.len(3.0), DARK.accent);
+    layer.icon(
+        f.at(66.0, 76.0),
+        f.len(30.0),
+        icons::SEARCH,
+        DARK.accent,
+        false,
+    );
     layer.text(
         f.at(100.0, 60.0),
         "Search apps",
@@ -83,19 +105,32 @@ pub fn build(size: Size) -> Scene {
         let cell_x = 24.0 + 168.0 * index as f32;
         let tile = f.rect(cell_x + 48.0, 148.0, 72.0, 72.0);
         layer.rect(tile, f.len(DARK.radius_l), DARK.surface_high);
-        centred(
-            &mut layer,
-            &f,
-            cell_x + 84.0,
-            148.0 + (72.0 - DARK.label_px * 1.25) / 2.0,
-            glyph,
-            TextStyle::new(
-                f.len(DARK.label_px),
-                Weight::SemiBold,
-                DARK.text_dim,
-                tile.w,
-            ),
-        );
+        match glyph {
+            TileGlyph::Icon(codepoint) => {
+                layer.icon(
+                    f.at(cell_x + 84.0, 184.0),
+                    f.len(34.0),
+                    *codepoint,
+                    DARK.text_dim,
+                    false,
+                );
+            }
+            TileGlyph::Letter(letter) => {
+                centred(
+                    &mut layer,
+                    &f,
+                    cell_x + 84.0,
+                    148.0 + (72.0 - DARK.label_px * 1.25) / 2.0,
+                    letter,
+                    TextStyle::new(
+                        f.len(DARK.label_px),
+                        Weight::SemiBold,
+                        DARK.text_dim,
+                        tile.w,
+                    ),
+                );
+            }
+        }
         centred(
             &mut layer,
             &f,
@@ -130,14 +165,27 @@ pub fn build(size: Size) -> Scene {
         let cell_y = 348.0 + 210.0 * (index / 4) as f32;
         let tile = f.rect(cell_x + 36.0, cell_y + 37.0, 96.0, 96.0);
         layer.rect(tile, f.len(DARK.radius_l), *fill);
-        centred(
-            &mut layer,
-            &f,
-            cell_x + 84.0,
-            cell_y + 37.0 + (96.0 - DARK.label_px * 1.25) / 2.0,
-            glyph,
-            TextStyle::new(f.len(DARK.label_px), Weight::SemiBold, *ink, tile.w),
-        );
+        match glyph {
+            TileGlyph::Icon(codepoint) => {
+                layer.icon(
+                    f.at(cell_x + 84.0, cell_y + 85.0),
+                    f.len(42.0),
+                    *codepoint,
+                    *ink,
+                    false,
+                );
+            }
+            TileGlyph::Letter(letter) => {
+                centred(
+                    &mut layer,
+                    &f,
+                    cell_x + 84.0,
+                    cell_y + 37.0 + (96.0 - DARK.label_px * 1.25) / 2.0,
+                    letter,
+                    TextStyle::new(f.len(DARK.label_px), Weight::SemiBold, *ink, tile.w),
+                );
+            }
+        }
         centred(
             &mut layer,
             &f,
@@ -227,7 +275,23 @@ mod tests {
                     text,
                     style,
                 } => Some((text.as_str(), *origin, style)),
-                DrawOp::Rect { .. } => None,
+                DrawOp::Rect { .. } | DrawOp::Icon { .. } => None,
+            })
+    }
+
+    fn icon_ops(scene: &Scene) -> impl Iterator<Item = (char, bool, Color)> + '_ {
+        scene
+            .layers
+            .iter()
+            .flat_map(|layer| layer.ops.iter())
+            .filter_map(|op| match op {
+                DrawOp::Icon {
+                    codepoint,
+                    filled,
+                    color,
+                    ..
+                } => Some((*codepoint, *filled, *color)),
+                DrawOp::Rect { .. } | DrawOp::Text { .. } => None,
             })
     }
 
@@ -245,6 +309,7 @@ mod tests {
             .flat_map(|op| match op {
                 DrawOp::Rect { color, .. } => vec![*color],
                 DrawOp::Text { style, .. } => vec![style.color],
+                DrawOp::Icon { color, .. } => vec![*color],
             })
             .collect()
     }
@@ -295,14 +360,21 @@ mod tests {
         let scene = build(REF);
         for (label, glyph, _, _) in APPS {
             find_text(&scene, label);
-            assert!(
-                texts(&scene).any(|(text, _, _)| text == glyph),
-                "no glyph tile for {label}"
-            );
+            match glyph {
+                TileGlyph::Icon(codepoint) => assert!(
+                    icon_ops(&scene).any(|(cp, _, _)| cp == codepoint),
+                    "no icon op for {label}"
+                ),
+                TileGlyph::Letter(letter) => assert!(
+                    texts(&scene).any(|(text, _, _)| text == letter),
+                    "no letter tile for {label}"
+                ),
+            }
         }
         for (label, _) in RECENT {
             find_text(&scene, label);
         }
+        assert!(icon_ops(&scene).any(|(cp, filled, _)| cp == icons::SEARCH && !filled));
 
         let mut icons = 0;
         for op in &scene.layers[0].ops {

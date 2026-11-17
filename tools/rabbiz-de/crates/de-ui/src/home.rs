@@ -2,11 +2,11 @@
 //! dock, and page dots.
 //!
 //! Authored on the 720×1600 reference panel and mapped onto the requested
-//! [`Size`]. Icons are letter tiles cut from rounded rects, a low ember glow
-//! stands in for the wallpaper, and every colour, radius and type size comes
-//! from [`DARK`].
+//! [`Size`]. System UI and first-party app icons use Material Symbols Rounded,
+//! a low ember glow stands in for the wallpaper, and every colour, radius and
+//! type size comes from [`DARK`].
 
-use de_api::{Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
 
 /// Reference panel the composition was authored on.
@@ -16,24 +16,34 @@ const REF_H: f32 = 1600.0;
 /// A home surface is one layer, named for the screen.
 const LAYER: &str = "home";
 
+/// Codepoints verified against `assets/fonts/MaterialSymbolsRounded.codepoints`.
+const ICON_CHAT: char = '\u{e0c9}';
+const ICON_EDIT_NOTE: char = '\u{e745}';
+
+#[derive(Clone, Copy)]
+enum TileGlyph {
+    Icon(char),
+    Letter(&'static str),
+}
+
 /// The 4×2 grid: label, glyph, tile fill, glyph ink.
-const APPS: [(&str, &str, Color, Color); 8] = [
-    ("Phone", "P", DARK.accent, DARK.accent_ink),
-    ("Messages", "M", DARK.surface_high, DARK.accent_hi),
-    ("Settings", "S", DARK.mark_body, DARK.text),
-    ("Chrome", "C", DARK.surface_high, DARK.text),
-    ("Files", "F", DARK.surface_high, DARK.accent),
-    ("Calendar", "C", DARK.surface_high, DARK.text),
-    ("Notes", "N", DARK.mark_body, DARK.text),
-    ("Camera", "C", DARK.surface_high, DARK.text),
+const APPS: [(&str, TileGlyph, Color, Color); 8] = [
+    ("Phone", TileGlyph::Icon(icons::PHONE), DARK.accent, DARK.accent_ink),
+    ("Messages", TileGlyph::Icon(ICON_CHAT), DARK.surface_high, DARK.accent_hi),
+    ("Settings", TileGlyph::Icon(icons::SETTINGS), DARK.mark_body, DARK.text),
+    ("Chrome", TileGlyph::Letter("C"), DARK.surface_high, DARK.text),
+    ("Files", TileGlyph::Icon(icons::FOLDER), DARK.surface_high, DARK.accent),
+    ("Calendar", TileGlyph::Icon(icons::CALENDAR_TODAY), DARK.surface_high, DARK.text),
+    ("Notes", TileGlyph::Icon(ICON_EDIT_NOTE), DARK.mark_body, DARK.text),
+    ("Camera", TileGlyph::Icon(icons::PHOTO_CAMERA), DARK.surface_high, DARK.text),
 ];
 
 /// The dock repeats four pinned apps with shorter labels.
-const DOCK: [(&str, &str, Color, Color); 4] = [
-    ("Phone", "P", DARK.accent, DARK.accent_ink),
-    ("Messages", "M", DARK.surface_high, DARK.accent_hi),
-    ("Chrome", "C", DARK.surface_high, DARK.text),
-    ("Files", "F", DARK.mark_body, DARK.text),
+const DOCK: [(&str, TileGlyph, Color, Color); 4] = [
+    ("Phone", TileGlyph::Icon(icons::PHONE), DARK.accent, DARK.accent_ink),
+    ("Messages", TileGlyph::Icon(ICON_CHAT), DARK.surface_high, DARK.accent_hi),
+    ("Chrome", TileGlyph::Letter("C"), DARK.surface_high, DARK.text),
+    ("Files", TileGlyph::Icon(icons::FOLDER), DARK.mark_body, DARK.text),
 ];
 
 pub fn build(size: Size) -> Scene {
@@ -66,13 +76,13 @@ pub fn build(size: Size) -> Scene {
             180.0 * f.sx,
         ),
     );
-    layer.rect(
-        f.rect(644.0, 32.0, 44.0, 22.0),
-        f.len(6.0),
-        DARK.surface_high,
+    layer.icon(
+        f.at(668.0, 43.0),
+        f.len(28.0),
+        icons::BATTERY_FULL,
+        DARK.success,
+        true,
     );
-    layer.rect(f.rect(648.0, 36.0, 36.0, 14.0), f.len(4.0), DARK.success);
-    layer.rect(f.rect(689.0, 38.0, 4.0, 10.0), f.len(2.0), DARK.success);
     centred(
         &mut layer,
         &f,
@@ -151,14 +161,27 @@ pub fn build(size: Size) -> Scene {
                 DARK.accent,
             );
         }
-        centred(
-            &mut layer,
-            &f,
-            cell_x + 84.0,
-            cell_y + 10.0 + (96.0 - DARK.label_px * 1.25) / 2.0,
-            glyph,
-            TextStyle::new(f.len(DARK.label_px), Weight::SemiBold, *ink, tile.w),
-        );
+        match glyph {
+            TileGlyph::Icon(codepoint) => {
+                layer.icon(
+                    f.at(cell_x + 84.0, cell_y + 58.0),
+                    f.len(44.0),
+                    *codepoint,
+                    *ink,
+                    true,
+                );
+            }
+            TileGlyph::Letter(letter) => {
+                centred(
+                    &mut layer,
+                    &f,
+                    cell_x + 84.0,
+                    cell_y + 10.0 + (96.0 - DARK.label_px * 1.25) / 2.0,
+                    letter,
+                    TextStyle::new(f.len(DARK.label_px), Weight::SemiBold, *ink, tile.w),
+                );
+            }
+        }
         centred(
             &mut layer,
             &f,
@@ -179,19 +202,19 @@ pub fn build(size: Size) -> Scene {
     layer.rect(f.rect(368.0, 1200.0, 8.0, 8.0), f.len(4.0), DARK.text_faint);
     layer.rect(f.rect(384.0, 1200.0, 8.0, 8.0), f.len(4.0), DARK.text_faint);
 
-    // Search pill: a copper magnifier ring and a quiet placeholder.
+    // Search pill: a copper magnifier icon and a quiet placeholder.
     layer.rect(
         f.rect(24.0, 1240.0, 672.0, 64.0),
         f.len(DARK.radius_pill),
         DARK.surface_high,
     );
-    layer.rect(f.rect(56.0, 1258.0, 28.0, 28.0), f.len(14.0), DARK.accent);
-    layer.rect(
-        f.rect(61.0, 1263.0, 18.0, 18.0),
-        f.len(9.0),
-        DARK.surface_high,
+    layer.icon(
+        f.at(70.0, 1272.0),
+        f.len(30.0),
+        icons::SEARCH,
+        DARK.accent,
+        false,
     );
-    layer.rect(f.rect(79.0, 1282.0, 10.0, 6.0), f.len(3.0), DARK.accent);
     layer.text(
         f.at(100.0, 1255.0),
         "Search apps",
@@ -213,14 +236,27 @@ pub fn build(size: Size) -> Scene {
         let x = 40.0 + 184.0 * index as f32;
         let tile = f.rect(x, 1348.0, 88.0, 88.0);
         layer.rect(tile, f.len(DARK.radius_l), *fill);
-        centred(
-            &mut layer,
-            &f,
-            x + 44.0,
-            1348.0 + (88.0 - DARK.label_px * 1.25) / 2.0,
-            glyph,
-            TextStyle::new(f.len(DARK.label_px), Weight::SemiBold, *ink, tile.w),
-        );
+        match glyph {
+            TileGlyph::Icon(codepoint) => {
+                layer.icon(
+                    f.at(x + 44.0, 1392.0),
+                    f.len(40.0),
+                    *codepoint,
+                    *ink,
+                    true,
+                );
+            }
+            TileGlyph::Letter(letter) => {
+                centred(
+                    &mut layer,
+                    &f,
+                    x + 44.0,
+                    1348.0 + (88.0 - DARK.label_px * 1.25) / 2.0,
+                    letter,
+                    TextStyle::new(f.len(DARK.label_px), Weight::SemiBold, *ink, tile.w),
+                );
+            }
+        }
     }
 
     // Gesture bar, barely there so the dock keeps the focus.
@@ -302,7 +338,23 @@ mod tests {
                     text,
                     style,
                 } => Some((text.as_str(), *origin, style)),
-                DrawOp::Rect { .. } => None,
+                DrawOp::Rect { .. } | DrawOp::Icon { .. } => None,
+            })
+    }
+
+    fn icon_ops(scene: &Scene) -> impl Iterator<Item = (char, bool, Color)> + '_ {
+        scene
+            .layers
+            .iter()
+            .flat_map(|layer| layer.ops.iter())
+            .filter_map(|op| match op {
+                DrawOp::Icon {
+                    codepoint,
+                    filled,
+                    color,
+                    ..
+                } => Some((*codepoint, *filled, *color)),
+                DrawOp::Rect { .. } | DrawOp::Text { .. } => None,
             })
     }
 
@@ -320,6 +372,7 @@ mod tests {
             .flat_map(|op| match op {
                 DrawOp::Rect { color, .. } => vec![*color],
                 DrawOp::Text { style, .. } => vec![style.color],
+                DrawOp::Icon { color, .. } => vec![*color],
             })
             .collect()
     }
@@ -377,11 +430,19 @@ mod tests {
         let scene = build(REF);
         for (label, glyph, _, _) in APPS {
             find_text(&scene, label);
-            assert!(
-                texts(&scene).any(|(text, _, _)| text == glyph),
-                "no glyph tile for {label}"
-            );
+            match glyph {
+                TileGlyph::Icon(codepoint) => assert!(
+                    icon_ops(&scene).any(|(cp, _, _)| cp == codepoint),
+                    "no icon op for {label}"
+                ),
+                TileGlyph::Letter(letter) => assert!(
+                    texts(&scene).any(|(text, _, _)| text == letter),
+                    "no letter tile for {label}"
+                ),
+            }
         }
+        assert!(icon_ops(&scene).any(|(cp, filled, _)| cp == icons::SEARCH && !filled));
+        assert!(icon_ops(&scene).any(|(cp, filled, _)| cp == icons::BATTERY_FULL && filled));
 
         let mut icons = 0;
         for op in &scene.layers[0].ops {
