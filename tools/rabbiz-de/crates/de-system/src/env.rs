@@ -41,12 +41,15 @@ pub const DESKTOP_CONTRACT_UNSET: &[&str] = &[
 /// overrides) without enumerating them.
 pub const DESKTOP_CONTRACT_UNSET_PREFIXES: &[&str] = &["WLR_", "RABBIZ_EXYNOS_"];
 
-/// Format the desktop contract as `KEY='value'` plus `unset` lines, ready for
-/// `eval "$(rabbiz-de env --shell)"` in a POSIX shell.
+/// Format the desktop contract as `export KEY='value'` plus `unset` lines,
+/// ready for `eval "$(rabbiz-de env --shell)"` in a POSIX shell. The `export`
+/// is load-bearing: a bare `KEY='value'` creates an unexported shell variable
+/// that never reaches `rabbiz-de run`, its spawned apps or
+/// `dbus-update-activation-environment`.
 pub fn format_shell_env() -> String {
     let mut out = String::new();
     for (k, v) in DESKTOP_CONTRACT_ENV {
-        out.push_str(&format!("{k}='{}'\n", v.replace('\'', "'\\''")));
+        out.push_str(&format!("export {k}='{}'\n", v.replace('\'', "'\\''")));
     }
     for k in DESKTOP_CONTRACT_UNSET {
         out.push_str(&format!("unset {k}\n"));
@@ -111,10 +114,12 @@ mod tests {
     }
 
     #[test]
-    fn shell_output_is_quotable_lines_plus_unsets() {
+    fn shell_output_exports_vars_and_unsets_overrides() {
         let out = format_shell_env();
-        assert!(out.contains("A21S_FORCE_SOFTWARE='1'\n"));
-        assert!(out.contains("QT_SCALE_FACTOR='1'\n"));
+        // `export` is required: eval'd `KEY='v'` alone stays a shell-local var.
+        assert!(out.contains("export A21S_FORCE_SOFTWARE='1'\n"));
+        assert!(out.contains("export QT_SCALE_FACTOR='1'\n"));
+        assert!(out.contains("export XDG_CURRENT_DESKTOP='Rabbiz'\n"));
         assert!(out.contains("unset LD_PRELOAD\n"));
         assert!(out.contains("unset QSG_RHI_BACKEND\n"));
         assert!(out.contains("unset $(compgen -v RABBIZ_EXYNOS_ || true)\n"));
