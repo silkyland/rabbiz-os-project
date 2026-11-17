@@ -25,10 +25,15 @@ for f in "$DE_BIN" "$SMOKE_BIN"; do
 done
 
 echo "== staging test binaries to /tmp under the device lock" >&2
+# SC2029: $DEVICE must expand client-side; it is the same lock path everywhere.
+# shellcheck disable=SC2029
 ssh "$HOST" "flock --close --timeout 300 $DEVICE mkdir -p /tmp/de-m1-check" </dev/null
+# shellcheck disable=SC2029
 ssh "$HOST" "flock --close --timeout 300 $DEVICE sh -c 'cat > /tmp/de-m1-check/rabbiz-de'" <"$DE_BIN"
+# shellcheck disable=SC2029
 ssh "$HOST" "flock --close --timeout 300 $DEVICE sh -c 'cat > /tmp/de-m1-check/de-smoke'" <"$SMOKE_BIN"
-ssh "$HOST" "flock --close --timeout 300 $DEVICE chmod +x /tmp/de-m1-check/rabbiz-de /tmp/de-m1-check/de-smoke" </dev/null
+# shellcheck disable=SC2029
+ssh "$HOST" "flock --close --timeout 300 $DEVICE chmod 777 /tmp/de-m1-check && chmod +x /tmp/de-m1-check/rabbiz-de /tmp/de-m1-check/de-smoke" </dev/null
 
 REMOTE_SCRIPT="$(cat <<'REMOTE'
 set -u
