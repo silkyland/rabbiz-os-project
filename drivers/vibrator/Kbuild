@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0
+# Out-of-tree Kbuild for the Samsung Galaxy A21s (SM-A217F) ERM vibration
+# motor driver (gpg0-0).
+
+obj-m += a21s-vibrator.o
+a21s-vibrator-y := a21s_vibrator.o

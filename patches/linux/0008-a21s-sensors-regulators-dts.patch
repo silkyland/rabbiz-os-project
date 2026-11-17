@@ -1,0 +1,18 @@
+--- a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
++++ b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
+@@ -299,6 +299,7 @@
+ 				regulator-min-microvolt = <3300000>;
+ 				regulator-max-microvolt = <3375000>;
+ 				regulator-ramp-delay = <12000>;
++				regulator-always-on;
+ 			};
+ 
+ 			vdd_ldo27: ldo27 {
+@@ -331,6 +332,7 @@
+ 				regulator-min-microvolt = <1800000>;
+ 				regulator-max-microvolt = <1800000>;
+ 				regulator-ramp-delay = <12000>;
++				regulator-always-on;
+ 			};
+ 
+ 			vdd_ldo31: ldo31 {

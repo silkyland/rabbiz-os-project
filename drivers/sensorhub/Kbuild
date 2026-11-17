@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-2.0
+# Out-of-tree Kbuild for the Samsung Galaxy A21s (SM-A217F) CHUB/SSP
+# sensor hub driver (gyroscope, accelerometer, ambient light, proximity).
+
+obj-m += a21s-chub.o
+a21s-chub-y := a21s_chub.o
