@@ -1,0 +1,22 @@
+[package]
+name = "de-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+de-api.workspace = true
+de-backend.workspace = true
+de-render.workspace = true
+de-protocols.workspace = true
+de-ui.workspace = true
+de-paint.workspace = true
+de-config.workspace = true
+de-apps.workspace = true
+de-system.workspace = true
+smithay.workspace = true
+serde_json.workspace = true

@@ -1,0 +1,84 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/de-api",
+    "crates/de-design",
+    "crates/de-paint",
+    "crates/de-ui",
+    "crates/de-config",
+    "crates/de-sim",
+    "crates/de-apps",
+    "crates/de-system",
+    "crates/de-backend",
+    "crates/de-render",
+    "crates/de-protocols",
+    "crates/de-core",
+    "crates/de-bin",
+]
+
+[workspace.package]
+edition = "2021"
+license = "GPL-3.0-only"
+rust-version = "1.88"
+
+[workspace.dependencies]
+# Internal crates
+de-api = { path = "crates/de-api" }
+de-design = { path = "crates/de-design" }
+de-paint = { path = "crates/de-paint" }
+de-ui = { path = "crates/de-ui" }
+de-config = { path = "crates/de-config" }
+de-sim = { path = "crates/de-sim" }
+de-apps = { path = "crates/de-apps" }
+de-system = { path = "crates/de-system" }
+de-backend = { path = "crates/de-backend" }
+de-render = { path = "crates/de-render" }
+de-protocols = { path = "crates/de-protocols" }
+de-core = { path = "crates/de-core" }
+
+# Compositor framework: Linux-only crates depend on this.
+smithay = { version = "=0.7.0", default-features = false, features = [
+    "backend_drm",
+    "backend_gbm",
+    "backend_libinput",
+    "backend_session_libseat",
+    "backend_udev",
+    "backend_egl",
+    "renderer_gl",
+    "renderer_pixman",
+    "renderer_multi",
+    "desktop",
+    "wayland_frontend",
+    "xwayland",
+] }
+
+# Paint/UI stack (host + device)
+tiny-skia = "0.12"
+cosmic-text = "0.12"
+resvg = "0.50"
+png = "0.18"
+
+# System services
+zbus = "5"
+freedesktop-desktop-entry = "0.8"
+
+# Host simulator
+minifb = "0.27"
+
+# Data
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"

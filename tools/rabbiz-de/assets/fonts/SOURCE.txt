@@ -1,0 +1,30 @@
+# Bundled font provenance (M0-T5)
+
+## Noto Sans + Noto Sans Thai (SIL OFL 1.1)
+
+Source: github.com/notofonts/noto-fonts @ ffebf8c1ee449e544955a7e813c54f9b73848eac
+(hinted TTFs, static instances, no subsetting — plan M0-T5)
+License: SIL Open Font License 1.1 (see OFL.txt)
+
+| File | URL | SHA-256 |
+|---|---|---|
+| NotoSans-Regular.ttf | https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-Regular.ttf | b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5 |
+| NotoSans-SemiBold.ttf | https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSans/NotoSans-SemiBold.ttf | 87a8b90ece1e89746b544e4e086f85a3710e41485a8078f9be874837dfad45d5 |
+| NotoSansThai-Regular.ttf | https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSansThai/NotoSansThai-Regular.ttf | 404ddfb5ed0aaa6b6ec8a85700d682978992062d67da93903967b56cbd9a4acc |
+| NotoSansThai-SemiBold.ttf | https://raw.githubusercontent.com/notofonts/noto-fonts/ffebf8c1ee449e544955a7e813c54f9b73848eac/hinted/ttf/NotoSansThai/NotoSansThai-SemiBold.ttf | a4513978cc45074a437918cf008d852d971c550c0140c0ac2517aa09af306fd9 |
+
+## Material Icons Round (Apache 2.0)
+
+Source: repo copy of `shell/assets/fonts/MaterialIconsRound-Regular.otf`
+(Google Fonts "Material Icons Round" family, Apache License 2.0).
+Used for system glyphs (Outlined/Filled states) per plan §7.17 Icons row.
+
+| File | SHA-256 |
+|---|---|
+| MaterialIconsRound-Regular.otf | bad85e5454b6288104ce03806c37323bcd8f145e3094e727860173ac8c91062e |
+
+## OFL.txt
+
+Source: https://raw.githubusercontent.com/google/fonts/main/ofl/notosans/OFL.txt
+SHA-256: (fetch-time) — see file contents; standard OFL 1.1 text with
+"Copyright 2022 The Noto Project Authors" header.

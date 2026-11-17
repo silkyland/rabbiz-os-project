@@ -41,25 +41,31 @@ if [ "$(id -u)" -eq 0 ]; then
   chmod 664 "$CMD_FILE" 2>/dev/null || true
 fi
 
-# Failsafe hardware wake/sleep only if quickshell is not running; when
+# Failsafe hardware wake/sleep only if no shell owns power policy; when
 # quickshell is active, SystemControl.qml owns brightness save/restore.
-if ! pgrep -x quickshell >/dev/null 2>&1; then
-  for bl in /sys/class/backlight/*; do
-    [ -d "$bl" ] || continue
-    case "$ACTION" in
-      sleep)
-        cat "$bl/brightness" > "${RUNTIME_DIR}/a21s-saved-brightness" 2>/dev/null || true
-        echo 0 > "$bl/brightness" 2>/dev/null || true
-        echo 4 > "$bl/bl_power" 2>/dev/null || true
-        ;;
-      wake|toggle|fp-unlock)
-        echo 0 > "$bl/bl_power" 2>/dev/null || true
-        if [ -s "${RUNTIME_DIR}/a21s-saved-brightness" ]; then
-          cat "${RUNTIME_DIR}/a21s-saved-brightness" > "$bl/brightness" 2>/dev/null || true
-        elif [ "$(cat "$bl/brightness" 2>/dev/null || echo 0)" -eq 0 ]; then
-          echo 180 > "$bl/brightness" 2>/dev/null || true
-        fi
-        ;;
-    esac
-  done
+# Under rabbiz-de the raw backlight is still the only power control (the DE
+# lock screen arrives in M4) — `lock` is a no-op there so it must not touch
+# the backlight either.
+if pgrep -x rabbiz-de >/dev/null 2>&1; then
+  [ "$ACTION" = "lock" ] && exit 0
+elif pgrep -x quickshell >/dev/null 2>&1; then
+  exit 0
 fi
+for bl in /sys/class/backlight/*; do
+  [ -d "$bl" ] || continue
+  case "$ACTION" in
+    sleep)
+      cat "$bl/brightness" > "${RUNTIME_DIR}/a21s-saved-brightness" 2>/dev/null || true
+      echo 0 > "$bl/brightness" 2>/dev/null || true
+      echo 4 > "$bl/bl_power" 2>/dev/null || true
+      ;;
+    wake|toggle|fp-unlock)
+      echo 0 > "$bl/bl_power" 2>/dev/null || true
+      if [ -s "${RUNTIME_DIR}/a21s-saved-brightness" ]; then
+        cat "${RUNTIME_DIR}/a21s-saved-brightness" > "$bl/brightness" 2>/dev/null || true
+      elif [ "$(cat "$bl/brightness" 2>/dev/null || echo 0)" -eq 0 ]; then
+        echo 180 > "$bl/brightness" 2>/dev/null || true
+      fi
+      ;;
+  esac
+done

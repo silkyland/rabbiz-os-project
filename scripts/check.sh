@@ -19,3 +19,7 @@ python3 -B -m unittest discover -s tools/qt-scanout/tests  # Mesa version gate (
 python3 -B tests/test_holdmenu.py                           # Vol Down + Power hold-to-menu (no evdev, no device)
 python3 -B tests/test_volume_keys.py                       # Actual key loop with deterministic evdev events
 node shell/tests/chargingevents.test.mjs                    # Stable charging connection notifications
+# rabbiz-de host gate (M0): only when the workspace exists (integration worktree)
+if [[ -f tools/rabbiz-de/Cargo.toml ]]; then
+  ./scripts/de_test_host.sh                           # cargo test --workspace + golden check
+fi
