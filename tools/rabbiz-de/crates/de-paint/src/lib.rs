@@ -14,7 +14,7 @@ use std::path::Path;
 use cosmic_text::{
     Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache, Weight as FontWeight,
 };
-use de_api::{Color, DrawOp, Point, Rect, Scene, TextStyle};
+use de_api::{Color, DrawOp, Point, Rect, Scene, TextAlign, TextStyle};
 use tiny_skia::{FillRule, Paint, Path as SkiaPath, PathBuilder, Pixmap, Transform};
 
 /// Scene -> pixmap painter. Holds the font database and the glyph cache, so
@@ -81,7 +81,18 @@ impl Renderer {
         // coverage alpha; `blend_pixel` premultiplies before the src-over.
         let color = cosmic_text::Color::rgb(style.color.r, style.color.g, style.color.b);
         let alpha_scale = u32::from(style.color.a);
-        let origin_x = origin.x.round() as i32;
+        // Center within the text box when the screen asks for it. cosmic-text
+        // gives absolute glyph positions, so the offset is applied once here.
+        let line_w = buffer
+            .layout_runs()
+            .next()
+            .map(|run| run.line_w)
+            .unwrap_or(style.max_width);
+        let center_offset = match style.align {
+            TextAlign::Left => 0.0,
+            TextAlign::Center => ((style.max_width - line_w) / 2.0).max(0.0),
+        };
+        let origin_x = (origin.x + center_offset).round() as i32;
         let origin_y = origin.y.round() as i32;
 
         buffer.draw(

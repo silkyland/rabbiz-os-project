@@ -136,6 +136,33 @@ Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge
 - **Consequence:** the PSK can no longer be handed to root-only `nmcli connection load`; `a21s-wifi-connect` feeds
   nmcli's `--ask` prompt on a pty with `stty -echo` so the secret never enters argv.
 
+
+## `rabbiz-de` scaffold (M0 host slice)
+
+The desktop environment is a separate Rust workspace under `tools/rabbiz-de/`.
+This section describes the first slice only; compositor, protocol and system
+crates arrive with their milestones (M0-T3 on device, M1/M2).
+
+| Module | Public API | May import | Never |
+|---|---|---|---|
+| `de-api` | `Point`, `Rect`, `Size`, `Color`, `DrawOp`, `Scene`, `TextStyle` | — | renderer, fonts, Wayland, OS |
+| `de-design` | `DARK: Tokens`, `contrast_ratio` | `de-api` | screens, renderer |
+| `de-paint` | `Renderer::{new,render}`, `save_png` | `de-api`, tiny-skia, cosmic-text | screens, Wayland, config |
+| `de-ui` | `boot::build(Size) -> Scene` | `de-api`, `de-design` | tiny-skia, cosmic-text, files, OS |
+| `de-sim` | `de-sim` binary | all of the above | business/screen logic |
+
+**Dependency direction**: `de-api ← de-design ← de-ui ← de-sim` and
+`de-api ← de-paint ← de-sim`; nothing imports `de-sim`.
+
+**Deferred**: `de-core`, `de-backend`, `de-protocols`, `de-render`,
+`de-system`, `de-apps`, `de-config` are not scaffolded yet — each arrives with
+the milestone that calls it, so no empty crate exists to maintain.
+
+**Enforced**: `scripts/de_test_host.sh` runs
+`tools/rabbiz-de/scripts/check_seams.py`, which fails on a forbidden workspace
+dependency or a cycle. The crate graph is the primary boundary; the script
+covers the inter-crate edge Rust does not enforce.
+
 ## Known constraints and sharp edges
 
 - **3 GB RAM ceiling (`2767544 kB`)**: Requires ZRAM + swapfile ([PLAN.md](PLAN.md#L46)).

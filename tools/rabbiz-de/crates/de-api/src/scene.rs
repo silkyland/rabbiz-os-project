@@ -29,6 +29,12 @@ impl Color {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextAlign {
+    Left,
+    Center,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Weight {
     Regular,
     SemiBold,
@@ -49,6 +55,7 @@ pub struct TextStyle {
     pub weight: Weight,
     pub color: Color,
     pub max_width: f32,
+    pub align: TextAlign,
 }
 
 impl TextStyle {
@@ -58,7 +65,12 @@ impl TextStyle {
             weight,
             color,
             max_width,
+            align: TextAlign::Left,
         }
+    }
+
+    pub const fn with_align(self, align: TextAlign) -> Self {
+        Self { align, ..self }
     }
 }
 

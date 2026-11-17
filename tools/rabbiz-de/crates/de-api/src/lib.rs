@@ -8,7 +8,7 @@ mod geom;
 mod scene;
 
 pub use geom::{Point, Rect, Size};
-pub use scene::{Color, DrawOp, Layer, Scene, TextStyle, Weight};
+pub use scene::{Color, DrawOp, Layer, Scene, TextAlign, TextStyle, Weight};
 
 /// Which compositor renderer is presenting this scene.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

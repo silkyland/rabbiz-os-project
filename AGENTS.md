@@ -73,3 +73,17 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 
 Shared controls: `Widgets/` (`MaterialIcon.qml`). Dependency direction: `Theme ← Services ← Widgets ← Windowing ← Desktop/Panels`; never sideways between Desktop and Panels. Do **not** add apps to `shell/apps/` (legacy, being replaced by real Linux apps — `docs/DESKTOP-SHELL.md`). Anti-homes: `utils`, `helpers`, `common`, `misc`, `_v2` — name the concept. Nothing fits? Propose the module, justify it by dependency direction, add a row and a rule in `scripts/check_shell_seams.mjs`.
 Vocabulary: *form factor* = handset/tablet/desktop; *desktop contract* = the appearance/env/portal settings every app obeys; *starting window* = shell-drawn morph overlay until the app's toplevel maps.
+
+## Where `rabbiz-de` code goes (`tools/rabbiz-de/`, checked by `scripts/de_test_host.sh`)
+
+| New thing | Put it in | Copy |
+|---|---|---|
+| Scene/geometry type shared by every layer | `crates/de-api/src/` | `crates/de-api/src/scene.rs` |
+| Colour, type scale, spacing, radius, motion token | `crates/de-design/src/` only; no literals in screens | `crates/de-design/src/lib.rs` |
+| Vector raster, text shaping, PNG encode | `crates/de-paint/src/` | `crates/de-paint/src/lib.rs` |
+| A screen (boot, home, lock, shade, settings) | `crates/de-ui/src/<screen>.rs`, registered in `lib.rs` | `crates/de-ui/src/boot.rs` |
+| Host runner, CLI parsing, wiring | `crates/de-sim/src/` | `crates/de-sim/src/main.rs` |
+| Unit test | Same file as the code (`#[cfg(test)]`) | `crates/de-ui/src/boot.rs` |
+| End-to-end test | `crates/de-sim/tests/` | — |
+
+Dependency direction: `de-api ← de-design ← de-ui ← de-sim`, and `de-api ← de-paint ← de-sim`. A screen never imports tiny-skia/cosmic-text/Wayland; paint never imports a screen. Never add `utils`, `helpers`, `common`, `misc`, `core`, or a second screen folder for one file. Tests stay with their code. Nothing fits? Propose a crate, justify it against this direction, add a row and an `ALLOWED` entry in `tools/rabbiz-de/scripts/check_seams.py`.

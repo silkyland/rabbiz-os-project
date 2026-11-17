@@ -7,7 +7,7 @@
 //! requested [`Size`] with `sx`/`sy`, so the frame fills any output instead of
 //! assuming the phone panel.
 
-use de_api::{Point, Rect, Scene, Size, TextStyle, Weight};
+use de_api::{Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
 
 /// Reference panel the P0 composition was authored on.
@@ -31,25 +31,38 @@ pub fn build(size: Size) -> Scene {
     // Full bleed: the first op always covers the whole output.
     layer.rect(Rect::new(0.0, 0.0, w, h), 0.0, DARK.bg);
 
-    // Low horizon: a canvas band with one surface card resting on it.
-    let horizon_y = 864.0 * sy;
+    // A low horizon and one surface card give the mark a place to stand.
+    let horizon_y = 872.0 * sy;
     let horizon = Rect::new(0.0, horizon_y, w, h - horizon_y);
     layer.rect(horizon, DARK.radius_card * s, DARK.canvas);
 
-    let card = Rect::new(48.0 * sx, 920.0 * sy, 624.0 * sx, 360.0 * sy);
+    let card = Rect::new(48.0 * sx, 928.0 * sy, 624.0 * sx, 336.0 * sy);
     layer.rect(card, DARK.radius_card * s, DARK.surface);
 
-    // Rabbiz mark, centred on y = 640 of the reference panel.
+    // A very soft copper halo behind the mascot, then the mark on top.
+    let halo = Rect::new(
+        360.0 * sx - 190.0 * s,
+        640.0 * sy - 190.0 * s,
+        380.0 * s,
+        380.0 * s,
+    );
+    layer.rect(halo, 190.0 * s, DARK.accent.with_alpha(14));
     draw_mark(&mut layer, 360.0 * sx, 640.0 * sy, s);
 
     // Brand lockup: one centred 560 dp text column at rest.
-    let wordmark = TextStyle::new(64.0 * s, Weight::SemiBold, DARK.text, 560.0 * s);
+    let wordmark = TextStyle::new(64.0 * s, Weight::SemiBold, DARK.text, 560.0 * s)
+        .with_align(TextAlign::Center);
     let wordmark_x = (w - wordmark.max_width) / 2.0;
     layer.text(Point::new(wordmark_x, 960.0 * sy), "RabbizOS", wordmark);
 
-    let subtitle = TextStyle::new(24.0 * s, Weight::Regular, DARK.text_dim, 560.0 * s);
+    let subtitle = TextStyle::new(24.0 * s, Weight::Regular, DARK.text_dim, 560.0 * s)
+        .with_align(TextAlign::Center);
     let subtitle_x = (w - subtitle.max_width) / 2.0;
-    layer.text(Point::new(subtitle_x, 1040.0 * sy), "native · quiet · yours", subtitle);
+    layer.text(
+        Point::new(subtitle_x, 1044.0 * sy),
+        "native · quiet · yours",
+        subtitle,
+    );
 
     // Copper progress hairline: 160×4 at rest, no spinner.
     let hairline = Rect::new((w - 160.0 * s) / 2.0, 1120.0 * sy, 160.0 * s, 4.0 * s);
@@ -85,8 +98,16 @@ fn draw_mark(layer: &mut de_api::Layer, cx: f32, cy: f32, s: f32) {
     let face = Rect::new(cx - 52.0 * s, cy - 22.0 * s, 104.0 * s, 76.0 * s);
     layer.rect(face, 38.0 * s, DARK.mark_cream);
     let eye = 14.0 * s;
-    layer.rect(Rect::new(cx - 32.0 * s, cy - 10.0 * s, eye, 18.0 * s), 7.0 * s, DARK.bg);
-    layer.rect(Rect::new(cx + 18.0 * s, cy - 10.0 * s, eye, 18.0 * s), 7.0 * s, DARK.bg);
+    layer.rect(
+        Rect::new(cx - 32.0 * s, cy - 10.0 * s, eye, 18.0 * s),
+        7.0 * s,
+        DARK.bg,
+    );
+    layer.rect(
+        Rect::new(cx + 18.0 * s, cy - 10.0 * s, eye, 18.0 * s),
+        7.0 * s,
+        DARK.bg,
+    );
 }
 
 #[cfg(test)]
@@ -102,7 +123,11 @@ mod tests {
             .iter()
             .flat_map(|layer| layer.ops.iter())
             .find_map(|op| match op {
-                DrawOp::Text { origin, text, style } if text.as_str() == needle => Some((*origin, style)),
+                DrawOp::Text {
+                    origin,
+                    text,
+                    style,
+                } if text.as_str() == needle => Some((*origin, style)),
                 _ => None,
             })
             .unwrap_or_else(|| panic!("no text op for {needle:?}"))
@@ -132,7 +157,11 @@ mod tests {
     fn first_op_is_the_full_bleed_background() {
         let scene = build(REF);
         match &scene.layers[0].ops[0] {
-            DrawOp::Rect { rect, radius, color } => {
+            DrawOp::Rect {
+                rect,
+                radius,
+                color,
+            } => {
                 assert_eq!(*rect, Rect::new(0.0, 0.0, 720.0, 1600.0));
                 assert_eq!(*radius, 0.0);
                 assert_eq!(*color, DARK.bg);
@@ -150,6 +179,7 @@ mod tests {
         assert_eq!(style.color, DARK.text);
         assert!((style.size - 64.0).abs() < 0.01);
         assert!((style.max_width - 560.0).abs() < 0.01);
+        assert_eq!(style.align, TextAlign::Center);
     }
 
     #[test]
@@ -175,7 +205,11 @@ mod tests {
         assert!((style.size - 128.0).abs() < 0.01);
 
         match &scene.layers[0].ops.last().unwrap() {
-            DrawOp::Rect { rect, radius, color } => {
+            DrawOp::Rect {
+                rect,
+                radius,
+                color,
+            } => {
                 assert_eq!(*rect, Rect::new(560.0, 2240.0, 320.0, 8.0));
                 assert_eq!(*radius, 4.0);
                 assert_eq!(*color, DARK.accent);
