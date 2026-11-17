@@ -41,9 +41,9 @@ if [ "$(id -u)" -eq 0 ]; then
   chmod 664 "$CMD_FILE" 2>/dev/null || true
 fi
 
-# Failsafe hardware wake/sleep only if quickshell is not running; when
-# quickshell is active, SystemControl.qml owns brightness save/restore.
-if ! pgrep -x quickshell >/dev/null 2>&1; then
+# Failsafe hardware wake/sleep only if neither quickshell nor rabbiz-de is
+# running; when a shell is active, it owns brightness save/restore.
+if ! pgrep -x quickshell >/dev/null 2>&1 && ! pgrep -x rabbiz-de >/dev/null 2>&1; then
   for bl in /sys/class/backlight/*; do
     [ -d "$bl" ] || continue
     case "$ACTION" in

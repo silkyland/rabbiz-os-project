@@ -1,0 +1,223 @@
+#!/usr/bin/env bash
+# a21s-session — session wrapper for a21s-phone-session.service.
+#
+# Resolves session mode (rabbiz-de vs labwc fallback), evaluates the
+# rabbiz-de environment contract, monitors Wayland socket + first-frame
+# readiness, and enforces the crash-loop guard (exit 75 immediate fallback
+# or 3 failures in 60s -> exec a21s-phone-session).
+set -euo pipefail
+
+ORIG_ARGS=("$@")
+CLI_MODE=""
+EXTRA_ARGS=()
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --de)
+      CLI_MODE="de"
+      shift
+      ;;
+    --labwc)
+      CLI_MODE="labwc"
+      shift
+      ;;
+    --force-fail)
+      EXTRA_ARGS+=("--force-fail")
+      shift
+      ;;
+    *)
+      EXTRA_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
+# --- XDG base dirs -------------------------------------------------------
+export LANG="${LANG:-C.UTF-8}"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${XDG_RUNTIME_DIR}/bus}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
+
+resolve_mode() {
+  if [ -n "$CLI_MODE" ]; then
+    printf '%s\n' "$CLI_MODE"
+    return 0
+  fi
+
+  local user_mode_file="${XDG_CONFIG_HOME}/rabbiz-de/mode"
+  if [ -r "$user_mode_file" ]; then
+    local val
+    val="$(tr -d '[:space:]' < "$user_mode_file" 2>/dev/null || true)"
+    case "$val" in
+      de|labwc)
+        printf '%s\n' "$val"
+        return 0
+        ;;
+      *)
+        echo "a21s-session: invalid mode '$val' in $user_mode_file; falling back to labwc" >&2
+        printf 'labwc\n'
+        return 0
+        ;;
+    esac
+  fi
+
+  if [ -r /etc/rabbiz-de/enabled ]; then
+    printf 'de\n'
+    return 0
+  fi
+
+  printf 'labwc\n'
+}
+
+MODE="$(resolve_mode)"
+if [ "$MODE" = "labwc" ]; then
+  exec /usr/local/bin/a21s-phone-session
+fi
+
+if [ ! -x /usr/local/bin/rabbiz-de ]; then
+  echo "a21s-session: /usr/local/bin/rabbiz-de not found; falling back to labwc" >&2
+  exec /usr/local/bin/a21s-phone-session
+fi
+
+# --- Clear wlroots/Mesa overrides & load contract ------------------------
+unset LD_PRELOAD || true
+for v in $(compgen -v WLR_ || true); do
+  unset "$v" || true
+done
+
+export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-seatd}"
+export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Rabbiz}"
+export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-rabbiz-de}"
+export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
+export XKB_DEFAULT_LAYOUT="${XKB_DEFAULT_LAYOUT:-us,th}"
+
+eval "$(/usr/local/bin/rabbiz-de env --shell)"
+
+READY_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.ready"
+FAIL_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.fail"
+STATS_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.stats.jsonl"
+SUMMARY_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.summary.json"
+SOCKET_FILE="${XDG_RUNTIME_DIR}/wayland-0"
+
+rm -f "$READY_FILE"
+: > "$STATS_FILE"
+: > "$SUMMARY_FILE"
+
+record_failure_and_check_limit() {
+  local now_ms cutoff_ms tmp_fail fail_count
+  now_ms="$(date +%s%3N 2>/dev/null || echo "$(date +%s)000")"
+  cutoff_ms=$((now_ms - 60000))
+  tmp_fail="${FAIL_FILE}.tmp.$$"
+  : > "$tmp_fail"
+  if [ -f "$FAIL_FILE" ]; then
+    awk -v cutoff="$cutoff_ms" '$1 ~ /^[0-9]+$/ && $1 >= cutoff { print $1 }' "$FAIL_FILE" > "$tmp_fail" || true
+  fi
+  printf '%s\n' "$now_ms" >> "$tmp_fail"
+  mv -f "$tmp_fail" "$FAIL_FILE"
+  fail_count="$(wc -l < "$FAIL_FILE" | tr -d ' ')"
+  [ "$fail_count" -ge 3 ]
+}
+
+handle_child_exit() {
+  local rc="$1"
+  if [ "$rc" -eq 0 ]; then
+    exit 0
+  fi
+  if [ "$rc" -eq 75 ]; then
+    echo "a21s-session: rabbiz-de exited with 75 (pre-first-frame init failure); falling back to labwc" >&2
+    exec /usr/local/bin/a21s-phone-session
+  fi
+  if record_failure_and_check_limit; then
+    echo "a21s-session: 3 failures in 60s; falling back to labwc" >&2
+    exec /usr/local/bin/a21s-phone-session
+  fi
+  echo "a21s-session: rabbiz-de exited with $rc; restarting" >&2
+  exec "$0" "${ORIG_ARGS[@]}"
+}
+
+# --- Launch rabbiz-de ----------------------------------------------------
+/usr/local/bin/rabbiz-de \
+  --stats-file "$STATS_FILE" \
+  --stats-summary "$SUMMARY_FILE" \
+  "${EXTRA_ARGS[@]}" &
+CHILD_PID=$!
+
+# 1. Wait up to 5s for wayland-0 socket
+socket_ok=0
+for _ in $(seq 1 50); do
+  if [ -S "$SOCKET_FILE" ]; then
+    socket_ok=1
+    break
+  fi
+  if ! kill -0 "$CHILD_PID" 2>/dev/null; then
+    rc=0
+    wait "$CHILD_PID" || rc=$?
+    handle_child_exit "$rc"
+  fi
+  sleep 0.1
+done
+
+if [ "$socket_ok" -ne 1 ]; then
+  echo "a21s-session: wayland-0 did not appear within 5s; falling back to labwc" >&2
+  kill "$CHILD_PID" 2>/dev/null || true
+  wait "$CHILD_PID" 2>/dev/null || true
+  exec /usr/local/bin/a21s-phone-session
+fi
+
+# 2. Wait up to 10s for rabbiz-de.ready (first page flip)
+ready_ok=0
+for _ in $(seq 1 100); do
+  if [ -f "$READY_FILE" ]; then
+    ready_ok=1
+    break
+  fi
+  if ! kill -0 "$CHILD_PID" 2>/dev/null; then
+    rc=0
+    wait "$CHILD_PID" || rc=$?
+    handle_child_exit "$rc"
+  fi
+  sleep 0.1
+done
+
+if [ "$ready_ok" -ne 1 ]; then
+  echo "a21s-session: readiness file did not appear within 10s" >&2
+  kill "$CHILD_PID" 2>/dev/null || true
+  wait "$CHILD_PID" 2>/dev/null || true
+  handle_child_exit 1
+fi
+
+# 3. Export Wayland/XWayland env & update D-Bus activation environment
+export WAYLAND_DISPLAY=wayland-0
+for xs in /tmp/.X11-unix/X*; do
+  if [ -S "$xs" ]; then
+    export DISPLAY=":${xs##*/X}"
+    break
+  fi
+done
+
+dbus-update-activation-environment --systemd \
+  WAYLAND_DISPLAY ${DISPLAY:+DISPLAY} XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP \
+  2>/dev/null || true
+
+if command -v gsettings >/dev/null 2>&1; then
+  gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true 2>/dev/null || true
+  gsettings set org.gnome.desktop.input-sources sources "[('xkb', 'us'), ('xkb', 'th')]" 2>/dev/null || true
+fi
+
+# 4. Truncate failure counter after 60s of healthy uptime
+(
+  sleep 60
+  if kill -0 "$CHILD_PID" 2>/dev/null; then
+    : > "$FAIL_FILE"
+  fi
+) &
+UPTIME_TIMER_PID=$!
+
+rc=0
+wait "$CHILD_PID" || rc=$?
+kill "$UPTIME_TIMER_PID" 2>/dev/null || true
+handle_child_exit "$rc"
