@@ -8,6 +8,7 @@ rust-version.workspace = true
 [dependencies]
 de-api.workspace = true
 de-backend.workspace = true
+de-protocols.workspace = true
 de-render.workspace = true
 de-paint.workspace = true
 de-ui.workspace = true

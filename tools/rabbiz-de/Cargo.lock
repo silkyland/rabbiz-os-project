@@ -260,6 +260,7 @@ dependencies = [
  "de-backend",
  "de-config",
  "de-paint",
+ "de-protocols",
  "de-render",
  "de-ui",
  "libc",
@@ -284,6 +285,14 @@ dependencies = [
  "de-api",
  "swash",
  "tiny-skia",
+]
+
+[[package]]
+name = "de-protocols"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "smithay",
 ]
 
 [[package]]

@@ -23,6 +23,7 @@ pub struct RunConfig {
     pub scenario: String,
     pub duration: Option<f64>,
     pub force_fail: bool,
+    pub spawn: Option<String>,
 }
 
 impl Default for RunConfig {
@@ -36,6 +37,7 @@ impl Default for RunConfig {
             scenario: "boot".to_string(),
             duration: None,
             force_fail: false,
+            spawn: None,
         }
     }
 }

@@ -35,7 +35,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "Usage:\n  rabbiz-de probe --json [--require=gl]\n  rabbiz-de run [--renderer=auto|gl|soft] [--require=gl] [--stats] [--stats-file <path>] [--stats-summary <path>] [--scenario <name>] [--duration <sec>] [--force-fail]\n  rabbiz-de env --shell\n  rabbiz-de launch <desktop-id>"
+        "Usage:\n  rabbiz-de probe --json [--require=gl]\n  rabbiz-de run [--renderer=auto|gl|soft] [--require=gl] [--stats] [--stats-file <path>] [--stats-summary <path>] [--scenario <name>] [--duration <sec>] [--spawn <cmd>] [--force-fail]\n  rabbiz-de env --shell\n  rabbiz-de launch <desktop-id>"
     );
 }
 
@@ -153,6 +153,15 @@ fn cmd_run(args: &[String]) -> i32 {
                     return 2;
                 }
             }
+        } else if arg == "--spawn" {
+            i += 1;
+            let Some(val) = args.get(i) else {
+                eprintln!("--spawn requires a command");
+                return 2;
+            };
+            cfg.spawn = Some(val.clone());
+        } else if let Some(val) = arg.strip_prefix("--spawn=") {
+            cfg.spawn = Some(val.to_string());
         } else {
             eprintln!("unknown run flag: {arg}");
             return 2;
