@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Videos</title>
+  <desc id="desc">Videos symbol on a softly graded rounded tile.</desc>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A38CEB"/><stop offset="1" stop-color="#6550BD"/></linearGradient></defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <rect x="22" y="30" width="84" height="68" rx="12" fill="#FFFFFF"/><path d="M55 46l27 18-27 18Z" fill="#7962CC"/>
+</svg>

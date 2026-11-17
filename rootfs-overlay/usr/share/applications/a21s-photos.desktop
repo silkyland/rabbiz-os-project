@@ -1,10 +1,11 @@
 [Desktop Entry]
 Type=Application
-Name=A21s Photos
+Name=Photos
 GenericName=Photo viewer
 Comment=In-house A21s Photos
-Exec=a21s-photos
-Icon=utilities-system-monitor
+Exec=a21s-photos %f
+MimeType=image/png;image/jpeg;image/webp;image/gif;image/bmp;
+Icon=a21s-gallery
 Categories=Utility;
 Terminal=false
 StartupNotify=true

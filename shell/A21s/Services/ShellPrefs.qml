@@ -2,18 +2,21 @@ pragma Singleton
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import A21s.Theme
 
 // Persistent launcher & theme preferences shared between the shell and
 // Settings.qml via ~/.config/a21s-shell/prefs.json.
 QtObject {
     id: prefs
 
+    property bool loaded: false
+    property int brightnessLevel: -1          // -1 = migrate current backlight on first load
+
     property string wallpaperId: "aurora"     // aurora | nebula | sunset | emerald | oled
     property string accentId: "blue"          // mono | blue | emerald | amber | crimson
     property bool lightTheme: false           // false = dark (default)
     property string clockStyle: "editorial"   // editorial | classic | compact
     property bool use24h: true
-    property bool showSteamCard: true
     property bool dndEnabled: false
     property string iconStyle: "squircle"     // squircle | circle | glass
     property int sleepTimeoutSec: 120         // 30 | 60 | 120 | 300 | 0 (Never)
@@ -109,7 +112,27 @@ QtObject {
         return accents[0].color
     }
 
+    // Glyph/text colour for content drawn ON the accent fill. Named
+    // "accentContent", never "on<Capitalized>": QML parses that shape as a signal
+    // handler for the sibling `accentColor` property, the declaration never gets
+    // its initialiser, and the value silently stays black — which is why
+    // `onAccentColor` below renders black to this day (Theme.qml documents the
+    // same trap for `primaryContent`). Fixing the remaining callers is a separate
+    // sweep across the legacy apps.
+    readonly property color accentContent: accentId === "mono" ? "#09090B" : "#FFFFFF"
+    // Legacy name kept for the apps that still bind it; do not use in new code.
     readonly property color onAccentColor: accentId === "mono" ? "#09090B" : "#FFFFFF"
+
+    // Accent colour for glyphs drawn on an inverted "on" well (Theme.text fill)
+    // in the shade's tiles and vertical sliders. The mono accent is nearly white,
+    // so on the dark theme it would vanish on a light well — fall back to the
+    // shell background there. The light theme inverts the well (dark fill), so
+    // the accent itself is already legible.
+    readonly property color accentInk: {
+        var a = accentColor
+        var luma = 0.2126 * a.r + 0.7152 * a.g + 0.0722 * a.b
+        return (luma > 0.8 && !lightTheme) ? Theme.bg : a
+    }
 
     readonly property string prefsPath: {
         var home = Quickshell.env("HOME") || "/home/gamer"
@@ -121,12 +144,16 @@ QtObject {
             return
         try {
             var d = JSON.parse(raw)
+            if (d.brightnessLevel !== undefined) {
+                var savedLevel = Number(d.brightnessLevel)
+                if (isFinite(savedLevel) && savedLevel >= 0)
+                    brightnessLevel = Math.max(0, Math.min(100, Math.round(savedLevel)))
+            }
             if (d.wallpaperId !== undefined) wallpaperId = String(d.wallpaperId)
             if (d.accentId !== undefined) accentId = String(d.accentId)
             if (d.lightTheme !== undefined) lightTheme = Boolean(d.lightTheme)
             if (d.clockStyle !== undefined) clockStyle = String(d.clockStyle)
             if (d.use24h !== undefined) use24h = Boolean(d.use24h)
-            if (d.showSteamCard !== undefined) showSteamCard = Boolean(d.showSteamCard)
             if (d.dndEnabled !== undefined) dndEnabled = Boolean(d.dndEnabled)
             if (d.iconStyle !== undefined) iconStyle = String(d.iconStyle)
             if (d.sleepTimeoutSec !== undefined) sleepTimeoutSec = Math.max(0, parseInt(d.sleepTimeoutSec) || 0)
@@ -144,12 +171,12 @@ QtObject {
 
     function save() {
         var payload = JSON.stringify({
+            brightnessLevel: brightnessLevel,
             wallpaperId: wallpaperId,
             accentId: accentId,
             lightTheme: lightTheme,
             clockStyle: clockStyle,
             use24h: use24h,
-            showSteamCard: showSteamCard,
             dndEnabled: dndEnabled,
             iconStyle: iconStyle,
             sleepTimeoutSec: sleepTimeoutSec,
@@ -176,7 +203,10 @@ QtObject {
     property var fileWatcher: FileView {
         path: prefs.prefsPath
         watchChanges: true
-        onLoaded: prefs.applyJson(text())
+        onLoaded: {
+            prefs.applyJson(text())
+            prefs.loaded = true
+        }
         onFileChanged: reload()
     }
 }

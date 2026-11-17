@@ -1,0 +1,16 @@
+From: RabbizOS developers
+Subject: arm64: dts: exynos: a217f: limit gadget speed during USB bring-up
+
+High-speed repeatedly loses the link on the test Mac (67-78 losses/minute).
+Disabling USB2 LPM and PHY suspend did not resolve it. Full-speed is a
+connectivity workaround; the high-speed failure remains under investigation.
+See docs/a21s-usb-flapping.md for controlled measurements and limitations.
+
+--- a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
++++ b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
+@@ -534,4 +534,4 @@
+ &usbdrd_dwc3 {
+ 	dr_mode = "otg";
+-	maximum-speed = "high-speed";
++	maximum-speed = "full-speed";
+ };

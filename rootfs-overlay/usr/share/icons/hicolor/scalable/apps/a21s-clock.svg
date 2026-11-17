@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Clock</title>
+  <desc id="desc">Clock symbol on a softly graded rounded tile.</desc>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3B414B"/><stop offset="1" stop-color="#171B23"/></linearGradient></defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <circle cx="64" cy="64" r="43" fill="#FFFFFF"/><g stroke="#ABB1BA" stroke-width="3" stroke-linecap="round"><path d="M64 28v6m36 30h-6m-30 36v-6m-36-30h6"/></g><path d="M64 40v24l19 11" fill="none" stroke="#262D38" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M64 64L46 82" stroke="#F56B54" stroke-width="2.5" stroke-linecap="round"/><circle cx="64" cy="64" r="4" fill="#262D38"/>
+</svg>

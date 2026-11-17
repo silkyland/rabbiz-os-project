@@ -1,7 +1,14 @@
-# Language: English (US)
-# a21s: Gboard-style permanent number row added to base/upper views.
-# User layouts in ~/.local/share/squeekboard/keyboards/ override the
-# compiled-in squeekboard layout of the same name.
+# Language: English (US) + Thai in one layout (RabbizOS)
+#
+# Owner request 2026-11-16: tapping the globe key must switch EN <-> TH immediately instead of
+# opening squeekboard's layout popover. squeekboard has no long-press support and no "cycle input
+# source" action, so the two languages live as views of this ONE layout and a key with
+# `set_view` does the switch instantly. The popover stays reachable from the small keyboard icon
+# (prefs) for choosing any other installed layout.
+#
+# Deployed to ~/.local/share/squeekboard/keyboards/us.yaml (custom layout dir documented at
+# https://world.pages.gitlab.gnome.org/Phosh/squeekboard/layouts.html). Input sources are set to
+# a single `us` so squeekboard always loads this file; Thai is reached through the TH view.
 ---
 outlines:
     default:       { width: 35.657, height: 52 }
@@ -12,30 +19,60 @@ outlines:
     special:       { width: 44.571, height: 52 }
     special-2:     { width: 53.485, height: 52 }
     special-3:     { width: 62.399, height: 52 }
+    lang:          { width: 53.485, height: 52 }
 
 views:
     base:
-        - "1 2 3 4 5 6 7 8 9 0"
         - "q w e r t y u i o p"
         - "a s d f g h j k l"
         - "show_upper z x c v b n m BackSpace"
-        - "show_numbers preferences space . Return"
+        - "show_numbers emoji lang_th prefs space . Return"
     upper:
-        - "1 2 3 4 5 6 7 8 9 0"
         - "Q W E R T Y U I O P"
         - "A S D F G H J K L"
         - "show_upper Z X C V B N M BackSpace"
-        - "show_numbers preferences space . Return"
+        - "show_numbers emoji lang_th prefs space . Return"
     numbers:
         - "1 2 3 4 5 6 7 8 9 0"
         - "@ # $ % & - _ + ( )"
         - "show_symbols , \" ' : ; ! ? BackSpace"
-        - "show_letters preferences space . Return"
+        - "show_letters emoji lang_th prefs space . Return"
     symbols:
         - "~ ` | · √ π τ ÷ × ¶"
         - "© ® £ € ¥ ^ ° * { }"
         - "show_numbers_from_symbols \\ / < > = [ ] BackSpace"
-        - "show_letters preferences space . Return"
+        - "show_letters emoji lang_th prefs space . Return"
+
+    # ---- Thai: Gboard-like full layout (11 keys per row, tone marks, Thai space) ----
+    thai_base:
+        - "ฑ ฒ ณ ฯ ญ ฐ ฅ ฃ ฬ ฦ ฌ"
+        - "ๆ ไ ำ พ ะ ั ี ร น ย บ ล"
+        - "ฟ ห ก ด เ ้ ่ า ส ว ง"
+        - "th_show_upper ผ ป แ อ ิ ื ท ม ใ ฝ BackSpace"
+        - "th_show_numbers emoji prefs lang_en th_space , . Return"
+    thai_upper:
+        - "ๅ / _ ภ ถ ุ ึ ค ต จ ข ช"
+        - "+ ๑ ๒ ๓ ๔ ู ฿ ๕ ๖ ๗ ๘ ๙"
+        - "๐ \" ฎ ฑ ธ ํ ๊ ณ ฯ ญ ฐ ,"
+        - "th_show_upper ฤ ฆ ฏ โ ฌ ็ ๋ ษ ศ ซ ฅ BackSpace"
+        - "th_show_numbers emoji prefs lang_en th_space , . Return"
+    thai_numbers:
+        - "๑ ๒ ๓ ๔ ๕ ๖ ๗ ๘ ๙ ๐"
+        - "@ # $ % & - _ + ( )"
+        - "th_show_symbols , \" ' : ; ! ? BackSpace"
+        - "th_show_letters emoji prefs lang_en th_space , . Return"
+    thai_symbols:
+        - "© ® £ € ¥ ^ ° * { }"
+        - "~ ` | · √ π τ ÷ × ¶"
+        - "th_show_numbers \\ / < > = [ ] BackSpace"
+        - "th_show_letters emoji prefs lang_en th_space , . Return"
+    # Static emoji page (squeekboard cannot host a dynamic clipboard, so this is a fixed
+    # palette; tapping a key submits the emoji as text).
+    emoji:
+        - "😀 😂 😍 🥰 😎 🤔 😭 😡 👍 👎"
+        - "❤️ 🔥 ✨ 🎉 🎂 🌹 ☀️ 🌙 ⭐ 💯"
+        - "🙏 👋 🤝 💪 🙌 👌 ✌️ 🤞 🫶 🤙"
+        - "emoji_back prefs lang_th th_space . Return"
 
 buttons:
     show_upper:
@@ -45,11 +82,30 @@ buttons:
                 unlock_view: "base"
         outline: "change-view"
         icon: "key-shift"
+    th_show_upper:
+        action:
+            locking:
+                lock_view: "thai_upper"
+                unlock_view: "thai_base"
+        outline: "change-view"
+        icon: "key-shift"
     BackSpace:
         outline: "special-2"
         icon: "edit-clear-symbolic"
         action: "erase"
-    preferences:
+    # Tap = instant language switch (no popover). Long-press is not a squeekboard concept.
+    lang_th:
+        action:
+            set_view: "thai_base"
+        outline: "lang"
+        label: "TH"
+    lang_en:
+        action:
+            set_view: "base"
+        outline: "lang"
+        label: "EN"
+    # Layout chooser popover stays available for other installed layouts.
+    prefs:
         action: "show_prefs"
         outline: "special"
         icon: "keyboard-mode-symbolic"
@@ -67,18 +123,47 @@ buttons:
         action:
             set_view: "base"
         outline: "change-view-2"
-        label: "ABC"
+        label: "abc"
     show_symbols:
         action:
             set_view: "symbols"
-        outline: "change-view"
+        outline: "change-view-2"
         label: "*/="
-    .:
-        outline: "large"
+    th_show_numbers:
+        action:
+            set_view: "thai_numbers"
+        outline: "change-view-2"
+        label: "๑๒๓"
+    th_show_symbols:
+        action:
+            set_view: "thai_symbols"
+        outline: "change-view-2"
+        label: "*/="
+    th_show_letters:
+        action:
+            set_view: "thai_base"
+        outline: "change-view-2"
+        label: "กขค"
     space:
         outline: "spaceline"
         text: " "
+    th_space:
+        outline: "spaceline"
+        label: "ไทย"
+        text: " "
+    emoji:
+        action:
+            set_view: "emoji"
+        outline: "change-view-2"
+        label: "☺"
+    emoji_back:
+        action:
+            set_view: "thai_base"
+        outline: "change-view-2"
+        label: "abc"
     Return:
         outline: "special-3"
         icon: "key-enter"
         keysym: "Return"
+    .:
+        text: "."

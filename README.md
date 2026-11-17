@@ -1,6 +1,21 @@
-# Android ARM Linux — Native Mainline Linux + SteamOS on Galaxy A21s
+<p align="center"><img src="assets/branding/rabbizos-wordmark-on-cream.png" width="440" alt="RabbizOS rabbit R logo"></p>
 
-Porting **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`)** directly onto Android smartphones/tablets (zero Android runtime).
+# RabbizOS
+
+**An Arch Linux ARM–based mobile Linux system, by Devded.**
+
+RabbizOS brings native Linux to phones and tablets, with its own touch-first shell,
+device integration, and desktop companion tools. It runs directly on the hardware,
+without Android, Termux, or proot. The project was previously named **Android ARM Linux**.
+
+The current development target is the Samsung Galaxy A21s. This is an experimental
+system under active development; hardware support and remaining work are listed below.
+
+<p align="center"><img src="assets/branding/rabbiz-mascot-flat.svg" width="240" alt="Rabbiz, the plum rabbit mascot, waving"></p>
+
+[Brand & mascot](docs/BRAND.md) · [Desktop shell](docs/DESKTOP-SHELL.md) · [Roadmap](ROADMAP.md)
+
+The platform combines **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`)** directly on supported phone and tablet hardware (zero Android runtime).
 
 - **Primary Device (Phase 1):** Samsung Galaxy A21s (`SM-A217F`, Exynos 850 / `S5E3830`, 3 GB RAM) — **Booting & Working**
 - **Secondary Device (Phase 2):** Xiaomi Pad 7 Pro (`muyu`, `SM8635`) — **Planned**
@@ -29,6 +44,7 @@ Porting **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -
 
 ```text
 .
+├── assets/branding/       # RabbizOS icon, rabbit mark & 2D mascot
 ├── drivers/scsc/          # Out-of-tree SCSC WLBT drivers (MIF, MX, WLAN, BT) for Mainline 7.3
 ├── docs/                  # Bring-up logs, reverse-engineering notes, architecture & plans
 │   ├── ARCHITECTURE.md    # System topology, boot/driver/network data flow, ADRs
@@ -39,6 +55,7 @@ Porting **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -
 │   ├── a21s-wifi-bluetooth.md
 │   ├── a21s-wlbt-reverse-engineering.md
 │   └── a21s-power-battery-modem-plan.md
+├── tools/a21s-mirror/     # macOS screen-mirror app (Swift/AppKit, RFB/ZRLE client)
 ├── scripts/               # Host probe/helper scripts (legacy Android scripts marked obsolete)
 ├── AGENTS.md              # Ground rules & verified facts for coding agents
 └── ROADMAP.md             # Milestone status and next steps
@@ -62,6 +79,21 @@ See **[docs/BUILD.md](docs/BUILD.md)** for full details (patches applied, `CONFI
 
 ---
 
+## Mirror the phone on a Mac
+
+A native macOS app (`tools/a21s-mirror/`) shows the phone screen and controls it with the
+Mac's mouse/keyboard over VNC (wayvnc inside `labwc` — no ADB, no Android):
+
+```bash
+./scripts/mirror_setup.sh          # installs wayvnc + user unit on the device (offline via USB)
+./scripts/build_mac_app.sh --run   # builds and opens "dist/Rabbiz Mirror.app"
+./scripts/verify_mirror.sh         # end-to-end RFB check (writes a 720x1600 PNG)
+```
+
+Details: **[docs/a21s-mirror.md](docs/a21s-mirror.md)**.
+
+---
+
 ## Quick Links
 
 - **Build & Patch Guide:** [docs/BUILD.md](docs/BUILD.md)
@@ -70,3 +102,17 @@ See **[docs/BUILD.md](docs/BUILD.md)** for full details (patches applied, `CONFI
 - **Wi-Fi & Bluetooth Bring-up Guide:** [docs/a21s-wifi-bluetooth.md](docs/a21s-wifi-bluetooth.md)
 - **Battery, Power & Modem Plan:** [docs/a21s-power-battery-modem-plan.md](docs/a21s-power-battery-modem-plan.md)
 - **Mainline Boot & GPU Results:** [docs/a21s-mainline-boot.md](docs/a21s-mainline-boot.md), [docs/a21s-native-gpu.md](docs/a21s-native-gpu.md)
+- **Mac Screen Mirror (mouse/keyboard control):** [docs/a21s-mirror.md](docs/a21s-mirror.md)
+
+## Project identity & upstream credits
+
+RabbizOS is the project and system name; **Rabbiz** is its rabbit mascot and
+**Rabbiz Mirror** is the native macOS companion app. The existing checkout name
+`android-arm-linux`, device-specific `a21s-*` commands, and source module names
+remain valid. Branding assets and usage notes live in [docs/BRAND.md](docs/BRAND.md).
+
+RabbizOS builds on Linux, Arch Linux ARM, uniLoader, labwc, Quickshell, Mesa,
+PipeWire, and other upstream projects. Steam and its gamepad UI are part of the
+gaming setup; RabbizOS is an independent project, not an official SteamOS release.
+Upstream code, firmware, names, and artwork retain their respective licenses and
+ownership; the RabbizOS name does not change those terms.

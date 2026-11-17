@@ -3,9 +3,8 @@ import QtQuick
 import Quickshell.Io
 
 // Screen brightness via systemd-logind D-Bus (busctl), falling back to
-// brightnessctl / a direct sysfs write. No backlight driver exists on the
-// A21s yet (M5) — probe fails, `available` stays false and the UI shows
-// the slider disabled. Contract: 0-100 integer level.
+// brightnessctl / a direct sysfs write. Restore the user-selected level after
+// both preferences and the backlight are ready. Contract: 0-100 integer level.
 QtObject {
     id: root
 
@@ -15,6 +14,7 @@ QtObject {
     // internals: _backend is "sysfs" | "brightnessctl" | ""
     property string _backend: ""
     property string _dev: ""         // /sys/class/backlight/<_dev>
+    property bool _restored: false
     property int _max: 0             // max_brightness (sysfs backend)
 
     function refresh() {
@@ -29,7 +29,42 @@ QtObject {
         }
     }
 
+    function restoreSavedLevel() {
+        if (root._restored || !root.available || !ShellPrefs.loaded)
+            return
+        root._restored = true
+        if (ShellPrefs.brightnessLevel < 0) {
+            // Migrate a readable current level; never learn the sleep/off value.
+            ShellPrefs.brightnessLevel = root.level > 5 ? root.level : 60
+            ShellPrefs.save()
+        }
+        root.setTransientLevel(ShellPrefs.brightnessLevel)
+    }
+
+    onAvailableChanged: root.restoreSavedLevel()
+
+    property var prefsReady: Connections {
+        target: ShellPrefs
+        function onLoadedChanged() { root.restoreSavedLevel() }
+    }
+
     function setLevel(v) {
+        if (!isFinite(v)) return
+        v = Math.max(0, Math.min(100, Math.round(v)))
+        if (ShellPrefs.brightnessLevel !== v) {
+            ShellPrefs.brightnessLevel = v
+            saveLevel.restart()
+        }
+        root.setTransientLevel(v)
+    }
+
+    property var saveLevel: Timer {
+        interval: 250
+        onTriggered: ShellPrefs.save()
+    }
+
+    // Screen torch/restore must not replace the user's normal preference.
+    function setTransientLevel(v) {
         v = Math.max(0, Math.min(100, Math.round(v)))
         root.level = v                // optimistic; refresh() reconciles
         if (!root.available)

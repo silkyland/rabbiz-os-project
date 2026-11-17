@@ -35,6 +35,8 @@ ApplicationWindow {
     readonly property real swipeThreshold: Theme.spaceXL * 1.5
 
     property var photos: []
+    // Set by `a21s-photos <file>` (xdg-open / the screenshot toast): jump straight into the viewer on it.
+    property string openPath: Quickshell.env("A21S_PHOTOS_OPEN") || ""
     property bool scanning: false
     property string scanError: ""
     property int viewerIndex: -1
@@ -69,6 +71,12 @@ ApplicationWindow {
 
     function applyFindOutput(text) {
         win.photos = PhotosLogic.parseFindOutput(text)
+        if (win.openPath.length > 0) {
+            for (var i = 0; i < win.photos.length; i++) {
+                if (win.photos[i].path === win.openPath) { win.openViewer(i); break }
+            }
+            win.openPath = ""
+        }
         if (win.viewerIndex >= win.photos.length)
             win.viewerIndex = win.photos.length - 1
         win.scanning = false

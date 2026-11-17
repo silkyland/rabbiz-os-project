@@ -1,0 +1,11 @@
+[Unit]
+Description=Hardware volume keys -> PipeWire default sink
+After=sound.target bluetooth.service
+
+[Service]
+ExecStart=/usr/local/bin/volume-keys.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

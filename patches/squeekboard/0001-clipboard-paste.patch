@@ -1,0 +1,114 @@
+diff --git a/src/action.rs b/src/action.rs
+index 5cbd27f..f6883d9 100644
+--- a/src/action.rs
++++ b/src/action.rs
+@@ -49,6 +49,8 @@ pub enum Action {
+     },
+     /// Erase a position behind the cursor
+     Erase,
++    /// Paste the Wayland clipboard (read through wl-clipboard)
++    Paste,
+     ShowPreferences,
+ }
+ 
+diff --git a/src/clipboard.rs b/src/clipboard.rs
+new file mode 100644
+index 0000000..465d095
+--- /dev/null
++++ b/src/clipboard.rs
+@@ -0,0 +1,19 @@
++//! Clipboard helper (RabbizOS patch).
++//!
++//! squeekboard's protocol surface cannot read the clipboard, so the `paste` key action reads it
++//! through wl-clipboard (`wl-paste`) and submits the text like typed input. Returns None when the
++//! clipboard is empty, holds no text, or wl-paste is missing — the key then does nothing.
++
++use std::process::Command;
++
++pub fn read_text() -> Option<String> {
++    let out = Command::new("wl-paste")
++        .args(["-n", "-t", "text/plain;charset=utf-8"])
++        .output()
++        .ok()?;
++    if !out.status.success() {
++        return None;
++    }
++    let text = String::from_utf8_lossy(&out.stdout).trim_end_matches(['\n', '\r']).to_string();
++    if text.is_empty() { None } else { Some(text) }
++}
+diff --git a/src/data/parsing.rs b/src/data/parsing.rs
+index 7f0cb31..475ee93 100644
+--- a/src/data/parsing.rs
++++ b/src/data/parsing.rs
+@@ -99,6 +99,9 @@ enum Action {
+     /// Remove last character
+     #[serde(rename="erase")]
+     Erase,
++    /// Paste clipboard contents
++    #[serde(rename="paste")]
++    Paste,
+ }
+ 
+ #[derive(Debug, Clone, PartialEq, Deserialize)]
+@@ -387,6 +390,7 @@ fn create_action<H: logging::Handler>(
+             Action::ShowPrefs
+         ) => crate::action::Action::ShowPreferences,
+         SubmitData::Action(Action::Erase) => action::Action::Erase,
++        SubmitData::Action(Action::Paste) => action::Action::Paste,
+         SubmitData::Keysym(keysym) => crate::action::Action::Submit {
+             text: None,
+             keys: vec!(crate::action::KeySym(
+diff --git a/src/layout.rs b/src/layout.rs
+index 75a5c94..ef50bd1 100644
+--- a/src/layout.rs
++++ b/src/layout.rs
+@@ -976,6 +976,7 @@ impl Layout {
+         match action {
+             Action::Submit { text: _, keys: _ }
+                 | Action::Erase
++                | Action::Paste
+                 | Action::ApplyModifier(_)
+             => {
+                 let t = match latched {
+@@ -1127,6 +1128,21 @@ mod seat {
+                 &button.keycodes,
+                 time,
+             ),
++            // Patch (RabbizOS): submit whatever text the Wayland clipboard holds. squeekboard has
++            // no clipboard support of its own, and the input-method-v2 protocol cannot paste, so
++            // the text is read with wl-clipboard and submitted like a typed key.
++            Action::Paste => {
++                if let Some(text) = crate::clipboard::read_text() {
++                    if let Ok(cstring) = CString::new(text) {
++                        submission.handle_press(
++                            button_pos.into(),
++                            SubmitData::Text(&cstring),
++                            &button.keycodes,
++                            time,
++                        );
++                    }
++                }
++            },
+             _ => {},
+         };
+     }
+@@ -1174,6 +1190,7 @@ mod seat {
+         match action.clone() {
+             Action::Submit { text: _, keys: _ }
+                 | Action::Erase
++                | Action::Paste
+             => {
+                 submission.handle_release(button_pos.into(), time);
+             },
+diff --git a/src/lib.rs b/src/lib.rs
+index 2a23ad0..c33e82d 100644
+--- a/src/lib.rs
++++ b/src/lib.rs
+@@ -32,6 +32,7 @@ pub mod float_ord;
+ pub mod imservice;
+ mod keyboard;
+ pub mod keycodes;
++mod clipboard;
+ mod layout;
+ mod locale;
+ mod main;

@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=A21s Terminal
+Name=Terminal
 GenericName=Terminal
 Comment=In-house A21s Terminal
 Exec=a21s-terminal
-Icon=utilities-system-monitor
+Icon=a21s-terminal
 Categories=Utility;
 Terminal=false
 StartupNotify=true

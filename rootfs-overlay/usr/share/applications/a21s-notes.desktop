@@ -1,10 +1,10 @@
 [Desktop Entry]
 Type=Application
-Name=A21s Notes
+Name=Notes
 GenericName=Notes
 Comment=In-house A21s Notes
 Exec=a21s-notes
-Icon=utilities-system-monitor
+Icon=a21s-notes
 Categories=Utility;
 Terminal=false
 StartupNotify=true

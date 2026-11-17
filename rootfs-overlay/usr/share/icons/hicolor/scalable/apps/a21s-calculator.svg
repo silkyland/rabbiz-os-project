@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Calculator</title>
+  <desc id="desc">Calculator symbol on a softly graded rounded tile.</desc>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#59616B"/><stop offset="1" stop-color="#292F38"/></linearGradient></defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <rect x="27" y="22" width="74" height="84" rx="12" fill="#E7ECF1"/><rect x="37" y="32" width="54" height="19" rx="5" fill="#4A5562"/><path d="M71 43h13" stroke="#B7E9CE" stroke-width="3" stroke-linecap="round"/><g fill="#8C97A4"><rect x="37" y="61" width="12" height="12" rx="3"/><rect x="37" y="80" width="12" height="12" rx="3"/><rect x="56" y="61" width="12" height="12" rx="3"/><rect x="56" y="80" width="12" height="12" rx="3"/></g><rect x="77" y="61" width="14" height="31" rx="5" fill="#F79B36"/><path d="M81 73h6m-6 7h6" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+</svg>

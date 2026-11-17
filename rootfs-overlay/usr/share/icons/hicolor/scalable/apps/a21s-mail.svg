@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Mail</title>
+  <desc id="desc">Mail symbol on a softly graded rounded tile.</desc>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#67B7FF"/><stop offset="1" stop-color="#3764DB"/></linearGradient></defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <rect x="22" y="34" width="84" height="62" rx="10" fill="#FFFFFF"/><path d="M25 38l33 27a10 10 0 0 0 12 0l33-27M25 92l25-23m53 23L78 69" fill="none" stroke="#6596E0" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

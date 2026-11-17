@@ -48,6 +48,7 @@ QtObject {
     property bool volumeOsdVisible: false
     property bool screenshotToastVisible: false
     property string lastScreenshotPath: ""
+    property int screenshotSerial: 0   // +1 per captured shot; drives the shutter flash
     property string lastScreenshotName: ""
 
     // --- Internals ---
@@ -119,12 +120,12 @@ QtObject {
                 root._savedBrightness = Brightness.level
                 root._hadSavedBrightness = true
                 if (Brightness.available)
-                    Brightness.setLevel(100)
+                    Brightness.setTransientLevel(100)
                 ShellState.torchOverlayOpen = true
             } else {
                 ShellState.torchOverlayOpen = false
                 if (root._hadSavedBrightness && Brightness.available)
-                    Brightness.setLevel(root._savedBrightness)
+                    Brightness.setTransientLevel(root._savedBrightness)
                 root._hadSavedBrightness = false
             }
         }
@@ -358,11 +359,6 @@ QtObject {
     property var postModemTimer: Timer {
         interval: 1200
         onTriggered: root.refreshTelemetry()
-    }
-
-    function switchToSteamOS() {
-        ShellState.powerMenuOpen = false
-        _runCmd(["sh", "-c", "a21s-steam >/dev/null 2>&1 &"])
     }
 
     function reloadShell() {
@@ -618,6 +614,7 @@ QtObject {
         }
         if (nonce.length > 0 && nonce !== root._lastShotNonce) {
             root._lastShotNonce = nonce
+            root.screenshotSerial++
             root.screenshotToastVisible = true
             shotToastTimer.restart()
         }

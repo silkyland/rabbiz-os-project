@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Messages</title>
+  <desc id="desc">A white speech bubble on a blue rounded tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#48A8FF"/>
+      <stop offset="1" stop-color="#1767DC"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <path d="M64 28c-24 0-43 15-43 34 0 12 7 22 18 28l-4 14 20-9c3 1 6 1 9 1 24 0 43-15 43-34S88 28 64 28Z" fill="#FFFFFF"/>
+</svg>

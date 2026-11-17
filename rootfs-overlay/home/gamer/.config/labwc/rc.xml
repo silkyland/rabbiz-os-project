@@ -137,16 +137,9 @@
     <keybind key="A-F4">
       <action name="Close"/>
     </keybind>
-    <!-- XF86 keys the shell may also handle via its own binds. -->
-    <keybind key="XF86AudioRaiseVolume">
-      <action name="Execute" command="a21s-volume up"/>
-    </keybind>
-    <keybind key="XF86AudioLowerVolume">
-      <action name="Execute" command="a21s-volume down"/>
-    </keybind>
-    <keybind key="XF86AudioMute">
-      <action name="Execute" command="a21s-volume mute"/>
-    </keybind>
+    <!-- Volume keys are owned by volume-keys.py (evdev): it delays a lone press and cancels it when the
+         press is part of the Power+Volume screenshot combo. A labwc bind here would change the volume
+         immediately (and twice per press), so there is deliberately no XF86Audio* bind. -->
     <keybind key="Print">
       <action name="Execute" command="a21s-screenshot"/>
     </keybind>
@@ -156,7 +149,8 @@
     <keybind key="XF86MonBrightnessDown">
       <action name="Execute" command="brightnessctl set 10%-"/>
     </keybind>
-    <keybind key="XF86PowerOff">
+    <!-- Release avoids repeating Power toggles while a hardware combo is held. -->
+    <keybind key="XF86PowerOff" onRelease="yes">
       <action name="Execute" command="a21s-power-key toggle"/>
     </keybind>
   </keyboard>

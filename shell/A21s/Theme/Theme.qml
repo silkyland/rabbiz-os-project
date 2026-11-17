@@ -34,10 +34,15 @@ QtObject {
     // clock nearly invisible in light mode.
     readonly property color onWallpaper:     "#F4F4F5"
     readonly property color onWallpaperDim:  "#C9FFFFFF"
+    // Faint ink and hairlines drawn on the wallpaper (lock-screen section labels
+    // and rules); the shade's Theme.shadeLine flips to black in light mode and
+    // would disappear on the lock screen's always-dark wallpaper.
+    readonly property color onWallpaperFaint: "#8CFFFFFF"
+    readonly property color onWallpaperLine:  "#33FFFFFF"
     readonly property color tileOff:      light ? "#E9E9EF" : "#22252F"
     readonly property color tileOffText:  light ? "#4A4A55" : "#8B93A3"
 
-    // Apps retain software rendering; the shell uses the pinned Panfrost path when available.
+    // Shell and in-house apps use the pinned Panfrost path via a21s-qt-render when CMA allows, else software.
     readonly property color glass:        light ? "#B3FFFFFF" : "#B3131316"
     readonly property color glassHigh:    light ? "#D9FFFFFF" : "#D917171B"
     readonly property color glassLow:     light ? "#8CFFFFFF" : "#8C0F0F12"
@@ -47,6 +52,16 @@ QtObject {
     readonly property color glassBlurHigh: light ? "#B3FFFFFF" : "#B317171B"
     readonly property int backdropBlurMax: 32
 
+    // Shade sheets (grouped notifications / quick settings). These sit on the
+    // captured, blurred screen, so cards are alpha layers rather than opaque
+    // surfaces: white alpha on the dark theme, black alpha on the light one.
+    readonly property color shadeCard:    light ? "#CCFFFFFF" : "#1AFFFFFF"
+    readonly property color shadeCardOn:  light ? "#F2FFFFFF" : "#26FFFFFF"
+    readonly property color shadeWell:    light ? "#14000000" : "#1AFFFFFF"
+    readonly property color shadeLine:    light ? "#24000000" : "#1FFFFFFF"
+    // Floating clear-all button; needs its own layer to stay legible over cards.
+    readonly property color shadeFab:     light ? "#F2FFFFFF" : "#B318181C"
+
     // Type (px @ 720x1600, scale=1)
     readonly property string fontFamily: "Noto Sans"
     readonly property int fontStatus:   20
@@ -54,6 +69,10 @@ QtObject {
     readonly property int fontBody:     28
     readonly property int fontTitle:    34
     readonly property int fontHeadline: 46
+    // Section labels ("CONVERSATIONS", timestamps) sit below fontStatus.
+    readonly property int fontMicro:    18
+    // Shade clock — the one oversized display number in the shell.
+    readonly property int fontClock:    100
 
     // Spacing
     readonly property int spaceXS: 6
@@ -80,6 +99,17 @@ QtObject {
     readonly property int navPillHeight:   8
     readonly property int navZoneHeight:   48
     readonly property int shadeHandleZone: 32
+
+    // Shade layout (720 px wide; One UI 7-style grouped sheets). Cards use
+    // radiusCard so every sheet element shares one corner language.
+    readonly property int radiusCard:        36
+    readonly property int shadeControlButton: 88   // round header button
+    readonly property int shadeTileHeight:    106  // large pill tile
+    readonly property int shadeIconWell:      90   // icon circle inside it
+    readonly property int shadeGroupWell:     64   // icon circle in a grouped row
+    readonly property int shadeGridTile:      124  // dense icon-tile circle
+    readonly property int shadeMediaHeight:   336
+    readonly property int shadeSliderWidth:   86   // vertical brightness/volume pill
 
     // Motion
     readonly property int animFast: 140

@@ -1,9 +1,0 @@
-#!/bin/sh
-# /usr/local/bin/steam — desktop shim. Game shortcuts written by Steam (`steam steam://rungameid/N`)
-# call this. Inside the legacy SteamOS session (marker file) it execs the real client; everywhere
-# else it opens Steam as a normal window via a21s-steam. It never switches the DRM seat (ADR-8).
-RD="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-if [ -f "$RD/a21s-in-steam" ]; then
-    exec /home/gamer/.local/share/Steam/steamrtarm64/steam "$@"
-fi
-exec a21s-steam "$@"

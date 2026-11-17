@@ -335,3 +335,45 @@ Sensor list จาก vendor `a21s_eur_open_w00_r00.dts` `fragment@camera` + `ca
 - Firmware `shub_nacho_a21s.bin`: ต้อง extract จาก vendor image (อยู่ใน vendor/modem partition?) — ถ้า CHUB บูตแล้วค้าง fw ไว้ อาจไม่ต้องดาวน์โหลดใหม่ทุก boot
 - ทางเลือก minimal: ถ้า gyro/accel ไม่ critical สำหรับ SteamOS (ใช้แค่ auto-rotate + game orientation) → **defer**; ถ้าจะทำ → accel+gyro (LSM6DSL) ก่อน, mag/prox ตามหลัง
 - Open questions: (1) transport จริง AP↔CHUB คืออะไร (ACPM channel?), (2) sensor อยู่บน bus ของ CHUB หรือ share กับ AP, (3) fw blob extract จาก partition ไหน, (4) node "ssp" จริงใน base DTB อยู่ไหน
+
+## 2026-11-16 — Fuel-gauge bus correction verified on hardware
+
+The old 0005 patch enabled **USI hsi2c_0 at 0x138a0000**, which bound the
+fuel-gauge driver but every read timed out with -110. The vendor A21s r06
+DT overlay's `__fixups__` explicitly maps FG fragment@15, MFD fragment@6,
+and USB-PD fragment@7 to **i2c_0**. This is the legacy controller at
+**0x13830000**, not the USI controller.
+
+Source: [vendor r06 DTS at b8c71b7](https://github.com/samsungexynos850/android_kernel_samsung_exynos850/blob/b8c71b7aecece9c67f0e840a6b074573e8041d20/arch/arm64/boot/dts/samsung/a21s/a21s_eur_open_w00_r06.dts#L6572).
+
+Before the correction, read-byte probes of 0x3b/0x3c/0x3d on all three
+enabled adapters found no responding S2MU106 devices; the incorrectly
+bound 1-003b returned EBUSY and its kernel driver logged -110. The real
+controller was disabled and therefore could not be scanned.
+
+0005 now enables `&i2c_0`, moves the FG node there, and requests 400 kHz via
+**samsung,i2c-max-bus-freq** (the property actually read by
+`drivers/i2c/busses/i2c-s3c2410.c:985`). The observed bus rate is 378 kHz.
+The unused hsi2c_0/USI block is no longer enabled for the battery.
+
+After building DTB + uniLoader, AVB verification, flash/readback and reboot:
+
+- Boot ID: `64047028-8099-4c1c-a126-b430fcf90bc5`.
+- Image `build/images/boot-battery-bus.img` SHA256:
+  `6bd0a485c8d69beeadcd771bc7ecf358383bbb8f284609f3889d6c0f1296d1a0`.
+- `0-003b` binds to the existing `s2mu005-fuel-gauge` driver; names stay stable.
+- On that adapter, 0x3c and 0x3d respond; 0x3b is driver-owned (EBUSY).
+- Kernel capacity **43%**, voltage **3.822631 V**, status **Charging**;
+  UPower device and DisplayDevice also report **43%**.
+- Installed Quickshell **0.3.2** reports `ready=true`, `isPresent=true`,
+  **percentage=0.43**. Thus StatusBar's `percentage * 100` is correct.
+  The probe must wait for UPower readiness; its initial lazy query is not
+  evidence that a battery is missing.
+- Zero `failed to read ... register` kernel messages in the new boot at
+  the verification point. USB retains the verified full-speed workaround.
+
+This validates bus connectivity and the capacity/display path, not complete
+S2MU106 register compatibility or calibration. Voltage-average reported zero
+and current-average was implausible relative to instantaneous current;
+these MONOUT channels remain unvalidated. No calibration/profile registers
+or charger policy were changed.

@@ -67,6 +67,30 @@ cp.set("WM", "activeBackground", rgb(a.surface)) if cp.has_section("WM") else No
 with open(kg + ".tmp", "w") as f: cp.write(f, space_around_delimiters=False)
 os.replace(kg + ".tmp", kg)
 
+# GTK3 has no color-scheme: squeekboard (the on-screen keyboard) only switches to its
+# Adwaita:dark stylesheet when gtk-application-prefer-dark-theme is set, so the keyboard stayed
+# light in dark mode (owner report 2026-11-16). Write the key, then restart squeekboard because
+# it reads GTK settings only at startup.
+gtk_dir = os.path.join(home, ".config/gtk-3.0"); os.makedirs(gtk_dir, exist_ok=True)
+gtk_ini = os.path.join(gtk_dir, "settings.ini")
+want = {"gtk-theme-name": "Adwaita",
+        "gtk-application-prefer-dark-theme": "0" if a.light else "1"}
+gcp = configparser.RawConfigParser(); gcp.optionxform = str
+gcp.read(gtk_ini)
+if not gcp.has_section("Settings"): gcp.add_section("Settings")
+gtk_changed = any(gcp.get("Settings", k, fallback=None) != v for k, v in want.items())
+for k, v in want.items(): gcp.set("Settings", k, v)
+if gtk_changed:
+    with open(gtk_ini + ".tmp", "w") as f: gcp.write(f, space_around_delimiters=False)
+    os.replace(gtk_ini + ".tmp", gtk_ini)
+    import shutil, time
+    if shutil.which("squeekboard") and subprocess.run(
+            ["pgrep", "-x", "squeekboard"], stdout=subprocess.DEVNULL).returncode == 0:
+        subprocess.run(["pkill", "-x", "squeekboard"], check=False)
+        time.sleep(0.4)
+        subprocess.Popen(["squeekboard"], env=os.environ.copy(), start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 if not a.no_gsettings:
     scheme = "prefer-light" if a.light else "prefer-dark"
     subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", scheme],

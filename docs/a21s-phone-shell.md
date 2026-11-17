@@ -104,6 +104,193 @@ swaymsg / labwc --version; ls /usr/share/a21s-shell
 - `brightnessctl`/backlight and battery may report unavailable until the
   M5 power drivers land — shell degrades gracefully by contract.
 
+## Shade UI — notifications + quick settings (redesign 2026-11-16)
+
+The pull-down shade was rebuilt to the One UI 7 shape: **grouped cards** instead
+of one flat stream, sections that read top-down by importance, and a two-page
+pager with dots instead of the old "Notifications | Controls" tab bar.
+
+| Controls | Notifications |
+|---|---|
+| ![Controls sheet](shade-controls-preview.png) | ![Notification sheet](shade-notifications-preview.png) |
+
+*(Device screenshots of `DSI-1` at 720x1600, 2026-11-16, with notifications
+injected through `notify-send` so the grouping is visible. The status bar is a
+separate `PanelWindow` and therefore not part of the captured sheet.)*
+
+### Composition
+
+| Page | Top to bottom |
+|---|---|
+| Notifications | clock (100 px) + date + bell (toggles DND) → **Conversations / Devices / Apps / Promotions** sections → floating clear-all button |
+| Controls | lock \| power, settings buttons → connections (2 pill tiles + 1 grouped share card) → media card + **vertical** brightness/volume sliders → device strip (CPU/disk + screenshot/gallery + settings) → 4×3 action grid |
+
+- Pages switch by sideways drag anywhere on the sheet, by tapping a page dot
+  (36×28 px hit area, no tab bar), or by pulling down from the left/right half of
+  the status bar (`ShellState.shadeMode`, unchanged contract).
+- The list/controls areas are `Flickable`s with `interactive: content > height`,
+  so in portrait the sheet's own pull-to-close still works; only an overflowing
+  sheet (landscape, short heights, long translations) takes the vertical drag.
+- Long-press on Wi-Fi / Bluetooth / Devices still opens the connectivity panel
+  (`ShellState.connPanelOpen` + `connPanelTab`), unchanged.
+
+### Notification grouping (`Panels/NotificationGroups.js`)
+
+Pure, testable transform (`shell/tests/notificationgroups.test.mjs`, wired into
+`scripts/check.sh`) — the QML only renders what it returns. One card per app,
+newest first, with a count; a card expands on tap (max 4 rows) and its ×
+dismisses the whole group. Category rules, in order:
+
+1. known marketing senders (`shopee`, `kbank`, `ais`, …) → **Promotions**
+2. known chat apps (`messenger`, `chatty`, `telegram`, …) → **Conversations**
+3. promo wording in the app name or newest text → **Promotions**
+4. system/device senders (`bluetooth`, `network`, `device share`, …) → **Devices**
+5. everything else → **Apps**
+
+Chat apps win over promo wording on purpose: a friend typing "ส่วนลด" is a
+conversation, not an ad. Promotions render dimmed and always last.
+
+### New tokens / widgets
+
+- `Theme`: `shadeCard`, `shadeCardOn`, `shadeWell`, `shadeLine`, `shadeFab`
+  (alpha layers over the captured backdrop; light theme flips to black alpha),
+  `radiusCard`, `shadeControlButton/TileHeight/IconWell/GroupWell/GridTile/`,
+  `shadeMediaHeight`, `shadeSliderWidth`, `fontClock`, `fontMicro`.
+- `ShellPrefs.accentInk` — the accent as a glyph colour on an **inverted** "on"
+  well (a near-white mono accent would vanish on a white well in dark mode).
+- `Widgets`: `QSTile` (large pill, restyled), `QSRowTile` (row inside a grouped
+  card), `QSIconTile` (grid circle + label), `QSSliderVertical` (tall pill slider).
+  ON state inverts the well to `Theme.text` with an accent glyph.
+- `Panels`: `NotificationCard` (replaces `NotificationItem`), `NotificationGroups.js`.
+
+### Verification
+
+Deployed and exercised on the A21s on 2026-11-16 (`/usr/share/a21s-shell`,
+`a21s-shell` restarted, clean `quickshell` log). Checked with injected touches
+(`a21s-touch`) and screenshots (`grim`): category grouping and per-app collapse,
+tap-to-expand, the × and the clear-all button, page swiping in both directions
+starting on tiles/cards, dot taps, tile toggles, and vertical slider drags
+(brightness 163→209, volume 71→52). `ipc shade state` now also reports
+`page` / `pageHeight` / `controlsContent` / `controlsScrolling`.
+
+Two defects only the device could show, both fixed:
+
+- `Shade.qml` lost its `A21s.Widgets` import while the header pills were removed,
+  but still uses `BackdropBlur` — the whole shade failed to load until the import
+  came back.
+- **`ShellPrefs.onAccentColor` has always been black.** QML parses
+  `on<Capitalized>` next to a sibling `xxx` property as a *signal handler*, so the
+  declaration never receives its initialiser (the same trap `Theme.qml` documents
+  for `primaryContent`). Shade glyphs now use the new `ShellPrefs.accentContent`;
+  the legacy name is kept for the apps that still bind it (a separate sweep).
+
+Page swiping needed a `DragHandler` in `Shade.qml` with
+`grabPermissions: PointerHandler.CanTakeOverFromAnything`: the tiles, cards and
+sliders are `MouseArea`s that swallow drags, so a `MouseArea`-only pager could
+only work in the 20 px gutters. The handler is x-axis only, so vertical drags
+still scroll, move sliders and pull the sheet closed.
+
+### Iterating without the device
+
+`tools/shade-preview/preview.py` renders both pages offscreen with the real QML
+(stubbed `Quickshell` types) — see [its README](../tools/shade-preview/README.md);
+`qmllint -I shell <file>` (Qt 6.12) catches syntax and missing properties. Neither
+excuses checking the phone: both device defects above passed both tools.
+
+## Lock screen — sheet language (2026-11-16)
+
+The lock screen was rebuilt *from the shade*, not from the home screen. The old
+overlay copied the home screen's editorial clock and drew itself on a 97 %-opaque
+wallpaper: the home clock, icons and dock ghosted through it, the system status
+bar and a second lock top bar overlapped, and the fingerprint pad, sleep pill and
+corner buttons shared no baseline.
+
+![Lock screen preview](lock-screen-preview.png)
+
+### Composition
+
+| Zone | Content |
+|---|---|
+| Status line | Wi-Fi/SSID or carrier (left) and battery (right). The system `StatusBar` is under this opaque layer, so the lock draws the only status readout that is visible |
+| Header | the notification page's oversized clock + date and the round DND button (`Theme.fontClock`, `Theme.shadeControlButton`) |
+| Preview | `NotificationGroups.js` sections (Conversations / Devices / Apps / Promotions) rendered with the same `NotificationCard`s as the shade, capped at 3 cards plus "+N more" |
+| Dock | the controls page's media card (`Theme.radiusCard` / `shadeCard`) and three labelled circular actions: Flashlight · Touch to unlock · Power |
+| Bottom | the slim home hint (the system `NavBar` is also under this layer) |
+
+Everything shares the sheet's 20 px insets and card language, so the lock screen,
+the shade and Settings read as one product.
+
+### Behaviour
+
+- Swipe up anywhere that has no handler (the background `MouseArea`), touch the
+  fingerprint pad, or tap the hint — all end in `SystemControl.unlockScreen()`.
+- Grouped cards expand/collapse on tap and dismiss with ×. **Action chips are
+  hidden on the lock** (`NotificationCard.actionsEnabled: false`): an action can
+  launch a window, so it belongs behind the unlock.
+- The bell toggles DND, the torch button opens the OLED torch, Power opens the
+  session menu.
+- The backdrop is opaque by contract. The home screen is drawn underneath this
+  layer; the previous translucent "glass" backdrop is what made the lock screen
+  look crooked and duplicated.
+
+### Home icons + unlock entrance
+
+- **Third-party apps keep their own name and icon.** Only in-house `a21s-*`
+  apps use the RabbizOS artwork; Chrome is listed as **Google Chrome** with
+  Chrome's logo, and KDE/GNOME apps keep their package icons. Wrapper entries
+  (`a21s-browser`, `a21s-files`, `a21s-calendar`, `a21s-contacts`) are now
+  fallbacks, so their real counterparts are preferred by `AppCatalog.js`.
+  `AppIcon` resolves theme names **and** absolute/URI icon paths, so Chrome's
+  `/opt/google/chrome/product_logo_256.png` renders as-is.
+- RabbizOS artwork no longer sits on a card tile: the old `Theme.card` well +
+  1 px border drew a dark (white in light theme) frame around every icon. The
+  well is now only used for generic/fallback glyphs and the explicit glass
+  style. The artwork keeps its original 90 % inset so the 4-column grid keeps
+  the spacing it was designed around (full-bleed artwork made it feel cramped).
+- App labels are a single line with a right ellipsis; long names no longer wrap
+  into the row below. The drawer's cell height follows the single line.
+
+![Home icons without tile frames](home-icons-preview.png)
+
+- After unlocking, the grid and dock tiles rise, scale and fade in **together**
+  as one motion (`AppIcon.entrance`, 650 ms, OutCubic, 32 px rise). The tiles are armed
+  while the lock screen is up, so the home surface cannot flash its settled
+  grid for a frame when the lock layer unmaps.
+
+### Clock tick
+
+When the minute rolls over, the clock digits slide up 12 px and fade back in
+over 260 ms (`outCubic`) instead of snapping. On the home screen the minute and
+hour are split (editorial style), so only the minute ticks every minute and the
+hour ticks on rollover; classic/compact animate the whole time. The lock
+screen's header clock gets the same tick via `LockScreen.tickClock()`.
+
+### Files
+
+- `Panels/LockScreen.qml` (new) — surface + interactions. `PowerMenu.qml` now
+  only owns the overlay layer, idle monitors, power menu, torch and sleep
+  curtain (1118 → 348 lines).
+- `Panels/NotificationCard.qml` — `actionsEnabled` (default `true`).
+- `Panels/qmldir` — registers `LockScreen`.
+- `Desktop/AppIcon.qml` — bare artwork tiles + the shared unlock entrance.
+- `Panels/LockScreen.qml` / `Desktop/HomeScreen.qml` — minute-tick clock animation.
+- `Desktop/HomeScreen.qml` — arm/play the entrance from `ShellState.lockScreenOpen`.
+- `Theme.qml` — `onWallpaperFaint` / `onWallpaperLine` for ink and hairlines on
+  the always-dark lock wallpaper (`shadeLine` flips to black in light mode).
+- This section + `docs/lock-screen-preview.png`.
+
+### Verification
+
+Device 2026-11-16, shell restarted with a clean log. Injected four notifications
+through `notify-send` (two Messenger items to exercise per-app grouping, plus
+Bluetooth, Clock and a KBank promotion) and a paused track through the
+`a21s-spotify` event file. With `a21s-touch` + `grim`: group expand/collapse,
+DND toggle, power menu, OLED torch and swipe-up unlock all confirmed; the empty
+state was checked with no notifications. An action-bearing notification
+(`gdbus ... Notify` with an `open` action) showed its chip in the shade but not
+on the lock, as intended. The status line, battery readout and media card are
+live services (`Network`, `UPower`, `Media`), not mocks.
+
 ## App layer (added 2026-11-15)
 
 - **File managers**: `a21s-files` prefers `index` (index-fm, Maui — true

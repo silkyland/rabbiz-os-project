@@ -1,11 +1,11 @@
-# Architecture
+# RabbizOS Architecture
 
 > Maintained by deep-plan-ingest from [PLAN.md](PLAN.md) and verified implementation up to commit `cc6eb14`. Last ingested: 2026-11-14.
 > Facts carry citations; if a citation no longer matches the code, re-verify before relying on it.
 
 ## System overview
 
-`android-arm-linux` boots **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`)** directly on unlocked Samsung Galaxy A21s (`SM-A217F`, Exynos 850 / `S5E3830`) hardware with zero Android runtime.
+**RabbizOS** (checkout: `android-arm-linux`) boots **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`)** directly on unlocked Samsung Galaxy A21s (`SM-A217F`, Exynos 850 / `S5E3830`) hardware with zero Android runtime.
 
 ```text
 Samsung S-Boot (BL1/BL2, locked by e-fuse)
@@ -66,7 +66,7 @@ Dependency direction is enforced by `scripts/check_shell_seams.mjs` (run `script
 | `Windowing` | launch flow, morph overlay, task switcher, app gesture layer, window policy by form factor | `Theme`, `Services`, `Widgets` | exists (M7.0 done) |
 | `Widgets` | small shared controls (tile, slider, icon) | `Theme`, `Services` | exists (M7.0 done) |
 | `Desktop` | wallpaper, icon grid, widgets, dock, app drawer | `Theme`, `Services`, `Widgets`, `Windowing` | exists (`HomeScreen`, `AppDrawer`) |
-| `Panels` | status bar, nav/gesture bar, shade, quick settings, power menu, HUD, notifications UI | `Theme`, `Services`, `Widgets`, `Windowing` | exists |
+| `Panels` | status bar, nav/gesture bar, shade, quick settings, lock screen, power menu, HUD, notifications UI | `Theme`, `Services`, `Widgets`, `Windowing` | exists |
 | `shell/apps/*` | **legacy** home-grown apps, deleted in M7.4 (Dialer/SMS last, after M6) | `Theme`, `Services`, `Widgets`, `Windowing` | exists, shrinking |
 
 Not checked (stated gap): `Loader { source: }` / `Qt.createComponent` paths and runtime string imports.

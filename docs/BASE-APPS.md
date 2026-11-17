@@ -59,3 +59,31 @@ shell; accent follows the shell; back minimizes (not kills); screenshot captured
 quickshell -p ... ipc call launcher launch a21s-calculator
 grim /tmp/shot.png                   # after waking with a21s-power-key fp-unlock
 ```
+
+## 5. Device verification log (2026-11-16)
+
+All six apps were launched under the shared device lock (`scripts/device_session.sh`) and
+screenshotted in the shell tone. Interaction spot checks:
+
+| App | Verified | Still unverified |
+|---|---|---|
+| Calculator | window + keypad render, live result | tap-through (2+3=), history round-trip |
+| Clock | Alarm panel → **Save alarm wrote** `~/.local/share/a21s-clock/alarms.json` (`{"enabled":true,"hour":7,"minute":30,...}`), empty state | alarm actually ringing (needs a due alarm + wait), timer zero, stopwatch laps |
+| Notes | New note → editor with OSK → typed → **autosave wrote** `~/.local/share/a21s-notes/<id>.json` (`{"v":1,...,"title":"bk"}`) | Thai typing, delete confirm, list round-trip after relaunch |
+| Photos | grid (4 photos) → viewer (1/4, name/date/path) → **swipe → 2/4** | double-tap zoom/pan, arrow buttons |
+| Music | library found `test-tone.wav`, tap → **playing, progress 0:03/0:08**, transport shown | next/prev, stop, mpv-missing banner |
+| Terminal | OSK input focus works, **command ran through the PTY** (`bash: sx: command not found` + red status), chips/OSK layout | successful command output (typed letters landed as `sx`), history persistence |
+
+Notes for the next pass: the OSK changes the vertical layout, so scripted taps must be
+re-coordinated after the keyboard appears; `~/Music` was created by root during testing and had to
+be `chown gamer:gamer` before ffmpeg could write into it.
+
+### KDE originals removed (same session)
+`pacman -Rns kalk kclock marknote elisa qmlkonsole`, then `koko` and `maui-pix` (the photo
+apps behind `org.kde.pix.desktop` / `org.kde.koko.desktop`; the "pix" package name did not exist,
+the entry belonged to maui-pix). All had no dependents. The home grid's `byId("org.kde.x") || fallback` pattern now resolves to the in-house
+apps for Clock/Calculator/Notes; Gallery and Terminal fall back to ids that no longer existed, so
+two `NoDisplay=true` compatibility entries were added: `a21s-gallery.desktop` (→ `a21s-photos`)
+and `org.kde.qmlkonsole.desktop` (→ `a21s-terminal`). Replace them with real ids the next time
+`HomeScreen.qml` is free to edit (another task was editing it), then delete the shims.
+

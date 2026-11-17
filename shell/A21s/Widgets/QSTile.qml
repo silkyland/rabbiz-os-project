@@ -3,128 +3,101 @@ import QtQuick.Layouts
 import A21s.Theme
 import A21s.Services
 
-// Material 3 Expressive Quick Settings pill tile:
-// Morphs outer shape (rounded rect <-> full pill) and inner icon container
-// (squircle <-> circle + scale pulse) on toggle.
+// Large quick-settings tile (One UI 7 style): a full-pill card with a round icon
+// well, two text lines and an optional expand chevron. Tap toggles, press-and-hold
+// fires the long-press action (Wi-Fi/Bluetooth use it to open the connectivity
+// panel). ON state inverts the well to Theme.text and tints the glyph with the
+// accent, so the accent stays the only colour on the sheet.
 Rectangle {
     id: root
 
-    property string glyph: ""               // fallback text/emoji icon
-    property string materialIcon: ""        // MaterialIconsRound name
+    property string materialIcon: ""
     property string label: ""
-    property string secondary: ""           // small line under label
+    property string secondary: ""
     property bool active: false
-    property bool stub: false               // no backend; pulse only
-    property Component glyphDelegate: null  // optional custom icon
+    property bool chevron: true
 
     signal tapped()
     signal longPressed()
 
-    property bool _lp: false              // set by pressAndHold; suppresses tapped
-
-    radius: active ? (height / 2) : Theme.radiusM
-    color: active ? ShellPrefs.accentColor : Theme.surfaceHigh
-    border.width: active ? 0 : 1
-    border.color: Theme.separator
-
-    Behavior on radius { NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutBack } }
-    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+    // pressAndHold also emits clicked on release; this suppresses that.
+    property bool _lp: false
 
     implicitWidth: 280
-    implicitHeight: 88
+    implicitHeight: Theme.shadeTileHeight
+    radius: height / 2
+    color: root.active ? Theme.shadeCardOn : Theme.shadeCard
+    border.width: 1
+    border.color: root.active ? Qt.alpha(Theme.text, 0.18) : Theme.shadeLine
 
-    scale: pressArea.pressed ? 0.95 : 1.0
+    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+    Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+
+    scale: pressArea.pressed ? 0.97 : 1.0
     Behavior on scale {
-        NumberAnimation { duration: Theme.animFast; easing.type: Easing.OutBack }
-    }
-
-    SequentialAnimation {
-        id: pulse
-        NumberAnimation { target: root; property: "opacity"; to: 0.45; duration: Theme.animFast }
-        NumberAnimation { target: root; property: "opacity"; to: 1.0;  duration: Theme.animMed }
+        NumberAnimation { duration: Theme.animFast; easing.type: Easing.OutCubic }
     }
 
     RowLayout {
         anchors {
             fill: parent
-            leftMargin: Theme.spaceM - 4
+            leftMargin: Theme.spaceXS + 2
             rightMargin: Theme.spaceM
         }
         spacing: Theme.spaceS
 
         Rectangle {
             Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: Theme.iconS + 14
-            Layout.preferredHeight: Theme.iconS + 14
-            radius: root.active ? width / 2 : Theme.radiusS
-            color: root.active
-                ? Qt.alpha(ShellPrefs.onAccentColor, 0.22)
-                : Qt.alpha(Theme.text, 0.06)
-            scale: pressArea.pressed ? 0.88 : (root.active ? 1.04 : 1.0)
+            Layout.preferredWidth: Theme.shadeIconWell
+            Layout.preferredHeight: Theme.shadeIconWell
+            radius: width / 2
+            color: root.active ? Theme.text : Theme.shadeWell
 
-            Behavior on radius { NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutBack } }
             Behavior on color { ColorAnimation { duration: Theme.animFast } }
-            Behavior on scale { NumberAnimation { duration: Theme.animMed; easing.type: Easing.OutBack } }
 
-            Loader {
+            MaterialIcon {
                 anchors.centerIn: parent
-                width: Theme.iconS
-                height: Theme.iconS
-                sourceComponent: root.glyphDelegate ? root.glyphDelegate
-                    : (root.materialIcon.length > 0 ? matIconComp : glyphText)
+                name: root.materialIcon
+                size: Math.round(Theme.shadeIconWell * 0.5)
+                color: root.active ? ShellPrefs.accentInk : Theme.text
+                Behavior on color { ColorAnimation { duration: Theme.animFast } }
             }
         }
 
         ColumnLayout {
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
-            spacing: 2
+            spacing: 0
 
             Text {
                 Layout.fillWidth: true
                 text: root.label
-                color: root.stub ? Theme.textFaint
-                     : root.active ? ShellPrefs.onAccentColor : Theme.text
+                color: Theme.text
                 font.pixelSize: Theme.fontCaption + 2
                 font.family: Theme.fontFamily
                 font.weight: Font.DemiBold
                 elide: Text.ElideRight
                 maximumLineCount: 1
-                Behavior on color { ColorAnimation { duration: Theme.animFast } }
             }
 
             Text {
                 Layout.fillWidth: true
                 visible: text.length > 0
-                text: root.stub && root.secondary === "" ? "Off" : root.secondary
-                color: root.active ? Qt.alpha(ShellPrefs.onAccentColor, 0.84) : Theme.textDim
+                text: root.secondary
+                color: Theme.textDim
                 font.pixelSize: Theme.fontStatus
                 font.family: Theme.fontFamily
                 elide: Text.ElideRight
                 maximumLineCount: 1
-                Behavior on color { ColorAnimation { duration: Theme.animFast } }
             }
         }
-    }
 
-    Component {
-        id: matIconComp
         MaterialIcon {
-            name: root.materialIcon
-            size: Theme.iconS - 4
-            color: root.stub ? Theme.textFaint
-                 : root.active ? ShellPrefs.onAccentColor : Theme.text
-        }
-    }
-
-    Component {
-        id: glyphText
-        Text {
-            text: root.glyph
-            font.pixelSize: Theme.fontTitle
-            color: root.active ? ShellPrefs.onAccentColor : Theme.text
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
+            Layout.alignment: Qt.AlignVCenter
+            visible: root.chevron
+            name: "unfold_more"
+            size: Theme.fontBody
+            color: Theme.textFaint
         }
     }
 
@@ -135,14 +108,10 @@ Rectangle {
         onClicked: {
             if (root._lp)
                 return
-            if (root.stub)
-                pulse.restart()
             root.tapped()
         }
         onPressAndHold: {
             root._lp = true
-            if (root.stub)
-                pulse.restart()
             root.longPressed()
         }
     }

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Contacts</title>
+  <desc id="desc">Contacts symbol on a softly graded rounded tile.</desc>
+  <defs><linearGradient id="tile" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#A9A0F2"/><stop offset="1" stop-color="#6E60C9"/></linearGradient></defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.16" stroke-width="2"/>
+  <rect x="27" y="23" width="71" height="82" rx="11" fill="#FFFFFF"/><path d="M98 41h5m-5 23h5m-5 23h5" stroke="#D8D3FA" stroke-width="5" stroke-linecap="round"/><circle cx="62" cy="51" r="13" fill="#8C7CD9"/><path d="M40 87c0-12 9-20 22-20s22 8 22 20v3H40Z" fill="#8C7CD9"/>
+</svg>

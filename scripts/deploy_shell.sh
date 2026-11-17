@@ -63,9 +63,11 @@ PACKAGES=(
   mpv                    # Media player for local/HTTP audio streams
   angelfish              # Plasma Mobile QtWebEngine browser (Spotify Web)
   grim                   # Wayland screenshot capture utility
+  python-evdev           # volume-keys.py (hardware keys + screenshot combo)
+  gcc                    # setup_qt_scanout.sh / setup_dumb_destroy_fix.sh compile their shims on the device
+  xdg-utils              # xdg-open (screenshot toast -> default image app)
   koko                   # KDE Plasma Mobile image gallery
   xorg-xwayland          # XWayland for gamescope/steam and X11 clients
-  gamescope              # nested Steam session
   squashfuse             # FUSE-mounts the FEX x86 guestos .sqsh (kernel lacks squashfs zstd)
   retroarch              # emulator frontend (GBA/NDS via libretro cores)
   libretro-mgba          # GBA core
@@ -88,8 +90,6 @@ print_packages() {
   echo "  - 'ttf-nerd-fonts-symbols' is unverified against"
   echo "    ALARM aarch64 repos; check before install."
   echo "    copy a Nerd Fonts ttf into /usr/share/fonts/TTF/."
-  echo "  - 'steam' itself is not packaged: native ARM64 client lives in"
-  echo "    /home/gamer/.local/share/Steam (see docs/a21s-game-results.md)."
 }
 
 if [[ "${1:-}" == "--packages" || "${1:-}" == "-p" ]]; then
@@ -152,18 +152,18 @@ ssh "${TARGET}" "
     /usr/share/applications /usr/local/bin /etc/systemd/system \
     /etc/udev/rules.d /etc/modules-load.d /etc/systemd/logind.conf.d -maxdepth 3 -name '._*' -delete 2>/dev/null || true
   chown -R root:root /usr/share/a21s-shell
-  chown root:root /etc/systemd/system/a21s-*.service /etc/systemd/system/steamos-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
-  chmod 644 /etc/systemd/system/a21s-*.service /etc/systemd/system/steamos-session.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
+  chown root:root /etc/systemd/system/a21s-*.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
+  chmod 644 /etc/systemd/system/a21s-*.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
   systemctl enable a21s-display-pin.service 2>/dev/null || true
   systemctl enable a21s-drm-keeper.service 2>/dev/null || true
   chown root:root /etc/polkit-1/rules.d/50-a21s-session.rules 2>/dev/null || true
   chmod 644 /etc/polkit-1/rules.d/50-a21s-session.rules 2>/dev/null || true
   chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/udev/rules.d/99-hide-system-partitions.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
   chmod 644 /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/udev/rules.d/99-hide-system-partitions.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
-  chown root:root /usr/local/bin/a21s-* /usr/local/bin/steam /usr/local/bin/steamos-session /usr/local/bin/volume-keys.py
-  chmod 755 /usr/local/bin/a21s-* /usr/local/bin/steam /usr/local/bin/steamos-session /usr/local/bin/volume-keys.py
-  chown root:root /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
-  chmod 644 /usr/share/applications/a21s-*.desktop /usr/share/applications/steam.desktop
+  chown root:root /usr/local/bin/a21s-* /usr/local/bin/a21s_holdmenu.py /usr/local/bin/volume-keys.py
+  chmod 755 /usr/local/bin/a21s-* /usr/local/bin/a21s_holdmenu.py /usr/local/bin/volume-keys.py
+  chown root:root /usr/share/applications/a21s-*.desktop
+  chmod 644 /usr/share/applications/a21s-*.desktop
   # tar preserves the macOS uids baked into the archive (501/20), which
   # leaves /, /home and /home/gamer owned by a non-existent uid and breaks
   # runuser/su + systemd path-transition checks. Restore real owners.
@@ -182,7 +182,16 @@ ssh "${TARGET}" "
   chown gamer:gamer /run/user/1001/a21s-power.cmd 2>/dev/null || true
   systemctl daemon-reload
   systemctl enable a21s-modem-init.service 2>/dev/null || true
+  # Boot splash + hardware volume/screenshot keys; no login prompt on the panel (getty@tty1 is a /dev/null symlink in the overlay).
+  systemctl enable a21s-splash.service volume-keys.service 2>/dev/null || true
+  sysctl -q --system 2>/dev/null || true
 "
+
+# --- GPU rendering support (built on the device from the checkout; both fail closed) ----------------
+echo ">> Qt/Panfrost scanout path + compositor CMA-leak fix"
+"${REPO_ROOT}/scripts/setup_qt_scanout.sh" "${TARGET}" || echo "   (a21s-qt-gpu unavailable: apps fall back to software rendering)"
+"${REPO_ROOT}/scripts/setup_dumb_destroy_fix.sh" "${TARGET}" || echo "   (dumb-destroy.so not installed: GPU apps will leak CMA!)"
+
 
 cat <<'EOF'
 
@@ -191,19 +200,14 @@ cat <<'EOF'
   1. Install packages (or run './scripts/deploy_shell.sh --packages'):
        pacman -Sy --needed labwc quickshell qt6-declarative qt6-svg \
          qt6-wayland dolphin calindori kclock kalk kweather krecorder \
-         marknote qmlkonsole elisa xorg-xwayland gamescope squeekboard \
+         marknote qmlkonsole elisa xorg-xwayland squeekboard \
          noto-fonts ttf-nerd-fonts-symbols upower brightnessctl
 
   2. Ensure seat access (once):
        usermod -aG seat,input,video,render gamer
 
-  3. Switch sessions (both stay installed; Conflicts= keeps them exclusive):
-       systemctl disable steamos-session.service
+  3. Start the phone session:
        systemctl enable --now a21s-phone-session.service
-
-     Revert to SteamOS session any time:
-       systemctl disable a21s-phone-session.service
-       systemctl enable --now steamos-session.service
 
   4. Logs:
        journalctl -u a21s-phone-session.service -b -f

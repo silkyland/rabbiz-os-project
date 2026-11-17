@@ -3,3 +3,4 @@ module A21s.Desktop
 AppDrawer 1.0 AppDrawer.qml
 HomeScreen 1.0 HomeScreen.qml
 AppIcon 1.0 AppIcon.qml
+AppCatalog 1.0 AppCatalog.js

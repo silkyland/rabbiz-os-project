@@ -1,0 +1,9 @@
+[Desktop Entry]
+Icon=a21s-terminal
+Type=Application
+Name=Terminal
+GenericName=Terminal
+Comment=Compatibility id used by the home grid fallback; launches the in-house terminal
+Exec=a21s-terminal
+NoDisplay=true
+Terminal=false

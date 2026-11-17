@@ -17,6 +17,42 @@ Item {
     property bool menuOpen: false
     signal launched()
 
+    // Home unlock entrance: HomeScreen bumps `entranceKey` once per unlock and
+    // every tile (grid + dock) rises/fades in together as one motion. Hosts
+    // other than the home leave the defaults and are unaffected.
+    property int entranceKey: 0
+    property int entranceArmKey: 0
+    property real entrance: 1.0
+
+    opacity: entrance
+    scale: 0.82 + 0.18 * entrance
+    transform: Translate { y: (1.0 - entrance) * 32 }
+
+    onEntranceKeyChanged: playEntrance()
+
+    // Arm while the lock is up: the home surface is composited under the lock,
+    // so hiding the tiles there removes the one-frame flash of the settled grid
+    // that would otherwise appear before the entrance starts.
+    onEntranceArmKeyChanged: {
+        entranceAnim.stop()
+        entrance = 0.0
+    }
+
+    function playEntrance() {
+        entranceAnim.stop()
+        entrance = 0.0
+        entranceAnim.start()
+    }
+
+    NumberAnimation {
+        id: entranceAnim
+        target: appIcon
+        property: "entrance"
+        to: 1.0
+        duration: 650
+        easing.type: Easing.OutCubic
+    }
+
     readonly property string entryId: (entry && entry.id) ? String(entry.id) : ""
     readonly property string entryName: (entry && entry.name) ? String(entry.name) : ""
     readonly property string entryIconName: (entry && entry.icon) ? String(entry.icon) : ""
@@ -73,13 +109,42 @@ Item {
             return iconMap[entryId]
         return ""
     }
-    // Keep our app artwork independent of the selected system icon theme, including
-    // home-screen placeholders whose DesktopEntry has not been discovered yet.
-    readonly property bool hasRabbizIcon: ["a21s-dialer", "a21s-sms", "a21s-settings"].indexOf(entryId) >= 0
-    readonly property url iconUrl: hasRabbizIcon
-        ? "file:///usr/share/icons/hicolor/scalable/apps/" + entryId + ".svg"
-        : ((entryIconName.length > 0 && resolvedMaterialIcon.length === 0 && !entryGlyph)
-            ? Quickshell.iconPath(entryIconName, true) : "")
+    // RabbizOS artwork is only for our own apps. Third-party entries keep the
+    // name and icon their package ships (Chrome must stay "Google Chrome" with
+    // Chrome's logo, KDE apps must keep theirs).
+    readonly property string builtinIconName: {
+        var icons = {
+            "a21s-dialer": "a21s-dialer",
+            "a21s-sms": "a21s-sms",
+            "a21s-settings": "a21s-settings",
+            "a21s-clock": "a21s-clock",
+            "a21s-calculator": "a21s-calculator",
+            "a21s-notes": "a21s-notes",
+            "a21s-photos": "a21s-gallery",
+            "a21s-music": "a21s-music",
+            "a21s-terminal": "a21s-terminal"
+        }
+        return icons[entryId] || ""
+    }
+
+    // DesktopEntry.icon may be an icon-theme name, an absolute path or a URI.
+    function resolveIcon(ref) {
+        if (!ref || ref.length === 0)
+            return ""
+        if (ref.indexOf("://") >= 0)
+            return ref
+        if (ref.indexOf("/") === 0)
+            return "file://" + ref
+        var resolved = Quickshell.iconPath(ref, true)
+        if (resolved.length === 0)
+            return ""
+        return resolved.indexOf("://") < 0 ? "file://" + resolved : resolved
+    }
+    readonly property bool hasBuiltinIcon: builtinIconName.length > 0
+    readonly property url iconUrl: hasBuiltinIcon
+        ? "file:///usr/share/icons/hicolor/scalable/apps/" + builtinIconName + ".svg"
+        : resolveIcon(entryIconName)
+    readonly property bool hasIconSource: iconUrl.toString().length > 0
     readonly property bool isGlass: ShellPrefs.iconStyle === "glass"
     readonly property bool isCircle: ShellPrefs.iconStyle === "circle"
 
@@ -111,7 +176,7 @@ Item {
     }
 
     implicitWidth: tileSize + Theme.spaceL
-    implicitHeight: tileSize + (labelVisible ? Theme.fontCaption * 2 : 0) + Theme.spaceS
+    implicitHeight: tileSize + (labelVisible ? Theme.fontCaption : 0) + Theme.spaceS
 
     Connections {
         target: ShellState
@@ -134,11 +199,18 @@ Item {
         height: appIcon.tileSize
         radius: appIcon.isCircle ? width / 2 : (Theme.radiusM + 4)
 
+        // No card behind a real icon (the old Theme.card well + border was the
+        // dark frame). A well is drawn only when there is no icon image at all
+        // (glyph fallback) or for the explicit glass style.
+        readonly property bool needsWell: !appIcon.isGlass && !appIcon.hasIconSource
+
         color: appIcon.isGlass
             ? Qt.alpha(Theme.surfaceHigh, 0.62)
-            : Theme.card
+            : (needsWell
+                ? (appIcon.isCircle ? Qt.alpha(Theme.text, 0.05) : Theme.card)
+                : "transparent")
 
-        border.width: 1
+        border.width: appIcon.menuOpen || appIcon.isGlass || needsWell ? 1 : 0
         border.color: appIcon.menuOpen
             ? ShellPrefs.accentColor
             : (appIcon.isGlass ? Qt.alpha(Theme.text, 0.16) : Qt.alpha(Theme.text, 0.08))
@@ -150,7 +222,7 @@ Item {
         Rectangle {
             anchors.fill: parent
             radius: parent.radius
-            visible: !appIcon.isGlass
+            visible: !appIcon.isGlass && parent.needsWell
             gradient: Gradient {
                 GradientStop { position: 0.0; color: Qt.alpha(Theme.text, 0.04) }
                 GradientStop { position: 1.0; color: "transparent" }
@@ -160,8 +232,8 @@ Item {
         Image {
             id: image
             anchors.centerIn: parent
-            width: Math.round(parent.width * (appIcon.hasRabbizIcon ? 0.90 : 0.60))
-            height: Math.round(parent.height * (appIcon.hasRabbizIcon ? 0.90 : 0.60))
+            width: Math.round(parent.width * 0.90)
+            height: Math.round(parent.height * 0.90)
             source: appIcon.iconUrl
             fillMode: Image.PreserveAspectFit
             asynchronous: true
@@ -171,7 +243,8 @@ Item {
 
         MaterialIcon {
             anchors.centerIn: parent
-            visible: image.status !== Image.Ready && appIcon.resolvedMaterialIcon.length > 0
+            visible: (!appIcon.hasIconSource || image.status === Image.Error)
+                     && appIcon.resolvedMaterialIcon.length > 0
             name: appIcon.resolvedMaterialIcon
             size: Math.round(appIcon.tileSize * 0.46)
             color: Theme.text
@@ -179,7 +252,8 @@ Item {
 
         Text {
             anchors.centerIn: parent
-            visible: image.status !== Image.Ready && appIcon.resolvedMaterialIcon.length === 0
+            visible: (!appIcon.hasIconSource || image.status === Image.Error)
+                     && appIcon.resolvedMaterialIcon.length === 0
             text: appIcon.entryGlyph.length > 0
                 ? appIcon.entryGlyph
                 : (appIcon.entryName.length > 0 ? appIcon.entryName.charAt(0).toUpperCase() : "?")
@@ -223,8 +297,8 @@ Item {
         font.weight: Font.Medium
         horizontalAlignment: Text.AlignHCenter
         elide: Text.ElideRight
-        wrapMode: Text.WordWrap
-        maximumLineCount: 2
+        wrapMode: Text.NoWrap
+        maximumLineCount: 1
     }
 
     // Running-app indicator pill (morphs width between 0 and 16px).

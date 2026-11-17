@@ -11,7 +11,7 @@ import A21s.Windowing
 
 // Home screen — 720x1600 artwork wallpaper + parallax scale morph on drawer drag,
 // tappable morphing clock + telemetry At-a-Glance pill, 2x4 utility grid,
-// swipeable 3-card Hero Deck (SteamOS / MPRIS Media / System Boost),
+// swipeable 3-card Hero Deck (MPRIS Media / System Boost),
 // flying Search pill morph, frosted dock, AppDrawer & AppLaunchMorph overlay.
 PanelWindow {
     id: home
@@ -32,12 +32,6 @@ PanelWindow {
     SystemClock {
         id: clock
         precision: SystemClock.Minutes
-    }
-
-    Process {
-        id: steamFallbackProc
-        environment: Appearance.appEnvironment
-        command: ["a21s-session-switch", "steamos"]
     }
 
     Process {
@@ -80,6 +74,65 @@ PanelWindow {
     readonly property string minStr: Qt.formatDateTime(clock.date, "mm")
     readonly property string ampmStr: ShellPrefs.use24h ? "" : Qt.formatDateTime(clock.date, "ap").toUpperCase()
 
+    // Clock tick: the minute text (and the hour, when it rolls over) slides up
+    // and fades back in instead of snapping to the new digits.
+    readonly property int hourNumber: clock.date.getHours()
+    readonly property int minuteNumber: clock.date.getMinutes()
+    property real minuteTickShift: 0
+    property real minuteTickOpacity: 1
+    property real hourTickShift: 0
+    property real hourTickOpacity: 1
+
+    onMinuteNumberChanged: tickMinute()
+    onHourNumberChanged: tickHour()
+
+    function tickMinute() {
+        minuteTickShift = 12
+        minuteTickOpacity = 0
+        minuteTickIn.restart()
+        minuteTickFade.restart()
+    }
+
+    function tickHour() {
+        hourTickShift = 12
+        hourTickOpacity = 0
+        hourTickIn.restart()
+        hourTickFade.restart()
+    }
+
+    NumberAnimation {
+        id: minuteTickIn
+        target: home
+        property: "minuteTickShift"
+        to: 0
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+        id: minuteTickFade
+        target: home
+        property: "minuteTickOpacity"
+        to: 1
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+        id: hourTickIn
+        target: home
+        property: "hourTickShift"
+        to: 0
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+    NumberAnimation {
+        id: hourTickFade
+        target: home
+        property: "hourTickOpacity"
+        to: 1
+        duration: Theme.animMed
+        easing.type: Easing.OutCubic
+    }
+
     readonly property bool batteryOk: UPower.displayDevice !== null
         && UPower.displayDevice.ready
         && UPower.displayDevice.isLaptopBattery
@@ -90,9 +143,36 @@ PanelWindow {
         ? "Airplane"
         : (Network.wifiConnected ? Network.activeSsid : (Network.wifiEnabled ? "Wi-Fi" : "Offline"))
 
-    readonly property var heroDeckModel: ShellPrefs.showSteamCard
-        ? ["steam", "media", "system"]
-        : ["media", "system"]
+    // The media card only exists while something is really playing / a player is open; otherwise the
+    // deck leads with the RabbizOS greeting card instead of an empty placeholder player.
+    readonly property var heroDeckModel: Media.hasRealPlayer ? ["media", "system"] : ["welcome", "system"]
+    readonly property string greeting: {
+        var h = clock.date.getHours()
+        return h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening"
+    }
+
+    // Bumped on every unlock so the grid + dock tiles play their staggered
+    // entrance (AppIcon.entranceKey). Never bump on boot or on app close.
+    property int unlockEntranceKey: 0
+    // Bumped while the lock is up so the tiles are hidden underneath it; the
+    // home surface is composited under the lock and would otherwise flash its
+    // settled grid for one frame when the lock unmaps.
+    property int entranceArmKey: 0
+
+    Connections {
+        target: ShellState
+        function onLockScreenOpenChanged() {
+            if (ShellState.lockScreenOpen)
+                home.entranceArmKey += 1
+            else
+                home.unlockEntranceKey += 1
+        }
+    }
+
+    Component.onCompleted: {
+        if (ShellState.lockScreenOpen)
+            home.entranceArmKey += 1
+    }
 
     function cycleClockStyle() {
         var order = ["editorial", "classic", "compact"]
@@ -294,7 +374,10 @@ PanelWindow {
                             spacing: 4
 
                             Text {
+                                id: editorialHour
                                 text: home.hourStr
+                                opacity: home.hourTickOpacity
+                                transform: Translate { y: home.hourTickShift }
                                 color: Theme.onWallpaper
                                 font.pixelSize: 120
                                 font.family: Theme.fontFamily
@@ -308,7 +391,10 @@ PanelWindow {
                                 font.weight: Font.ExtraLight
                             }
                             Text {
+                                id: editorialMinute
                                 text: home.minStr
+                                opacity: home.minuteTickOpacity
+                                transform: Translate { y: home.minuteTickShift }
                                 color: ShellPrefs.accentColor
                                 font.pixelSize: 120
                                 font.family: Theme.fontFamily
@@ -332,6 +418,8 @@ PanelWindow {
                             visible: ShellPrefs.clockStyle === "classic"
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: Qt.formatDateTime(clock.date, home.timeFormatStr)
+                            opacity: home.minuteTickOpacity
+                            transform: Translate { y: home.minuteTickShift }
                             color: Theme.onWallpaper
                             font.pixelSize: 114
                             font.family: Theme.fontFamily
@@ -344,6 +432,8 @@ PanelWindow {
                             visible: ShellPrefs.clockStyle === "compact"
                             width: parent.width
                             text: Qt.formatDateTime(clock.date, home.timeFormatStr)
+                            opacity: home.minuteTickOpacity
+                            transform: Translate { y: home.minuteTickShift }
                             color: Theme.onWallpaper
                             font.pixelSize: 82
                             font.family: Theme.fontFamily
@@ -451,18 +541,21 @@ PanelWindow {
             homeApps = [
                 DesktopEntries.byId("org.kde.index")   || DesktopEntries.byId("org.kde.dolphin") || ({ id: "a21s-files", name: "Files", materialIcon: "folder" }),
                 DesktopEntries.byId("org.kde.merkuro.calendar") || DesktopEntries.byId("org.kde.merkuro") || DesktopEntries.byId("org.kde.calindori") || ({ id: "org.kde.calindori", name: "Calendar", materialIcon: "calendar_month" }),
-                DesktopEntries.byId("org.kde.kclock") || ({ id: "a21s-clock", name: "Clock", materialIcon: "schedule" }),
-                DesktopEntries.byId("org.kde.kalk") || ({ id: "a21s-calculator", name: "Calculator", materialIcon: "calculate" }),
+                DesktopEntries.byId("a21s-clock") || DesktopEntries.byId("org.kde.kclock") || ({ id: "a21s-clock", name: "Clock", materialIcon: "schedule" }),
+                DesktopEntries.byId("a21s-calculator") || DesktopEntries.byId("org.kde.kalk") || ({ id: "a21s-calculator", name: "Calculator", materialIcon: "calculate" }),
                 DesktopEntries.byId("org.kde.kweather") || ({ id: "org.kde.kweather", name: "Weather", materialIcon: "wb_sunny" }),
-                DesktopEntries.byId("org.kde.marknote") || ({ id: "a21s-notes", name: "Notes", materialIcon: "edit_note" }),
-                DesktopEntries.byId("org.kde.pix")     || DesktopEntries.byId("org.kde.koko") || ({ id: "a21s-gallery", name: "Gallery", materialIcon: "photo_library" }),
-                DesktopEntries.byId("org.kde.qmlkonsole") || ({ id: "org.kde.qmlkonsole", name: "Terminal", materialIcon: "terminal" })
+                DesktopEntries.byId("a21s-notes") || DesktopEntries.byId("org.kde.marknote") || ({ id: "a21s-notes", name: "Notes", materialIcon: "edit_note" }),
+                DesktopEntries.byId("a21s-photos") || DesktopEntries.byId("org.kde.pix")     || DesktopEntries.byId("org.kde.koko") || ({ id: "a21s-gallery", name: "Gallery", materialIcon: "photo_library" }),
+                DesktopEntries.byId("a21s-terminal") || DesktopEntries.byId("org.kde.qmlkonsole") || ({ id: "org.kde.qmlkonsole", name: "Terminal", materialIcon: "terminal" })
             ];
             dockApps = [
                 DesktopEntries.byId("a21s-dialer")   || ({ id: "a21s-dialer", name: "Phone", materialIcon: "call" }),
                 DesktopEntries.byId("a21s-sms")      || ({ id: "a21s-sms", name: "Messages", materialIcon: "sms" }),
                 DesktopEntries.byId("a21s-settings") || ({ id: "a21s-settings", name: "Settings", materialIcon: "settings" }),
-                DesktopEntries.byId("a21s-steam")    || DesktopEntries.byId("steam") || ({ id: "a21s-steam", name: "Steam", materialIcon: "sports_esports" })
+                DesktopEntries.byId("google-chrome")
+                    || DesktopEntries.byId("com.google.Chrome")
+                    || DesktopEntries.byId("a21s-browser")
+                    || ({ id: "a21s-browser", name: "Browser", materialIcon: "language" })
             ];
         }
 
@@ -475,14 +568,17 @@ PanelWindow {
 
         Grid {
             id: homeGridRow
-            anchors {
-                horizontalCenter: parent.horizontalCenter
-                top: clockBlock.bottom
-                topMargin: Theme.spaceM + 4
-            }
+            readonly property real cellW: Theme.iconApp - 4 + Theme.spaceM
+            readonly property real sideMargin: Theme.spaceL
+            anchors.horizontalCenter: parent.horizontalCenter
+            // Upper third of the free space between the clock and the hero deck: reads as one group
+            // with the clock and keeps the labels clear of the wallpaper's bright sun below.
+            y: clockBlock.y + clockBlock.height
+               + Math.max(Theme.spaceM, (heroDeckSection.y - (clockBlock.y + clockBlock.height) - height) / 3)
             columns: 4
-            columnSpacing: Theme.spaceM + 4
-            rowSpacing: Theme.spaceM
+            columnSpacing: Math.max(Theme.spaceS,
+                (homeContent.width - 2 * sideMargin - columns * cellW) / (columns - 1))
+            rowSpacing: Theme.spaceL
 
             Repeater {
                 model: homeContent.homeApps
@@ -491,7 +587,7 @@ PanelWindow {
                     required property var modelData
                     required property int index
                     tileSize: Theme.iconApp - 4
-                    width: tileSize + Theme.spaceM
+                    width: homeGridRow.cellW
                     height: tileSize + Theme.fontCaption + Theme.spaceS + 4
                     entry: modelData
 
@@ -511,11 +607,13 @@ PanelWindow {
                         }
                     ]
                     labelVisible: true
+                    entranceKey: home.unlockEntranceKey
+                    entranceArmKey: home.entranceArmKey
                 }
             }
         }
 
-        // ---- Interactive 3-Card Hero Pager Deck (SteamOS / Media / System) ----
+        // ---- Interactive 3-Card Hero Pager Deck (Media / System) ----
         Item {
             id: heroDeckSection
             anchors {
@@ -544,6 +642,8 @@ PanelWindow {
                 boundsBehavior: Flickable.StopAtBounds
                 clip: true
                 model: home.heroDeckModel
+                // The deck's first card changes with the media state; always land on the first card.
+                onModelChanged: { currentIndex = 0; positionViewAtBeginning() }
 
                 delegate: Item {
                     id: deckDelegate
@@ -551,9 +651,9 @@ PanelWindow {
                     width: heroList.width
                     height: heroList.height
 
-                    // --- Card 0: SteamOS Gaming ---
+                    // --- Card 0: RabbizOS welcome (shown while no media player is active) ---
                     Rectangle {
-                        visible: deckDelegate.modelData === "steam"
+                        visible: deckDelegate.modelData === "welcome"
                         anchors {
                             fill: parent
                             leftMargin: Theme.spaceM
@@ -564,126 +664,48 @@ PanelWindow {
                         border.width: 1
                         border.color: Qt.alpha(Theme.text, 0.10)
                         clip: true
-                        scale: steamCardTap.pressed ? 0.97 : 1.0
-                        Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
 
-                        ColumnLayout {
+                        RowLayout {
                             anchors { fill: parent; margins: Theme.spaceM }
-                            spacing: Theme.spaceS
+                            spacing: Theme.spaceM
 
-                            RowLayout {
+                            Image {
+                                source: "../Assets/rabbiz-mark.png"
+                                Layout.preferredWidth: 96
+                                Layout.preferredHeight: 96
+                                sourceSize: Qt.size(192, 192)
+                                fillMode: Image.PreserveAspectFit
+                                smooth: true
+                            }
+
+                            ColumnLayout {
                                 Layout.fillWidth: true
-                                spacing: Theme.spaceS
-
-                                Rectangle {
-                                    width: 40; height: 40; radius: 20
-                                    color: Theme.surfaceHigh
-                                    border.width: 1; border.color: Theme.separator
-                                    MaterialIcon {
-                                        anchors.centerIn: parent
-                                        name: "sports_esports"
-                                        size: 22; color: Theme.text
-                                    }
+                                spacing: 4
+                                Text {
+                                    text: "RabbizOS"
+                                    color: ShellPrefs.accentColor
+                                    font.pixelSize: Theme.fontCaption
+                                    font.family: Theme.fontFamily
+                                    font.letterSpacing: 2
+                                    font.weight: Font.DemiBold
                                 }
                                 Text {
-                                    text: "STEAM OS"
-                                    color: Theme.textDim
-                                    font.pixelSize: Theme.fontStatus
+                                    Layout.fillWidth: true
+                                    text: home.greeting
+                                    color: Theme.text
+                                    font.pixelSize: Theme.fontTitle
                                     font.family: Theme.fontFamily
                                     font.weight: Font.DemiBold
-                                    font.letterSpacing: 1.5
+                                    elide: Text.ElideRight
                                 }
-                                Item { Layout.fillWidth: true }
-                                Rectangle {
-                                    implicitWidth: modeRow.implicitWidth + Theme.spaceM
-                                    implicitHeight: modeRow.implicitHeight + 10
-                                    radius: Theme.radiusPill
-                                    color: Theme.surface
-                                    border.width: 1; border.color: Theme.separator
-                                    RowLayout {
-                                        id: modeRow
-                                        anchors.centerIn: parent
-                                        spacing: 6
-                                        Rectangle {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            width: 7; height: 7; radius: 4
-                                            color: Theme.success
-                                        }
-                                        Text {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            text: "SteamOS"
-                                            color: Theme.textDim
-                                            font.pixelSize: Theme.fontStatus - 2
-                                            font.family: Theme.fontFamily
-                                        }
-                                    }
-                                }
-                            }
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: Theme.spaceM
-
-                                ColumnLayout {
+                                Text {
                                     Layout.fillWidth: true
-                                    spacing: 2
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: "SteamOS Gaming"
-                                        color: Theme.text
-                                        font.pixelSize: Theme.fontTitle
-                                        font.family: Theme.fontFamily
-                                        font.weight: Font.DemiBold
-                                        elide: Text.ElideRight
-                                    }
-                                    Text {
-                                        text: "Big Picture · Panfrost Vulkan"
-                                        color: Theme.textDim
-                                        font.pixelSize: Theme.fontStatus
-                                        font.family: Theme.fontFamily
-                                    }
+                                    text: "Swipe up for all apps"
+                                    color: Theme.textDim
+                                    font.pixelSize: Theme.fontCaption
+                                    font.family: Theme.fontFamily
+                                    elide: Text.ElideRight
                                 }
-
-                                Rectangle {
-                                    implicitWidth: playRow.implicitWidth + Theme.spaceL + 8
-                                    implicitHeight: Theme.iconM + 4
-                                    radius: Theme.radiusPill
-                                    color: ShellPrefs.accentColor
-                                    RowLayout {
-                                        id: playRow
-                                        anchors.centerIn: parent
-                                        spacing: 6
-                                        Text {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            text: "Play"
-                                            color: ShellPrefs.onAccentColor
-                                            font.pixelSize: Theme.fontBody
-                                            font.family: Theme.fontFamily
-                                            font.weight: Font.DemiBold
-                                        }
-                                        MaterialIcon {
-                                            Layout.alignment: Qt.AlignVCenter
-                                            name: "play_arrow"
-                                            size: Theme.fontBody
-                                            color: ShellPrefs.onAccentColor
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        TapHandler {
-                            id: steamCardTap
-                            onTapped: {
-                                var steamEntry = DesktopEntries.byId("a21s-steam") || DesktopEntries.byId("steam")
-                                if (steamEntry && typeof steamEntry.execute === "function") {
-                                    var sp = steamCardTap.parent.mapToItem(null, 0, 0)
-                                    Launcher.launchEntry(steamEntry, {
-                                        x: sp.x, y: sp.y, w: steamCardTap.parent.width, h: steamCardTap.parent.height,
-                                        radius: Theme.radiusL, name: "Steam", materialIcon: "sports_esports",
-                                        iconUrl: "", tint: "#1B6EF3" })
-                                } else if (!steamFallbackProc.running)
-                                    steamFallbackProc.running = true
                             }
                         }
                     }
@@ -1166,20 +1188,8 @@ PanelWindow {
                         height: tileSize + 8
                         entry: modelData
                         labelVisible: false
-
-                        readonly property real fe: home.enterEase(home.enterLin(0.40 + index * 0.03))
-                        transform: [
-                            Translate {
-                                x: (dockIcon.index - (homeContent.dockApps.length - 1) / 2) * home.width * 0.26 * (1 - dockIcon.fe)
-                                y: 90 * (1 - dockIcon.fe)
-                            },
-                            Scale {
-                                origin.x: dockIcon.width / 2
-                                origin.y: dockIcon.height / 2
-                                xScale: 0.55 + 0.45 * dockIcon.fe
-                                yScale: 0.55 + 0.45 * dockIcon.fe
-                            }
-                        ]
+                        entranceKey: home.unlockEntranceKey
+                        entranceArmKey: home.entranceArmKey
                     }
                 }
             }
@@ -1208,4 +1218,5 @@ PanelWindow {
         target: ShellState
         function onGoHome() { ShellState.drawerOpen = false; }
     }
+
 }

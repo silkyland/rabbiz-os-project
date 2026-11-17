@@ -1,5 +1,7 @@
 # Desktop shell rewrite — plan (M7 v2)
 
+The public system name is **RabbizOS**; `a21s-shell` and `A21s.*` remain the implementation names. Brand assets: [BRAND.md](BRAND.md).
+
 > Status: **proposed**, branch `feat/desktop-shell-rewrite`. Decisions below marked **D#** were
 > answered by the owner on 2026-11-16; everything marked **H#** is a hypothesis to prove on the
 > device. Nothing in this file has been run on hardware yet (device was offline when it was written).
@@ -161,7 +163,7 @@ Owner: apps that look bad may be themed over, and `Theme.qml` may be rewritten f
 Evidence for doing it: Plasma Settings rendered light/default on our dark device (§8 S2). Plan for M7.2:
 
 1. **One palette definition** (`shell/A21s/Theme/palette` data: dark + light, accent, radii, motion) is the only source.
-2. **Generators** (run by `A21s.Services.Appearance` at session start and on change): a Qt/KDE colour scheme (`~/.local/share/color-schemes/A21s.colors` + `kdeglobals`), GTK 3/4 overrides (`gtk.css` + `gsettings`), cursor/icon/font settings; `QT_QPA_PLATFORMTHEME=kde` set once in the session env (fixes the light render).
+2. **Generators** (run by `A21s.Services.Appearance` at session start and on change): a Qt/KDE colour scheme (`~/.local/share/color-schemes/A21s.colors` + `kdeglobals`), GTK 3/4 overrides (`gtk.css` + `gsettings`), cursor/icon/font settings; `QT_QPA_PLATFORMTHEME=kde` set once in the session env (fixes the light render). **GTK3 has no `color-scheme`**, so the generator also writes `~/.config/gtk-3.0/settings.ini` with `gtk-application-prefer-dark-theme` and restarts squeekboard (it reads GTK settings only at startup) — without that the on-screen keyboard stayed light in dark mode.
 3. **Rewrite `Theme.qml`** as a thin reader of that palette (no literal colours), keeping today's token *names* as aliases until M7.0 moves are done, so nothing breaks mid-retrofit.
 4. Limits (honest): a colour scheme + Breeze style recolours Qt/KDE apps well; GTK4/libadwaita and Chromium only follow `color-scheme` + accent, not arbitrary shapes. Deep restyling of those is out of scope; per-app CSS only where it is ugly enough to matter (decide per app after M7.4 screenshots).
 
