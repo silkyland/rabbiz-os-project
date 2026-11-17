@@ -1,8 +1,13 @@
-# Build & cloned upstream trees
-build/
-src/
-vendor/
-backups/
+# Build & cloned upstream trees (anchored: bare `src/` would ignore every
+# crates/*/src/ inside tools/)
+/build/
+/src/
+/vendor/
+/backups/
+
+# rabbiz-de worktrees and Rust build artifacts
+.worktrees/
+tools/rabbiz-de/**/target/
 
 # deep-plan working memory
 docs/.deep-plan/
