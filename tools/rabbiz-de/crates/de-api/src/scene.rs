@@ -53,16 +53,29 @@ pub struct TextStyle {
 
 impl TextStyle {
     pub const fn new(size: f32, weight: Weight, color: Color, max_width: f32) -> Self {
-        Self { size, weight, color, max_width }
+        Self {
+            size,
+            weight,
+            color,
+            max_width,
+        }
     }
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum DrawOp {
     /// Filled rectangle. `radius` is clamped to half the shorter side.
-    Rect { rect: Rect, radius: f32, color: Color },
+    Rect {
+        rect: Rect,
+        radius: f32,
+        color: Color,
+    },
     /// Text box; `origin` is the top-left corner of the box.
-    Text { origin: Point, text: String, style: TextStyle },
+    Text {
+        origin: Point,
+        text: String,
+        style: TextStyle,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -73,15 +86,26 @@ pub struct Layer {
 
 impl Layer {
     pub fn new(name: impl Into<String>) -> Self {
-        Self { name: name.into(), ops: Vec::new() }
+        Self {
+            name: name.into(),
+            ops: Vec::new(),
+        }
     }
 
     pub fn rect(&mut self, rect: Rect, radius: f32, color: Color) {
-        self.ops.push(DrawOp::Rect { rect, radius, color });
+        self.ops.push(DrawOp::Rect {
+            rect,
+            radius,
+            color,
+        });
     }
 
     pub fn text(&mut self, origin: Point, text: impl Into<String>, style: TextStyle) {
-        self.ops.push(DrawOp::Text { origin, text: text.into(), style });
+        self.ops.push(DrawOp::Text {
+            origin,
+            text: text.into(),
+            style,
+        });
     }
 }
 
@@ -93,7 +117,10 @@ pub struct Scene {
 
 impl Scene {
     pub fn new(size: Size) -> Self {
-        Self { size, layers: Vec::new() }
+        Self {
+            size,
+            layers: Vec::new(),
+        }
     }
 
     pub fn push(&mut self, layer: Layer) {

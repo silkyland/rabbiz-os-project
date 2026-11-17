@@ -50,6 +50,11 @@ impl Rect {
     }
 
     pub fn inset(self, by: f32) -> Self {
-        Self::new(self.x + by, self.y + by, (self.w - by * 2.0).max(0.0), (self.h - by * 2.0).max(0.0))
+        Self::new(
+            self.x + by,
+            self.y + by,
+            (self.w - by * 2.0).max(0.0),
+            (self.h - by * 2.0).max(0.0),
+        )
     }
 }
