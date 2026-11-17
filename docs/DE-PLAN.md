@@ -221,7 +221,7 @@ All values are device pixels at the 720×1600 panel; the same tokens are multipl
 | Radii | 12 (chips), 20 (rows), 28 (cards), 36 (sheets), 999 (pills) |
 | Type | bundled Noto Sans + Noto Sans Thai (Regular 400 / SemiBold 600, OFL); `tnum` (tabular numerals) for clocks, timers, and percentages; display 104/112 w400; h1 40/48 w600; h2 32/40 w600; title 28/36 w600; body 26/34 w400; label 22/28 w600; caption 20/26 w400; micro 18/24 w600 (tracking .08em) |
 | Elevation | shadow `0 8 24 rgba(8,4,10,.35)`; 1 px inner highlight `rgba(255,255,255,.08)`; no blur shadows in software mode |
-| Motion | 90/160/240/360/520 ms; standard `cubic-bezier(.2,0,0,1)`, enter `(.05,.7,.1,1)`, exit `(.3,0,.8,.15)`; sheets and app gestures track the finger 1:1 and settle on release; reduced motion = 120 ms crossfade |
+| Motion | **spring-based, finger-tracked, interruptible** (section 7.17a). Presets `smooth` / `snappy` / `soft`; durations 90/160/240/360/520 ms and the cubic-bezier curves `standard (.2,0,0,1)`, `enter (.05,.7,.1,1)`, `exit (.3,0,.8,.15)` remain only as the **fallback ladder** (safe mode, reduced motion). Reduced motion = 120 ms crossfade, no bounce |
 | Icons | system glyphs: **Google Font Icons** (`Material Symbols Rounded` / bundled `MaterialIconsRound-Regular.otf`, Apache 2.0) rendered via `cosmic-text` + texture cache; Outlined (inactive) ↔ Filled (active) states; Rabbiz apps: 96 px sand tile (`#DAC9B3→#C9B69C`), plum glyph, radius 28; third-party: original icon in a 96 px box, no recolor |
 | Safe area | top-left punch-hole camera cutout exclusion (`statusBarHeight 56`, left cutout inset `72 px`) + bottom gesture bar `32 px`; no interactive/status content inside the camera cutout |
 | Wallpapers | `dusk` (plum/copper horizon), `ember` (default, warm sun), `sand` (parchment); 720×1600 WebP/PNG, ≤ 350 KB each, 2 % grain to stop banding |
@@ -229,6 +229,38 @@ All values are device pixels at the 720×1600 panel; the same tokens are multipl
 | Density | one-hand reach: primary actions in the bottom 40 %; top edge reserved for status/shade gestures |
 
 **Harmony rules** (enforced by review + tests): one accent at a time; no more than two surface levels in a card stack; every card uses the same radii/line/shadow; every list row is 88 px unless it is a section header; all icons align to the 8 px grid; every screen has one primary action and one clear exit.
+
+### 7.17a Motion principles (added 2026-11-17, owner preference: Honor-like, Apple-inspired, tuned for Rabbiz)
+
+**Why this style.** Users read motion as "familiar" when three things are true, and the iOS family of phone UIs (which Honor's also follows) trains exactly these: (1) the UI follows the finger 1:1 and *continues the finger's velocity* when released; (2) anything can be interrupted and reversed mid-flight without a jump; (3) one object moves continuously between screens (shared element) instead of cutting. Fixed-time cubic-bezier animations cannot do (1) or (2), which is why the earlier Motion row is demoted to a fallback. "Relaxing" comes from soft settles with little or no overshoot and one consistent rhythm, not from slowness. **Hypothesis, not law:** the numbers below are starting values taken from common spring conventions, not measurements of any vendor; the owner tunes them on the device (feel review) and they change when that evidence says so.
+
+**Rabbiz tuning (what is ours, not a copy).** Warmer and slightly softer than the reference: app and sheet motion has **zero bounce**; a small bounce (<= 12 %) only on small playful elements (toggles, pills, charging pill); never bounce text or lists. Copper accent glow eases in with the surface, not as a separate flash.
+
+**Spring presets** (critically-damped closed form for `smooth`, underdamped for the others; `duration` = time to settle within 1 %):
+
+| Preset | Duration | Bounce | Use |
+|---|---|---|---|
+| `smooth` | 450 ms | 0 | app open/close, sheets, shade, drawer, page changes, recents |
+| `snappy` | 350 ms | 0.12 | toggles, buttons on release, sliders, small elements |
+| `soft` | 500 ms | 0.25 | charging pill, one-off delight moments (max one per screen) |
+| `rubber` | n/a | n/a | overscroll: displacement = 0.55 x drag, springs back with `smooth` |
+
+**Gesture rules (all gesture-driven surfaces: shade, drawer, recents, app close, edge-back, quick-switch):**
+1. Track the finger 1:1 with no latency smoothing; record touch timestamps (needs event timestamps in `de-api`).
+2. On release choose the target from the **projected end position** (`pos + velocity x 0.25 s`), not from position alone, so a short fast flick still commits.
+3. Start the spring from the finger's current position **and velocity** (no velocity reset).
+4. Every animation is interruptible: a new touch or target retargets the same spring keeping position and velocity; nothing is blocked until an animation ends.
+5. Press feedback starts on touch-down: scale 0.96 over 90 ms, release with `snappy`. No dead-time before feedback.
+
+**Shared-element transitions (v1 list; everything else is a 160 ms crossfade):** icon <-> app (P12, extended: close is the exact reverse and can be dragged), home <-> drawer (icons stay, wallpaper blur ramps), quick-toggle chevron -> inline sub-sheet (P6), recents card <-> app, lock -> home on unlock (clock and notifications fade/scale out 0.96, home icons fade/scale in from 0.96, wallpaper settles from 1.04 to 1.0).
+
+**Rhythm.** One family per screen (do not mix presets inside one transition). Staggered entrances: step 20 ms, at most 8 items, only for drawer grid and notification stack. Nothing longer than 600 ms. Elements that move together share the same preset and start frame.
+
+**Performance contract (the plan's own frame budget wins over looks).** Animate only transform, opacity and corner radius of already-rasterised layers; **no per-frame vector raster, no live blur** (blur is a pre-baked snapshot or pre-blurred wallpaper crossfaded in). The spring solver is closed-form (no per-frame allocation) and lives in the animation clock (M2-T4). Degrade ladder when p95 frame time > 20 ms for 3 consecutive transitions: drop stagger -> drop blur/scale effects -> `smooth` becomes the 160 ms bezier -> 120 ms crossfade. Safe mode starts at the last rung. Reduced-motion pref: bounce 0, durations <= 160 ms, no parallax or scale.
+
+**Acceptance.** Host test: the spring solver settles within tolerance, preserves velocity on retarget, and never overshoots for bounce 0. Device: `scripts/de_bench.sh --scenario launcher` meets p95 <= 16.6 ms with the springs on; an interruption test (reverse a drawer or app-close drag mid-flight) shows no jump; owner feel review on the A21s before the presets are frozen.
+
+**Open items.** Haptic ticks on toggle/snap (depends on whether the A21s vibrator is reachable from the DE; unverified). Whether `rubber` applies to every scroll view or only lists. Real Honor/iOS curves were not measured: do not claim parity, only familiarity.
 
 ### 7.18 Screen contracts (v1)
 
@@ -384,7 +416,7 @@ tests/                     golden list, protocol smoke clients
   - [ ] `M1-T5`: data device + primary selection + `wlr-data-control`/`ext-data-control` (the OSK clipboard sheet needs `wl-paste --watch`). Files: `crates/de-protocols/src/selection.rs`.
   - [ ] `M1-T6`: `a21s-session` wrapper (DE disabled by default; `--de`/`--labwc`; reads `$XDG_CONFIG_HOME/rabbiz-de/mode` then `/etc/rabbiz-de/enabled`; failure counter in `$XDG_RUNTIME_DIR/rabbiz-de.fail`; exit-75 and 3-failures/60 s fallback; unset `LD_PRELOAD`/`WLR_*`; set `XDG_CURRENT_DESKTOP=Rabbiz`, `XDG_SESSION_DESKTOP=rabbiz-de`, `XDG_SESSION_TYPE=wayland`, `XKB_DEFAULT_LAYOUT=us,th`; set `org.gnome.desktop.a11y.applications screen-keyboard-enabled=true` and the us/th input sources; export `WAYLAND_DISPLAY`, `DISPLAY` if XWayland is up; run `dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP` after the socket is up). Unit `ExecStart` change; remove the unit's `QT_*`/`PLASMA_PLATFORM` lines (the wrapper/env contract owns them, the unit keeps `XDG_RUNTIME_DIR`, `DBUS_SESSION_BUS_ADDRESS`, `LIBSEAT_BACKEND`, `PAMName`, groups); `a21s-power-key` also detects `rabbiz-de`; `de_deploy.sh` installs binary + wrapper + unit + the patched `a21s-power-key` and runs `daemon-reload` + ExecStart existence check. Files: `rootfs-overlay/usr/local/bin/a21s-session`, `rootfs-overlay/etc/systemd/system/a21s-phone-session.service`, `rootfs-overlay/usr/local/bin/a21s-power-key`, `scripts/de_deploy.sh`.
   - [ ] `M1-T7`: app environment contract + launch helper (`setsid`, env, logging, `launch.toml` overrides: Chrome → `a21s-browser` so `--disable-gpu`/scale 1.5 stay in one place). The contract **must** include `A21S_FORCE_SOFTWARE=1`, `QT_SCALE_FACTOR=1` (the wrapper may set 1.5 for its own app), and unset `LD_PRELOAD`/`DRI_PRIME`/`__EGL_VENDOR_LIBRARY_FILENAMES`/`QSG_RHI_BACKEND`/`RABBIZ_EXYNOS_*`; `de-system/env.rs` is the single authority and the wrapper sources it via `rabbiz-de env --shell`. M1 exercises launch through the `rabbiz-de launch <desktop-id>` subcommand (the launcher UI arrives in M3). `launch.toml` is embedded with `include_str!`; schema: `[overrides."<desktop-id>"] exec = "a21s-browser"` (optional `env` table); exact desktop-id match, no globs; logs at `$XDG_STATE_HOME/rabbiz-de/apps/<desktop-id>.log`. Test with installed `a21s-calculator` and the Chrome wrapper. Files: `crates/de-apps/src/launch.rs`, `crates/de-apps/data/launch.toml`, `crates/de-system/src/env.rs`.
-  - [ ] `M1-T8`: seat forwarding (pointer/touch/keyboard focus, keymap from `XKB_DEFAULT_LAYOUT=us,th` with `XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle`; gsettings is OSK-only), plus a minimal shell stub (`crates/de-ui/src/shell_stub.rs`: clock + 32 px gesture bar) so closing the app has a visible home and edge-back works. Files: `crates/de-core/src/seat.rs`, `crates/de-ui/src/shell_stub.rs`, `crates/de-core/src/input.rs`.
+  - [ ] `M1-T8`: seat forwarding (touch events carry libinput timestamps through `de-api` so M2-T4 can compute release velocity for 7.17a; pointer/touch/keyboard focus, keymap from `XKB_DEFAULT_LAYOUT=us,th` with `XKB_DEFAULT_OPTIONS=grp:alt_shift_toggle`; gsettings is OSK-only), plus a minimal shell stub (`crates/de-ui/src/shell_stub.rs`: clock + 32 px gesture bar) so closing the app has a visible home and edge-back works. Files: `crates/de-core/src/seat.rs`, `crates/de-ui/src/shell_stub.rs`, `crates/de-core/src/input.rs`.
 - **Exit criteria:** with the unit stopped under the device lock, `runuser -u gamer -- env ... a21s-session --de` (same env as the unit) starts the DE; `a21s-calculator` maps fullscreen, taps and a USB keyboard work, and closing returns to the launcher stubs; `--stats` shows `primary_composite > 0` for `a21s-calculator`; `direct_scanout > 0` for `a21s-qt-gpu a21s-calculator` is required **only if** the dmabuf/scanout probe (S1) reports the path available, otherwise the waiver is recorded in section 11; `--force-fail` lands in labwc within 10 s; with the DE running, `a21s-power-key lock` leaves the raw backlight untouched (the lock screen itself arrives in M4).
 
 ### M2: Design system and paint pipeline (effort: L)
@@ -392,10 +424,10 @@ tests/                     golden list, protocol smoke clients
 - **Depends on:** M1.
 - **Entry criteria:** M1 app path stable on device.
 - **Tasks:**
-  - [ ] `M2-T1`: `de-design` tokens from 7.17, typography metrics, dark/light maps, contrast test. Files: `crates/de-design/src/{tokens,type_scale,motion,theme}.rs`, `tests/contrast.rs`.
+  - [ ] `M2-T1`: `de-design` tokens from 7.17, typography metrics, dark/light maps (see the light Cream Glass note in Decision 9), motion presets from 7.17a (`motion.rs`: spring presets + fallback bezier ladder), contrast test. Files: `crates/de-design/src/{tokens,type_scale,motion,theme}.rs`, `tests/contrast.rs`.
   - [ ] `M2-T2`: text pipeline: fontdb + cosmic-text shaping, bundled Thai fallback, cache, ellipsis/wrap rules. Files: `crates/de-paint/src/text/{mod,layout,shape,cache}.rs`.
   - [ ] `M2-T3`: icon pipeline: hicolor lookup + resvg raster + cache + third-party passthrough. Files: `crates/de-apps/src/icons.rs`, `crates/de-paint/src/image.rs`.
-  - [ ] `M2-T4`: layer cache + damage + animation clock; no per-frame vector raster. Files: `crates/de-paint/src/{layer,cache,damage}.rs`.
+  - [ ] `M2-T4`: layer cache + damage + animation clock with the closed-form spring solver, velocity-preserving retarget and the degrade ladder from 7.17a; no per-frame vector raster. Files: `crates/de-paint/src/{layer,cache,damage,animation}.rs`.
   - [ ] `M2-T5`: screen skeletons P0–P20 with static data and navigation. Files: `crates/de-ui/src/{boot,lock,home,drawer,recents,status,shade,qs,osd,power,search,screenshot,error,first_run}.rs`, `crates/de-ui/src/settings/mod.rs`, `crates/de-ui/src/settings/index.rs`, `crates/de-ui/src/nav.rs`.
   - [ ] `M2-T6`: golden harness for all screens at 720×1600 and 1080×2400 (tablet seam), plus Thai/English; `--scene all --out-dir`, pixel comparator shared with M0-T7. Files: `crates/de-sim/src/golden.rs`, `tools/rabbiz-de/tests/golden/*.png`, `scripts/de_golden.sh`.
   - [ ] `M2-T7`: i18n catalogs and `de-ui` string accessor. Files: `crates/de-ui/locales/{en,th}.toml`, `crates/de-ui/src/i18n.rs`.
@@ -410,7 +442,7 @@ tests/                     golden list, protocol smoke clients
   - [ ] `M3-T2`: home: wallpaper parallax, clock/date, hero deck, 4×2 grid, search pill, dock, page dots. Files: `crates/de-ui/src/home/*.rs`.
   - [ ] `M3-T3`: drawer + search + app actions + hide/pin persistence. Files: `crates/de-ui/src/{drawer,search}.rs`, `crates/de-apps/src/{catalog,prefs}.rs`.
   - [ ] `M3-T4`: recents with snapshot cache and dismissal. Files: `crates/de-ui/src/recents.rs`, `crates/de-core/src/snapshots.rs`.
-  - [ ] `M3-T5`: launch/close morph + timeout/error path. Files: `crates/de-ui/src/launch_morph.rs`, `crates/de-core/src/launch.rs`.
+  - [ ] `M3-T5`: launch/close morph (spring-driven, interruptible, draggable close) + the other shared-element transitions listed in 7.17a + timeout/error path. Files: `crates/de-ui/src/launch_morph.rs`, `crates/de-ui/src/transitions.rs`, `crates/de-core/src/launch.rs`.
   - [ ] `M3-T6`: gestures: edge-back, home swipe, swipe-up-hold recents, shade pull, dock page switch. Files: `crates/de-ui/src/gestures.rs`, `crates/de-core/src/input.rs`.
   - [ ] `M3-T7`: prefs compatibility (read legacy `prefs.json`, own `~/.config/rabbiz-de/prefs.json` with atomic writes/backup, `deAccent`/`deWallpaperId`, no legacy writes) and wallpaper/accent loading. Files: `crates/de-config/src/prefs.rs`, `crates/de-config/tests/prefs.rs`, `crates/de-paint/src/wallpaper.rs`.
 - **Exit criteria:** `scripts/de_bench.sh --scenario launcher` reports p95 ≤ 16.6 ms and 0 missed frames > 2 for home scroll, drawer open, launch morph, back; a 30-app list scrolls without texture thrash; all flows work with touch and keyboard.
@@ -559,6 +591,7 @@ REMOTE
 
 ## 11. Change log
 
+- **2026-11-17 (motion, owner preference):** added section 7.17a (spring-based, finger-tracked, interruptible motion; shared-element transitions; degrade ladder) and demoted the fixed-time bezier Motion row to a fallback; touch event timestamps must reach `de-api` (M1-T1/M1-T8). Values are starting hypotheses pending device feel review.
 - **2026-11-17 (design direction, owner preference):** recorded the light "Cream Glass" direction in Decision 9 and open question (d); added `docs/DE-DESIGN-LIGHT-TOKENS.md`, mock-ups `assets/design/light-v1/` and wallpaper candidates `assets/wallpapers-v2/` (generated with Stitch project `RabbizOS Phone Shell` and local z-image-turbo). No code or golden changed; M2-T1 applies it.
 - **2026-11-17 (UI/UX & hardware alignment):**
   - Replaced custom 24 px SVG system icons with **Google Font Icons** (`Material Symbols Rounded` / `MaterialIconsRound-Regular.otf`, Outlined ↔ Filled states) embedded in `M0-T5` / `de-paint`.
