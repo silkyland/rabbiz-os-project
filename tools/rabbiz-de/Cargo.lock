@@ -145,6 +145,7 @@ dependencies = [
  "de-design",
  "de-paint",
  "de-ui",
+ "tiny-skia",
 ]
 
 [[package]]
