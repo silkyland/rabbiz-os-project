@@ -247,11 +247,13 @@ pub fn run(config: RunConfig) -> i32 {
         }
     };
 
+    // Fatal: a session that renders but accepts no input is a brick on a
+    // handset - exit 75 so the wrapper falls back to labwc (§7.20).
     let libinput_backend = match create_libinput_backend(&session, &protocols.seat.name()) {
         Ok(b) => Some(b),
         Err(err) => {
-            eprintln!("libinput init warning (continuing without input): {err}");
-            None
+            eprintln!("libinput init failed: {err}");
+            return 75;
         }
     };
 
@@ -649,8 +651,8 @@ where
                 // window origin + popup offset inside the toplevel tree -
                 // the popup's own window-geometry origin.
                 // Output scale is 1:1, so logical and physical points coincide.
-                let offset = (window.geometry().loc + location - popup.geometry().loc)
-                    .to_physical(1);
+                let offset =
+                    (window.geometry().loc + location - popup.geometry().loc).to_physical(1);
                 let popup_elems: Vec<OutputElement<R>> = render_elements_from_surface_tree(
                     renderer,
                     popup.wl_surface(),
@@ -693,13 +695,9 @@ fn send_frame_callbacks(state: &mut LoopState) {
     }
     surfaces.extend(state.protocols.mapped_popup_surfaces());
     for surface in surfaces {
-        send_frames_surface_tree(
-            &surface,
-            output,
-            now_dur,
-            Some(Duration::ZERO),
-            |_, _| Some(output.clone()),
-        );
+        send_frames_surface_tree(&surface, output, now_dur, Some(Duration::ZERO), |_, _| {
+            Some(output.clone())
+        });
     }
 }
 
