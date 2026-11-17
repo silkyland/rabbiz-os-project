@@ -20,9 +20,10 @@ RAW="$(mktemp -t shell-perf.XXXXXX)"
 set -u
 REPEATS=$REPEATS
 CLK=\$(getconf CLK_TCK)
+GU=\$(id -u gamer)
 LW=\$(pgrep -x labwc | head -1)
-WD=\$(ls -t /run/user/1001/wayland-[0-9]* 2>/dev/null | grep -v '\.lock\$' | head -1 | xargs -r basename)
-ENVF="XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=\${WD:-wayland-0} \$(tr '\0' '\n' < /proc/\$LW/environ | grep -E '^(XDG_|WAYLAND_DISPLAY|DBUS_|QML|LIBSEAT|MOZ_|LANG)' | tr '\n' ' ')"
+WD=\$(ls -t /run/user/\$GU/wayland-[0-9]* 2>/dev/null | grep -v '\.lock\$' | head -1 | xargs -r basename)
+ENVF="XDG_RUNTIME_DIR=/run/user/\$GU WAYLAND_DISPLAY=\${WD:-wayland-0} \$(tr '\0' '\n' < /proc/\$LW/environ | grep -E '^(XDG_|WAYLAND_DISPLAY|DBUS_|QML|LIBSEAT|MOZ_|LANG)' | tr '\n' ' ')"
 PAT='quickshell -p /usr/share/a21s-shell/shell.qml'
 ticks() { awk '{print \$14+\$15}' /proc/\$1/stat; }
 

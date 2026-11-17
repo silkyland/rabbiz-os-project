@@ -179,7 +179,7 @@ ssh "${TARGET}" "
   chmod 666 /sys/kernel/a21s_fp/trigger_unlock /sys/kernel/a21s_fp/sleep_pin /dev/esfp0 2>/dev/null || true
   chgrp video /dev/umts_* 2>/dev/null || true
   chmod 660 /dev/umts_* 2>/dev/null || true
-  chown gamer:gamer /run/user/1001/a21s-power.cmd 2>/dev/null || true
+  chown gamer:gamer /run/user/\$(id -u gamer)/a21s-power.cmd 2>/dev/null || true
   systemctl daemon-reload
   systemctl enable a21s-modem-init.service 2>/dev/null || true
   # Boot splash + hardware volume/screenshot keys; no login prompt on the panel (getty@tty1 is a /dev/null symlink in the overlay).
