@@ -5,6 +5,7 @@
 //! GPU renderer, the pixman renderer, or the host simulator.
 
 mod geom;
+pub mod icons;
 mod scene;
 
 pub use geom::{Point, Rect, Size};
