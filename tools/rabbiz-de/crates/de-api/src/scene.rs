@@ -36,6 +36,7 @@ pub enum TextAlign {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Weight {
+    Light,
     Regular,
     SemiBold,
 }
@@ -43,6 +44,7 @@ pub enum Weight {
 impl Weight {
     pub const fn numeric(self) -> u16 {
         match self {
+            Weight::Light => 300,
             Weight::Regular => 400,
             Weight::SemiBold => 600,
         }

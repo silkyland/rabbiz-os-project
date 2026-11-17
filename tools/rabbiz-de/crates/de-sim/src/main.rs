@@ -23,7 +23,7 @@ impl Default for Args {
             scene: "brand".to_string(),
             width: 720,
             height: 1600,
-            out: PathBuf::from("build/de/brand.png"),
+            out: PathBuf::new(),
         }
     }
 }
@@ -54,6 +54,9 @@ fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Args, String> {
     }
     if parsed.width == 0 || parsed.height == 0 {
         return Err("width and height must be non-zero".to_string());
+    }
+    if parsed.out.as_os_str().is_empty() {
+        parsed.out = PathBuf::from(format!("build/de/{}.png", parsed.scene));
     }
     Ok(parsed)
 }
@@ -100,6 +103,12 @@ mod tests {
         assert_eq!(args.scene, "brand");
         assert_eq!((args.width, args.height), (720, 1600));
         assert_eq!(args.out, PathBuf::from("build/de/brand.png"));
+    }
+
+    #[test]
+    fn scene_names_the_default_output() {
+        let args = parse_args(["--scene", "lock"].into_iter().map(String::from)).unwrap();
+        assert_eq!(args.out, PathBuf::from("build/de/lock.png"));
     }
 
     #[test]

@@ -21,6 +21,8 @@ pub struct Tokens {
     pub mark_copper: Color,
     pub line: Color,
     pub display_px: f32,
+    /// The lock-screen clock, one step larger than the home display.
+    pub clock_px: f32,
     pub title_px: f32,
     pub body_px: f32,
     pub label_px: f32,
@@ -43,6 +45,7 @@ pub const DARK: Tokens = Tokens {
     mark_copper: Color::rgb(0xA5, 0x5C, 0x32),
     line: Color::rgba(0xF4, 0xED, 0xE1, 0x1A),
     display_px: 104.0,
+    clock_px: 120.0,
     title_px: 40.0,
     body_px: 26.0,
     label_px: 22.0,

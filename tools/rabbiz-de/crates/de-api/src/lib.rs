@@ -31,6 +31,13 @@ mod tests {
     }
 
     #[test]
+    fn weight_values_match_css_numeric_weights() {
+        assert_eq!(Weight::Light.numeric(), 300);
+        assert_eq!(Weight::Regular.numeric(), 400);
+        assert_eq!(Weight::SemiBold.numeric(), 600);
+    }
+
+    #[test]
     fn scene_keeps_layer_order() {
         let mut scene = Scene::new(Size::new(720, 1600));
         scene.push(Layer::new("background"));
