@@ -1,0 +1,12 @@
+[package]
+name = "de-render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+de-api.workspace = true
+de-paint.workspace = true
+smithay.workspace = true
+tiny-skia.workspace = true

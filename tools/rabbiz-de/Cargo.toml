@@ -8,6 +8,19 @@ members = [
     "crates/de-sim",
     "crates/de-config",
     "crates/de-apps",
+    "crates/de-backend",
+    "crates/de-render",
+    "crates/de-core",
+    "crates/de-bin",
+]
+default-members = [
+    "crates/de-api",
+    "crates/de-design",
+    "crates/de-paint",
+    "crates/de-ui",
+    "crates/de-config",
+    "crates/de-apps",
+    "crates/de-sim",
 ]
 
 [workspace.package]
@@ -21,12 +34,30 @@ de-api = { path = "crates/de-api" }
 de-design = { path = "crates/de-design" }
 de-paint = { path = "crates/de-paint" }
 de-ui = { path = "crates/de-ui" }
+de-config = { path = "crates/de-config" }
+de-apps = { path = "crates/de-apps" }
+de-backend = { path = "crates/de-backend" }
+de-render = { path = "crates/de-render" }
+de-core = { path = "crates/de-core" }
 tiny-skia = { version = "0.11", features = ["png-format"] }
 cosmic-text = "0.15"
 swash = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+libc = "0.2"
+smithay = { version = "0.7.0", default-features = false, features = [
+    "backend_drm",
+    "backend_gbm",
+    "backend_libinput",
+    "backend_session_libseat",
+    "backend_udev",
+    "backend_egl",
+    "renderer_gl",
+    "renderer_pixman",
+    "desktop",
+    "wayland_frontend",
+] }
 
 [profile.release]
 lto = "thin"
