@@ -1,0 +1,195 @@
+# RabbizOS Desktop Environment — ชุดภาษาไทย (Thai UI catalog)
+
+[brand]
+tagline = "เนทีฟ · เงียบสงบ · ของคุณ"
+
+[status]
+bar_hint = "แถบสถานะ · 48px"
+now = "ตอนนี้"
+
+[lock]
+touch_to_unlock = "แตะเพื่อปลดล็อก"
+flashlight = "ไฟฉาย"
+power = "เปิด/ปิด"
+
+[home]
+good_morning = "สวัสดีตอนเช้า"
+good_afternoon = "สวัสดีตอนบ่าย"
+good_evening = "สวัสดีตอนเย็น"
+swipe_up_for_all_apps = "ปัดขึ้นเพื่อดูแอปทั้งหมด"
+search_apps = "ค้นหาแอป"
+
+[drawer]
+search_apps = "ค้นหาแอป"
+all_apps = "แอปทั้งหมด"
+
+[search]
+placeholder = "ค้นหาแอป ไฟล์ และการตั้งค่า"
+apps = "แอป"
+settings = "การตั้งค่า"
+recent = "ล่าสุด"
+back = "ย้อนกลับ"
+
+[recents]
+title = "แอปล่าสุด"
+swipe_up_to_close = "ปัดขึ้นเพื่อปิด"
+clear_all = "ล้างทั้งหมด"
+
+[shade]
+internet = "อินเทอร์เน็ต"
+bluetooth = "บลูทูธ"
+off = "ปิด"
+on = "เปิด"
+screenshot = "ภาพหน้าจอ"
+flashlight = "ไฟฉาย"
+dnd = "ห้ามรบกวน"
+rotate = "หมุนจอ"
+brightness = "ความสว่าง"
+volume = "ระดับเสียง"
+clear_all = "ล้างทั้งหมด"
+
+[quick_settings]
+wifi = "ไวไฟ"
+bluetooth = "บลูทูธ"
+dnd = "ห้ามรบกวน"
+flashlight = "ไฟฉาย"
+airplane = "โหมดเครื่องบิน"
+rotation = "การหมุนจอ"
+battery_saver = "ประหยัดแบตเตอรี่"
+hotspot = "ฮอตสปอต"
+screenshot = "ภาพหน้าจอ"
+night_light = "แสงกลางคืน"
+cast = "แคสต์"
+location = "ตำแหน่งที่ตั้ง"
+mobile_data = "ข้อมูลมือถือ"
+nfc = "เอ็นเอฟซี"
+auto_brightness = "ความสว่างอัตโนมัติ"
+settings = "การตั้งค่า"
+edit = "แก้ไข"
+
+[power_menu]
+lock = "ล็อกหน้าจอ"
+restart = "รีสตาร์ท"
+power_off = "ปิดเครื่อง"
+screenshot = "ภาพหน้าจอ"
+emergency = "ฉุกเฉิน"
+
+[osd]
+speakers = "ลำโพง"
+brightness = "ความสว่าง"
+volume = "ระดับเสียง"
+
+[launch]
+opening = "กำลังเปิด"
+
+[settings]
+title = "การตั้งค่า"
+network = "เครือข่าย"
+bluetooth = "บลูทูธ"
+display = "หน้าจอ"
+sound = "เสียง"
+notifications = "การแจ้งเตือน"
+apps = "แอป"
+battery = "แบตเตอรี่"
+about = "เกี่ยวกับอุปกรณ์"
+
+[settings_network]
+title = "เครือข่าย"
+wifi = "ไวไฟ"
+visible_as = "มองเห็นเป็น"
+connected = "เชื่อมต่อแล้ว"
+saved_networks = "เครือข่ายที่บันทึกไว้"
+rescan_hint = "สแกนหาเครือข่ายใหม่อัตโนมัติทุก 30 วินาที"
+
+[settings_bluetooth]
+title = "บลูทูธ"
+visible_as = "มองเห็นเป็น"
+paired_device = "อุปกรณ์ที่จับคู่ไว้"
+connected = "เชื่อมต่อแล้ว"
+nearby_devices = "อุปกรณ์ใกล้เคียง"
+discoverable_hint = "อุปกรณ์ใกล้เคียงจะมองเห็นได้เป็นเวลา 2 นาที"
+pair = "จับคู่"
+
+[settings_display]
+title = "หน้าจอ"
+brightness = "ความสว่าง"
+appearance = "รูปแบบ"
+dark = "มืด"
+light = "สว่าง"
+wallpaper = "ภาพพื้นหลัง"
+accent_colour = "สีเน้น"
+copper = "ทองแดง"
+sand = "ทราย"
+plum = "พลัม"
+emerald = "มรกต"
+accent_hint = "สีเน้นใช้กับปุ่ม สวิตช์ และแถบเลื่อน"
+
+[settings_sound]
+title = "เสียง"
+volume = "ระดับเสียง"
+output = "อุปกรณ์เสียงออก"
+speakers = "ลำโพง"
+media_volume = "ระดับเสียงสื่อ"
+ringtone = "เสียงเรียกเข้า"
+media_hint = "ระดับเสียงสื่อปรับตามปุ่มปรับเสียงด้วย"
+
+[settings_about]
+title = "เกี่ยวกับอุปกรณ์"
+device = "อุปกรณ์"
+kernel = "เคอร์เนล"
+build = "บิลด์"
+licenses = "สัญญาอนุญาตโอเพนซอร์ส"
+
+[settings_session]
+title = "เซสชัน"
+lock_now = "ล็อกทันที"
+restart_de = "รีสตาร์ท Rabbiz DE"
+recovery = "การกู้คืน"
+switch_labwc = "สลับไปใช้ labwc สำรอง"
+switch_labwc_desc = "จบเซสชันนี้แล้วเริ่ม labwc"
+confirm_switch_hint = "แตะอีกครั้งเพื่อยืนยันการสลับเซสชัน"
+return_hint = "คุณสามารถกลับมายัง Rabbiz DE ได้จากเซสชันสำรอง"
+
+[first_run]
+title = "เริ่มต้นตั้งค่า RabbizOS"
+subtitle = "ภาษา เครือข่าย การปลดล็อก — ใช้เวลาประมาณหนึ่งนาที"
+language = "ภาษา"
+wifi = "ไวไฟ"
+connected = "เชื่อมต่อแล้ว"
+fingerprint = "ลายนิ้วมือ"
+add_fingerprint = "เพิ่มลายนิ้วมือเพื่อปลดล็อก"
+fingerprint_privacy = "ข้อมูลลายนิ้วมือจะไม่ถูกส่งออกจากเครื่อง"
+continue_btn = "ดำเนินการต่อ"
+change_later = "คุณสามารถเปลี่ยนการตั้งค่าเหล่านี้ได้ภายหลังในการตั้งค่า"
+
+[error]
+not_responding = "ไม่ตอบสนอง"
+wait_or_close = "คุณสามารถรอให้แอปตอบสนองหรือปิดแอปได้"
+wait = "รอ"
+close_app = "ปิดแอป"
+
+[screenshot]
+open = "เปิด"
+share = "แชร์"
+saved_to = "บันทึกไว้ที่ Pictures/Screenshots"
+
+[apps]
+phone = "โทรศัพท์"
+messages = "ข้อความ"
+settings = "การตั้งค่า"
+calendar = "ปฏิทิน"
+notes = "โน้ต"
+camera = "กล้อง"
+clock = "นาฬิกา"
+weather = "สภาพอากาศ"
+photos = "รูปภาพ"
+music = "เพลง"
+calculator = "เครื่องคิดเลข"
+terminal = "เทอร์มินัล"
+maps = "แผนที่"
+mail = "เมล"
+contacts = "รายชื่อ"
+store = "ร้านค้า"
+podcasts = "พอดแคสต์"
+videos = "วิดีโอ"
+files = "ไฟล์"

@@ -1,0 +1,195 @@
+# RabbizOS Desktop Environment — English UI catalog
+
+[brand]
+tagline = "native · quiet · yours"
+
+[status]
+bar_hint = "status bar · 48px"
+now = "now"
+
+[lock]
+touch_to_unlock = "Touch to unlock"
+flashlight = "Flashlight"
+power = "Power"
+
+[home]
+good_morning = "Good morning"
+good_afternoon = "Good afternoon"
+good_evening = "Good evening"
+swipe_up_for_all_apps = "Swipe up for all apps"
+search_apps = "Search apps"
+
+[drawer]
+search_apps = "Search apps"
+all_apps = "ALL APPS"
+
+[search]
+placeholder = "Search apps, files & settings"
+apps = "APPS"
+settings = "SETTINGS"
+recent = "RECENT"
+back = "Back"
+
+[recents]
+title = "Recents"
+swipe_up_to_close = "Swipe up to close"
+clear_all = "Clear all"
+
+[shade]
+internet = "Internet"
+bluetooth = "Bluetooth"
+off = "Off"
+on = "On"
+screenshot = "Screenshot"
+flashlight = "Flashlight"
+dnd = "DND"
+rotate = "Rotate"
+brightness = "Brightness"
+volume = "Volume"
+clear_all = "Clear all"
+
+[quick_settings]
+wifi = "Wi-Fi"
+bluetooth = "Bluetooth"
+dnd = "DND"
+flashlight = "Flashlight"
+airplane = "Airplane"
+rotation = "Rotation"
+battery_saver = "Battery saver"
+hotspot = "Hotspot"
+screenshot = "Screenshot"
+night_light = "Night light"
+cast = "Cast"
+location = "Location"
+mobile_data = "Mobile data"
+nfc = "NFC"
+auto_brightness = "Auto-brightness"
+settings = "Settings"
+edit = "Edit"
+
+[power_menu]
+lock = "Lock"
+restart = "Restart"
+power_off = "Power off"
+screenshot = "Screenshot"
+emergency = "Emergency"
+
+[osd]
+speakers = "Speakers"
+brightness = "Brightness"
+volume = "Volume"
+
+[launch]
+opening = "Opening"
+
+[settings]
+title = "Settings"
+network = "Network"
+bluetooth = "Bluetooth"
+display = "Display"
+sound = "Sound"
+notifications = "Notifications"
+apps = "Apps"
+battery = "Battery"
+about = "About"
+
+[settings_network]
+title = "Network"
+wifi = "Wi-Fi"
+visible_as = "Visible as"
+connected = "Connected"
+saved_networks = "Saved networks"
+rescan_hint = "Networks are rescanned every 30 seconds."
+
+[settings_bluetooth]
+title = "Bluetooth"
+visible_as = "Visible as"
+paired_device = "Paired device"
+connected = "Connected"
+nearby_devices = "Nearby devices"
+discoverable_hint = "Nearby devices stay discoverable for two minutes."
+pair = "Pair"
+
+[settings_display]
+title = "Display"
+brightness = "Brightness"
+appearance = "Appearance"
+dark = "Dark"
+light = "Light"
+wallpaper = "Wallpaper"
+accent_colour = "Accent colour"
+copper = "Copper"
+sand = "Sand"
+plum = "Plum"
+emerald = "Emerald"
+accent_hint = "The accent colour tints buttons, toggles and sliders."
+
+[settings_sound]
+title = "Sound"
+volume = "Volume"
+output = "Output"
+speakers = "Speakers"
+media_volume = "Media volume"
+ringtone = "Ringtone"
+media_hint = "Media volume also follows the volume keys."
+
+[settings_about]
+title = "About"
+device = "Device"
+kernel = "Kernel"
+build = "Build"
+licenses = "Open source licenses"
+
+[settings_session]
+title = "Session"
+lock_now = "Lock now"
+restart_de = "Restart Rabbiz DE"
+recovery = "Recovery"
+switch_labwc = "Switch to labwc fallback"
+switch_labwc_desc = "Ends this session and starts labwc"
+confirm_switch_hint = "Tap again to confirm switching sessions."
+return_hint = "You can return to Rabbiz DE from the fallback session."
+
+[first_run]
+title = "Let's set up RabbizOS"
+subtitle = "Language, network, unlock — about a minute."
+language = "Language"
+wifi = "Wi-Fi"
+connected = "Connected"
+fingerprint = "Fingerprint"
+add_fingerprint = "Add a fingerprint to unlock"
+fingerprint_privacy = "Your fingerprint never leaves the device."
+continue_btn = "Continue"
+change_later = "You can change these later in Settings."
+
+[error]
+not_responding = "isn't responding"
+wait_or_close = "You can wait for it to respond or close it."
+wait = "Wait"
+close_app = "Close app"
+
+[screenshot]
+open = "Open"
+share = "Share"
+saved_to = "Saved to Pictures/Screenshots"
+
+[apps]
+phone = "Phone"
+messages = "Messages"
+settings = "Settings"
+calendar = "Calendar"
+notes = "Notes"
+camera = "Camera"
+clock = "Clock"
+weather = "Weather"
+photos = "Photos"
+music = "Music"
+calculator = "Calculator"
+terminal = "Terminal"
+maps = "Maps"
+mail = "Mail"
+contacts = "Contacts"
+store = "Store"
+podcasts = "Podcasts"
+videos = "Videos"
+files = "Files"

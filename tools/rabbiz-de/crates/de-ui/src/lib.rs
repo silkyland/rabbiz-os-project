@@ -12,6 +12,7 @@ pub mod drawer;
 pub mod error;
 pub mod first_run;
 pub mod home;
+pub mod i18n;
 pub mod launch;
 pub mod lock;
 pub mod osd;
