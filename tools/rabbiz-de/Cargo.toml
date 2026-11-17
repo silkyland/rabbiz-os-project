@@ -13,6 +13,7 @@ members = [
     "crates/de-render",
     "crates/de-core",
     "crates/de-bin",
+    "tests/smoke",
 ]
 default-members = [
     "crates/de-api",
