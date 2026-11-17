@@ -4,3 +4,4 @@
 //! navigation are M2-T5.
 
 pub mod boot;
+pub mod shell_stub;

@@ -54,33 +54,44 @@ fn main() {
             eprintln!("launch {id}: M1 path, not wired yet");
             2
         }
-        Command::Run => match init(&cli.flags) {
-            Ok(de) => {
-                match Run::new(
-                    de,
-                    cli.flags.stats_file.as_deref(),
-                    cli.flags.stats_summary.clone(),
-                    cli.flags.scenario.clone(),
-                    cli.flags.duration.map(std::time::Duration::from_secs),
-                ) {
-                    Ok(run) => match event_loop(run, cli.flags.stats) {
-                        Ok(code) => code as i32,
+        Command::Run => {
+            let mut display = match smithay::reexports::wayland_server::Display::<
+                de_core::De,
+            >::new() {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("display: {e}");
+                    std::process::exit(EXIT_CRASH_FALLBACK);
+                }
+            };
+            match init(&cli.flags, &mut display) {
+                Ok(de) => {
+                    match Run::new(
+                        de,
+                        cli.flags.stats_file.as_deref(),
+                        cli.flags.stats_summary.clone(),
+                        cli.flags.scenario.clone(),
+                        cli.flags.duration.map(std::time::Duration::from_secs),
+                    ) {
+                        Ok(run) => match event_loop(run, display, cli.flags.stats) {
+                            Ok(code) => code as i32,
+                            Err(e) => {
+                                eprintln!("run: {e}");
+                                EXIT_CRASH_FALLBACK
+                            }
+                        },
                         Err(e) => {
-                            eprintln!("run: {e}");
+                            eprintln!("stats: {e}");
                             EXIT_CRASH_FALLBACK
                         }
-                    },
-                    Err(e) => {
-                        eprintln!("stats: {e}");
-                        EXIT_CRASH_FALLBACK
                     }
                 }
+                Err(e) => {
+                    eprintln!("init: {e}");
+                    EXIT_CRASH_FALLBACK
+                }
             }
-            Err(e) => {
-                eprintln!("init: {e}");
-                EXIT_CRASH_FALLBACK
-            }
-        },
+        }
     };
     std::process::exit(code);
 }
