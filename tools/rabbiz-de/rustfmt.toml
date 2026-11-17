@@ -1,0 +1,6 @@
+# Widths the scaffold was authored with. Without them `cargo fmt --check`
+# reflows de-api's one-line struct literals and fails on unchanged code.
+max_width = 110
+fn_call_width = 105
+struct_lit_width = 60
+struct_variant_width = 70
