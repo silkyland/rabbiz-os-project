@@ -134,4 +134,28 @@ assert.equal(L.prettyId(""), "");
 assert.equal(L.prettyId("steam"), "Steam");
 assert.equal(L.prettyId("org.kde.kweather"), "Kweather");
 
+
+// ---- alias identity: one app, one tile ---------------------------------------
+// The seed ships placeholder ids (a21s-gallery) while the installed entry may be a
+// different id from the same role (a21s-photos); both must count as the same app.
+assert.equal(L.sameApp("a21s-gallery", "a21s-photos"), true, "same seed role");
+assert.equal(L.sameApp("a21s-photos", "a21s-photos"), true, "exact");
+assert.equal(L.sameApp("a21s-clock", "a21s-calculator"), false, "different roles");
+assert.equal(L.sameApp("", "a21s-clock"), false, "empty id is nobody");
+assert.equal(L.sameApp("unknown-a", "unknown-b"), false, "unknown ids only match exactly");
+let aliased = L.createState(["a21s-gallery"], [], {});
+assert.deepEqual(L.add(aliased, "desktop", "a21s-photos").desktop, ["a21s-gallery"], "alias not added twice");
+assert.deepEqual(L.add(aliased, "desktop", "a21s-photos", 0).desktop, ["a21s-gallery"]);
+assert.deepEqual(L.remove(aliased, "desktop", "a21s-photos").desktop, [], "alias removes the tile");
+assert.deepEqual(L.transfer(aliased, "desktop", "a21s-photos", "dock").desktop, []);
+assert.deepEqual(L.transfer(aliased, "desktop", "a21s-photos", "dock").dock, ["a21s-gallery"],
+    "transfer keeps the stored id");
+const aliasTarget = L.createState(["a21s-gallery"], ["a21s-photos"], {});
+assert.deepEqual(L.transfer(aliasTarget, "desktop", "a21s-gallery", "dock").dock, ["a21s-photos"],
+    "target already holds the same app: source copy dropped");
+assert.deepEqual(L.transfer(aliasTarget, "desktop", "a21s-gallery", "dock").desktop, []);
+assert.equal(L.has(aliasTarget, "dock", "a21s-gallery"), true);
+assert.equal(L.indexOfApp(aliasTarget, "dock", "a21s-gallery"), 0);
+assert.equal(L.containsId(["a", "b"], "a21s-clock"), false);
+
 console.log("iconlayout: ok");

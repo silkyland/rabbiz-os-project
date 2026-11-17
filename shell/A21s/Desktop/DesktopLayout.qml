@@ -103,23 +103,10 @@ QtObject {
         return { ids: out, changed: changed }
     }
 
-    // Does this surface already hold the app? Placeholder ids and installed aliases of
-    // the same seed count as the same app (used by the picker's "added" badge).
-    function sameApp(a, b) {
-        if (a === b)
-            return true
-        var sa = seedFor(a)
-        var sb = seedFor(b)
-        return !!sa && !!sb && sa === sb
-    }
-
+    // Does this surface already hold the app? A shipped placeholder and the installed
+    // alias of the same seed count as one app (the picker's "added" badge uses this).
     function contains(surface, id) {
-        var ids = Layout.list(state, surface)
-        for (var i = 0; i < ids.length; ++i) {
-            if (sameApp(ids[i], id))
-                return true
-        }
-        return false
+        return Layout.containsId(Layout.list(state, surface), id)
     }
 
     function seedId(seed) {

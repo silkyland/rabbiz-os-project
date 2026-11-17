@@ -167,9 +167,47 @@ function ids(state, surface) {
     return list(state, surface);
 }
 
-function has(state, surface, id) {
+// Two ids name the same app when they belong to the same seed group (e.g. the shipped
+// placeholder "a21s-gallery" and the real "a21s-photos"). Operations use this so a
+// re-added app never shows up twice under two ids.
+function seedRole(id) {
+    var seed = seedFor(DESKTOP_SEED, id) || seedFor(DOCK_SEED, id);
+    return seed ? seed.id : "";
+}
+
+function sameApp(a, b) {
+    var one = cleanId(a);
+    var two = cleanId(b);
+    if (one.length === 0 || two.length === 0)
+        return false;
+    if (one === two)
+        return true;
+    var roleA = seedRole(one);
+    return roleA.length > 0 && roleA === seedRole(two);
+}
+
+function containsId(ids, id) {
     var target = cleanId(id);
-    return target.length > 0 && list(state, surface).indexOf(target) >= 0;
+    if (target.length === 0)
+        return false;
+    for (var i = 0; i < ids.length; ++i) {
+        if (sameApp(ids[i], target))
+            return true;
+    }
+    return false;
+}
+
+function indexOfApp(state, surface, id) {
+    var ids = list(state, surface);
+    for (var i = 0; i < ids.length; ++i) {
+        if (sameApp(ids[i], id))
+            return i;
+    }
+    return -1;
+}
+
+function has(state, surface, id) {
+    return indexOfApp(state, surface, id) >= 0;
 }
 
 function indexOf(state, surface, id) {
@@ -189,7 +227,7 @@ function add(state, surface, id, index) {
     if (entryId.length === 0)
         return next;
     var entries = target === SURFACE_DOCK ? next.dock : next.desktop;
-    if (entries.indexOf(entryId) >= 0)
+    if (containsId(entries, entryId))
         return next;
     if (entries.length >= capacity(target))
         return next;
@@ -201,7 +239,7 @@ function add(state, surface, id, index) {
 function remove(state, surface, id) {
     var next = clone(state);
     var entries = surfaceOf(surface) === SURFACE_DOCK ? next.dock : next.desktop;
-    var at = entries.indexOf(cleanId(id));
+    var at = indexOfApp(next, surface, id);
     if (at >= 0)
         entries.splice(at, 1);
     return next;
@@ -233,13 +271,15 @@ function transfer(state, fromSurface, id, toSurface, index) {
     if (entryId.length === 0)
         return next;
     if (from === to)
-        return move(next, to, indexOf(next, to, entryId), index);
+        return move(next, to, indexOfApp(next, to, entryId), index);
     var source = from === SURFACE_DOCK ? next.dock : next.desktop;
     var target = to === SURFACE_DOCK ? next.dock : next.desktop;
-    var at = source.indexOf(entryId);
+    var at = indexOfApp(next, from, entryId);
     if (at < 0)
         return next;
-    if (target.indexOf(entryId) >= 0) {
+    // Move the id exactly as the source stored it (callers may pass an alias of the app).
+    var moved = source[at];
+    if (containsId(target, entryId)) {
         source.splice(at, 1);
         return next;
     }
@@ -247,7 +287,7 @@ function transfer(state, fromSurface, id, toSurface, index) {
         return next;
     source.splice(at, 1);
     var insertAt = (typeof index === "number" && index >= 0) ? Math.min(Math.floor(index), target.length) : target.length;
-    target.splice(insertAt, 0, entryId);
+    target.splice(insertAt, 0, moved);
     return next;
 }
 
@@ -336,6 +376,7 @@ if (typeof module !== "undefined") module.exports = {
     emptyState: emptyState, normalize: normalize, createState: createState,
     tryParse: tryParse, parse: parse, serialize: serialize,
     list: list, ids: ids, count: count, has: has, indexOf: indexOf,
+    sameApp: sameApp, containsId: containsId, indexOfApp: indexOfApp, seedRole: seedRole,
     capacity: capacity, isFull: isFull, add: add, remove: remove,
     move: move, transfer: transfer, setOverride: setOverride,
     clearOverride: clearOverride, overrideFor: overrideFor,

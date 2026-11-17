@@ -130,9 +130,9 @@ Item {
 
                 Text {
                     Layout.fillWidth: true
-                    text: "Icon"
+                    text: "Rename & icon"
                     color: Theme.text
-                    font.pixelSize: Theme.fontTitle - 2
+                    font.pixelSize: Theme.fontTitle - 4
                     font.family: Theme.fontFamily
                     font.weight: Font.DemiBold
                 }
