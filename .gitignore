@@ -1,6 +1,6 @@
 # Build & cloned upstream trees
 build/
-src/
+/src/
 vendor/
 backups/
 
@@ -30,3 +30,8 @@ dist/
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# rabbiz-de: per-worktree build products
+.worktrees/
+tools/rabbiz-de/target/
+tools/rabbiz-de/.cargo-home/

@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/de-api",
+    "crates/de-design",
+    "crates/de-paint",
+    "crates/de-ui",
+    "crates/de-sim",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+rust-version = "1.85"
+
+[workspace.dependencies]
+de-api = { path = "crates/de-api" }
+de-design = { path = "crates/de-design" }
+de-paint = { path = "crates/de-paint" }
+de-ui = { path = "crates/de-ui" }
+tiny-skia = { version = "0.12", features = ["png-format"] }
+cosmic-text = "0.12"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

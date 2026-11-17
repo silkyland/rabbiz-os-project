@@ -1,0 +1,15 @@
+[package]
+name = "de-sim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "de-sim"
+path = "src/main.rs"
+
+[dependencies]
+de-api.workspace = true
+de-design.workspace = true
+de-paint.workspace = true
+de-ui.workspace = true
