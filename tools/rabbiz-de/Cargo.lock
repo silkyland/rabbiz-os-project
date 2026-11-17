@@ -448,9 +448,11 @@ version = "0.1.0"
 dependencies = [
  "de-api",
  "de-config",
+ "de-system",
  "freedesktop-desktop-entry",
  "serde",
  "serde_json",
+ "toml",
 ]
 
 [[package]]

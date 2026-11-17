@@ -50,10 +50,16 @@ fn main() {
                 EXIT_CRASH_FALLBACK
             }
         },
-        Command::Launch(id) => {
-            eprintln!("launch {id}: M1 path, not wired yet");
-            2
-        }
+        Command::Launch(id) => match de_apps::launch::launch(&id) {
+            Ok(pid) => {
+                println!("{pid}");
+                0
+            }
+            Err(e) => {
+                eprintln!("launch {id}: {e}");
+                2
+            }
+        },
         Command::Run => {
             let mut display = match smithay::reexports::wayland_server::Display::<
                 de_core::De,

@@ -1,0 +1,16 @@
+# rabbiz-de launch overrides (M1-T7).
+#
+# Schema:
+#   [overrides."<desktop-id>"]
+#   exec = "command line"          # required; run via `setsid`, sh-split
+#   [overrides."<desktop-id>".env] # optional extra env on top of the contract
+#
+# Exact desktop-id matches only — no globs. Third-party wrappers keep their
+# own branding/flags; e.g. Chrome launches through `a21s-browser` so
+# `--disable-gpu` and the 1.5 scale stay in one place.
+
+[overrides."google-chrome"]
+exec = "a21s-browser"
+
+[overrides."com.google.Chrome"]
+exec = "a21s-browser"

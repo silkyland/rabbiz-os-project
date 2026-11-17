@@ -1,1 +1,3 @@
-//! de-apps crate (M0 scaffold)
+//! de-apps — app launch helper (M1-T7).
+
+pub mod launch;

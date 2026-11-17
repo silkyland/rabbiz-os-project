@@ -291,8 +291,19 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let mut seat_state = SeatState::new();
     let mut seat = seat_state.new_wl_seat(&dh, seat_name.clone());
     let pointer = seat.add_pointer();
-    seat.add_keyboard(XkbConfig::default(), 200, 25)
-        .expect("keyboard");
+    // Handset contract: us,th layouts + Alt-Shift toggle (env.rs is the
+    // authority; these fallbacks keep bare `rabbiz-de run` sane).
+    let xkb = XkbConfig {
+        layout: std::env::var("XKB_DEFAULT_LAYOUT")
+            .unwrap_or_else(|_| "us,th".into())
+            .leak(),
+        options: Some(
+            std::env::var("XKB_DEFAULT_OPTIONS")
+                .unwrap_or_else(|_| "grp:alt_shift_toggle".into()),
+        ),
+        ..XkbConfig::default()
+    };
+    seat.add_keyboard(xkb, 200, 25).expect("keyboard");
     let touch = seat.add_touch();
 
     // smithay Output object for globals + frame callbacks.
