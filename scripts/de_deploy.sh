@@ -61,8 +61,9 @@ fi
 
 SESSION_SCRIPT="$REPO_ROOT/rootfs-overlay/usr/local/bin/a21s-session"
 POWER_KEY_SCRIPT="$REPO_ROOT/rootfs-overlay/usr/local/bin/a21s-power-key"
+UNIT_FILE="$REPO_ROOT/rootfs-overlay/etc/systemd/system/a21s-phone-session.service"
 
-for f in "$SESSION_SCRIPT" "$POWER_KEY_SCRIPT"; do
+for f in "$SESSION_SCRIPT" "$POWER_KEY_SCRIPT" "$UNIT_FILE"; do
   if [ ! -f "$f" ]; then
     echo "de_deploy: missing $f" >&2
     exit 1
@@ -70,8 +71,8 @@ for f in "$SESSION_SCRIPT" "$POWER_KEY_SCRIPT"; do
 done
 
 STAGE_DIR="/tmp/rabbiz-de-stage.$$"
-ssh "$HOST" "mkdir -p '$STAGE_DIR'"
-scp -q "$BIN_PATH" "$SESSION_SCRIPT" "$POWER_KEY_SCRIPT" "${HOST}:${STAGE_DIR}/"
+ssh "$HOST" mkdir -p "$STAGE_DIR"
+scp -q "$BIN_PATH" "$SESSION_SCRIPT" "$POWER_KEY_SCRIPT" "$UNIT_FILE" "${HOST}:${STAGE_DIR}/"
 
 "$REPO_ROOT/scripts/device_session.sh" "$HOST" <<EOF
 set -euo pipefail
@@ -84,6 +85,7 @@ trap cleanup EXIT
 install -o root -g root -m 0755 "${STAGE_DIR}/rabbiz-de" /usr/local/bin/rabbiz-de
 install -o root -g root -m 0755 "${STAGE_DIR}/a21s-session" /usr/local/bin/a21s-session
 install -o root -g root -m 0755 "${STAGE_DIR}/a21s-power-key" /usr/local/bin/a21s-power-key
+install -o root -g root -m 0644 "${STAGE_DIR}/a21s-phone-session.service" /etc/systemd/system/a21s-phone-session.service
 
 case "$ENABLE_MODE" in
   enable)
@@ -102,5 +104,9 @@ esac
 systemctl daemon-reload
 test -x /usr/local/bin/a21s-session
 /usr/local/bin/rabbiz-de --help >/dev/null
-echo "de_deploy: deployed and verified on \$(hostname)" >&2
+# ExecStart must resolve to a runnable path (catches a bad unit early).
+execstart="\$(systemctl show a21s-phone-session.service -p ExecStart --value 2>/dev/null | awk '{print \$1}' | tr -d '{}')"
+execstart="\${execstart#argv[]=}"
+test -x "\${execstart:-/nonexistent}" || { echo "de_deploy: ExecStart '\$execstart' not executable" >&2; exit 1; }
+echo "de_deploy: deployed and verified on \$(hostname) (ExecStart=\$execstart)" >&2
 EOF

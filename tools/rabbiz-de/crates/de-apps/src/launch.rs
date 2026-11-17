@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
+use de_system::env::DESKTOP_CONTRACT_ENV;
+
 use crate::desktop::DesktopEntry;
 
 const EMBEDDED_LAUNCH_TOML: &str = include_str!("../data/launch.toml");
@@ -47,8 +49,16 @@ impl LaunchPolicy {
     }
 
     /// Resolves the final program, arguments, and environment for `entry`.
+    /// The env base is the desktop contract from `de-system` (single
+    /// authority), extended by `[contract.env]` then the app's override.
     pub fn resolve(&self, entry: &DesktopEntry) -> LaunchSpec {
-        let mut env = self.contract.env.clone();
+        let mut env: BTreeMap<String, String> = DESKTOP_CONTRACT_ENV
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        for (k, v) in &self.contract.env {
+            env.insert(k.clone(), v.clone());
+        }
 
         if let Some(ov) = self.overrides.get(&entry.id) {
             for (k, v) in &ov.env {

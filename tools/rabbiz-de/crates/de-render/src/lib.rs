@@ -1,6 +1,7 @@
 //! Linux GLES + Pixman renderers, texture upload, and render target wrapper.
 
 pub mod gl;
+pub mod scanout;
 pub mod soft;
 pub mod target;
 pub mod texture;

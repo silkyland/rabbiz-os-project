@@ -9,12 +9,8 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::{Client, DisplayHandle, Resource};
 use smithay::utils::{IsAlive, Logical, Point, Serial, Transform};
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::{
-    CompositorClientState, CompositorHandler, CompositorState,
-};
-use smithay::wayland::dmabuf::{
-    DmabufFeedbackBuilder, DmabufGlobal, DmabufState, ImportNotifier,
-};
+use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState, ImportNotifier};
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
@@ -25,9 +21,7 @@ use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::xdg_activation::XdgActivationState;
-use smithay::{
-    delegate_compositor, delegate_output, delegate_shm, delegate_viewporter,
-};
+use smithay::{delegate_compositor, delegate_output, delegate_shm, delegate_viewporter};
 
 use crate::focus::FocusStack;
 
@@ -83,6 +77,8 @@ impl ProtocolState {
         height: u32,
         refresh_mhz: i32,
         drm_dev_id: Option<libc::dev_t>,
+        keymap_layout: &str,
+        keymap_options: Option<&str>,
     ) -> Result<Self, String> {
         let compositor_state = CompositorState::new::<Self>(dh);
         let shm_state = ShmState::new::<Self>(dh, vec![]);
@@ -93,9 +89,9 @@ impl ProtocolState {
         let xkb = smithay::input::keyboard::XkbConfig {
             rules: "",
             model: "",
-            layout: "us,th",
+            layout: keymap_layout,
             variant: "",
-            options: Some("grp:alt_shift_toggle".to_string()),
+            options: keymap_options.map(str::to_string),
         };
         // Fatal: a compositor that cannot build its keymap cannot type into
         // apps, so continuing silently would leave a half-working session.
@@ -109,19 +105,10 @@ impl ProtocolState {
         let xdg_activation_state = XdgActivationState::new::<Self>(dh);
         let data_device_state = DataDeviceState::new::<Self>(dh);
         let primary_selection_state = PrimarySelectionState::new::<Self>(dh);
-        // wl-paste --watch uses zwlr_data_control_manager_v1; wl-data-control
-        // clients that prefer the stable ext variant get it too. The filter
-        // allows every client: M1 has no security boundary between apps.
-        let wlr_data_control_state = WlrDataControlState::new::<Self, _>(
-            dh,
-            Some(&primary_selection_state),
-            |_| true,
-        );
-        let ext_data_control_state = ExtDataControlState::new::<Self, _>(
-            dh,
-            Some(&primary_selection_state),
-            |_| true,
-        );
+        let wlr_data_control_state =
+            WlrDataControlState::new::<Self, _>(dh, Some(&primary_selection_state), |_| true);
+        let ext_data_control_state =
+            ExtDataControlState::new::<Self, _>(dh, Some(&primary_selection_state), |_| true);
         let viewporter_state = ViewporterState::new::<Self>(dh);
 
         let mut dmabuf_state = DmabufState::new();
@@ -347,7 +334,11 @@ impl CompositorHandler for ProtocolState {
         if let Some(window) = self
             .space
             .elements()
-            .find(|w| w.toplevel().map(|t| t.wl_surface() == surface).unwrap_or(false))
+            .find(|w| {
+                w.toplevel()
+                    .map(|t| t.wl_surface() == surface)
+                    .unwrap_or(false)
+            })
             .cloned()
         {
             window.on_commit();

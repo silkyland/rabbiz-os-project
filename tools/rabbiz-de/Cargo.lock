@@ -216,6 +216,7 @@ version = "0.1.0"
 name = "de-apps"
 version = "0.1.0"
 dependencies = [
+ "de-system",
  "serde",
  "toml",
 ]
@@ -240,6 +241,7 @@ dependencies = [
  "de-backend",
  "de-core",
  "de-render",
+ "de-system",
  "libc",
  "serde_json",
 ]
@@ -326,6 +328,10 @@ dependencies = [
  "wayland-protocols",
  "wayland-protocols-wlr",
 ]
+
+[[package]]
+name = "de-system"
+version = "0.1.0"
 
 [[package]]
 name = "de-ui"

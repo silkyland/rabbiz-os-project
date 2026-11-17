@@ -17,6 +17,8 @@ import sys
 from pathlib import Path
 
 # Lower layers first. A crate may only depend on the crates listed for it.
+# Host-only crates (top block) build on macOS; the Linux/smithay crates
+# (bottom block) build only in the arm64 container — same one-way rule.
 ALLOWED: dict[str, set[str]] = {
     "de-api": set(),
     "de-design": {"de-api"},
@@ -25,15 +27,14 @@ ALLOWED: dict[str, set[str]] = {
     "de-config": set(),
     "de-apps": set(),
     "de-sim": {"de-api", "de-design", "de-paint", "de-ui"},
-    # Linux compositor crates: smithay-facing layers at the bottom.
-    "de-protocols": set(),
+    "de-config": set(),
+    "de-system": set(),
+    "de-apps": {"de-system"},
     "de-backend": {"de-api"},
+    "de-protocols": set(),
     "de-render": {"de-api", "de-paint"},
-    "de-core": {
-        "de-api", "de-backend", "de-protocols", "de-render",
-        "de-paint", "de-ui", "de-config",
-    },
-    "de-bin": {"de-api", "de-apps", "de-backend", "de-core", "de-render"},
+    "de-core": {"de-api", "de-backend", "de-protocols", "de-render", "de-paint", "de-ui", "de-config"},
+    "de-bin": {"de-api", "de-apps", "de-backend", "de-core", "de-render", "de-system"},
     # Protocol smoke clients: standalone wayland-client binaries, no internal
     # deps (they talk to the compositor over the socket only).
     "de-smoke": set(),

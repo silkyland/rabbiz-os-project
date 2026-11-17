@@ -15,5 +15,6 @@ de-apps.workspace = true
 de-backend.workspace = true
 de-core.workspace = true
 de-render.workspace = true
+de-system.workspace = true
 serde_json.workspace = true
 libc.workspace = true

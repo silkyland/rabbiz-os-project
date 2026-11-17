@@ -12,6 +12,7 @@ members = [
     "crates/de-protocols",
     "crates/de-render",
     "crates/de-core",
+    "crates/de-system",
     "crates/de-bin",
     "tests/smoke",
 ]
@@ -42,6 +43,7 @@ de-backend = { path = "crates/de-backend" }
 de-protocols = { path = "crates/de-protocols" }
 de-render = { path = "crates/de-render" }
 de-core = { path = "crates/de-core" }
+de-system = { path = "crates/de-system" }
 tiny-skia = { version = "0.11", features = ["png-format"] }
 cosmic-text = "0.15"
 swash = "0.2"

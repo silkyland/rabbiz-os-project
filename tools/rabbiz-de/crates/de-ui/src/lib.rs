@@ -23,6 +23,7 @@ pub mod screenshot;
 pub mod search;
 pub mod settings;
 pub mod shade;
+pub mod shell_stub;
 pub mod status;
 pub mod toast;
 
@@ -52,6 +53,7 @@ pub const SCENES: &[&str] = &[
     "error",
     "first-run",
     "toast",
+    "shell-stub",
 ];
 
 pub fn boot_frame(size: Size) -> Scene {
@@ -86,6 +88,7 @@ pub fn scene(name: &str, size: Size) -> Option<Scene> {
         "error" => Some(error::build(size)),
         "first-run" => Some(first_run::build(size)),
         "toast" => Some(toast::build(size)),
+        "shell-stub" => Some(shell_stub::build(size, "09:41", "Tue, Nov 17")),
         _ => None,
     }
 }
