@@ -273,6 +273,12 @@ impl Run {
             self.de.needs_present = false;
             let _ = self.present().map_err(|e| eprintln!("present: {e}"));
         }
+        // Input handlers and commits queue server->client events on every
+        // source (libinput taps, frame callbacks, configures), not just the
+        // display source — flush here so they reach clients immediately.
+        if let Err(e) = self.de.display_handle.flush_clients() {
+            eprintln!("flush_clients: {e}");
+        }
     }
 
     /// Called on each vblank: release the pending frame, account timing,
@@ -302,6 +308,11 @@ impl Run {
             self.flush_second(now);
         }
         let _ = self.present().map_err(|e| eprintln!("present: {e}"));
+        // window.send_frame() inside present() queued frame.done events —
+        // flush so clients see them this vblank, not on their next request.
+        if let Err(e) = self.de.display_handle.flush_clients() {
+            eprintln!("flush_clients: {e}");
+        }
     }
 
     fn flush_second(&mut self, now: Instant) {
