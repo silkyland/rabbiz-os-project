@@ -35,3 +35,4 @@ dist/
 # Python bytecode
 __pycache__/
 *.py[cod]
+tools/rabbiz-de/build/

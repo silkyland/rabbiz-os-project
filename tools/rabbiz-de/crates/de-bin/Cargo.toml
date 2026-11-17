@@ -1,0 +1,26 @@
+[package]
+name = "de-bin"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+de-api.workspace = true
+de-core.workspace = true
+de-backend.workspace = true
+de-render.workspace = true
+de-config.workspace = true
+de-apps.workspace = true
+de-system.workspace = true
+de-ui.workspace = true
+de-paint.workspace = true
+serde_json.workspace = true
+smithay.workspace = true
+
+[[bin]]
+name = "rabbiz-de"
+path = "src/main.rs"

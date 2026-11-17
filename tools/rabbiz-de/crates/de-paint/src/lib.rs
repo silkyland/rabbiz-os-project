@@ -1,0 +1,15 @@
+//! `de-paint` — rasterize visual units into premultiplied RGBA8 [`Pixels`].
+//!
+//! M0 surface: [`Canvas`] (fill / rounded rect / blit), [`image`] PNG
+//! decode/encode, [`text::label`] cosmic-text rasterization with the bundled
+//! Noto/Material fonts. The layer/damage/animation cache arrives in M2-T4.
+
+pub mod canvas;
+pub mod fonts;
+pub mod image;
+pub mod svg;
+pub mod text;
+
+pub use canvas::Canvas;
+pub use image::{decode_png, encode_png, ImageError};
+pub use text::{draw_label, label, LabelStyle};
