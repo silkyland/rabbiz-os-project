@@ -4,8 +4,8 @@ use std::process::{Command, Stdio};
 
 use de_apps::{load_desktop_dir, parse_desktop_file, DesktopEntry, LaunchPolicy};
 use de_backend::probe::run_probe;
-use de_core::env::format_shell_env;
 use de_core::{run, RendererChoice, RunConfig};
+use de_system::env::{format_shell_env, unset_names};
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -233,11 +233,21 @@ fn cmd_launch(args: &[String]) -> i32 {
     }
 
     let mut cmd = Command::new(&spec.program);
-    cmd.args(&spec.args)
-        .envs(&spec.env)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
+    cmd.args(&spec.args).envs(&spec.env).stdin(Stdio::null());
+    // Strip the wlroots/Mesa/RABBIZ_EXYNOS_* overrides from the child env —
+    // same contract as `env --shell`, applied process-side.
+    for name in unset_names() {
+        cmd.env_remove(&name);
+    }
+    match open_app_log(desktop_id) {
+        Ok((stdout, stderr)) => {
+            cmd.stdout(stdout).stderr(stderr);
+        }
+        Err(err) => {
+            eprintln!("app log for {desktop_id} unavailable ({err}); output discarded");
+            cmd.stdout(Stdio::null()).stderr(Stdio::null());
+        }
+    }
 
     unsafe {
         cmd.pre_exec(|| {
@@ -255,6 +265,29 @@ fn cmd_launch(args: &[String]) -> i32 {
             1
         }
     }
+}
+
+/// `$XDG_STATE_HOME/rabbiz-de/apps/<desktop-id>.log` — app stdout/stderr land
+/// here so a misbehaving app can't wedge the compositor's stderr.
+fn open_app_log(desktop_id: &str) -> std::io::Result<(std::fs::File, std::fs::File)> {
+    let base = std::env::var("XDG_STATE_HOME")
+        .map(PathBuf::from)
+        .ok()
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .map(|h| PathBuf::from(h).join(".local/state"))
+        })
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "no XDG_STATE_HOME"))?;
+    let dir = base.join("rabbiz-de").join("apps");
+    std::fs::create_dir_all(&dir)?;
+    let safe_id = desktop_id.replace('/', "_").replace(".desktop", "");
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join(format!("{safe_id}.log")))?;
+    let stderr = file.try_clone()?;
+    Ok((file, stderr))
 }
 
 fn find_desktop_entry(desktop_id: &str) -> Option<DesktopEntry> {

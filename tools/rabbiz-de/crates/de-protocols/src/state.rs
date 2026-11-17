@@ -9,22 +9,18 @@ use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::DisplayHandle;
 use smithay::utils::{Logical, Point, Serial, Transform};
 use smithay::wayland::buffer::BufferHandler;
-use smithay::wayland::compositor::{
-    CompositorClientState, CompositorHandler, CompositorState,
-};
-use smithay::wayland::dmabuf::{
-    DmabufFeedbackBuilder, DmabufGlobal, DmabufState, ImportNotifier,
-};
+use smithay::wayland::compositor::{CompositorClientState, CompositorHandler, CompositorState};
+use smithay::wayland::dmabuf::{DmabufFeedbackBuilder, DmabufGlobal, DmabufState, ImportNotifier};
 use smithay::wayland::output::{OutputHandler, OutputManagerState};
 use smithay::wayland::selection::data_device::DataDeviceState;
+use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
+use smithay::wayland::selection::wlr_data_control::DataControlState as WlrDataControlState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::{ShmHandler, ShmState};
 use smithay::wayland::viewporter::ViewporterState;
-use smithay::{
-    delegate_compositor, delegate_output, delegate_shm, delegate_viewporter,
-};
+use smithay::{delegate_compositor, delegate_output, delegate_shm, delegate_viewporter};
 
 #[derive(Default)]
 pub struct ClientState {
@@ -45,6 +41,8 @@ pub struct ProtocolState {
     pub xdg_decoration_state: XdgDecorationState,
     pub data_device_state: DataDeviceState,
     pub primary_selection_state: PrimarySelectionState,
+    pub wlr_data_control_state: WlrDataControlState,
+    pub ext_data_control_state: ExtDataControlState,
     pub viewporter_state: ViewporterState,
     pub dmabuf_state: DmabufState,
     pub dmabuf_global: Option<DmabufGlobal>,
@@ -64,6 +62,8 @@ impl ProtocolState {
         height: u32,
         refresh_mhz: i32,
         drm_dev_id: Option<libc::dev_t>,
+        keymap_layout: &str,
+        keymap_options: Option<&str>,
     ) -> Self {
         let compositor_state = CompositorState::new::<Self>(dh);
         let shm_state = ShmState::new::<Self>(dh, vec![]);
@@ -74,9 +74,9 @@ impl ProtocolState {
         let xkb = smithay::input::keyboard::XkbConfig {
             rules: "",
             model: "",
-            layout: "us,th",
+            layout: keymap_layout,
             variant: "",
-            options: Some("grp:alt_shift_toggle".to_string()),
+            options: keymap_options.map(str::to_string),
         };
         if let Err(err) = seat.add_keyboard(xkb, 250, 30) {
             eprintln!("seat.add_keyboard failed: {err}");
@@ -88,6 +88,10 @@ impl ProtocolState {
         let xdg_decoration_state = XdgDecorationState::new::<Self>(dh);
         let data_device_state = DataDeviceState::new::<Self>(dh);
         let primary_selection_state = PrimarySelectionState::new::<Self>(dh);
+        let wlr_data_control_state =
+            WlrDataControlState::new::<Self, _>(dh, Some(&primary_selection_state), |_| true);
+        let ext_data_control_state =
+            ExtDataControlState::new::<Self, _>(dh, Some(&primary_selection_state), |_| true);
         let viewporter_state = ViewporterState::new::<Self>(dh);
 
         let mut dmabuf_state = DmabufState::new();
@@ -147,6 +151,8 @@ impl ProtocolState {
             xdg_decoration_state,
             data_device_state,
             primary_selection_state,
+            wlr_data_control_state,
+            ext_data_control_state,
             viewporter_state,
             dmabuf_state,
             dmabuf_global,
@@ -197,7 +203,11 @@ impl CompositorHandler for ProtocolState {
         if let Some(window) = self
             .space
             .elements()
-            .find(|w| w.toplevel().map(|t| t.wl_surface() == surface).unwrap_or(false))
+            .find(|w| {
+                w.toplevel()
+                    .map(|t| t.wl_surface() == surface)
+                    .unwrap_or(false)
+            })
             .cloned()
         {
             window.on_commit();

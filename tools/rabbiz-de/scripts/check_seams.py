@@ -17,12 +17,22 @@ import sys
 from pathlib import Path
 
 # Lower layers first. A crate may only depend on the crates listed for it.
+# Host-only crates (top block) build on macOS; the Linux/smithay crates
+# (bottom block) build only in the arm64 container — same one-way rule.
 ALLOWED: dict[str, set[str]] = {
     "de-api": set(),
     "de-design": {"de-api"},
     "de-paint": {"de-api"},
     "de-ui": {"de-api", "de-design"},
     "de-sim": {"de-api", "de-design", "de-paint", "de-ui"},
+    "de-config": set(),
+    "de-system": set(),
+    "de-apps": {"de-system"},
+    "de-backend": {"de-api"},
+    "de-protocols": set(),
+    "de-render": {"de-api", "de-paint"},
+    "de-core": {"de-api", "de-backend", "de-protocols", "de-render", "de-paint", "de-ui", "de-config"},
+    "de-bin": {"de-api", "de-apps", "de-backend", "de-core", "de-render", "de-system"},
 }
 
 # Non-workspace dependencies are ignored: only the seams between our crates

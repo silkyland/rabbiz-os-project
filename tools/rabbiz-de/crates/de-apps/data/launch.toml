@@ -1,9 +1,9 @@
-# RabbizOS desktop contract & per-app launch overrides.
+# RabbizOS per-app launch overrides.
 # Embedded at compile time via include_str!("../data/launch.toml").
-
-[contract.env]
-A21S_FORCE_SOFTWARE = "1"
-QT_QUICK_BACKEND = "software"
+#
+# The shared app env contract lives in de-system/env.rs (single authority);
+# [contract.env] here is only for app-launch–specific additions. Exact
+# desktop-id match, no globs.
 
 [overrides.google-chrome]
 exec = "a21s-browser"

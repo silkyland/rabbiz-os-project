@@ -12,11 +12,12 @@ use de_backend::drm::{
     create_gbm_device, create_surface_and_compositor, inspect_drm, open_drm_device,
     BackendDrmCompositor,
 };
-use de_backend::libinput::{create_libinput_backend, handle_input_event};
+use de_backend::libinput::{create_libinput_backend, spawn_power_key_toggle};
 use de_backend::session::{open_drm_fd, open_session};
 use de_protocols::{ClientState, ProtocolState};
+use de_render::scanout::ScanoutCounters;
 use de_render::{texture_element, RenderTarget};
-use smithay::backend::drm::compositor::{FrameFlags, PrimaryPlaneElement};
+use smithay::backend::allocator::Fourcc;
 use smithay::backend::drm::{DrmEvent, DrmNode};
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::{
@@ -24,12 +25,12 @@ use smithay::backend::renderer::element::surface::{
 };
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{Id, Kind};
-use smithay::backend::renderer::utils::CommitCounter;
-use smithay::backend::allocator::Fourcc;
 use smithay::backend::renderer::gles::GlesTexture;
 use smithay::backend::renderer::utils::draw_render_elements;
+use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::{
-    Bind, Color32F, ExportMem, Frame, ImportAll, ImportDma, Offscreen, Renderer, RendererSuper, Texture,
+    Bind, Color32F, ExportMem, Frame, ImportAll, ImportDma, Offscreen, Renderer, RendererSuper,
+    Texture,
 };
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::reexports::calloop::generic::Generic;
@@ -38,6 +39,8 @@ use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Buffer as BufferCoord, Physical, Rectangle, Size as SmSize, Transform};
 use smithay::wayland::socket::ListeningSocketSource;
 
+use crate::present::PRESENT_FLAGS;
+use crate::seat::{SeatController, SeatEffect};
 use crate::state::{
     choose_initial_renderer, read_cma_free_kb, read_rss_kb, renderer_label, round2,
     summarize_cpu_ms, FrameStatsLine, RendererChoice, RunConfig, StatsSummary,
@@ -60,6 +63,9 @@ struct LoopState {
     display: Display<ProtocolState>,
     display_handle: DisplayHandle,
     protocols: ProtocolState,
+    seat_ctl: SeatController,
+    painter: de_paint::Renderer,
+    shell_minute: i64,
     compositor: BackendDrmCompositor,
     render_target: RenderTarget,
     output_width: u32,
@@ -74,8 +80,8 @@ struct LoopState {
     expected_interval_ms: f64,
     total_frames: u64,
     missed_frames: u64,
-    direct_scanout: u64,
-    primary_composite: u64,
+    scanout: ScanoutCounters,
+    last_states_sig: String,
     window_frames: u64,
     window_cpu_ms: Vec<f64>,
     all_cpu_ms: Vec<f64>,
@@ -98,8 +104,14 @@ pub fn run(config: RunConfig) -> i32 {
 
     STOP_REQUESTED.store(false, Ordering::SeqCst);
     unsafe {
-        libc::signal(libc::SIGINT, handle_signal as *const () as libc::sighandler_t);
-        libc::signal(libc::SIGTERM, handle_signal as *const () as libc::sighandler_t);
+        libc::signal(
+            libc::SIGINT,
+            handle_signal as *const () as libc::sighandler_t,
+        );
+        libc::signal(
+            libc::SIGTERM,
+            handle_signal as *const () as libc::sighandler_t,
+        );
     }
 
     // Bind fixed wayland-0 socket before first frame (§7.20).
@@ -212,6 +224,9 @@ pub fn run(config: RunConfig) -> i32 {
     };
 
     let refresh_mhz = (setup.refresh_hz * 1000.0).round() as i32;
+    let keymap_layout = std::env::var("XKB_DEFAULT_LAYOUT").unwrap_or_else(|_| "us,th".to_string());
+    let keymap_options =
+        std::env::var("XKB_DEFAULT_OPTIONS").unwrap_or_else(|_| "grp:alt_shift_toggle".to_string());
     let protocols = ProtocolState::new(
         &display_handle,
         &setup.info.connector,
@@ -219,6 +234,8 @@ pub fn run(config: RunConfig) -> i32 {
         setup.height,
         refresh_mhz,
         drm_dev_id,
+        &keymap_layout,
+        Some(&keymap_options),
     );
 
     let libinput_backend = match create_libinput_backend(&session, &protocols.seat.name()) {
@@ -253,8 +270,9 @@ pub fn run(config: RunConfig) -> i32 {
         }
     };
 
-    if let Err(err) = event_loop.handle().insert_source(notifier, |event, _, st| {
-        match event {
+    if let Err(err) = event_loop
+        .handle()
+        .insert_source(notifier, |event, _, st| match event {
             DrmEvent::VBlank(_) => {
                 let now = Instant::now();
                 if let Some(prev) = st.last_vblank {
@@ -280,8 +298,8 @@ pub fn run(config: RunConfig) -> i32 {
             DrmEvent::Error(err) => {
                 eprintln!("DRM error event: {err}");
             }
-        }
-    }) {
+        })
+    {
         eprintln!("insert DRM notifier failed: {err}");
         return 75;
     }
@@ -310,19 +328,22 @@ pub fn run(config: RunConfig) -> i32 {
 
     if let Some(libinput) = libinput_backend {
         if let Err(err) = event_loop.handle().insert_source(libinput, |event, _, st| {
-            let focus = st.protocols.top_wl_surface();
-            let seat = st.protocols.seat.clone();
-            let out_size = (st.output_width as i32, st.output_height as i32).into();
-            let mut ptr_loc = st.protocols.pointer_location;
-            handle_input_event(
-                &mut st.protocols,
-                &seat,
-                focus,
-                out_size,
-                &mut ptr_loc,
-                event,
-            );
-            st.protocols.pointer_location = ptr_loc;
+            for effect in st.seat_ctl.handle(&mut st.protocols, event) {
+                match effect {
+                    SeatEffect::GoHome => {
+                        if let Some(toplevel) = st
+                            .protocols
+                            .space
+                            .elements()
+                            .last()
+                            .and_then(|w| w.toplevel())
+                        {
+                            toplevel.send_close();
+                        }
+                    }
+                    SeatEffect::TogglePower => spawn_power_key_toggle(),
+                }
+            }
         }) {
             eprintln!("insert libinput source failed: {err}");
         }
@@ -340,6 +361,9 @@ pub fn run(config: RunConfig) -> i32 {
         display,
         display_handle,
         protocols,
+        seat_ctl: SeatController::new(setup.width as f64, setup.height as f64),
+        painter,
+        shell_minute: -1,
         compositor,
         render_target,
         output_width: setup.width,
@@ -354,8 +378,8 @@ pub fn run(config: RunConfig) -> i32 {
         expected_interval_ms,
         total_frames: 0,
         missed_frames: 0,
-        direct_scanout: 0,
-        primary_composite: 0,
+        scanout: ScanoutCounters::default(),
+        last_states_sig: String::new(),
         window_frames: 0,
         window_cpu_ms: Vec::with_capacity(128),
         all_cpu_ms: Vec::with_capacity(1024),
@@ -384,6 +408,7 @@ pub fn run(config: RunConfig) -> i32 {
         let _ = state.display.dispatch_clients(&mut state.protocols);
         process_pending_dmabufs(&mut state);
         state.protocols.space.refresh();
+        refresh_shell_stub(&mut state);
 
         if !state.vblank_pending {
             if let Err(err) = submit_frame(&mut state) {
@@ -397,7 +422,9 @@ pub fn run(config: RunConfig) -> i32 {
         }
 
         if let Some(path) = &config.screenshot {
-            if !screenshot_done && state.start_instant.elapsed().as_secs_f64() >= config.screenshot_at {
+            if !screenshot_done
+                && state.start_instant.elapsed().as_secs_f64() >= config.screenshot_at
+            {
                 screenshot_done = true;
                 match capture_screenshot(&mut state, path) {
                     Ok(()) => eprintln!("screenshot written: {}", path.display()),
@@ -450,7 +477,11 @@ pub fn run(config: RunConfig) -> i32 {
 fn capture_screenshot(state: &mut LoopState, path: &std::path::Path) -> Result<(), String> {
     let w = state.output_width as i32;
     let h = state.output_height as i32;
-    let RenderTarget::Gl { renderer, scene_tex } = &mut state.render_target else {
+    let RenderTarget::Gl {
+        renderer,
+        scene_tex,
+    } = &mut state.render_target
+    else {
         return Err("screenshot needs the GL renderer".to_string());
     };
     let elements = build_elements(
@@ -530,12 +561,14 @@ where
 {
     let mut elements: Vec<OutputElement<R>> = Vec::new();
 
-    // 32 px bottom gesture bar overlay (pill on translucent plum bar).
-    if !protocols.space.elements().next().is_none() {
-        let pill_w = 140;
-        let pill_h = 5;
-        let pill_rect: Rectangle<i32, Physical> =
-            Rectangle::new(((width - pill_w) / 2, height - 18).into(), (pill_w, pill_h).into());
+    // 32 px bottom gesture bar overlay (pill on translucent plum bar); same
+    // geometry the shell stub draws when no app is mapped.
+    if protocols.space.elements().next().is_some() {
+        let pill = de_ui::shell_stub::nav_pill_rect(width as f32, height as f32);
+        let pill_rect: Rectangle<i32, Physical> = Rectangle::new(
+            (pill.x as i32, pill.y as i32).into(),
+            (pill.w as i32, pill.h as i32).into(),
+        );
         elements.push(OutputElement::Solid(SolidColorRenderElement::new(
             pill_id.clone(),
             pill_rect,
@@ -544,8 +577,11 @@ where
             Kind::Unspecified,
         )));
 
-        let bar_rect: Rectangle<i32, Physical> =
-            Rectangle::new((0, height - 32).into(), (width, 32).into());
+        let bar = de_ui::shell_stub::nav_bar_rect(width as f32, height as f32);
+        let bar_rect: Rectangle<i32, Physical> = Rectangle::new(
+            (bar.x as i32, bar.y as i32).into(),
+            (bar.w as i32, bar.h as i32).into(),
+        );
         elements.push(OutputElement::Solid(SolidColorRenderElement::new(
             bar_id.clone(),
             bar_rect,
@@ -581,11 +617,11 @@ where
 fn submit_frame(state: &mut LoopState) -> Result<(), String> {
     let t0 = Instant::now();
     let clear = Color32F::new(0.086, 0.063, 0.102, 1.0);
-    let flags = FrameFlags::empty();
+    let flags = PRESENT_FLAGS;
     let w = state.output_width as i32;
     let h = state.output_height as i32;
 
-    let used_direct_scanout = match &mut state.render_target {
+    match &mut state.render_target {
         RenderTarget::Gl {
             renderer,
             scene_tex,
@@ -606,7 +642,7 @@ fn submit_frame(state: &mut LoopState) -> Result<(), String> {
             if res.is_empty {
                 return Ok(());
             }
-            matches!(res.primary_element, PrimaryPlaneElement::Element(_))
+            observe_frame(state, &res);
         }
         RenderTarget::Soft {
             renderer,
@@ -628,7 +664,7 @@ fn submit_frame(state: &mut LoopState) -> Result<(), String> {
             if res.is_empty {
                 return Ok(());
             }
-            matches!(res.primary_element, PrimaryPlaneElement::Element(_))
+            observe_frame(state, &res);
         }
     };
 
@@ -655,15 +691,28 @@ fn submit_frame(state: &mut LoopState) -> Result<(), String> {
     let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
     state.total_frames += 1;
     state.window_frames += 1;
-    if used_direct_scanout {
-        state.direct_scanout += 1;
-    } else {
-        state.primary_composite += 1;
-    }
     state.damage_px_window += state.frame_damage_px;
     state.window_cpu_ms.push(elapsed_ms);
     state.all_cpu_ms.push(elapsed_ms);
     Ok(())
+}
+
+/// Observe what the frame assignment actually did (M1-T4): update the
+/// direct_scanout/primary_composite counters and log the per-element
+/// presentation states once per change (evidence for the S1 waiver).
+fn observe_frame<B, F, E>(
+    state: &mut LoopState,
+    res: &smithay::backend::drm::compositor::RenderFrameResult<'_, B, F, E>,
+) where
+    B: smithay::backend::allocator::Buffer,
+    F: smithay::backend::drm::Framebuffer,
+{
+    let sig = de_render::scanout::summarize_states(&res.states);
+    if sig != state.last_states_sig {
+        eprintln!("elements: {sig}");
+        state.last_states_sig = sig;
+    }
+    de_render::scanout::record(&res.primary_element, &mut state.scanout);
 }
 
 fn flush_stats_window(state: &mut LoopState) {
@@ -686,8 +735,8 @@ fn flush_stats_window(state: &mut LoopState) {
         textures_mb: round2(state.textures_bytes as f64 / (1024.0 * 1024.0)),
         cma_free_kb: cma,
         rss_kb: rss,
-        direct_scanout: state.direct_scanout,
-        primary_composite: state.primary_composite,
+        direct_scanout: state.scanout.direct_scanout,
+        primary_composite: state.scanout.primary_composite,
         missed_frames: state.missed_frames,
         renderer: renderer_label(state.render_target.kind()),
     };
@@ -702,6 +751,51 @@ fn flush_stats_window(state: &mut LoopState) {
     state.window_cpu_ms.clear();
     state.damage_px_window = 0;
     state.last_window_instant = Instant::now();
+}
+
+/// Rebuild the shell-stub background when no toplevel is mapped and the
+/// minute rolled over — the stub's only live datum is the clock.
+fn refresh_shell_stub(state: &mut LoopState) {
+    if state.protocols.space.elements().next().is_some() {
+        return;
+    }
+    let minute = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| (d.as_secs() / 60) as i64)
+        .unwrap_or(0);
+    if minute == state.shell_minute {
+        return;
+    }
+    state.shell_minute = minute;
+    let (clock, date) = clock_and_date();
+    let scene = de_ui::shell_stub::build(
+        Size::new(state.output_width, state.output_height),
+        &clock,
+        &date,
+    );
+    let pixmap = state.painter.render(&scene);
+    match state.render_target.upload_scene(&pixmap) {
+        Ok(bytes) => state.textures_bytes = bytes,
+        Err(err) => eprintln!("shell stub texture upload failed: {err}"),
+    }
+}
+
+/// Local time as ("HH:MM", "Tue, Nov 17") via libc — no extra deps.
+fn clock_and_date() -> (String, String) {
+    const WEEKDAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe { libc::localtime_r(&secs, &mut tm) };
+    let clock = format!("{:02}:{:02}", tm.tm_hour, tm.tm_min);
+    let weekday = WEEKDAYS.get(tm.tm_wday as usize).copied().unwrap_or("");
+    let month = MONTHS.get(tm.tm_mon as usize).copied().unwrap_or("");
+    (clock, format!("{weekday}, {month} {}", tm.tm_mday))
 }
 
 fn write_ready_file() {
