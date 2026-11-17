@@ -6,28 +6,31 @@
 //! reference panel and mapped with `sx`/`sy`, so the field sits at y=96 on the
 //! 1080×2400 panel too.
 //!
-//! Icons are initials on 48 px tiles, never an icon font: the shell has no font
-//! to load and no images to ship.
+//! Icons are Google Font Icons (`Material Symbols Rounded`) on 48 px tiles.
 
-use de_api::{Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
+
+/// `photo` and `music_note` from `assets/fonts/MaterialSymbolsRounded.codepoints`.
+const ICON_PHOTO: char = '\u{e693}';
+const ICON_MUSIC_NOTE: char = '\u{e405}';
 
 /// Reference panel the overlay was authored on.
 const REF_W: f32 = 720.0;
 const REF_H: f32 = 1600.0;
 
-/// Result grouping: four app hits, three settings rows, one tile initial each.
-const APPS: [(&str, &str, &str); 4] = [
-    ("C", "Calculator", "Math, units and conversions"),
-    ("F", "Files", "Browse Downloads and Pictures"),
-    ("P", "Photos", "128 photos · 1.2 GB"),
-    ("M", "Music", "Rabiz Mix · 12 tracks"),
+/// Result grouping: four app hits, three settings rows, one icon each.
+const APPS: [(char, &str, &str); 4] = [
+    (icons::CALCULATE, "Calculator", "Math, units and conversions"),
+    (icons::FOLDER, "Files", "Browse Downloads and Pictures"),
+    (ICON_PHOTO, "Photos", "128 photos · 1.2 GB"),
+    (ICON_MUSIC_NOTE, "Music", "Rabiz Mix · 12 tracks"),
 ];
 
-const SETTINGS: [(&str, &str, &str); 3] = [
-    ("W", "Wi-Fi", "Rabbiz-5G · connected"),
-    ("B", "Bluetooth", "2 devices paired"),
-    ("D", "Display", "Brightness 45% · Dark"),
+const SETTINGS: [(char, &str, &str); 3] = [
+    (icons::WIFI, "Wi-Fi", "Rabbiz-5G · connected"),
+    (icons::BLUETOOTH, "Bluetooth", "2 devices paired"),
+    (icons::BRIGHTNESS_HIGH, "Display", "Brightness 45% · Dark"),
 ];
 
 const RECENT: [&str; 3] = ["calculator", "bluetooth", "screenshots"];
@@ -83,7 +86,7 @@ pub fn build(size: Size) -> Scene {
     scene
 }
 
-/// 72 px field at y=96: a magnifier ring and the placeholder, nothing else.
+/// 72 px field at y=96: search icon, placeholder and clear button.
 fn search_field(layer: &mut Layer, scale: &Scale) {
     let (sx, sy, s) = (scale.sx, scale.sy, scale.s);
     let field = Rect::new(
@@ -94,30 +97,25 @@ fn search_field(layer: &mut Layer, scale: &Scale) {
     );
     layer.rect(field, DARK.radius_pill * s, DARK.surface);
 
-    let ring = Rect::new(
-        field.x + DARK.space_l * sx,
-        field.y + 26.0 * sy,
-        20.0 * s,
-        20.0 * s,
-    );
-    layer.rect(ring, 10.0 * s, DARK.text_faint);
-    layer.rect(ring.inset(4.0 * s), 6.0 * s, DARK.surface);
-    // The stem overlaps the ring's lower-right arc, so the two rects read as
-    // one magnifier instead of a circle and a tick.
-    layer.rect(
-        Rect::new(
-            ring.right() - 4.0 * s,
-            ring.bottom() - 4.0 * s,
-            5.0 * s,
-            12.0 * s,
-        ),
-        2.5 * s,
+    let icon_left = field.x + DARK.space_l * sx;
+    layer.icon(
+        Point::new(icon_left + 10.0 * s, field.y + 36.0 * sy),
+        24.0 * s,
+        icons::SEARCH,
         DARK.text_faint,
+        false,
+    );
+    layer.icon(
+        Point::new(field.right() - DARK.space_l * sx - 12.0 * s, field.y + 36.0 * sy),
+        22.0 * s,
+        icons::CLOSE,
+        DARK.text_faint,
+        false,
     );
 
-    // The placeholder owns everything from the ring to the right edge.
-    let text_x = ring.right() + DARK.space_m * sx;
-    let text_w = field.right() - DARK.page_margin * sx - text_x;
+    // The placeholder sits between the search and clear icons.
+    let text_x = icon_left + 20.0 * s + DARK.space_m * sx;
+    let text_w = field.right() - DARK.space_l * sx - 28.0 * s - text_x;
     let placeholder = TextStyle::new(DARK.label_px * s, Weight::Regular, DARK.text_faint, text_w);
     layer.text(
         Point::new(text_x, field.y + 22.0 * sy),
@@ -137,11 +135,11 @@ fn section(layer: &mut Layer, text: &str, y: f32, scale: &Scale) {
     layer.text(Point::new(DARK.page_margin * scale.sx, y), text, style);
 }
 
-/// One result: a 48 px tile with an initial, a title and a subtitle.
+/// One result: a 48 px tile with a Material icon, a title and a subtitle.
 fn result_row(
     layer: &mut Layer,
     top: f32,
-    initial: &str,
+    icon_cp: char,
     title: &str,
     subtitle: &str,
     top_hit: bool,
@@ -153,12 +151,12 @@ fn result_row(
 
     // The top hit wears copper; every other tile stays quiet.
     let ink = if top_hit { DARK.accent } else { DARK.text_dim };
-    let initial_style = TextStyle::new(DARK.label_px * s, Weight::SemiBold, ink, icon.w)
-        .with_align(TextAlign::Center);
-    layer.text(
-        Point::new(icon.x, icon.y + (icon.h - DARK.label_px * s * 1.25) / 2.0),
-        initial,
-        initial_style,
+    layer.icon(
+        Point::new(icon.x + icon.w / 2.0, icon.y + icon.h / 2.0),
+        26.0 * s,
+        icon_cp,
+        ink,
+        top_hit,
     );
 
     // Title and subtitle share the column from the tile to the right margin.
@@ -219,23 +217,14 @@ fn back_hint(layer: &mut Layer, w: f32, h: f32, scale: &Scale) {
     );
 
     let hint_y = h - 118.0 * sy;
-    // A "<" from nine 6 px squares stepping 3 px: each square overlaps the
-    // next by half, so the shape is one stroke rather than a dotted diagonal.
     let chevron_x = w / 2.0 - 40.0 * sx;
-    for step in 0..9 {
-        // Columns: 12, 9, 6, 3, 0, 3, 6, 9, 12 from the group origin, a "<".
-        let column = (step as f32 - 4.0).abs() * 3.0;
-        layer.rect(
-            Rect::new(
-                chevron_x + column * sx,
-                hint_y + step as f32 * 3.0 * s,
-                6.0 * s,
-                6.0 * s,
-            ),
-            2.0 * s,
-            DARK.text_faint,
-        );
-    }
+    layer.icon(
+        Point::new(chevron_x + 9.0 * sx, hint_y + 15.0 * s),
+        24.0 * s,
+        icons::CHEVRON_LEFT,
+        DARK.text_faint,
+        false,
+    );
 
     let style = TextStyle::new(DARK.label_px * s, Weight::Regular, DARK.text_dim, 120.0 * s);
     layer.text(
@@ -279,7 +268,7 @@ mod tests {
             .iter()
             .filter_map(|op| match op {
                 DrawOp::Rect { rect, color, .. } => Some((*rect, *color)),
-                DrawOp::Text { .. } => None,
+                DrawOp::Text { .. } | DrawOp::Icon { .. } => None,
             })
             .collect()
     }
@@ -389,12 +378,25 @@ mod tests {
     #[test]
     fn top_hit_wears_copper_and_the_rest_stay_dim() {
         let scene = build(REF);
-        let (_, top_hit) = find_text(&scene, "C");
-        assert_eq!(top_hit.color, DARK.accent);
-        assert_eq!(top_hit.align, TextAlign::Center);
+        assert!(scene.layers[0].ops.iter().any(|op| matches!(
+            op,
+            DrawOp::Icon {
+                codepoint,
+                color,
+                filled: true,
+                ..
+            } if *codepoint == icons::CALCULATE && *color == DARK.accent
+        )));
 
-        let (_, plain) = find_text(&scene, "F");
-        assert_eq!(plain.color, DARK.text_dim);
+        assert!(scene.layers[0].ops.iter().any(|op| matches!(
+            op,
+            DrawOp::Icon {
+                codepoint,
+                color,
+                filled: false,
+                ..
+            } if *codepoint == icons::FOLDER && *color == DARK.text_dim
+        )));
 
         let (_, title) = find_text(&scene, "Calculator");
         assert_eq!(title.color, DARK.text);
@@ -407,10 +409,33 @@ mod tests {
         let mut used: Vec<Color> = rects(&scene).into_iter().map(|(_, c)| c).collect();
         used.extend(scene.layers[0].ops.iter().filter_map(|op| match op {
             DrawOp::Text { style, .. } => Some(style.color),
+            DrawOp::Icon { color, .. } => Some(*color),
             DrawOp::Rect { .. } => None,
         }));
         assert!(used.contains(&DARK.scrim), "no overlay scrim");
         assert!(used.contains(&DARK.text_dim), "no dim subtitle ink");
         assert!(used.contains(&DARK.line), "no hint hairline");
+    }
+
+    #[test]
+    fn search_uses_material_icons() {
+        let scene = build(REF);
+        let codepoints: Vec<char> = scene.layers[0]
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                DrawOp::Icon { codepoint, .. } => Some(*codepoint),
+                DrawOp::Rect { .. } | DrawOp::Text { .. } => None,
+            })
+            .collect();
+        assert!(codepoints.contains(&icons::SEARCH));
+        assert!(codepoints.contains(&icons::CLOSE));
+        assert!(codepoints.contains(&icons::CHEVRON_LEFT));
+        for (cp, _, _) in APPS {
+            assert!(codepoints.contains(&cp));
+        }
+        for (cp, _, _) in SETTINGS {
+            assert!(codepoints.contains(&cp));
+        }
     }
 }

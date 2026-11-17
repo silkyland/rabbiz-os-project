@@ -9,8 +9,11 @@
 //! This is the frame a real app is composited into: no decorations, the status
 //! inset is 48 px (P5/P13), and the 32 px gesture bar overlays the bottom.
 
-use de_api::{Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
+
+/// `menu` from `assets/fonts/MaterialSymbolsRounded.codepoints`.
+const ICON_MENU: char = '\u{e5d2}';
 
 /// Reference panel the app frame was authored on.
 const REF_W: f32 = 720.0;
@@ -56,18 +59,12 @@ fn status_inset(layer: &mut Layer, w: f32, sx: f32, sy: f32, s: f32) {
     let clock = TextStyle::new(DARK.label_px * s, Weight::Regular, DARK.text_dim, 160.0 * s);
     layer.text(Point::new(DARK.page_margin * sx, 12.0 * sy), "9:41", clock);
 
-    // Battery: a body and a tip, both vector, no glyph from a font.
-    let body = Rect::new(
-        w - DARK.page_margin * sx - 28.0 * s,
-        17.0 * sy,
-        28.0 * s,
-        14.0 * s,
-    );
-    layer.rect(body, 4.0 * s, DARK.text_faint);
-    layer.rect(
-        Rect::new(body.right() + 1.0 * s, body.y + 4.0 * s, 3.0 * s, 6.0 * s),
-        1.5 * s,
+    layer.icon(
+        Point::new(w - DARK.page_margin * sx - 12.0 * s, 24.0 * sy),
+        24.0 * s,
+        icons::BATTERY_FULL,
         DARK.text_faint,
+        true,
     );
 }
 
@@ -77,16 +74,14 @@ fn toolbar(layer: &mut Layer, w: f32, sx: f32, sy: f32, s: f32) {
     let band = Rect::new(0.0, DARK.status_h * sy, w, TOOLBAR_H * sy);
     layer.rect(band, 0.0, DARK.surface);
 
-    // Hamburger: three 24 px bars.
     let bar_x = DARK.page_margin * sx;
-    let bars_top = band.y + 37.0 * sy;
-    for i in 0..3 {
-        layer.rect(
-            Rect::new(bar_x, bars_top + i as f32 * 6.0 * s, 24.0 * s, 3.0 * s),
-            1.5 * s,
-            DARK.text_dim,
-        );
-    }
+    layer.icon(
+        Point::new(bar_x + 12.0 * s, band.y + 44.0 * sy),
+        26.0 * s,
+        ICON_MENU,
+        DARK.text_dim,
+        false,
+    );
 
     let title = TextStyle::new(DARK.label_px * s, Weight::SemiBold, DARK.text, 420.0 * s);
     layer.text(
@@ -95,26 +90,12 @@ fn toolbar(layer: &mut Layer, w: f32, sx: f32, sy: f32, s: f32) {
         title,
     );
 
-    // Search: a ring of two rects plus a short stem pointing down-right.
-    let ring = Rect::new(
-        w - DARK.page_margin * sx - 50.0 * s,
-        band.y + 32.0 * sy,
-        24.0 * s,
-        24.0 * s,
-    );
-    layer.rect(ring, 12.0 * s, DARK.text_dim);
-    layer.rect(ring.inset(5.0 * s), 7.0 * s, DARK.surface);
-    // The stem overlaps the ring's lower-right arc so the two rects read as one
-    // magnifier instead of a circle with a tick under it.
-    layer.rect(
-        Rect::new(
-            ring.right() - 5.0 * s,
-            ring.bottom() - 5.0 * s,
-            5.0 * s,
-            12.0 * s,
-        ),
-        2.5 * s,
+    layer.icon(
+        Point::new(w - DARK.page_margin * sx - 38.0 * s, band.y + 44.0 * sy),
+        26.0 * s,
+        icons::SEARCH,
         DARK.text_dim,
+        false,
     );
 
     // One hairline under the chrome; no shadows, no second surface.
@@ -228,7 +209,7 @@ mod tests {
             .iter()
             .filter_map(|op| match op {
                 DrawOp::Rect { rect, color, .. } => Some((*rect, *color)),
-                DrawOp::Text { .. } => None,
+                DrawOp::Text { .. } | DrawOp::Icon { .. } => None,
             })
             .collect()
     }
@@ -350,10 +331,27 @@ mod tests {
         let mut used: Vec<Color> = rects(&scene).into_iter().map(|(_, c)| c).collect();
         used.extend(scene.layers[0].ops.iter().filter_map(|op| match op {
             DrawOp::Text { style, .. } => Some(style.color),
+            DrawOp::Icon { color, .. } => Some(*color),
             DrawOp::Rect { .. } => None,
         }));
         assert!(used.contains(&DARK.accent), "no copper action chip");
         assert!(used.contains(&DARK.text_faint), "no faint body ink");
         assert!(used.contains(&DARK.accent_ink), "no ink on the chip");
+    }
+
+    #[test]
+    fn chrome_uses_material_icons() {
+        let scene = build(REF);
+        let codepoints: Vec<char> = scene.layers[0]
+            .ops
+            .iter()
+            .filter_map(|op| match op {
+                DrawOp::Icon { codepoint, .. } => Some(*codepoint),
+                DrawOp::Rect { .. } | DrawOp::Text { .. } => None,
+            })
+            .collect();
+        assert!(codepoints.contains(&icons::BATTERY_FULL));
+        assert!(codepoints.contains(&ICON_MENU));
+        assert!(codepoints.contains(&icons::SEARCH));
     }
 }

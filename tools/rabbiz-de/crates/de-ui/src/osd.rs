@@ -5,10 +5,10 @@
 //! 720×1600 reference panel and mapped with `sx`/`sy`, so the pill sits at the
 //! same left-edge point on the 1080×2400 panel.
 //!
-//! There is no icon font: the speaker and the sun are built from rounded
-//! rects, and the meter is twenty real segments, not a texture.
+//! The speaker and sun glyphs use Google Font Icons (`Material Symbols Rounded`),
+//! and the meter is twenty real segments, not a texture.
 
-use de_api::{Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
 
 /// Reference panel the OSD composition was authored on.
@@ -63,10 +63,11 @@ fn osd(size: Size, layer_name: &str, glyph: Glyph, percent: u32, caption: &str) 
     layer.rect(pill, DARK.radius_pill * s, DARK.glass);
 
     let cx = pill.x + pill.w / 2.0;
-    match glyph {
-        Glyph::Speaker => speaker(&mut layer, cx, 620.0 * sy, s),
-        Glyph::Sun => sun(&mut layer, cx, 620.0 * sy, s),
-    }
+    let (codepoint, icon_color) = match glyph {
+        Glyph::Speaker => (icons::VOLUME_UP, DARK.text_dim),
+        Glyph::Sun => (icons::BRIGHTNESS_HIGH, DARK.accent_hi),
+    };
+    layer.icon(Point::new(cx, 640.0 * sy), 40.0 * s, codepoint, icon_color, true);
 
     // The number is the loudest thing in the pill. Its box is the usable pill
     // width, so "70%" never breaks into two lines over the meter.
@@ -108,55 +109,6 @@ fn osd(size: Size, layer_name: &str, glyph: Glyph, percent: u32, caption: &str) 
 
     scene.push(layer);
     scene
-}
-
-/// Speaker cabinet with a driver and two sound bars. Two dark eyes in a cream
-/// face would be the mascot; this is the plain audio glyph.
-fn speaker(layer: &mut Layer, cx: f32, top: f32, s: f32) {
-    layer.rect(
-        Rect::new(cx - 26.0 * s, top, 30.0 * s, 40.0 * s),
-        8.0 * s,
-        DARK.text_dim,
-    );
-    // The driver reads as a hole, so it borrows the canvas ink.
-    layer.rect(
-        Rect::new(cx - 18.0 * s, top + 12.0 * s, 14.0 * s, 16.0 * s),
-        8.0 * s,
-        DARK.bg,
-    );
-    layer.rect(
-        Rect::new(cx + 8.0 * s, top + 10.0 * s, 6.0 * s, 20.0 * s),
-        3.0 * s,
-        DARK.text_dim,
-    );
-    layer.rect(
-        Rect::new(cx + 19.0 * s, top + 2.0 * s, 6.0 * s, 36.0 * s),
-        3.0 * s,
-        DARK.text_dim,
-    );
-}
-
-/// Sun: a disc and four cardinal rays. Diagonal rays would need rotation, which
-/// [`de_api::DrawOp`] does not express, so the four are enough to read as light.
-fn sun(layer: &mut Layer, cx: f32, top: f32, s: f32) {
-    layer.rect(
-        Rect::new(cx - 14.0 * s, top + 6.0 * s, 28.0 * s, 28.0 * s),
-        14.0 * s,
-        DARK.accent_hi,
-    );
-    let rays = [
-        (-3.0, 0.0, 6.0, 13.0),
-        (-3.0, 27.0, 6.0, 13.0),
-        (-27.0, 14.0, 14.0, 6.0),
-        (14.0, 14.0, 14.0, 6.0),
-    ];
-    for (dx, dy, rw, rh) in rays {
-        layer.rect(
-            Rect::new(cx + dx * s, top + dy * s, rw * s, rh * s),
-            3.0 * s,
-            DARK.accent_hi,
-        );
-    }
 }
 
 /// Fit type inside the pill. The scene API has no text metrics, so 0.66 em is
@@ -211,7 +163,7 @@ mod tests {
                     radius,
                     color,
                 } => Some((*rect, *radius, *color)),
-                DrawOp::Text { .. } => None,
+                DrawOp::Text { .. } | DrawOp::Icon { .. } => None,
             })
             .collect()
     }
@@ -220,6 +172,7 @@ mod tests {
         let mut used: Vec<Color> = rects(scene).into_iter().map(|(_, _, c)| c).collect();
         used.extend(scene.layers[0].ops.iter().filter_map(|op| match op {
             DrawOp::Text { style, .. } => Some(style.color),
+            DrawOp::Icon { color, .. } => Some(*color),
             DrawOp::Rect { .. } => None,
         }));
         used
@@ -326,5 +279,30 @@ mod tests {
         assert!(used.contains(&DARK.accent), "no copper in the meter");
         assert!(used.contains(&DARK.text_dim), "no dim ink in the glyph");
         assert!(used.contains(&DARK.scrim), "no scrim behind the pill");
+    }
+
+    #[test]
+    fn osd_uses_material_icons() {
+        let vol = volume(REF);
+        assert!(vol.layers[0].ops.iter().any(|op| matches!(
+            op,
+            DrawOp::Icon {
+                codepoint,
+                color,
+                filled: true,
+                ..
+            } if *codepoint == icons::VOLUME_UP && *color == DARK.text_dim
+        )));
+
+        let bri = brightness(REF);
+        assert!(bri.layers[0].ops.iter().any(|op| matches!(
+            op,
+            DrawOp::Icon {
+                codepoint,
+                color,
+                filled: true,
+                ..
+            } if *codepoint == icons::BRIGHTNESS_HIGH && *color == DARK.accent_hi
+        )));
     }
 }

@@ -10,7 +10,7 @@
 //! hairline and the caption. No app content yet — the first app frame replaces
 //! this layer once the toplevel maps.
 
-use de_api::{Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
 
 /// Reference panel the starting window was authored on.
@@ -53,7 +53,13 @@ pub fn build(size: Size) -> Scene {
     // The tile stays on top of the card while the frame expands under it.
     let tile = Rect::new(cx - TILE / 2.0 * s, cy - TILE / 2.0 * s, TILE * s, TILE * s);
     layer.rect(tile, DARK.radius_l * s, DARK.accent);
-    calculator(&mut layer, tile, s);
+    layer.icon(
+        Point::new(cx, cy),
+        56.0 * s,
+        icons::CALCULATE,
+        DARK.accent_ink,
+        true,
+    );
 
     // Caption under the card: what the shell is waiting for, on the page column.
     let caption_w = (REF_W - 2.0 * DARK.page_margin) * s;
@@ -76,27 +82,6 @@ pub fn build(size: Size) -> Scene {
 
     scene.push(layer);
     scene
-}
-
-/// The Calculator glyph on the tile: a display bar over two rows of keys. All
-/// rounded rects, no icon font, and it reads at 96 px.
-fn calculator(layer: &mut Layer, tile: Rect, s: f32) {
-    let pad = 24.0 * s;
-    let display = Rect::new(tile.x + pad, tile.y + pad, tile.w - 2.0 * pad, 18.0 * s);
-    layer.rect(display, 6.0 * s, DARK.accent_ink);
-
-    // Three columns of two keys, centred under the display.
-    let key = 14.0 * s;
-    let gap = 8.0 * s;
-    let grid_w = 3.0 * key + 2.0 * gap;
-    let grid_x = tile.x + (tile.w - grid_w) / 2.0;
-    let rows = [display.bottom() + 10.0 * s, display.bottom() + 30.0 * s];
-    for row in rows {
-        for col in 0..3 {
-            let x = grid_x + col as f32 * (key + gap);
-            layer.rect(Rect::new(x, row, key, 12.0 * s), 4.0 * s, DARK.accent_ink);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -133,7 +118,7 @@ mod tests {
             .iter()
             .filter_map(|op| match op {
                 DrawOp::Rect { rect, color, .. } => Some((*rect, *color)),
-                DrawOp::Text { .. } => None,
+                DrawOp::Text { .. } | DrawOp::Icon { .. } => None,
             })
             .collect()
     }
@@ -236,9 +221,23 @@ mod tests {
 
     #[test]
     fn morph_uses_the_copper_accent_and_the_scrim() {
-        let used: Vec<Color> = rects(&build(REF)).into_iter().map(|(_, c)| c).collect();
+        let scene = build(REF);
+        let mut used: Vec<Color> = rects(&scene).into_iter().map(|(_, c)| c).collect();
+        used.extend(scene.layers[0].ops.iter().filter_map(|op| match op {
+            DrawOp::Icon { color, .. } => Some(*color),
+            DrawOp::Rect { .. } | DrawOp::Text { .. } => None,
+        }));
         assert!(used.contains(&DARK.accent), "no copper tile or hairline");
         assert!(used.contains(&DARK.scrim), "no dim scrim");
         assert!(used.contains(&DARK.accent_ink), "no ink inside the tile");
+        assert!(scene.layers[0].ops.iter().any(|op| matches!(
+            op,
+            DrawOp::Icon {
+                codepoint,
+                color,
+                filled: true,
+                ..
+            } if *codepoint == icons::CALCULATE && *color == DARK.accent_ink
+        )));
     }
 }
