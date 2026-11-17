@@ -1,0 +1,12 @@
+[Unit]
+Description=S2MU106 charger enable (charge path + watchdog kick)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/root/charger-up.sh
+TimeoutStartSec=30
+
+[Install]
+WantedBy=multi-user.target

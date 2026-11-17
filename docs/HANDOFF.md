@@ -224,6 +224,18 @@ Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/
 
 **Rule:** any DT change that enables/disables an I2C bus on this device renumbers `i2c-N` adapters — never hardcode `N-00XX` paths; glob `/sys/bus/i2c/drivers/<drv>/*/`.
 
+### 0.7 Round 8 — Charging restored: S2MU106 was in BUCK mode, minimal driver shipped (2026-11-17 07:30)
+
+**Symptom:** battery discharges while USB cable attached; `s2mu005-fuel-gauge` is the only power_supply. Verified fixed on device — gauge reads positive charge current, `status=Charging`, `power_supply/s2mu106-charger` online.
+
+**Root cause:** the S2MU106 MFD (`i2c-0` @ `0x3d`, charger+MUIC; `0x3c` = USB-PDIC) has **no driver** — `patches/linux/0005` intentionally omits it. The charger block boots into `REG_MODE=BUCK` (charge switch off), so VBUS reaching CHGIN (`STATUS0 CHGIN_STATUS=3/5`, verified live) is never used. `CTRL0[3:0]=0x3` (`CHG`) starts charge immediately.
+
+**Debug trap — never probe `0x3d` via userspace SMBus ioctl:** `I2C_SMBUS` byte reads returned garbage/unstable values (every register flipped between reads), while plain `write(reg)+read` on `/dev/i2c-0` gives stable correct data. Kernel-side `i2c_smbus_read_byte_data` is unaffected (the module probes fine). Chasing the noise cost false leads (VBUS "absent", PDIC LPM theories) — always cross-check with the plain-transfer path first.
+
+**Shipped:** `drivers/s2mu106/s2mu106-charger.c` (out-of-tree `extra/`): CHG mode, CV 4.35 V, input limit 1.5 A, fast-charge 1.4 A, top-off 150/100 mA, FC timer 16 h, 100 s hardware WDT kicked from a 40 s `delayed_work` (also re-asserts CHG mode if the chip loses it). Exposes `power_supply/s2mu106-charger` (ONLINE/STATUS/HEALTH/limits). Instantiated via `i2c-0/new_device` by `scripts/charger-up.sh` + `s2mu106-charger.service` (enabled) — **no DT node yet**, no reflash needed.
+
+**Still open:** real S2MU106 MFD + MUIC + PDIC port (cable-type detection, AFC/PD 9 V fast charge, OTG, haptic); CC/Rd assertion for USB-C sources that hold VBUS off until Rd; DT node replacing `new_device` instantiation; charger IRQ wiring; sustained-charge validation across a full cycle (gauge current was seen swinging negative briefly under load — cross-check units/calibration).
+
 ---
 
 ## 1. Current Verified Device State
