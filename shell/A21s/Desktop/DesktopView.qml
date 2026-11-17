@@ -50,6 +50,34 @@ PanelWindow {
     }
 
     readonly property var wp: ShellPrefs.activeWallpaper
+
+    // ---- Unlock fly-in: icons start spread along the bottom and glide into place ----
+    property real enter: 1.0
+    readonly property real enterSpan: 1.5
+    function enterLin(delay) { return Math.max(0, Math.min(1, enter * enterSpan - delay)) }
+    function enterEase(p) { var q = p - 1; return 1 + 2.1 * q * q * q + 1.1 * q * q }
+
+    NumberAnimation {
+        id: enterAnim
+        target: home
+        property: "enter"
+        from: 0
+        to: 1
+        duration: 1000
+        easing.type: Easing.Linear
+    }
+
+    Connections {
+        target: ShellState
+        function onLockScreenOpenChanged() {
+            if (ShellState.lockScreenOpen) {
+                enterAnim.stop()
+                home.enter = 1.0
+            } else {
+                enterAnim.restart()
+            }
+        }
+    }
     readonly property string timeFormatStr: ShellPrefs.use24h ? "HH:mm" : "h:mm ap"
     readonly property string hourStr: Qt.formatDateTime(clock.date, ShellPrefs.use24h ? "HH" : "h")
     readonly property string minStr: Qt.formatDateTime(clock.date, "mm")
@@ -162,7 +190,6 @@ PanelWindow {
         ShellPrefs.save()
         clockMorphAnim.restart()
     }
-
 
     // ------------------------------------------------------------------
     // ~/Desktop + dock editing
@@ -803,6 +830,9 @@ PanelWindow {
                 rightMargin: Theme.spaceL
             }
             height: clockCol.implicitHeight
+            readonly property real fp: home.enterLin(0.0)
+            opacity: Math.min(1, fp * 2.5)
+            transform: Translate { y: -36 * (1 - home.enterEase(clockBlock.fp)) }
 
             ColumnLayout {
                 id: clockCol
@@ -1066,6 +1096,24 @@ PanelWindow {
                     menuOpen: home.menuIcon === gridIcon
                     entranceKey: home.unlockEntranceKey
                     entranceArmKey: home.entranceArmKey
+
+                    // Unlock fly-in, kept alongside AppIcon's own entrance.
+                    readonly property real fp: home.enterLin(0.05 + index * 0.035)
+                    readonly property real fe: home.enterEase(fp)
+                    opacity: Math.min(1, fp * 2.5)
+                    transform: [
+                        Translate {
+                            x: (homeGridRow.x + gridIcon.x + gridIcon.width / 2 - home.width / 2) * 0.75 * (1 - gridIcon.fe)
+                            y: (home.height * 0.38 + Math.floor(gridIcon.index / 4) * 36) * (1 - gridIcon.fe)
+                        },
+                        Scale {
+                            origin.x: gridIcon.width / 2
+                            origin.y: gridIcon.height / 2
+                            xScale: 0.6 + 0.4 * gridIcon.fe
+                            yScale: 0.6 + 0.4 * gridIcon.fe
+                        }
+                    ]
+
                     onMenuRequested: (sx, sy, sw, sh) => home.openIconMenu(gridIcon, sx, sy, sw, sh)
                     onDragStarted: home.beginIconDrag(gridIcon)
                     onDragMoved: (sx, sy) => home.updateIconDrag(gridIcon, sx, sy)
@@ -1093,6 +1141,9 @@ PanelWindow {
                 bottomMargin: Theme.spaceM
             }
             height: 192
+            readonly property real fp: home.enterLin(0.32)
+            opacity: Math.min(1, fp * 2.5)
+            transform: Translate { y: 140 * (1 - home.enterEase(heroDeckSection.fp)) }
 
             ListView {
                 id: heroList
@@ -1576,11 +1627,13 @@ PanelWindow {
             color: Qt.alpha(Theme.surfaceHigh, 0.72)
             border.width: 1
             border.color: Qt.alpha(Theme.text, 0.11)
-            opacity: Math.max(0, 1.0 - ShellState.drawerProgress * 1.45)
+            readonly property real fp: home.enterLin(0.38)
+            opacity: Math.max(0, 1.0 - ShellState.drawerProgress * 1.45) * Math.min(1, fp * 2.5)
             scale: (searchTap.pressed ? 0.97 : 1.0) * (1.0 + 0.03 * ShellState.drawerProgress)
-            transform: Translate {
-                y: -ShellState.drawerProgress * (home.height * 0.42)
-            }
+            transform: [
+                Translate { y: -ShellState.drawerProgress * (home.height * 0.42) },
+                Translate { y: 110 * (1 - home.enterEase(searchPill.fp)) }
+            ]
             Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
 
             RowLayout {
@@ -1636,6 +1689,7 @@ PanelWindow {
             color: gpu ? Theme.glassBlur : Theme.glass
             border.width: 1
             border.color: Theme.glassBorder
+            opacity: Math.min(1, home.enterLin(0.30) * 2.5)
 
             Row {
                 id: dockRow
@@ -1685,7 +1739,6 @@ PanelWindow {
                 }
             }
         }
-
         // ---- Editing overlays ---------------------------------------------------
         // Drop affordances: the source tile fades to a hole; these show where it lands.
         Rectangle {

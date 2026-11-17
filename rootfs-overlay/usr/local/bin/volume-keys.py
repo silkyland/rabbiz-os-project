@@ -64,6 +64,16 @@ def volume_devices():
 devs = volume_devices()
 print("watching:", [d.name for d in devs.values()], flush=True)
 
+def held_now():
+    held = set()
+    for d in devs.values():
+        try:
+            held |= set(d.active_keys())
+        except OSError:
+            pass
+    return held
+
+
 held_keys = set()
 last_combo_ts = 0.0
 hold = HoldMenu()
@@ -126,6 +136,10 @@ while True:
                 continue
 
             if e.value == 1:
+                # Resync with real hardware state first: a missed release
+                # must not leave a phantom "held" key that fakes a combo
+                # (mainline d7b468d).
+                held_keys = held_now()
                 held_keys.add(e.code)
 
                 power_active = ecodes.KEY_POWER in held_keys

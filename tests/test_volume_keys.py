@@ -24,9 +24,20 @@ def replay(events):
     frames.append((events[-1][0] + 1, []))
     current = []
     actions = []
+    live = set()
+
+    def read_events():
+        for e in current:
+            if e.value == 1:
+                live.add(e.code)
+            elif e.value == 0:
+                live.discard(e.code)
+        return current
+
     device = SimpleNamespace(fd=42, name='test keys',
         capabilities=lambda: {1: [POWER, UP, DOWN, 113]},
-        read=lambda: current)
+        read=read_events,
+        active_keys=lambda: set(live))
 
     def select_events(read, write, error, timeout):
         nonlocal now, current

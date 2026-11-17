@@ -8,6 +8,7 @@
  * the in-RAM MEM\0 region map.
  */
 #include <errno.h>
+#include <endian.h>
 #include <fcntl.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -15,6 +16,7 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #if defined(__has_include) && __has_include("cpif_uapi.h")
@@ -44,9 +46,52 @@ static void usage(const char *prog)
 		"usage:\n"
 		"  %s --load-only --radio /dev/disk/by-partlabel/radio [--dev %s]\n"
 		"  %s --boot --image FILE | --radio DEV [--offset OFF] [--size LEN]\n"
+		"  %s --handshake-only [--dev %s]\n"
 		"  %s --status\n",
-		prog, DEFAULT_DEV, prog, prog);
+		prog, DEFAULT_DEV, prog, prog, DEFAULT_DEV, prog);
 	exit(1);
+}
+
+static int boot_exchange(int fd, uint32_t request, uint32_t expected)
+{
+	struct timespec start, now;
+	uint32_t response = 0, word = htole32(request);
+	ssize_t n;
+
+	if (write(fd, &word, sizeof(word)) != sizeof(word)) {
+		perror("boot control write");
+		return -1;
+	}
+	if (clock_gettime(CLOCK_MONOTONIC, &start))
+		return -1;
+	for (;;) {
+		n = read(fd, &response, sizeof(response));
+		if (n == sizeof(response))
+			break;
+		if (n < 0 && errno != EAGAIN && errno != EINTR) {
+			perror("boot control read");
+			return -1;
+		}
+		if (n > 0 || clock_gettime(CLOCK_MONOTONIC, &now))
+			return -1;
+		if (now.tv_sec - start.tv_sec >= 30) {
+			fprintf(stderr, "boot control 0x%04x timed out\n", request);
+			return -1;
+		}
+		usleep(10000);
+	}
+	response = le32toh(response);
+	printf("[*] UDL 0x%04x -> 0x%04x (expected 0x%04x)\n",
+	       request, response, expected);
+	return response == expected ? 0 : -1;
+}
+
+static int boot_handshake(int fd)
+{
+	if (boot_exchange(fd, 0x900d, 0xa00d) ||
+	    boot_exchange(fd, 0x9f00, 0xaf00))
+		return -1;
+	return 0;
 }
 
 static int xioctl(int fd, unsigned long req, void *arg, const char *what)
@@ -137,6 +182,7 @@ int main(int argc, char **argv)
 	size_t chunk = CHUNK_SIZE;
 	int load_only = 1;
 	int status_only = 0;
+	int handshake_only = 0;
 	int fd = -1, src = -1, i;
 	struct stat st;
 	void *buf = NULL;
@@ -165,12 +211,25 @@ int main(int argc, char **argv)
 			load_only = 0;
 		else if (!strcmp(argv[i], "--status"))
 			status_only = 1;
+		else if (!strcmp(argv[i], "--handshake-only"))
+			handshake_only = 1;
 		else
 			usage(argv[0]);
 	}
 
 	if (status_only)
 		return show_status();
+
+	if (handshake_only) {
+		fd = open(dev, O_RDWR | O_NONBLOCK);
+		if (fd < 0) {
+			perror(dev);
+			return 1;
+		}
+		ret = boot_handshake(fd);
+		close(fd);
+		return ret ? 1 : 0;
+	}
 
 	if (!image_path && !radio_dev)
 		usage(argv[0]);
@@ -204,7 +263,7 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	fd = open(dev, O_RDWR);
+	fd = open(dev, O_RDWR | O_NONBLOCK);
 	if (fd < 0) {
 		perror(dev);
 		ret = -1;
@@ -308,6 +367,10 @@ int main(int argc, char **argv)
 			goto out;
 		printf("[*] CP bootloader started\n");
 	}
+
+	ret = boot_handshake(fd);
+	if (ret)
+		goto out;
 
 	ret = xioctl(fd, CPIF_IOC_COMPLETE_NORMAL_BOOTUP, NULL,
 		     "COMPLETE_NORMAL_BOOTUP");

@@ -23,9 +23,8 @@ case "$cmd" in
     fix_perms
     if [ -x /usr/local/bin/a21s-cbd ] && [ -e "$RADIO_DEV" ]; then
       st="$(cat "$CPIF_SYS/phone_state" 2>/dev/null || echo OFFLINE)"
-      toc="$(cat "$CPIF_SYS/toc_summary" 2>/dev/null || echo unloaded)"
-      if [ "$st" != "ONLINE" ] || [ "$toc" = "unloaded" ]; then
-        /usr/local/bin/a21s-cbd --load-only --radio "$RADIO_DEV" >/dev/null 2>&1 || true
+      if [ "$st" != "ONLINE" ]; then
+        /usr/local/bin/a21s-cbd --boot --radio "$RADIO_DEV" || true
       fi
     fi
     ;;

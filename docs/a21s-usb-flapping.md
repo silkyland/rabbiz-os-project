@@ -177,3 +177,13 @@ A second complete window **17:33:00–17:38:00** had zero hardware connection
 losses (`full-speed-only-five-min.log`). This establishes that the LPM
 quirks are unnecessary for this workaround. The board DTS speed limit is
 the only retained USB patch. Do not claim that high-speed is repaired.
+
+## Resolution: patch removed, high-speed kept (2026-11-17)
+
+`0008-a21s-usb-full-speed.patch` was deleted from `patches/linux/`. The
+deployed kernel (#12) runs `maximum-speed = "high-speed"` and the usb0
+link is stable on Linux hosts; bootstrap applies every `patches/linux/*.patch`
+globally, so keeping the file would silently downgrade fresh builds to
+12 Mbps. The patch survives in git history (`git show e3e0550^:patches/linux/0008-a21s-usb-full-speed.patch`)
+if macOS flapping returns — the high-speed root cause remains unresolved
+on that host.

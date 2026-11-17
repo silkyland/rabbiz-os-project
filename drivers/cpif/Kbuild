@@ -14,6 +14,8 @@ obj-m += a21s-cpif.o
 a21s-cpif-y := \
 	cpif_core.o \
 	cpif_power.o \
+	cpif_mbox.o \
 	cpif_shmem.o \
 	cpif_boot.o \
+	cpif_sbd.o \
 	cpif_ipc.o

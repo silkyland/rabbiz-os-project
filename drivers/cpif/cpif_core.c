@@ -58,7 +58,7 @@ static int cpif_get_pmu(struct cpif_dev *c)
 static int cpif_map_regions(struct cpif_dev *c)
 {
 	struct resource res;
-	struct device_node *np, *rmem_np;
+	struct device_node *rmem_np;
 	int ret;
 
 	/* cp_rmem: reserved-memory child referenced by memory-region */
@@ -98,7 +98,7 @@ static int cpif_map_regions(struct cpif_dev *c)
 					 PTR_ERR(v));
 				c->vgpio = NULL;
 			} else {
-				c->vgpio = v + VGPIO_TX_MONITOR_OFF;
+				c->vgpio = v;
 			}
 		} else {
 			dev_warn(c->dev,
@@ -107,31 +107,18 @@ static int cpif_map_regions(struct cpif_dev *c)
 		}
 	}
 
-	/* cp-mailbox child: keep phandle for future mailbox driver */
-	np = of_find_node_by_name(c->dev->of_node, "cp-mailbox");
-	if (!np)
-		np = of_find_node_by_name(c->dev->of_node, "cp_mailbox");
-	if (np)
-		of_node_put(np);
-	else
-		dev_warn(c->dev, "no cp-mailbox child node\n");
-
-	return 0;
+	return cpif_mbox_init(c);
 }
 
 static const char *cpif_state_name(enum cpif_modem_state st)
 {
-	switch (st) {
-	case CPIF_STATE_OFFLINE:	return "OFFLINE";
-	case CPIF_STATE_ONLINE:		return "ONLINE";
-	case CPIF_STATE_NV_REBUILDING:	return "NV_REBUILDING";
-	case CPIF_STATE_CRASH_EXIT:	return "CRASH_EXIT";
-	case CPIF_STATE_SIM_ATTACH:	return "SIM_ATTACH";
-	case CPIF_STATE_SIM_DETACH:	return "SIM_DETACH";
-	case CPIF_STATE_DUMP_ACTIVE:	return "DUMP_ACTIVE";
-	case CPIF_STATE_URC_PENDING:	return "URC_PENDING";
-	default:			return "UNKNOWN";
-	}
+	static const char * const names[CPIF_STATE_MAX] = {
+		"OFFLINE", "CRASH_RESET", "CRASH_EXIT", "BOOTING", "ONLINE",
+		"NV_REBUILDING", "LOADER_DONE", "SIM_ATTACH", "SIM_DETACH",
+		"CRASH_WATCHDOG",
+	};
+
+	return st < CPIF_STATE_MAX ? names[st] : "UNKNOWN";
 }
 
 static ssize_t modem_name_show(struct device *dev,
@@ -224,6 +211,114 @@ static ssize_t regions_summary_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(regions_summary);
 
+/* Debug bring-up attrs (see docs/HANDOFF-MODEM.md):
+ *   echo "pmu 0x3004"  > peek       -> cat peek shows the value
+ *   echo "vgpio 0x1700" > peek
+ *   echo N > power_step              -> runs only cp_init_seq[N]
+ * WARNING: a bad vgpio address can hard-hang the SoC; use peek first. */
+static char peek_buf[64];
+
+static ssize_t peek_show(struct device *dev, struct device_attribute *attr,
+			 char *buf)
+{
+	return sysfs_emit(buf, "%s\n", peek_buf);
+}
+
+static ssize_t peek_store(struct device *dev, struct device_attribute *attr,
+			  const char *buf, size_t count)
+{
+	struct cpif_dev *c = dev_get_drvdata(dev);
+	char which[8];
+	unsigned int off, wval = 0;
+	u32 val = 0;
+	int ret, w, nw;
+
+	nw = sscanf(buf, "%7s %i %i", which, &off, &wval);
+	if (nw < 2)
+		return -EINVAL;
+	if (!strcmp(which, "pmu"))
+		w = 0;
+	else if (!strcmp(which, "vgpio"))
+		w = 1;
+	else if (!strcmp(which, "smc"))
+		w = 2;
+	else if (!strcmp(which, "ipc"))
+		w = 3;
+	else if (!strcmp(which, "btl"))
+		w = 4;
+	else if (!strcmp(which, "cp"))
+		w = 5;
+	else if (!strcmp(which, "vss"))
+		w = 6;
+	else if (!strcmp(which, "lin"))
+		w = 7;
+	else if (!strcmp(which, "linw"))
+		w = 8;
+	else
+		return -EINVAL;
+
+	mutex_lock(&c->lock);
+	if (w == 7)
+		ret = cpif_lin_peek(c, off, &val);
+	else if (w == 8) {
+		if (nw < 3) {
+			mutex_unlock(&c->lock);
+			return -EINVAL;
+		}
+		ret = cpif_lin_poke(c, off, wval);
+		val = wval;
+	} else {
+		ret = cpif_reg_peek(c, w, off, &val);
+	}
+	mutex_unlock(&c->lock);
+	if (ret) {
+		snprintf(peek_buf, sizeof(peek_buf), "error %d", ret);
+	} else {
+		snprintf(peek_buf, sizeof(peek_buf), "%s 0x%x = 0x%08x",
+			 which, off, val);
+	}
+	return count;
+}
+static DEVICE_ATTR_RW(peek);
+
+static ssize_t power_step_store(struct device *dev,
+				struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct cpif_dev *c = dev_get_drvdata(dev);
+	unsigned int idx;
+	int ret;
+
+	if (kstrtouint(buf, 0, &idx))
+		return -EINVAL;
+
+	mutex_lock(&c->lock);
+	ret = cpif_power_step(c, idx);
+	mutex_unlock(&c->lock);
+	if (ret)
+		return ret;
+	return count;
+}
+static DEVICE_ATTR_WO(power_step);
+
+/* Write anything to re-run the SIPC legacy link init (IPC magic +
+ * mem_access + head/tail reset) without re-uploading firmware. */
+static ssize_t legacy_init_store(struct device *dev,
+				 struct device_attribute *attr,
+				 const char *buf, size_t count)
+{
+	struct cpif_dev *c = dev_get_drvdata(dev);
+	int ret;
+
+	mutex_lock(&c->lock);
+	ret = cpif_legacy_init_now(c);
+	mutex_unlock(&c->lock);
+	if (ret)
+		return ret;
+	return count;
+}
+static DEVICE_ATTR_WO(legacy_init);
+
 static struct attribute *cpif_attrs[] = {
 	&dev_attr_modem_name.attr,
 	&dev_attr_phone_state.attr,
@@ -231,6 +326,9 @@ static struct attribute *cpif_attrs[] = {
 	&dev_attr_toc_summary.attr,
 	&dev_attr_mem_map_on_cp.attr,
 	&dev_attr_regions_summary.attr,
+	&dev_attr_peek.attr,
+	&dev_attr_power_step.attr,
+	&dev_attr_legacy_init.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(cpif);
@@ -263,6 +361,18 @@ static int cpif_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
+	/* If the CP outlived a module reload, IPC magic remains valid.
+	 * Adopt the session so PHONE_START can be answered with INIT_END.
+	 */
+	if (c->shmem[CPIF_SHMEM_IPC].map &&
+	    readl(c->shmem[CPIF_SHMEM_IPC].map) == CPIF_MEM_IPC_MAGIC &&
+	    readl(c->shmem[CPIF_SHMEM_IPC].map + 4) == 1) {
+		c->sbd_ready = true;
+		c->phone_started = true;
+		complete_all(&c->init_cmpl);
+		dev_info(c->dev, "adopted running CP session (IPC magic present)\n");
+	}
+
 	ret = cpif_boot_register(c);
 	if (ret)
 		goto err_shmem;
@@ -289,6 +399,7 @@ static void cpif_remove(struct platform_device *pdev)
 
 	cpif_ipc_unregister(c);
 	cpif_boot_unregister(c);
+	cpif_mbox_exit(c);
 	cpif_shmem_exit(c);
 	g_cpif = NULL;
 }
