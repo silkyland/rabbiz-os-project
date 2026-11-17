@@ -24,6 +24,9 @@ pub struct RunConfig {
     pub duration: Option<f64>,
     pub force_fail: bool,
     pub spawn: Option<String>,
+    /// Write a PNG of the composed scene (GL renderer only) once, at `screenshot_at` seconds.
+    pub screenshot: Option<PathBuf>,
+    pub screenshot_at: f64,
 }
 
 impl Default for RunConfig {
@@ -38,6 +41,8 @@ impl Default for RunConfig {
             duration: None,
             force_fail: false,
             spawn: None,
+            screenshot: None,
+            screenshot_at: 3.0,
         }
     }
 }

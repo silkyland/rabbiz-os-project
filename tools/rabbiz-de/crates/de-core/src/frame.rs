@@ -25,12 +25,17 @@ use smithay::backend::renderer::element::surface::{
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{Id, Kind};
 use smithay::backend::renderer::utils::CommitCounter;
-use smithay::backend::renderer::{Color32F, ImportAll, ImportDma, Renderer, RendererSuper, Texture};
+use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::gles::GlesTexture;
+use smithay::backend::renderer::utils::draw_render_elements;
+use smithay::backend::renderer::{
+    Bind, Color32F, ExportMem, Frame, ImportAll, ImportDma, Offscreen, Renderer, RendererSuper, Texture,
+};
 use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
-use smithay::utils::{Physical, Rectangle};
+use smithay::utils::{Buffer as BufferCoord, Physical, Rectangle, Size as SmSize, Transform};
 use smithay::wayland::socket::ListeningSocketSource;
 
 use crate::state::{
@@ -368,6 +373,7 @@ pub fn run(config: RunConfig) -> i32 {
 
     let duration_limit = config.duration.map(Duration::from_secs_f64);
 
+    let mut screenshot_done = false;
     while !STOP_REQUESTED.load(Ordering::SeqCst) {
         if let Some(limit) = duration_limit {
             if state.start_instant.elapsed() >= limit {
@@ -388,6 +394,16 @@ pub fn run(config: RunConfig) -> i32 {
                 break;
             }
             state.first_frame_done = true;
+        }
+
+        if let Some(path) = &config.screenshot {
+            if !screenshot_done && state.start_instant.elapsed().as_secs_f64() >= config.screenshot_at {
+                screenshot_done = true;
+                match capture_screenshot(&mut state, path) {
+                    Ok(()) => eprintln!("screenshot written: {}", path.display()),
+                    Err(err) => eprintln!("screenshot failed: {err}"),
+                }
+            }
         }
 
         let _ = state.display.flush_clients();
@@ -426,6 +442,59 @@ pub fn run(config: RunConfig) -> i32 {
     }
 
     0
+}
+
+/// Render the current scene into an offscreen GL texture and write it as PNG.
+/// Independent of the DRM swapchain, so it also works when no frame is queued
+/// (damage-driven idle). GL renderer only; the soft renderer reports an error.
+fn capture_screenshot(state: &mut LoopState, path: &std::path::Path) -> Result<(), String> {
+    let w = state.output_width as i32;
+    let h = state.output_height as i32;
+    let RenderTarget::Gl { renderer, scene_tex } = &mut state.render_target else {
+        return Err("screenshot needs the GL renderer".to_string());
+    };
+    let elements = build_elements(
+        renderer,
+        scene_tex.as_ref(),
+        &state.protocols,
+        w,
+        h,
+        &state.bar_id,
+        &state.pill_id,
+    );
+
+    let buf_size: SmSize<i32, BufferCoord> = (w, h).into();
+    let phys_size: SmSize<i32, Physical> = (w, h).into();
+    let full: Rectangle<i32, Physical> = Rectangle::from_size(phys_size);
+    let mut target: GlesTexture = renderer
+        .create_buffer(Fourcc::Abgr8888, buf_size)
+        .map_err(|e| format!("create_buffer: {e:?}"))?;
+    let mut fb = renderer
+        .bind(&mut target)
+        .map_err(|e| format!("bind: {e:?}"))?;
+    {
+        let mut frame = renderer
+            .render(&mut fb, phys_size, Transform::Normal)
+            .map_err(|e| format!("render: {e:?}"))?;
+        frame
+            .clear(Color32F::new(0.086, 0.063, 0.102, 1.0), &[full])
+            .map_err(|e| format!("clear: {e:?}"))?;
+        draw_render_elements(&mut frame, 1.0, &elements, &[full])
+            .map_err(|e| format!("draw: {e:?}"))?;
+        let sync = frame.finish().map_err(|e| format!("finish: {e:?}"))?;
+        let _ = sync.wait();
+    }
+    let mapping = renderer
+        .copy_framebuffer(&fb, Rectangle::from_size(buf_size), Fourcc::Abgr8888)
+        .map_err(|e| format!("copy_framebuffer: {e:?}"))?;
+    let bytes = renderer
+        .map_texture(&mapping)
+        .map_err(|e| format!("map_texture: {e:?}"))?
+        .to_vec();
+
+    let size = tiny_skia::IntSize::from_wh(w as u32, h as u32).ok_or("bad size")?;
+    let pixmap = tiny_skia::Pixmap::from_vec(bytes, size).ok_or("pixmap size mismatch")?;
+    pixmap.save_png(path).map_err(|e| format!("save_png: {e}"))
 }
 
 fn process_pending_dmabufs(state: &mut LoopState) {

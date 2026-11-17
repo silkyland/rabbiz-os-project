@@ -35,7 +35,7 @@ fn main() {
 
 fn print_usage() {
     eprintln!(
-        "Usage:\n  rabbiz-de probe --json [--require=gl]\n  rabbiz-de run [--renderer=auto|gl|soft] [--require=gl] [--stats] [--stats-file <path>] [--stats-summary <path>] [--scenario <name>] [--duration <sec>] [--spawn <cmd>] [--force-fail]\n  rabbiz-de env --shell\n  rabbiz-de launch <desktop-id>"
+        "Usage:\n  rabbiz-de probe --json [--require=gl]\n  rabbiz-de run [--renderer=auto|gl|soft] [--require=gl] [--stats] [--stats-file <path>] [--stats-summary <path>] [--scenario <name>] [--duration <sec>] [--spawn <cmd>] [--screenshot <png>] [--screenshot-at <sec>] [--force-fail]\n  rabbiz-de env --shell\n  rabbiz-de launch <desktop-id>"
     );
 }
 
@@ -132,6 +132,22 @@ fn cmd_run(args: &[String]) -> i32 {
             cfg.scenario = val.clone();
         } else if let Some(val) = arg.strip_prefix("--scenario=") {
             cfg.scenario = val.to_string();
+        } else if arg == "--screenshot" {
+            i += 1;
+            let Some(val) = args.get(i) else {
+                eprintln!("--screenshot requires a path");
+                return 2;
+            };
+            cfg.screenshot = Some(PathBuf::from(val));
+        } else if arg == "--screenshot-at" {
+            i += 1;
+            match args.get(i).and_then(|v| v.parse::<f64>().ok()) {
+                Some(secs) if secs >= 0.0 => cfg.screenshot_at = secs,
+                _ => {
+                    eprintln!("--screenshot-at requires seconds");
+                    return 2;
+                }
+            }
         } else if arg == "--duration" {
             i += 1;
             let Some(val) = args.get(i) else {
