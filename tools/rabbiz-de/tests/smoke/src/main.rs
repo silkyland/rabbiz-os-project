@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use wayland_client::protocol::{
     wl_buffer, wl_callback, wl_compositor, wl_data_device, wl_data_device_manager, wl_data_offer,
     wl_data_source, wl_keyboard, wl_output, wl_registry, wl_seat, wl_shm, wl_shm_pool, wl_surface,
+    wl_touch,
 };
 use wayland_client::{Connection, Dispatch, EventQueue, QueueHandle};
 use wayland_protocols::xdg::shell::client::{
@@ -77,6 +78,8 @@ struct State {
     got_ctrl_source_send: bool,
     got_selection: bool,
     kb_enter_serial: Option<u32>,
+    got_key: bool,
+    got_touch_down: bool,
 }
 
 impl Dispatch<wl_registry::WlRegistry, ()> for State {
@@ -240,8 +243,33 @@ impl Dispatch<wl_keyboard::WlKeyboard, ()> for State {
         _c: &Connection,
         _q: &QueueHandle<Self>,
     ) {
-        if let wl_keyboard::Event::Enter { serial, .. } = event {
-            state.kb_enter_serial = Some(serial);
+        match event {
+            wl_keyboard::Event::Enter { serial, .. } => {
+                state.kb_enter_serial = Some(serial);
+            }
+            wl_keyboard::Event::Key {
+                state: key_state, ..
+            } => {
+                if key_state == wayland_client::WEnum::Value(wl_keyboard::KeyState::Pressed) {
+                    state.got_key = true;
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+impl Dispatch<wl_touch::WlTouch, ()> for State {
+    fn event(
+        state: &mut Self,
+        _p: &wl_touch::WlTouch,
+        event: wl_touch::Event,
+        _d: &(),
+        _c: &Connection,
+        _q: &QueueHandle<Self>,
+    ) {
+        if let wl_touch::Event::Down { .. } = event {
+            state.got_touch_down = true;
         }
     }
 }
@@ -653,15 +681,57 @@ fn test_framecb() {
     println!("PASS framecb");
 }
 
+/// End-to-end input path (M1-T1/T8): maps a toplevel (takes keyboard + touch
+/// focus), then waits for a real key press and a touch-down forwarded by the
+/// compositor. The events are injected from the device side via uinput while
+/// this client waits - a pass proves libinput -> seat -> client works.
+fn test_input() {
+    let (conn, mut queue) = connect();
+    let qh = queue.handle();
+    let mut state = State::default();
+    let _reg = conn.display().get_registry(&qh, ());
+    let deadline = Instant::now() + TIMEOUT;
+    if !dispatch_until(&conn, &mut queue, &mut state, deadline, |s| {
+        s.xdg_base.is_some() && s.shm.is_some() && s.compositor.is_some() && s.seat.is_some()
+    }) {
+        fail("input: required globals missing");
+    }
+
+    let seat = state.seat.clone().unwrap();
+    let _kb = seat.get_keyboard(&qh, ());
+    let _touch = seat.get_touch(&qh, ());
+
+    let _top = map_toplevel(&conn, &mut queue, &mut state, "smoke-input");
+    let deadline = Instant::now() + TIMEOUT;
+    if !dispatch_until(&conn, &mut queue, &mut state, deadline, |s| {
+        s.kb_enter_serial.is_some()
+    }) {
+        fail("input: mapped toplevel never received keyboard focus");
+    }
+
+    println!("input: focused; waiting for injected key + touch (15s)");
+    let deadline = Instant::now() + Duration::from_secs(15);
+    if !dispatch_until(&conn, &mut queue, &mut state, deadline, |s| {
+        s.got_key && s.got_touch_down
+    }) {
+        fail(&format!(
+            "input: got_key={} got_touch_down={} before timeout",
+            state.got_key, state.got_touch_down
+        ));
+    }
+    println!("PASS input");
+}
+
 fn main() {
     let arg = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| fail("usage: de-smoke <popup|clipboard|datacontrol|framecb>"));
+        .unwrap_or_else(|| fail("usage: de-smoke <popup|clipboard|datacontrol|framecb|input>"));
     match arg.as_str() {
         "popup" => test_popup(),
         "clipboard" => test_clipboard(),
         "datacontrol" => test_datacontrol(),
         "framecb" => test_framecb(),
+        "input" => test_input(),
         other => fail(&format!("unknown smoke test: {other}")),
     }
 }
