@@ -9,6 +9,7 @@ set -euo pipefail
 
 ORIG_ARGS=("$@")
 CLI_MODE=""
+WANT_LABWC=0
 PRINT_MODE=0
 EXTRA_ARGS=()
 
@@ -19,6 +20,8 @@ while [ $# -gt 0 ]; do
       shift
       ;;
     --labwc)
+      # §7.20 precedence: --labwc always wins over --de, regardless of order.
+      WANT_LABWC=1
       CLI_MODE="labwc"
       shift
       ;;
@@ -38,6 +41,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+if [ "$WANT_LABWC" -eq 1 ]; then
+  CLI_MODE="labwc"
+fi
+
 # Binary the wrapper drives; overridable for device tests under /tmp.
 RABBIZ_DE="${RABBIZ_DE_BIN:-/usr/local/bin/rabbiz-de}"
 
@@ -49,7 +56,9 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME"
+# Tolerated: --print-mode must stay host-testable where /run/user does not
+# exist, and a genuinely unwritable runtime dir fails the child -> labwc.
+mkdir -p "$XDG_RUNTIME_DIR" "$XDG_CONFIG_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" 2>/dev/null || true
 
 resolve_mode() {
   if [ -n "$CLI_MODE" ]; then
@@ -108,7 +117,13 @@ done
 
 export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-seatd}"
 
-eval "$("$RABBIZ_DE" env --shell)"
+# A binary that cannot print its own contract is not a runnable DE: fall back
+# instead of eval'ing empty output and launching without the contract.
+if ! CONTRACT="$("$RABBIZ_DE" env --shell)"; then
+  echo "a21s-session: 'rabbiz-de env --shell' failed; falling back to labwc" >&2
+  exec /usr/local/bin/a21s-phone-session
+fi
+eval "$CONTRACT"
 
 READY_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.ready"
 FAIL_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.fail"
@@ -116,6 +131,9 @@ STATS_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.stats.jsonl"
 SUMMARY_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.summary.json"
 SOCKET_FILE="${XDG_RUNTIME_DIR}/wayland-0"
 
+# A stale readiness file must not fake a healthy start. The socket is not
+# removed: unlinking a live compositor's wayland-0 would break it, and a
+# stale one only shortens the first wait - readiness stays the real gate.
 rm -f "$READY_FILE"
 : > "$STATS_FILE"
 : > "$SUMMARY_FILE"
