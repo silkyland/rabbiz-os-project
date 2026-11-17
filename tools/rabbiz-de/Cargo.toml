@@ -19,8 +19,9 @@ de-api = { path = "crates/de-api" }
 de-design = { path = "crates/de-design" }
 de-paint = { path = "crates/de-paint" }
 de-ui = { path = "crates/de-ui" }
-tiny-skia = { version = "0.12", features = ["png-format"] }
-cosmic-text = "0.12"
+tiny-skia = { version = "0.11", features = ["png-format"] }
+cosmic-text = "0.15"
+swash = "0.2"
 
 [profile.release]
 lto = "thin"

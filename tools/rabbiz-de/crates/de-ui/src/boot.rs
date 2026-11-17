@@ -139,7 +139,7 @@ mod tests {
             .iter()
             .filter_map(|op| match op {
                 DrawOp::Rect { color, .. } => Some(*color),
-                DrawOp::Text { .. } => None,
+                DrawOp::Text { .. } | DrawOp::Icon { .. } => None,
             })
             .collect()
     }

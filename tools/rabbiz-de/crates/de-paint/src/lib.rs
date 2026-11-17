@@ -15,20 +15,33 @@ use cosmic_text::{
     Attrs, Buffer, Family, FontSystem, Metrics, Shaping, SwashCache, Weight as FontWeight,
 };
 use de_api::{Color, DrawOp, Point, Rect, Scene, TextAlign, TextStyle};
+use swash::scale::{Render, ScaleContext, Source};
+use swash::zeno::Format;
+use swash::FontRef;
 use tiny_skia::{FillRule, Paint, Path as SkiaPath, PathBuilder, Pixmap, Transform};
+
+const NOTO_SANS: &[u8] = include_bytes!("../../../../../assets/fonts/NotoSans.ttf");
+const NOTO_SANS_THAI: &[u8] = include_bytes!("../../../../../assets/fonts/NotoSansThai.ttf");
+const MATERIAL_SYMBOLS_ROUNDED: &[u8] =
+    include_bytes!("../../../../../assets/fonts/MaterialSymbolsRounded.ttf");
 
 /// Scene -> pixmap painter. Holds the font database and the glyph cache, so
 /// one renderer can paint many frames without re-reading system fonts.
 pub struct Renderer {
     font_system: FontSystem,
     swash_cache: SwashCache,
+    icon_scale_context: ScaleContext,
 }
 
 impl Renderer {
     pub fn new() -> Self {
+        let mut font_system = FontSystem::new();
+        font_system.db_mut().load_font_data(NOTO_SANS.to_vec());
+        font_system.db_mut().load_font_data(NOTO_SANS_THAI.to_vec());
         Self {
-            font_system: FontSystem::new(),
+            font_system,
             swash_cache: SwashCache::new(),
+            icon_scale_context: ScaleContext::new(),
         }
     }
 
@@ -50,11 +63,81 @@ impl Renderer {
                         text,
                         style,
                     } => self.draw_text(&mut pixmap, *origin, text, style),
+                    DrawOp::Icon {
+                        center,
+                        size,
+                        codepoint,
+                        color,
+                        filled,
+                    } => self.draw_icon(&mut pixmap, *center, *size, *codepoint, *color, *filled),
                 }
             }
         }
 
         pixmap
+    }
+
+    /// Rasterize a Material Symbols Rounded glyph centered at `center`.
+    fn draw_icon(
+        &mut self,
+        pixmap: &mut Pixmap,
+        center: Point,
+        size: f32,
+        codepoint: char,
+        color: Color,
+        filled: bool,
+    ) {
+        if size <= 0.0 || color.a == 0 {
+            return;
+        }
+        let Some(font) = FontRef::from_index(MATERIAL_SYMBOLS_ROUNDED, 0) else {
+            return;
+        };
+        let glyph_id = font.charmap().map(codepoint);
+        if glyph_id == 0 {
+            return;
+        }
+        let fill_val = if filled { 1.0 } else { 0.0 };
+        let opsz_val = size.clamp(20.0, 48.0);
+        let mut scaler = self
+            .icon_scale_context
+            .builder(font)
+            .size(size)
+            .hint(true)
+            .variations(&[("FILL", fill_val), ("wght", 400.0), ("opsz", opsz_val)])
+            .build();
+        let Some(image) = Render::new(&[Source::Outline])
+            .format(Format::Alpha)
+            .render(&mut scaler, glyph_id)
+        else {
+            return;
+        };
+
+        let w = image.placement.width as i32;
+        let h = image.placement.height as i32;
+        if w <= 0 || h <= 0 {
+            return;
+        }
+        // Center the rendered glyph bounding box at `center`.
+        let start_x = (center.x - w as f32 / 2.0).round() as i32;
+        let start_y = (center.y - h as f32 / 2.0).round() as i32;
+        let alpha_scale = u32::from(color.a);
+
+        for oy in 0..h {
+            for ox in 0..w {
+                let cov = image.data[(oy * w + ox) as usize];
+                if cov == 0 {
+                    continue;
+                }
+                blend_pixel(
+                    pixmap,
+                    start_x + ox,
+                    start_y + oy,
+                    [color.r, color.g, color.b, cov],
+                    alpha_scale,
+                );
+            }
+        }
     }
 
     /// Shape a text box at `origin` (its top-left corner) and blend the glyphs
@@ -70,10 +153,11 @@ impl Renderer {
         buffer.set_text(
             &mut self.font_system,
             text,
-            Attrs::new()
+            &Attrs::new()
                 .family(Family::SansSerif)
                 .weight(FontWeight(style.weight.numeric())),
             Shaping::Advanced,
+            None,
         );
         buffer.shape_until_scroll(&mut self.font_system, false);
 
@@ -398,5 +482,29 @@ mod tests {
         assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
 
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn icon_op_paints_outlined_and_filled_glyphs() {
+        let render_icon = |filled: bool| {
+            let mut scene = Scene::new(Size::new(64, 64));
+            let mut layer = Layer::new("icon");
+            layer.icon(
+                Point::new(32.0, 32.0),
+                40.0,
+                de_api::icons::NOTIFICATIONS,
+                Color::rgb(255, 255, 255),
+                filled,
+            );
+            scene.push(layer);
+            render(&scene)
+        };
+
+        let outlined = render_icon(false);
+        let filled = render_icon(true);
+        let outlined_lit = outlined.pixels().iter().filter(|p| p.alpha() > 0).count();
+        let filled_lit = filled.pixels().iter().filter(|p| p.alpha() > 0).count();
+        assert!(outlined_lit > 20, "outlined icon should paint pixels");
+        assert!(filled_lit > outlined_lit, "filled icon should paint more pixels than outlined");
     }
 }
