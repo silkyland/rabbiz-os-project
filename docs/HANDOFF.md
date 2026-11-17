@@ -212,6 +212,18 @@ runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 \
 
 Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend per `docs/a21s-power-battery-modem-plan.md`), then M6.
 
+### 0.6 Round 7 — Speaker silent again after kernel #12 flash: I2C renumbering, not IOMMU (2026-11-17 07:15)
+
+**Symptom:** no speaker sound after flashing `boot-avb.img` (kernel `#12`, built 2026-11-16 22:54). Verified fixed on device — speaker plays `aplay` test WAVs.
+
+**Root cause chain (verified live):** `#12` enables `i2c@13830000` for the `s2mu106-fuelgauge@3b` move (kernel `#9` had the gauge on the USI `i2c@138a0000` instead). The new adapter takes `i2c-0` (`0-003b` = fuel gauge), pushing the SMA1303 amp bus to `i2c-1` → the amp lives at **`1-001e`**, not `0-001e`. The on-device `/root/audio-up.sh` was still the **old** revision hardcoding `/sys/bus/i2c/devices/0-001e/playback_init` and swallowing the error (`2>/dev/null`) → `playback_init` was never written → amp PLL/BCLK never configured → silence, while card (`Exynos3830-Madera`), DSP (`calliope_version=nEB0`) and `SPK SPK On` were all healthy. Card presence is therefore **not** proof the amp is initialized — only `playback_init` reaching the bound `sma1303` instance is.
+
+**Fix deployed:** `scripts/audio-up.sh` (commit `b6282cc`, dynamic card/amp discovery) copied to `/root/audio-up.sh` + `echo 1536000 > /sys/bus/i2c/drivers/sma1303/1-001e/playback_init`; `abox-audio.service` restart = SUCCESS, `aplay` clean.
+
+**Second defect found in the new script:** `set -eu` + `v=$(cat .../calliope_version 2>/dev/null)` inside the wait loop exits the whole script on the first empty poll (a failing command substitution under `set -e`), skipping routing+amp+SPK-On whenever the DSP is slow. Fixed in `scripts/audio-up.sh` with `|| true` — keep that guard.
+
+**Rule:** any DT change that enables/disables an I2C bus on this device renumbers `i2c-N` adapters — never hardcode `N-00XX` paths; glob `/sys/bus/i2c/drivers/<drv>/*/`.
+
 ---
 
 ## 1. Current Verified Device State
