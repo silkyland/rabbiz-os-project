@@ -22,7 +22,21 @@ ALLOWED: dict[str, set[str]] = {
     "de-design": {"de-api"},
     "de-paint": {"de-api"},
     "de-ui": {"de-api", "de-design"},
+    "de-config": set(),
+    "de-apps": set(),
     "de-sim": {"de-api", "de-design", "de-paint", "de-ui"},
+    # Linux compositor crates: smithay-facing layers at the bottom.
+    "de-protocols": set(),
+    "de-backend": {"de-api"},
+    "de-render": {"de-api", "de-paint"},
+    "de-core": {
+        "de-api", "de-backend", "de-protocols", "de-render",
+        "de-paint", "de-ui", "de-config",
+    },
+    "de-bin": {"de-api", "de-apps", "de-backend", "de-core", "de-render"},
+    # Protocol smoke clients: standalone wayland-client binaries, no internal
+    # deps (they talk to the compositor over the socket only).
+    "de-smoke": set(),
 }
 
 # Non-workspace dependencies are ignored: only the seams between our crates
