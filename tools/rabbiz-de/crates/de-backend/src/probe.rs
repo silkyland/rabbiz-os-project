@@ -6,7 +6,6 @@
 //! frames on GL and again on pixman. Exactly one JSON object on stdout
 //! (§7.21 stdout purity); diagnostics go to stderr.
 
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
@@ -18,8 +17,8 @@ use smithay::backend::drm::{DrmDeviceFd, DrmEvent};
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::pixman::PixmanRenderer;
 use smithay::output::OutputModeSource;
-use smithay::reexports::calloop::{EventLoop, LoopHandle};
-use smithay::utils::{Buffer, Physical, Scale, Size, Transform};
+use smithay::reexports::calloop::EventLoop;
+use smithay::utils::{Buffer, Scale, Size, Transform};
 
 use crate::drm::{self, DrmSetup, OutputSelection};
 use crate::session::SessionError;
@@ -178,16 +177,14 @@ pub fn run(require_gl: bool) -> Result<(serde_json::Value, bool), SessionError> 
     let ok = (gles.is_some() && gl.ok) || soft.ok;
     let ok = if require_gl { gl.ok } else { ok };
 
-    Ok((
-        serde_json::json!({
-            "frame_interval_ms": round3(frame_interval_ms),
-            "drm": drm_report,
-            "gl": gl,
-            "soft": soft,
-            "errors": errors,
-        }),
-        ok,
-    ))
+    let report = ProbeReport {
+        frame_interval_ms: round3(frame_interval_ms),
+        drm: drm_report,
+        gl,
+        soft,
+        errors,
+    };
+    Ok((serde_json::to_value(&report).unwrap_or_default(), ok))
 }
 
 enum Renderer<'a> {
@@ -418,7 +415,6 @@ fn make_tex_soft(
     SessionError,
 > {
     use smithay::backend::renderer::element::texture::TextureBuffer;
-    use smithay::backend::renderer::pixman::PixmanTexture;
     let data = vec![0xD0u8, 0x8A, 0x5A, 0xFF].repeat(64 * 64);
     TextureBuffer::from_memory(
         r,

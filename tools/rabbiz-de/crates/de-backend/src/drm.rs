@@ -12,7 +12,6 @@ use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmDeviceNotifier};
 use smithay::backend::egl::{EGLDevice, EGLDisplay};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::reexports::drm::control::{connector, crtc, Device as _, ModeTypeFlags};
-use smithay::reexports::drm::Device as _;
 use smithay::reexports::drm::{self};
 use smithay::utils::DeviceFd;
 

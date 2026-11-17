@@ -82,6 +82,7 @@ pub fn parse<I: Iterator<Item = String>>(args: I) -> Result<Cli, String> {
                 command = Command::Launch(id);
             }
             "--shell" => { /* only meaningful with `env`; accepted silently */ }
+            "--json" => { /* probe output is always JSON; accepted for the contract */ }
             "--force-fail" => flags.force_fail = true,
             "--require=gl" => flags.require_gl = true,
             "--stats" => flags.stats = true,
