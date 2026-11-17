@@ -9,6 +9,7 @@ set -euo pipefail
 
 ORIG_ARGS=("$@")
 CLI_MODE=""
+PRINT_MODE=0
 EXTRA_ARGS=()
 
 while [ $# -gt 0 ]; do
@@ -21,6 +22,11 @@ while [ $# -gt 0 ]; do
       CLI_MODE="labwc"
       shift
       ;;
+    --print-mode)
+      # Dry-run: print the resolved mode and exit (host-testable).
+      PRINT_MODE=1
+      shift
+      ;;
     --force-fail)
       EXTRA_ARGS+=("--force-fail")
       shift
@@ -31,6 +37,9 @@ while [ $# -gt 0 ]; do
       ;;
   esac
 done
+
+# Binary the wrapper drives; overridable for device tests under /tmp.
+RABBIZ_DE="${RABBIZ_DE_BIN:-/usr/local/bin/rabbiz-de}"
 
 # --- XDG base dirs -------------------------------------------------------
 export LANG="${LANG:-C.UTF-8}"
@@ -74,28 +83,32 @@ resolve_mode() {
 }
 
 MODE="$(resolve_mode)"
+if [ "$PRINT_MODE" -eq 1 ]; then
+  printf '%s\n' "$MODE"
+  exit 0
+fi
 if [ "$MODE" = "labwc" ]; then
   exec /usr/local/bin/a21s-phone-session
 fi
 
-if [ ! -x /usr/local/bin/rabbiz-de ]; then
-  echo "a21s-session: /usr/local/bin/rabbiz-de not found; falling back to labwc" >&2
+if [ ! -x "$RABBIZ_DE" ]; then
+  echo "a21s-session: $RABBIZ_DE not found; falling back to labwc" >&2
   exec /usr/local/bin/a21s-phone-session
 fi
 
 # --- Clear wlroots/Mesa overrides & load contract ------------------------
+# The de-system contract (`rabbiz-de env --shell`) is the single authority for
+# XDG desktop vars, QT_*, XKB_* and the unset list (LD_PRELOAD, DRI_PRIME,
+# __EGL_VENDOR_LIBRARY_FILENAMES, QSG_RHI_BACKEND, RABBIZ_EXYNOS_*, WLR_*).
+# The pre-eval sweep keeps a stale contract from leaking in.
 unset LD_PRELOAD || true
 for v in $(compgen -v WLR_ || true); do
   unset "$v" || true
 done
 
 export LIBSEAT_BACKEND="${LIBSEAT_BACKEND:-seatd}"
-export XDG_CURRENT_DESKTOP="${XDG_CURRENT_DESKTOP:-Rabbiz}"
-export XDG_SESSION_DESKTOP="${XDG_SESSION_DESKTOP:-rabbiz-de}"
-export XDG_SESSION_TYPE="${XDG_SESSION_TYPE:-wayland}"
-export XKB_DEFAULT_LAYOUT="${XKB_DEFAULT_LAYOUT:-us,th}"
 
-eval "$(/usr/local/bin/rabbiz-de env --shell)"
+eval "$("$RABBIZ_DE" env --shell)"
 
 READY_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.ready"
 FAIL_FILE="${XDG_RUNTIME_DIR}/rabbiz-de.fail"
@@ -140,7 +153,7 @@ handle_child_exit() {
 }
 
 # --- Launch rabbiz-de ----------------------------------------------------
-/usr/local/bin/rabbiz-de \
+"$RABBIZ_DE" run \
   --stats-file "$STATS_FILE" \
   --stats-summary "$SUMMARY_FILE" \
   "${EXTRA_ARGS[@]}" &

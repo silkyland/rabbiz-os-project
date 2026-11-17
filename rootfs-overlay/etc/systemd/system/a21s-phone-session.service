@@ -41,14 +41,10 @@ Environment=LANG=C.UTF-8
 Environment=XDG_SESSION_TYPE=wayland
 # Force libseat onto the seatd backend (no logind seat-claim attempt).
 Environment=LIBSEAT_BACKEND=seatd
-# Software Qt Quick backend (wl_shm): exynos-drm lacks IOMMU for non-contiguous
-# Panfrost dmabufs on card0, so software Qt Quick avoids EGL dmabuf import failure.
-Environment=QT_QPA_PLATFORM=wayland
-Environment=QT_QUICK_BACKEND=software
-Environment=QT_QUICK_CONTROLS_MOBILE=1
-Environment=QT_QPA_PLATFORMTHEME=kde
-Environment=PLASMA_PLATFORM=phone:handset
-ExecStart=/usr/local/bin/a21s-phone-session
+# Qt/toolkit env is NOT set here: a21s-session sources the rabbiz-de env
+# contract (`rabbiz-de env --shell`) for the DE path, and a21s-phone-session
+# exports its own for the labwc path. The unit owns only seat/runtime vars.
+ExecStart=/usr/local/bin/a21s-session
 # Phone UX: if the compositor dies, bring the shell back instead of
 # stranding the user on a black screen.
 Restart=on-failure
