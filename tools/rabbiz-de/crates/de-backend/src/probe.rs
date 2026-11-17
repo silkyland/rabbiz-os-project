@@ -400,15 +400,19 @@ where
 
     let empty: [MemoryRenderBufferRenderElement<R>; 0] = [];
 
-    for _ in 0..PROBE_FRAMES {
-        compositor
-            .render_frame(
-                renderer,
-                &empty,
-                Color32F::new(0.086, 0.063, 0.102, 1.0),
-                FrameFlags::empty(),
-            )
+    for i in 0..PROBE_FRAMES {
+        let clear = if i % 2 == 0 {
+            Color32F::new(0.086, 0.063, 0.102, 1.0)
+        } else {
+            Color32F::new(0.090, 0.067, 0.106, 1.0)
+        };
+        let res = compositor
+            .render_frame(renderer, &empty, clear, FrameFlags::empty())
             .map_err(|err| format!("render_frame failed: {err:?}"))?;
+
+        if res.is_empty {
+            continue;
+        }
 
         compositor
             .queue_frame(())

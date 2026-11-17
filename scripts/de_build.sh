@@ -18,6 +18,6 @@ docker run --rm \
   -v "$ROOT_DIR":/w \
   -v rabbiz-de-cargo-cache:/usr/local/cargo/registry \
   -w /w/tools/rabbiz-de \
-  "${TARGET_DIR_ARG[@]}" \
+  ${TARGET_DIR_ARG[@]+"${TARGET_DIR_ARG[@]}"} \
   "$IMAGE" \
   /usr/local/cargo/bin/cargo build --release -p de-bin "$@"
