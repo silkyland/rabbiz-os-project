@@ -115,19 +115,19 @@ fi
 # --- mode resolution (M1-T6): the staged wrapper, a throwaway config dir.
 MODE_CFG="$CHECK/xdgcfg"
 mkdir -p "$MODE_CFG"; chown "$UID_G":"$UID_G" "$MODE_CFG"
-mode_ok=1
+mode_ok=0
 pm() { runuser -u gamer -- env XDG_CONFIG_HOME="$MODE_CFG" XDG_RUNTIME_DIR="$RT" \
         RABBIZ_DE_BIN="$DE" bash "$SESSION" --print-mode "$@" 2>/dev/null; }
 EXPECT_DEF=labwc; [ -e /etc/rabbiz-de/enabled ] && EXPECT_DEF=de
-[ "$(pm)" = "$EXPECT_DEF" ] || mode_ok=0
-[ "$(pm --de)" = "de" ] || mode_ok=0
-[ "$(pm --labwc)" = "labwc" ] || mode_ok=0
-[ "$(pm --de --labwc)" = "labwc" ] || mode_ok=0
-[ "$(pm --labwc --de)" = "labwc" ] || mode_ok=0
+[ "$(pm)" = "$EXPECT_DEF" ] || mode_ok=1
+[ "$(pm --de)" = "de" ] || mode_ok=1
+[ "$(pm --labwc)" = "labwc" ] || mode_ok=1
+[ "$(pm --de --labwc)" = "labwc" ] || mode_ok=1
+[ "$(pm --labwc --de)" = "labwc" ] || mode_ok=1
 echo de > "$MODE_CFG/rabbiz-de.mode.tmp"; mkdir -p "$MODE_CFG/rabbiz-de"; mv "$MODE_CFG/rabbiz-de.mode.tmp" "$MODE_CFG/rabbiz-de/mode"; chown -R "$UID_G":"$UID_G" "$MODE_CFG"
-[ "$(pm)" = "de" ] || mode_ok=0
+[ "$(pm)" = "de" ] || mode_ok=1
 echo bogus > "$MODE_CFG/rabbiz-de/mode"
-[ "$(pm)" = "labwc" ] || mode_ok=0
+[ "$(pm)" = "labwc" ] || mode_ok=1
 rm -f "$MODE_CFG/rabbiz-de/mode"
 record mode "$mode_ok"
 
