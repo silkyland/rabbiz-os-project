@@ -46,3 +46,61 @@ function visibleEntries(entries) {
     }
     return result
 }
+
+// Entries that ship a desktop file but are not launchable apps: KDE daemons/helpers,
+// control modules and developer tools. The drawer and the add-app picker share this list.
+var HELPER_IDS = [
+    "org.kde.kiod6",
+    "ktelnetservice6",
+    "org.kde.knewstuff-dialog6",
+    "org.kde.ksecretd",
+    "org.kde.kwalletd",
+    "cmake-gui",
+    "qv4l2",
+    "qvidcap",
+    "org.gnupg.pinentry-qt"
+]
+
+function idOf(entry) {
+    return entry && entry.id !== undefined ? String(entry.id) : ""
+}
+
+function nameOf(entry) {
+    return entry && entry.name ? String(entry.name) : ""
+}
+
+// A desktop file the user would recognise as an app (not a KCM, handler or helper).
+function isLaunchable(entry) {
+    var id = idOf(entry)
+    if (id.length === 0)
+        return false
+    if (id.indexOf("kcm_") === 0)
+        return false
+    if (id.indexOf("-geo-handler") >= 0)
+        return false
+    return HELPER_IDS.indexOf(id) < 0
+}
+
+// Name search; empty query matches everything. Case- and whitespace-insensitive.
+function matchesQuery(entry, query) {
+    var q = String(query === undefined || query === null ? "" : query).trim().toLowerCase()
+    if (q.length === 0)
+        return true
+    return nameOf(entry).toLowerCase().indexOf(q) >= 0
+}
+
+function sortByName(list) {
+    list.sort(function(a, b) { return nameOf(a).localeCompare(nameOf(b)) })
+    return list
+}
+
+// What a picker shows: one entry per preferred role, launchable only, search-filtered.
+function launcherEntries(entries, query) {
+    var visible = visibleEntries(entries ? entries : [])
+    var result = []
+    for (var i = 0; i < visible.length; ++i) {
+        if (isLaunchable(visible[i]) && matchesQuery(visible[i], query))
+            result.push(visible[i])
+    }
+    return sortByName(result)
+}

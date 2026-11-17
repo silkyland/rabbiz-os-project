@@ -7,7 +7,7 @@ import A21s.Desktop
 import A21s.Services
 import A21s.Widgets
 
-// Full-screen app drawer embedded in HomeScreen.
+// Full-screen app drawer embedded in DesktopView (~/Desktop).
 // Shares ShellState.drawerProgress (0..1) so interactive finger drag,
 // home parallax scale morph, search-pill flight, category-pill sliding morph,
 // and pull-down-to-close all stay 100% synchronized.
@@ -97,15 +97,7 @@ Item {
         var result = [];
         for (var i = 0; i < source.length; ++i) {
             var entry = source[i];
-            if (!entry || entry.noDisplay)
-                continue;
-            var eid = String(entry.id || "");
-            if (eid.indexOf("kcm_") === 0 || eid.indexOf("-geo-handler") >= 0
-                    || eid === "org.kde.kiod6" || eid === "ktelnetservice6"
-                    || eid === "org.kde.knewstuff-dialog6" || eid === "org.kde.ksecretd"
-                    || eid === "org.kde.kwalletd" || eid === "cmake-gui"
-                    || eid === "qv4l2" || eid === "qvidcap"
-                    || eid === "org.gnupg.pinentry-qt")
+            if (!entry || !AppCatalog.isLaunchable(entry))
                 continue;
             if (drawer.activeCategory !== "all" && drawer.categoryForEntry(entry) !== drawer.activeCategory)
                 continue;

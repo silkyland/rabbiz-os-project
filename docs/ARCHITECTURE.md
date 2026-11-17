@@ -65,12 +65,34 @@ Dependency direction is enforced by `scripts/check_shell_seams.mjs` (run `script
 | `Services` | singletons over system backends (NM, BlueZ, UPower, audio, telephony, Appearance writer); no UI | `Theme` | exists |
 | `Windowing` | launch flow, morph overlay, task switcher, app gesture layer, window policy by form factor | `Theme`, `Services`, `Widgets` | exists (M7.0 done) |
 | `Widgets` | small shared controls (tile, slider, icon) | `Theme`, `Services` | exists (M7.0 done) |
-| `Desktop` | wallpaper, icon grid, widgets, dock, app drawer | `Theme`, `Services`, `Widgets`, `Windowing` | exists (`HomeScreen`, `AppDrawer`) |
+| `Desktop` | wallpaper (`~/Desktop` view), icon grid, dock, app drawer, icon editing UI | `Theme`, `Services`, `Widgets`, `Windowing` | exists (`DesktopView`, `AppDrawer`, `DesktopLayout`, `AppIcon`) |
 | `Panels` | status bar, nav/gesture bar, shade, quick settings, lock screen, power menu, HUD, notifications UI | `Theme`, `Services`, `Widgets`, `Windowing` | exists |
 | `shell/apps/*` | **legacy** home-grown apps, deleted in M7.4 (Dialer/SMS last, after M6) | `Theme`, `Services`, `Widgets`, `Windowing` | exists, shrinking |
 
 Not checked (stated gap): `Loader { source: }` / `Qt.createComponent` paths and runtime string imports.
 Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge location, Settings split (spike S2).
+
+### `~/Desktop` icon surface (grid + dock)
+
+The home page is called `~/Desktop` (`DesktopLayout.surfaceLabel`) and behaves like the
+folder: the grid holds the desktop icons, the dock holds the pinned favourites. Both are
+user data, not a hardcoded list.
+
+| Layer | File | Responsibility |
+|---|---|---|
+| Model rules (no Qt) | `Desktop/IconLayout.js` | membership, order (`move`/`transfer`/`add`/`remove`), per-icon overrides, JSON parse/serialize. Node-tested by `shell/tests/iconlayout.test.mjs`. Dock caps at 5 (720 px panel). |
+| Persistence + resolution | `Desktop/DesktopLayout.qml` (singleton) | `~/.config/a21s-shell/desktop.json` (atomic write + file watcher), maps ids to `DesktopEntries` (installed entry, else seed placeholder), migrates saved ids to a newly installed alias. |
+| Surfaces | `Desktop/DesktopView.qml` (the `~/Desktop` PanelWindow) | grid + dock from `DesktopLayout.desktopIds`/`dockIds`, drag target math, drop hole/caret, `~/Desktop` location chip, `desktop` IPC hooks. |
+| Interaction + visuals | `Desktop/AppIcon.qml`, `DragGhost.qml`, `AddTile.qml`, `IconContextMenu.qml`, `IconEditor.qml`, `AppPicker.qml` | tap = launch, long-press (420 ms) or right-click = context menu, hold-and-drag = move (ghost follows the finger, source slot becomes a hole), tap-outside dismisses. |
+
+Invariants:
+- **The model is the source of truth for identity.** A delegate's `entryId` is the stored id;
+  every mutation goes through `DesktopLayout` (which debounces a write), then `Qt.callLater`
+  applies it after the input event unwinds (the model change destroys delegates).
+- **No live reorder during a drag**: the drag only previews the drop index; the model changes
+  once on release, so no Repeater delegate is destroyed while it owns the pointer.
+- **Overrides are scoped to the home surfaces** (`AppIcon.editable`): the app drawer keeps the
+  real app name/icon, and third-party apps are never restyled (`AppCatalog`, AGENTS.md).
 
 ## Decision records
 

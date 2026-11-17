@@ -273,8 +273,8 @@ screen's header clock gets the same tick via `LockScreen.tickClock()`.
 - `Panels/NotificationCard.qml` — `actionsEnabled` (default `true`).
 - `Panels/qmldir` — registers `LockScreen`.
 - `Desktop/AppIcon.qml` — bare artwork tiles + the shared unlock entrance.
-- `Panels/LockScreen.qml` / `Desktop/HomeScreen.qml` — minute-tick clock animation.
-- `Desktop/HomeScreen.qml` — arm/play the entrance from `ShellState.lockScreenOpen`.
+- `Panels/LockScreen.qml` / `Desktop/DesktopView.qml` — minute-tick clock animation.
+- `Desktop/DesktopView.qml` — arm/play the entrance from `ShellState.lockScreenOpen`.
 - `Theme.qml` — `onWallpaperFaint` / `onWallpaperLine` for ink and hairlines on
   the always-dark lock wallpaper (`shadeLine` flips to black in light mode).
 - This section + `docs/lock-screen-preview.png`.

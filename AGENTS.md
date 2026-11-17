@@ -65,8 +65,11 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 | Wrapper over a system backend (D-Bus, CLI, file) | `Services/<Concept>.qml` singleton, no UI | `Services/Network.qml` |
 | Design token | `Theme/Theme.qml` only; no literal colors elsewhere | `Theme/Theme.qml` |
 | App launch / morph / window policy logic | `Windowing/`; state logic in plain `.js` with a node test | `Windowing/LaunchFlow.js` + `tests/launchflow.test.mjs` |
-| Home surface (grid, dock, drawer, widgets) | `Desktop/` | `Desktop/HomeScreen.qml` |
+| Home surface (grid, dock, drawer, widgets) | `Desktop/` | `Desktop/DesktopView.qml` |
+| Icon layout / per-icon label+glyph (data, not UI) | `Desktop/DesktopLayout.qml` + `Desktop/IconLayout.js` | `Desktop/IconLayout.js` + `shell/tests/iconlayout.test.mjs` |
 | Status/nav bar, shade, quick settings, power, HUD | `Panels/` | `Panels/Shade.qml` |
 
 Shared controls: `Widgets/` (`MaterialIcon.qml`). Dependency direction: `Theme ← Services ← Widgets ← Windowing ← Desktop/Panels`; never sideways between Desktop and Panels. Do **not** add apps to `shell/apps/` (legacy, being replaced by real Linux apps — `docs/DESKTOP-SHELL.md`). Anti-homes: `utils`, `helpers`, `common`, `misc`, `_v2` — name the concept. Nothing fits? Propose the module, justify it by dependency direction, add a row and a rule in `scripts/check_shell_seams.mjs`.
-Vocabulary: *form factor* = handset/tablet/desktop; *desktop contract* = the appearance/env/portal settings every app obeys; *starting window* = shell-drawn morph overlay until the app's toplevel maps.
+Vocabulary: *form factor* = handset/tablet/desktop; *desktop contract* = the appearance/env/portal settings every app obeys; *starting window* = shell-drawn morph overlay until the app's toplevel maps; *~/Desktop* = the home page (icon grid + dock), named like the folder it represents.
+
+Icons on `~/Desktop` and in the dock are **user data**: membership, order and per-icon label/glyph live in `~/.config/a21s-shell/desktop.json` through `DesktopLayout` — never re-hardcode a home icon list in a view, and keep the ordering rules in `IconLayout.js` with its node test.

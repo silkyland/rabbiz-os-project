@@ -174,7 +174,7 @@ Evidence for doing it: Plasma Settings rendered light/default on our dark device
 | M7.0 split `Components` | **done** | Widgets/Windowing/Desktop/Panels; shell loads with no errors; home unchanged; seam checker green |
 | M7.1 launch slice | **done** | `quickshell ipc call launcher launch kalk` -> starting window -> real Kalk window -> state idle (2-3 s); same for kclock, index, marknote |
 | M7.2 desktop contract v1 | **done (apps)** | `a21s-appearance` + `Appearance` service write `A21s.colors`, `kdeglobals [Colors:*]`, gsettings; Kalk/KClock render the dark A21s palette. GTK/Chromium only follow `color-scheme` (not verified visually) |
-| M7.3 desktop surface | **not redesigned** | existing HomeScreen (clock, grid, dock, Steam card) kept; widgets/icons-on-desktop not built |
+| M7.3 desktop surface | **partly done** | home page renamed `~/Desktop` (`DesktopView`); icon grid + dock are user-editable (drag to reorder / move between surfaces, long-press menu: open, rename & icon, move, add, remove), persisted in `~/.config/a21s-shell/desktop.json`; widgets not built |
 | M7.4 swap base apps | **done** | home/drawer use `org.kde.*`; Calculator/Clock/Notes/Gallery/Files/Spotify QML + wrappers deleted (~4 k lines); Spotify removed entirely (owner request; Widevine is unavailable so the web player could not play anyway). Dialer/SMS/Settings QML kept (D1/ADR-6) |
 | M7.5 form factors | not started | only `handset` is in scope (D3) |
 | M7.6 close morph | not started | S1 says ScreencopyView is available, untested |

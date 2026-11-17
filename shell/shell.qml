@@ -18,7 +18,7 @@ ShellRoot {
         Power.start()
     }
     StatusBar {}
-    HomeScreen {}
+    DesktopView {}
     Shade {}
     NavBar {}
     EdgeBack {}

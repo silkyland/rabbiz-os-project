@@ -10,7 +10,7 @@ Exynos 850 / 2.8GB RAM / Mali-G52 Panfrost (GLES only — `QSG_RHI_BACKEND=openg
 a21s-phone-session.service ─ labwc (compositor)
   ├─ quickshell -p /usr/share/a21s-shell/shell.qml   (the shell, one process)
   │    ├─ StatusBar   WlrLayer.Top     44px, exclusive zone
-  │    ├─ HomeScreen  WlrLayer.Background  wallpaper+grid+drawer+switcher
+  │    ├─ DesktopView  WlrLayer.Background  ~/Desktop: wallpaper+icons+dock+drawer
   │    ├─ Shade       WlrLayer.Top     pull-down notifications+quick settings
   │    └─ NavBar      WlrLayer.Top     bottom 48px gesture strip
   ├─ app windows (quickshell -p / XWayland) — labwc window-rule: always maximize,
@@ -25,6 +25,22 @@ a21s-phone-session.service ─ labwc (compositor)
 - `A21s.Services` — singletons: `ShellState` (UI state), `Network` (nmcli),
   `Bluetooth` (bluetoothctl), `Brightness` (logind busctl), `Telephony`
   (ModemManager→demo fallback). **Contracts are frozen — extend, don't rename.**
+
+## `~/Desktop` (home) icon surface
+
+- `A21s.Desktop.DesktopLayout` (singleton) owns which apps are on the desktop grid and in
+  the dock, their order, and per-icon label/glyph overrides. It persists to
+  `~/.config/a21s-shell/desktop.json`; ordering rules are plain JS in `IconLayout.js`
+  (`shell/tests/iconlayout.test.mjs`).
+- `DesktopView.qml` is the `~/Desktop` surface (grid + hero deck + search + dock). Tap an
+  icon to launch it, **long-press (or right-click) for its menu** (open / rename & icon /
+  move to dock or desktop / add app / remove), **hold and drag to move** it — the tile lifts
+  into a ghost, the source slot becomes a hole, and the drop target is previewed (grid cell
+  outline or dock caret). The **+** tile at the end of the grid and in the dock adds an
+  installed app (`AppPicker`).
+- Overrides are scoped to the home surfaces: the drawer still shows the real app name/icon.
+- `quickshell ... ipc call desktop state|menu|action|edit|applyEdit|picker|pick|move|add|remove|reset|dragStart|dragTo|dragDrop`
+  drives the same paths for automation.
 
 ## Backend rules
 

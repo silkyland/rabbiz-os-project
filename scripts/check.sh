@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 node scripts/check_shell_seams.mjs          # real tree
 node shell/tests/appcatalog.test.mjs        # Preferred base apps and duplicate entries
+node shell/tests/iconlayout.test.mjs        # ~/Desktop + dock icon order/membership (no Qt, no device)
 node shell/tests/seams.test.mjs             # checker still fires on bad fixtures
 node shell/tests/launchflow.test.mjs        # LaunchFlow seam test (no Qt, no device)
 node shell/tests/gesture.test.mjs             # Gesture classifier (no Qt, no device)

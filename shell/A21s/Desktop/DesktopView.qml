@@ -9,10 +9,17 @@ import A21s.Services
 import A21s.Widgets
 import A21s.Windowing
 
-// Home screen — 720x1600 artwork wallpaper + parallax scale morph on drawer drag,
-// tappable morphing clock + telemetry At-a-Glance pill, 2x4 utility grid,
-// swipeable 3-card Hero Deck (MPRIS Media / System Boost),
-// flying Search pill morph, frosted dock, AppDrawer & AppLaunchMorph overlay.
+// ~/Desktop — the home page. 720x1600 artwork wallpaper, tappable morphing clock +
+// telemetry At-a-Glance pill, the editable desktop icon grid, the swipeable Hero Deck
+// (RabbizOS welcome / MPRIS Media / System Boost), flying Search pill morph, frosted
+// dock, AppDrawer & AppLaunchMorph overlay.
+//
+// The home page IS ~/Desktop (DesktopLayout.surfaceLabel): grid icons are the files on
+// the desktop, dock icons are the pinned favourites. Both surfaces are user-editable —
+// long-press an icon for its menu (open / rename / move / remove), hold and drag to
+// reorder or to move between grid and dock, and the "+" tile at the end of either
+// surface adds an installed app. Membership/order/overrides live in DesktopLayout.qml
+// (~/.config/a21s-shell/desktop.json); this file owns the surfaces and the interaction.
 PanelWindow {
     id: home
 
@@ -24,7 +31,9 @@ PanelWindow {
     }
     exclusionMode: ExclusionMode.Ignore
     WlrLayershell.layer: WlrLayer.Background
-    WlrLayershell.keyboardFocus: ShellState.drawerOpen
+    // The drawer, the icon editor and the add-app picker all own a text field.
+    readonly property bool typingOverlay: editorSheet.open || appPicker.open
+    WlrLayershell.keyboardFocus: (ShellState.drawerOpen || typingOverlay)
         ? WlrKeyboardFocus.OnDemand
         : WlrKeyboardFocus.None
     color: Theme.bg
@@ -154,6 +163,469 @@ PanelWindow {
         clockMorphAnim.restart()
     }
 
+
+    // ------------------------------------------------------------------
+    // ~/Desktop + dock editing
+    // ------------------------------------------------------------------
+    // The model is A21s.Desktop.DesktopLayout (ordering rules in IconLayout.js, host
+    // tested; persisted to ~/.config/a21s-shell/desktop.json). Everything below is the
+    // presentation layer: drag targets, the context menu, the editor and the picker.
+
+    // Bumped when the installed-app list changes so the icon models rebuild.
+    property int entryGeneration: 0
+
+    readonly property var desktopIcons: {
+        var gen = home.entryGeneration
+        var ids = DesktopLayout.desktopIds
+        var out = []
+        for (var i = 0; i < ids.length; ++i)
+            out.push(DesktopLayout.iconFor(ids[i]))
+        return out
+    }
+    readonly property var dockIcons: {
+        var gen = home.entryGeneration
+        var ids = DesktopLayout.dockIds
+        var out = []
+        for (var i = 0; i < ids.length; ++i)
+            out.push(DesktopLayout.iconFor(ids[i]))
+        return out
+    }
+
+    Connections {
+        target: DesktopEntries
+        function onApplicationsChanged() { home.entryGeneration += 1 }
+    }
+
+    // Context menu / editor / picker / drag state.
+    property var menuIcon: null          // AppIcon whose menu is open (null = closed)
+    property var editorId: ""            // entry id being renamed
+    property string editorAppName: ""
+    property bool dragActive: false
+    property var dragInfo: null          // { id, surface, index }
+    property string dropSurface: ""
+    property int dropIndex: -1
+    property rect dropHole: Qt.rect(0, 0, 0, 0)
+    property rect dockCaret: Qt.rect(0, 0, 0, 0)
+
+    function surfaceLabelFor(surface) {
+        return surface === "dock" ? DesktopLayout.dockLabel : DesktopLayout.surfaceLabel
+    }
+
+    function iconById(id) {
+        for (var i = 0; i < desktopRepeater.count; ++i) {
+            var a = desktopRepeater.itemAt(i)
+            if (a && a.entryId === id)
+                return a
+        }
+        for (var j = 0; j < dockRepeater.count; ++j) {
+            var b = dockRepeater.itemAt(j)
+            if (b && b.entryId === id)
+                return b
+        }
+        return null
+    }
+
+    // Apply a model change after the current input event has unwound: it creates /
+    // destroys Repeater delegates, and the delegate that owns the press handler may
+    // still be on the stack.
+    function commitLayout(fn) {
+        Qt.callLater(fn)
+    }
+
+    function closeIconMenu() {
+        home.menuIcon = null
+        iconMenu.open = false
+    }
+
+    function closeOverlays() {
+        closeIconMenu()
+        editorSheet.open = false
+        appPicker.open = false
+    }
+
+    function openIconMenu(icon, sx, sy, sw, sh) {
+        if (!icon)
+            return
+        editorSheet.open = false
+        appPicker.open = false
+        home.menuIcon = icon
+        var p = homeContent.mapFromItem(null, sx, sy)
+        iconMenu.anchorRect = Qt.rect(p.x, p.y, sw, sh)
+        iconMenu.target = {
+            id: icon.entryId,
+            name: icon.entryName,
+            materialIcon: icon.resolvedMaterialIcon,
+            iconUrl: icon.iconUrl,
+            surfaceLabel: surfaceLabelFor(icon.surface),
+            running: icon.isRunning
+        }
+        iconMenu.actions = menuActionsFor(icon)
+        iconMenu.open = true
+    }
+
+    function menuActionsFor(icon) {
+        var label = surfaceLabelFor(icon.surface)
+        var actions = [{ id: "open", label: "Open", icon: "play_arrow" }]
+        if (icon.isRunning)
+            actions.push({ id: "close", label: "Close", icon: "stop_circle" })
+        actions.push({ id: "edit", label: "Rename & icon", icon: "palette" })
+        if (icon.surface === "dock")
+            actions.push({ id: "toDesktop", label: "Move to " + DesktopLayout.surfaceLabel, icon: "desktop_windows" })
+        else
+            actions.push({ id: "toDock", label: "Move to " + DesktopLayout.dockLabel, icon: "dock",
+                           enabled: !DesktopLayout.dockFull })
+        actions.push({ id: "addApp", label: "Add app to " + label + "…", icon: "add" })
+        actions.push({ id: "remove", label: "Remove from " + label, icon: "delete_outline", danger: true })
+        return actions
+    }
+
+    function handleIconAction(action) {
+        var icon = home.menuIcon
+        if (!icon)
+            return
+        var surface = icon.surface
+        var id = icon.entryId
+        if (action === "open") {
+            closeIconMenu()
+            icon.triggerLaunch()
+            return
+        }
+        if (action === "close") {
+            var toplevel = icon.findRunningToplevel()
+            closeIconMenu()
+            if (toplevel)
+                toplevel.close()
+            return
+        }
+        if (action === "edit") {
+            openIconEditor(icon)
+            return
+        }
+        if (action === "addApp") {
+            closeIconMenu()
+            openAppPicker(surface)
+            return
+        }
+        closeIconMenu()
+        if (action === "toDock")
+            commitLayout(function() { DesktopLayout.transfer(surface, id, "dock", DesktopLayout.count("dock")) })
+        else if (action === "toDesktop")
+            commitLayout(function() { DesktopLayout.transfer(surface, id, "desktop", DesktopLayout.count("desktop")) })
+        else if (action === "remove")
+            commitLayout(function() { DesktopLayout.remove(surface, id) })
+    }
+
+    function openIconEditor(icon) {
+        closeIconMenu()
+        home.editorId = icon.entryId
+        home.editorAppName = icon.appName
+        editorSheet.begin({
+            id: icon.entryId,
+            surface: icon.surface,
+            surfaceLabel: surfaceLabelFor(icon.surface),
+            name: icon.entryName,
+            appName: icon.appName,
+            defaultIcon: icon.entryMaterialIcon,
+            overrideIcon: icon.overrideIcon,
+            iconUrl: icon.iconUrl
+        })
+    }
+
+    function applyIconEdit(label, iconName) {
+        var id = home.editorId
+        if (!id)
+            return
+        var text = String(label).trim()
+        var patch = { label: text === home.editorAppName ? "" : text, icon: String(iconName) }
+        commitLayout(function() { DesktopLayout.setOverride(id, patch) })
+    }
+
+    function resetIconEdit() {
+        var id = home.editorId
+        if (!id)
+            return
+        commitLayout(function() { DesktopLayout.clearOverride(id) })
+    }
+
+    function openAppPicker(surface) {
+        closeIconMenu()
+        appPicker.surface = surface
+        appPicker.surfaceLabel = surfaceLabelFor(surface)
+        appPicker.begin()
+    }
+
+    function addPickedApp(surface, entryId) {
+        commitLayout(function() { DesktopLayout.add(surface, entryId) })
+    }
+
+    // ---- drag targets ------------------------------------------------------
+    function scrollRectToContent(r) {
+        var p = homeContent.mapFromItem(null, r.x, r.y)
+        return Qt.rect(p.x, p.y, r.width, r.height)
+    }
+
+    function gridMetrics() {
+        var probe = desktopRepeater.count > 0 ? desktopRepeater.itemAt(0) : null
+        var cellW = probe ? probe.width : (Theme.iconApp - 4 + Theme.spaceM)
+        var cellH = probe ? probe.height : (Theme.iconApp - 4 + Theme.fontCaption + Theme.spaceS + 4)
+        return {
+            x: homeGridRow.x,
+            y: homeGridRow.y,
+            colStep: cellW + homeGridRow.columnSpacing,
+            rowStep: cellH + homeGridRow.rowSpacing,
+            w: cellW,
+            h: cellH,
+            cols: homeGridRow.columns
+        }
+    }
+
+    function gridCellRect(index) {
+        var m = gridMetrics()
+        return Qt.rect(m.x + (index % m.cols) * m.colStep,
+                       m.y + Math.floor(index / m.cols) * m.rowStep,
+                       m.w, m.h)
+    }
+
+    function gridIndexAt(sx, sy) {
+        var m = gridMetrics()
+        var p = homeContent.mapFromItem(null, sx, sy)
+        var col = Math.floor((p.x - m.x + m.colStep / 2) / m.colStep)
+        var row = Math.floor((p.y - m.y + m.rowStep / 2) / m.rowStep)
+        col = Math.max(0, Math.min(m.cols - 1, col))
+        row = Math.max(0, row)
+        return row * m.cols + col
+    }
+
+    function dockTileRects() {
+        var out = []
+        for (var i = 0; i < dockRepeater.count; ++i) {
+            var tile = dockRepeater.itemAt(i)
+            if (!tile)
+                continue
+            var p = tile.mapToItem(homeContent, 0, 0)
+            out.push({ index: i, x: p.x, y: p.y, w: tile.width, h: tile.height, cx: p.x + tile.width / 2 })
+        }
+        return out
+    }
+
+    // Dock icons that will stay put: the dragged one is not a drop candidate.
+    function dockOthers() {
+        var rects = dockTileRects()
+        var out = []
+        for (var i = 0; i < rects.length; ++i) {
+            if (home.dragInfo && home.dragInfo.surface === "dock" && rects[i].index === home.dragInfo.index)
+                continue
+            out.push(rects[i])
+        }
+        return out
+    }
+
+    function dockIndexAt(sx, sy) {
+        var p = homeContent.mapFromItem(null, sx, sy)
+        var others = dockOthers()
+        var n = 0
+        for (var i = 0; i < others.length; ++i) {
+            if (others[i].cx < p.x)
+                n++
+        }
+        return n
+    }
+
+    function desktopTargetIndex(sx, sy) {
+        var count = desktopRepeater.count
+        var idx = gridIndexAt(sx, sy)
+        var sameSurface = home.dragInfo && home.dragInfo.surface === "desktop"
+        return Math.max(0, Math.min(sameSurface ? count - 1 : count, idx))
+    }
+
+    // Two forgiving drop bands: the dock (plus a margin above it, because a thumb
+    // aiming at the dock usually lifts slightly high) and everything else on the
+    // desktop, which lands in the nearest grid cell (or appends past the last one).
+    function dropTargetAt(sx, sy) {
+        var p = homeContent.mapFromItem(null, sx, sy)
+        var dock = dockContainer.mapToItem(homeContent, 0, 0)
+        if (p.x >= dock.x - 24 && p.x <= dock.x + dockContainer.width + 24
+                && p.y >= dock.y - 28)
+            return { surface: "dock", index: dockIndexAt(sx, sy) }
+        return { surface: "desktop", index: desktopTargetIndex(sx, sy) }
+    }
+
+    function beginIconDrag(icon) {
+        if (!icon || !icon.entryId)
+            return
+        closeOverlays()
+        home.dragInfo = { id: icon.entryId, surface: icon.surface, index: icon.slotIndex }
+        home.dragActive = true
+        dragGhost.entry = icon.entry
+        dragGhost.surface = icon.surface
+        dragGhost.tileSize = icon.tileSize
+        var r = scrollRectToContent(icon.tileSceneRect())
+        dragGhost.x = r.x + r.width / 2 - dragGhost.width / 2
+        dragGhost.y = r.y + r.height - dragGhost.height
+        dragGhost.visible = true
+        home.dropSurface = ""
+        home.dropIndex = -1
+        home.updateDropHints()
+    }
+
+    function updateIconDrag(icon, sx, sy) {
+        if (!home.dragActive)
+            return
+        var p = homeContent.mapFromItem(null, sx, sy)
+        dragGhost.x = Math.max(Theme.spaceXS, Math.min(home.width - dragGhost.width - Theme.spaceXS,
+                                                       p.x - dragGhost.width / 2))
+        dragGhost.y = Math.max(Theme.statusBarHeight + Theme.spaceXS, p.y - dragGhost.height - 18)
+        var target = dropTargetAt(sx, sy)
+        home.dropSurface = target.surface
+        home.dropIndex = target.index
+        home.updateDropHints()
+    }
+
+    function updateDropHints() {
+        if (!home.dragActive || home.dropSurface === "") {
+            home.dropHole = Qt.rect(0, 0, 0, 0)
+            home.dockCaret = Qt.rect(0, 0, 0, 0)
+            return
+        }
+        if (home.dropSurface === "desktop") {
+            home.dropHole = gridCellRect(Math.max(0, Math.min(desktopRepeater.count, home.dropIndex)))
+            home.dockCaret = Qt.rect(0, 0, 0, 0)
+            return
+        }
+        var others = dockOthers()
+        var dockRect = dockContainer.mapToItem(homeContent, 0, 0)
+        var x
+        if (others.length === 0) {
+            x = dockRect.x + dockContainer.width / 2
+        } else if (home.dropIndex <= 0) {
+            x = others[0].x - dockRow.spacing / 2
+        } else if (home.dropIndex >= others.length) {
+            var last = others[others.length - 1]
+            x = last.x + last.w + dockRow.spacing / 2
+        } else {
+            x = (others[home.dropIndex - 1].x + others[home.dropIndex - 1].w + others[home.dropIndex].x) / 2
+        }
+        home.dockCaret = Qt.rect(x - 2, dockRect.y + dockContainer.height / 2 - 18, 4, 36)
+        home.dropHole = Qt.rect(0, 0, 0, 0)
+    }
+
+    function finishIconDrag(sx, sy) {
+        if (!home.dragActive)
+            return
+        var info = home.dragInfo
+        var target = dropTargetAt(sx, sy)
+        home.dragActive = false
+        home.dragInfo = null
+        home.dropSurface = ""
+        home.dropIndex = -1
+        home.dropHole = Qt.rect(0, 0, 0, 0)
+        home.dockCaret = Qt.rect(0, 0, 0, 0)
+        dragGhost.visible = false
+        if (!info || !target || target.surface === "")
+            return
+        var fromSurface = info.surface
+        var id = info.id
+        var toSurface = target.surface
+        var toIndex = target.index
+        commitLayout(function() {
+            if (toSurface === fromSurface) {
+                var from = DesktopLayout.indexOf(toSurface, id)
+                if (from >= 0 && from !== toIndex)
+                    DesktopLayout.move(toSurface, from, toIndex)
+            } else {
+                DesktopLayout.transfer(fromSurface, id, toSurface, toIndex)
+            }
+        })
+    }
+
+    function cancelIconDrag() {
+        home.dragActive = false
+        home.dragInfo = null
+        home.dropSurface = ""
+        home.dropIndex = -1
+        home.dropHole = Qt.rect(0, 0, 0, 0)
+        home.dockCaret = Qt.rect(0, 0, 0, 0)
+        dragGhost.visible = false
+    }
+
+    // Automation/debug surface, mirroring the drawer's: `quickshell ... ipc call desktop state`
+    IpcHandler {
+        target: "desktop"
+
+        function state(): string {
+            return JSON.stringify({
+                label: DesktopLayout.surfaceLabel,
+                desktop: DesktopLayout.desktopIds,
+                dock: DesktopLayout.dockIds,
+                overrides: DesktopLayout.overrides,
+                menuId: home.menuIcon ? home.menuIcon.entryId : "",
+                editor: editorSheet.open,
+                picker: appPicker.open,
+                drag: home.dragActive,
+                dropSurface: home.dropSurface,
+                dropIndex: home.dropIndex
+            })
+        }
+        function add(surface: string, id: string): string { DesktopLayout.add(surface, id); return "ok" }
+        function remove(surface: string, id: string): string { DesktopLayout.remove(surface, id); return "ok" }
+        function move(surface: string, from: int, to: int): string { DesktopLayout.move(surface, from, to); return "ok" }
+        function reset(): string { DesktopLayout.reset(); return "ok" }
+        function menu(id: string): string {
+            var icon = home.iconById(id)
+            if (!icon)
+                return "no icon " + id
+            var r = icon.tileSceneRect()
+            home.openIconMenu(icon, r.x, r.y, r.width, r.height)
+            return "menu " + id
+        }
+        function action(id: string): string { home.handleIconAction(id); return "ok" }
+        function edit(): string {
+            if (!home.menuIcon)
+                return "no icon"
+            home.openIconEditor(home.menuIcon)
+            return "edit"
+        }
+        function applyEdit(label: string, iconName: string): string { home.applyIconEdit(label, iconName); return "ok" }
+        function picker(surface: string): string { home.openAppPicker(surface); return "picker" }
+        function pick(id: string): string {
+            var surface = appPicker.surface
+            appPicker.open = false
+            home.addPickedApp(surface, id)
+            return "ok"
+        }
+        function close(): string { home.closeOverlays(); home.cancelIconDrag(); return "closed" }
+        // Drives the same drawer-swipe maths a finger on the wallpaper (or on an icon)
+        // goes through, so the gesture can be exercised without a touch device.
+        function swipe(dy: real): string {
+            homeContent.beginDrawerDrag(600)
+            homeContent.updateDrawerDrag(600 - dy)
+            homeContent.endDrawerDrag()
+            return ShellState.drawerOpen ? "open" : "closed"
+        }
+        function dragStart(id: string): string {
+            var icon = home.iconById(id)
+            if (!icon)
+                return "no icon " + id
+            icon.beginPickup()
+            home.beginIconDrag(icon)
+            return "dragging " + id
+        }
+        function dragTo(x: real, y: real): string {
+            var icon = home.dragInfo ? home.iconById(home.dragInfo.id) : null
+            if (!icon)
+                return "no drag"
+            home.updateIconDrag(icon, x, y)
+            return "at " + home.dropSurface + ":" + home.dropIndex
+        }
+        function dragDrop(x: real, y: real): string {
+            var icon = home.dragInfo ? home.iconById(home.dragInfo.id) : null
+            if (icon)
+                icon.endPickup()
+            home.finishIconDrag(x, y)
+            return "dropped"
+        }
+    }
+
     // The drawer samples this sibling scene, which excludes the drawer itself.
     Item {
         id: desktopScene
@@ -261,39 +733,62 @@ PanelWindow {
         opacity: 1.0 - 0.55 * ShellState.drawerProgress
 
         // ---- Gesture layer: interactive vertical drag to open the App Drawer ----
+        // The maths lives in these functions because a swipe that starts on an icon is
+        // forwarded here too (AppIcon.drawerGesture) instead of being swallowed by it.
+        property real drawerPressY: 0
+        property bool drawerDragging: false
+        property bool drawerFromIcon: false
+
+        function beginDrawerDrag(sceneY) {
+            drawerPressY = sceneY
+            drawerDragging = false
+        }
+        function updateDrawerDrag(sceneY) {
+            if (ShellState.drawerOpen)
+                return
+            var dy = drawerPressY - sceneY
+            if (dy > 14)
+                drawerDragging = true
+            if (drawerDragging) {
+                var range = Math.max(220, home.height * 0.45)
+                ShellState.drawerProgress = Math.max(0, Math.min(1, dy / range))
+            }
+        }
+        function endDrawerDrag() {
+            if (!drawerDragging)
+                return
+            drawerDragging = false
+            if (ShellState.drawerProgress > 0.24) {
+                ShellState.drawerOpen = true
+                appDrawer.snapTo(1.0)
+            } else {
+                ShellState.drawerOpen = false
+                appDrawer.snapTo(0.0)
+            }
+        }
+
+        // An icon only starts reporting after the finger has travelled far enough to be
+        // a swipe, so use its first sample as the press point (minus the threshold).
+        function iconDrawerGesture(sceneY) {
+            var y = homeContent.mapFromItem(null, 0, sceneY).y
+            if (!drawerFromIcon) {
+                drawerFromIcon = true
+                beginDrawerDrag(y + 24)
+            }
+            updateDrawerDrag(y)
+        }
+        function iconDrawerGestureEnded() {
+            drawerFromIcon = false
+            endDrawerDrag()
+        }
+
         MouseArea {
             id: homeSwipe
             anchors.fill: parent
-            property real pressY: 0
-            property bool draggingDrawer: false
-
-            onPressed: (mouse) => {
-                pressY = mouse.y
-                draggingDrawer = false
-            }
-            onPositionChanged: (mouse) => {
-                if (!pressed || ShellState.drawerOpen)
-                    return
-                var dy = pressY - mouse.y
-                if (dy > 14)
-                    draggingDrawer = true
-                if (draggingDrawer) {
-                    var range = Math.max(220, home.height * 0.45)
-                    ShellState.drawerProgress = Math.max(0, Math.min(1, dy / range))
-                }
-            }
-            onReleased: {
-                if (!draggingDrawer)
-                    return
-                draggingDrawer = false
-                if (ShellState.drawerProgress > 0.24) {
-                    ShellState.drawerOpen = true
-                    appDrawer.snapTo(1.0)
-                } else {
-                    ShellState.drawerOpen = false
-                    appDrawer.snapTo(0.0)
-                }
-            }
+            onPressed: (mouse) => homeContent.beginDrawerDrag(mouse.y)
+            onPositionChanged: (mouse) => { if (pressed) homeContent.updateDrawerDrag(mouse.y) }
+            onReleased: homeContent.endDrawerDrag()
+            onCanceled: homeContent.endDrawerDrag()
         }
 
         // ---- Clock (tap to morph style) + Date + Telemetry At-a-Glance Pill ----
@@ -502,39 +997,44 @@ PanelWindow {
             }
         }
 
-        // ---- Home Utility Apps Grid (2x4) ----
-        property var homeApps: []
-        property var dockApps: []
+        // ---- Location chip: this home page is ~/Desktop ----
+        Rectangle {
+            id: locationChip
+            anchors {
+                left: parent.left
+                top: parent.top
+                leftMargin: Theme.spaceM
+                topMargin: Theme.statusBarHeight + Theme.spaceXS
+            }
+            width: chipRow.implicitWidth + Theme.spaceM
+            height: 30
+            radius: Theme.radiusPill
+            color: Qt.alpha(Theme.surfaceHigh, 0.55)
+            border.width: 1
+            border.color: Qt.alpha(Theme.text, 0.10)
+            opacity: 0.92
 
-        function buildApps() {
-            homeApps = [
-                DesktopEntries.byId("org.kde.index")   || DesktopEntries.byId("org.kde.dolphin") || ({ id: "a21s-files", name: "Files", materialIcon: "folder" }),
-                DesktopEntries.byId("org.kde.merkuro.calendar") || DesktopEntries.byId("org.kde.merkuro") || DesktopEntries.byId("org.kde.calindori") || ({ id: "org.kde.calindori", name: "Calendar", materialIcon: "calendar_month" }),
-                DesktopEntries.byId("a21s-clock") || DesktopEntries.byId("org.kde.kclock") || ({ id: "a21s-clock", name: "Clock", materialIcon: "schedule" }),
-                DesktopEntries.byId("a21s-calculator") || DesktopEntries.byId("org.kde.kalk") || ({ id: "a21s-calculator", name: "Calculator", materialIcon: "calculate" }),
-                DesktopEntries.byId("org.kde.kweather") || ({ id: "org.kde.kweather", name: "Weather", materialIcon: "wb_sunny" }),
-                DesktopEntries.byId("a21s-notes") || DesktopEntries.byId("org.kde.marknote") || ({ id: "a21s-notes", name: "Notes", materialIcon: "edit_note" }),
-                DesktopEntries.byId("a21s-photos") || DesktopEntries.byId("org.kde.pix")     || DesktopEntries.byId("org.kde.koko") || ({ id: "a21s-gallery", name: "Gallery", materialIcon: "photo_library" }),
-                DesktopEntries.byId("a21s-terminal") || DesktopEntries.byId("org.kde.qmlkonsole") || ({ id: "org.kde.qmlkonsole", name: "Terminal", materialIcon: "terminal" })
-            ];
-            dockApps = [
-                DesktopEntries.byId("a21s-dialer")   || ({ id: "a21s-dialer", name: "Phone", materialIcon: "call" }),
-                DesktopEntries.byId("a21s-sms")      || ({ id: "a21s-sms", name: "Messages", materialIcon: "sms" }),
-                DesktopEntries.byId("a21s-settings") || ({ id: "a21s-settings", name: "Settings", materialIcon: "settings" }),
-                DesktopEntries.byId("google-chrome")
-                    || DesktopEntries.byId("com.google.Chrome")
-                    || DesktopEntries.byId("a21s-browser")
-                    || ({ id: "a21s-browser", name: "Browser", materialIcon: "language" })
-            ];
+            Row {
+                id: chipRow
+                anchors.centerIn: parent
+                spacing: Theme.spaceXS
+
+                MaterialIcon {
+                    name: "folder_open"
+                    size: Theme.fontStatus - 4
+                    color: Theme.onWallpaperDim
+                }
+                Text {
+                    text: DesktopLayout.surfaceLabel
+                    color: Theme.onWallpaperDim
+                    font.pixelSize: Theme.fontStatus - 3
+                    font.family: Theme.fontFamily
+                    font.weight: Font.Medium
+                }
+            }
         }
 
-        Component.onCompleted: buildApps()
-
-        Connections {
-            target: DesktopEntries
-            function onApplicationsChanged() { homeContent.buildApps(); }
-        }
-
+        // ---- ~/Desktop icon grid (user-editable: hold to drag, long-press for menu) ----
         Grid {
             id: homeGridRow
             readonly property real cellW: Theme.iconApp - 4 + Theme.spaceM
@@ -550,17 +1050,36 @@ PanelWindow {
             rowSpacing: Theme.spaceL
 
             Repeater {
-                model: homeContent.homeApps
+                id: desktopRepeater
+                model: home.desktopIcons
                 delegate: AppIcon {
+                    id: gridIcon
                     required property var modelData
+                    required property int index
                     tileSize: Theme.iconApp - 4
                     width: homeGridRow.cellW
                     height: tileSize + Theme.fontCaption + Theme.spaceS + 4
                     entry: modelData
+                    surface: "desktop"
+                    slotIndex: index
                     labelVisible: true
+                    menuOpen: home.menuIcon === gridIcon
                     entranceKey: home.unlockEntranceKey
                     entranceArmKey: home.entranceArmKey
+                    onMenuRequested: (sx, sy, sw, sh) => home.openIconMenu(gridIcon, sx, sy, sw, sh)
+                    onDragStarted: home.beginIconDrag(gridIcon)
+                    onDragMoved: (sx, sy) => home.updateIconDrag(gridIcon, sx, sy)
+                    onDragDropped: (sx, sy) => home.finishIconDrag(sx, sy)
+                    onDragCancelled: home.cancelIconDrag()
+                    onDrawerGesture: (sceneY) => homeContent.iconDrawerGesture(sceneY)
+                    onDrawerGestureEnded: homeContent.iconDrawerGestureEnded()
                 }
+            }
+
+            AddTile {
+                tileSize: Theme.iconApp - 4
+                labelText: "Add app"
+                onTapped: home.openAppPicker("desktop")
             }
         }
 
@@ -1119,23 +1638,112 @@ PanelWindow {
             border.color: Theme.glassBorder
 
             Row {
+                id: dockRow
                 anchors.centerIn: parent
-                spacing: Theme.spaceL
+                // Five favourites plus the add tile still fit in the 680 px dock.
+                spacing: home.dockIcons.length >= 4 ? Theme.spaceS : Theme.spaceL
 
                 Repeater {
-                    model: homeContent.dockApps
+                    id: dockRepeater
+                    model: home.dockIcons
                     delegate: AppIcon {
+                        id: dockIcon
                         required property var modelData
+                        required property int index
                         tileSize: Theme.iconApp - 8
                         width: tileSize + Theme.spaceS
                         height: tileSize + 8
                         entry: modelData
+                        surface: "dock"
+                        slotIndex: index
                         labelVisible: false
+                        menuOpen: home.menuIcon === dockIcon
                         entranceKey: home.unlockEntranceKey
                         entranceArmKey: home.entranceArmKey
+                        onMenuRequested: (sx, sy, sw, sh) => home.openIconMenu(dockIcon, sx, sy, sw, sh)
+                        onDragStarted: home.beginIconDrag(dockIcon)
+                        onDragMoved: (sx, sy) => home.updateIconDrag(dockIcon, sx, sy)
+                        onDragDropped: (sx, sy) => home.finishIconDrag(sx, sy)
+                        onDragCancelled: home.cancelIconDrag()
+                        onDrawerGesture: (sceneY) => homeContent.iconDrawerGesture(sceneY)
+                        onDrawerGestureEnded: homeContent.iconDrawerGestureEnded()
+                    }
+                }
+
+                Item {
+                    width: dockAddTile.implicitWidth
+                    height: Theme.iconApp - 8 + 8
+                    // A full dock has no room; the icon menu's "Move to Dock" explains why.
+                    visible: !DesktopLayout.dockFull
+
+                    AddTile {
+                        id: dockAddTile
+                        compact: true
+                        anchors.centerIn: parent
+                        onTapped: home.openAppPicker("dock")
                     }
                 }
             }
+        }
+
+        // ---- Editing overlays ---------------------------------------------------
+        // Drop affordances: the source tile fades to a hole; these show where it lands.
+        Rectangle {
+            id: gridDropHole
+            visible: home.dragActive && home.dropSurface === "desktop" && home.dropHole.width > 0
+            x: home.dropHole.x
+            y: home.dropHole.y
+            width: home.dropHole.width
+            height: home.dropHole.height
+            radius: Theme.radiusM + 4
+            color: Qt.alpha(ShellPrefs.accentColor, 0.10)
+            border.width: 2
+            border.color: Qt.alpha(ShellPrefs.accentColor, 0.55)
+            z: 6
+        }
+
+        Rectangle {
+            id: dockDropCaret
+            visible: home.dragActive && home.dropSurface === "dock"
+            x: home.dockCaret.x
+            y: home.dockCaret.y
+            width: 4
+            height: 36
+            radius: 2
+            color: ShellPrefs.accentColor
+            z: 8
+        }
+
+        DragGhost {
+            id: dragGhost
+            z: 40
+        }
+
+        IconContextMenu {
+            id: iconMenu
+            anchors.fill: parent
+            z: 60
+            onActionTriggered: (action) => home.handleIconAction(action)
+            onDismissed: home.closeIconMenu()
+        }
+
+        IconEditor {
+            id: editorSheet
+            anchors.fill: parent
+            z: 61
+            backdropSource: wallpaperScene
+            onApplied: (label, iconName) => home.applyIconEdit(label, iconName)
+            onResetRequested: home.resetIconEdit()
+        }
+
+        AppPicker {
+            id: appPicker
+            anchors.fill: parent
+            z: 62
+            backdropSource: wallpaperScene
+            existingIds: appPicker.surface === "dock" ? DesktopLayout.dockIds : DesktopLayout.desktopIds
+            full: appPicker.surface === "dock" ? DesktopLayout.dockFull : false
+            onPicked: (entryId) => home.addPickedApp(appPicker.surface, entryId)
         }
     }
 
@@ -1159,7 +1767,18 @@ PanelWindow {
 
     Connections {
         target: ShellState
-        function onGoHome() { ShellState.drawerOpen = false; }
+        function onGoHome() {
+            ShellState.drawerOpen = false
+            home.closeOverlays()
+            home.cancelIconDrag()
+        }
+        // The drawer is the app catalog: opening it dismisses any icon editing UI.
+        function onDrawerOpenChanged() {
+            if (ShellState.drawerOpen) {
+                home.closeOverlays()
+                home.cancelIconDrag()
+            }
+        }
     }
 
 }

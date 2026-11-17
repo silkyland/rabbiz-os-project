@@ -30,7 +30,7 @@ apps/kit/            shared components — LEAD owns, agents must not edit
 apps/<app>/<App>.qml one app — exactly one agent owns the whole directory
 rootfs-overlay/usr/local/bin/a21s-<app>        wrappers — LEAD
 rootfs-overlay/usr/share/applications/a21s-<app>.desktop  entries — LEAD
-shell/A21s/Desktop/HomeScreen.qml (home/dock lists)       LEAD
+shell/A21s/Desktop/IconLayout.js (home/dock seed lists)      LEAD
 scripts/deploy_shell.sh (apps/ -> /usr/share/a21s-apps/)  LEAD
 ```
 
@@ -85,5 +85,5 @@ the entry belonged to maui-pix). All had no dependents. The home grid's `byId("o
 apps for Clock/Calculator/Notes; Gallery and Terminal fall back to ids that no longer existed, so
 two `NoDisplay=true` compatibility entries were added: `a21s-gallery.desktop` (→ `a21s-photos`)
 and `org.kde.qmlkonsole.desktop` (→ `a21s-terminal`). Replace them with real ids the next time
-`HomeScreen.qml` is free to edit (another task was editing it), then delete the shims.
+`IconLayout.js` (the seed lists) is free to edit, then delete the shims; `DesktopLayout` migrates saved ids to the installed alias.
 

@@ -18,4 +18,16 @@ assert.deepEqual(ids([null, entry(''), entry('ai.opencode'), entry('ai.opencode'
 assert.deepEqual(ids([]), []);
 const native = ['a21s-clock', 'a21s-calculator', 'a21s-notes', 'a21s-music', 'a21s-terminal', 'a21s-photos'];
 assert.deepEqual(ids(native.map(id => entry(id)).concat(['org.kde.kclock', 'org.kde.kalk', 'org.kde.marknote', 'org.kde.elisa', 'org.kde.qmlkonsole', 'org.kde.koko'].map(id => entry(id)))), native);
+// Launcher/picker view: helpers are not apps, search matches names, order is by name.
+const names = list => Array.from(list, e => e.name);
+assert.deepEqual(Array.from(context.launcherEntries([
+    entry('org.kde.kiod6'), entry('kcm_bad'), entry('foo-geo-handler'), entry('a21s-clock'), entry('xterm')
+]), e => e.id), ['a21s-clock', 'xterm']);
+assert.deepEqual(Array.from(context.launcherEntries([
+    entry('a21s-clock', { name: 'Clock' }), entry('a21s-calculator', { name: 'Calc' }), entry('a21s-notes', { name: 'Notes' })
+], 'l'), e => e.name), ['Calc', 'Clock']);
+assert.deepEqual(Array.from(context.launcherEntries([entry('a'), entry('b')], '   '), e => e.id), ['a', 'b']);
+assert.deepEqual(names(context.sortByName([entry('b', { name: 'Bravo' }), entry('a', { name: 'Alpha' })])), ['Alpha', 'Bravo']);
+assert.equal(context.matchesQuery(entry('x', { name: 'Google Chrome' }), 'chrome'), true);
+assert.equal(context.matchesQuery(entry('x', { name: 'Google Chrome' }), 'firefox'), false);
 console.log('app catalog: preferred apps, fallbacks, hidden entries and duplicate IDs: ok');
