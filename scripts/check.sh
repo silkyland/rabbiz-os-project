@@ -18,3 +18,8 @@ python3 -B -m unittest discover -s tools/qt-scanout/tests  # Mesa version gate (
 python3 -B tests/test_holdmenu.py                           # Vol Down + Power hold-to-menu (no evdev, no device)
 python3 -B tests/test_volume_keys.py                       # Actual key loop with deterministic evdev events
 node shell/tests/chargingevents.test.mjs                    # Stable charging connection notifications
+
+# rabbiz-de host slice: seams, tests and the brand-frame render.
+if [ -f tools/rabbiz-de/Cargo.toml ] && command -v cargo >/dev/null 2>&1; then
+  ./scripts/de_test_host.sh
+fi

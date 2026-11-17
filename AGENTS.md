@@ -84,6 +84,8 @@ Vocabulary: *form factor* = handset/tablet/desktop; *desktop contract* = the app
 | A screen (boot, home, lock, shade, settings) | `crates/de-ui/src/<screen>.rs`, registered in `lib.rs` | `crates/de-ui/src/boot.rs` |
 | Host runner, CLI parsing, wiring | `crates/de-sim/src/` | `crates/de-sim/src/main.rs` |
 | Unit test | Same file as the code (`#[cfg(test)]`) | `crates/de-ui/src/boot.rs` |
-| End-to-end test | `crates/de-sim/tests/` | — |
+| End-to-end test | `crates/de-sim/tests/` | `crates/de-sim/tests/png.rs` |
+
+A new screen touches `crates/de-ui/src/<screen>.rs`, `de-ui/src/lib.rs`, the scene dispatch in `crates/de-sim/src/main.rs`, and the scene loop in `scripts/de_test_host.sh`; the module map is `docs/ARCHITECTURE.md`.
 
 Dependency direction: `de-api ← de-design ← de-ui ← de-sim`, and `de-api ← de-paint ← de-sim`. A screen never imports tiny-skia/cosmic-text/Wayland; paint never imports a screen. Never add `utils`, `helpers`, `common`, `misc`, `core`, or a second screen folder for one file. Tests stay with their code. Nothing fits? Propose a crate, justify it against this direction, add a row and an `ALLOWED` entry in `tools/rabbiz-de/scripts/check_seams.py`.
