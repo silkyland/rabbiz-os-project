@@ -124,7 +124,10 @@ pub fn load_desktop_dir(dir: &Path) -> Vec<DesktopEntry> {
 }
 
 fn parse_bool(val: &str) -> bool {
-    matches!(val.trim().to_ascii_lowercase().as_str(), "true" | "1" | "yes")
+    matches!(
+        val.trim().to_ascii_lowercase().as_str(),
+        "true" | "1" | "yes"
+    )
 }
 
 #[cfg(test)]

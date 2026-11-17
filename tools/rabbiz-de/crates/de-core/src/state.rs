@@ -104,7 +104,11 @@ pub fn renderer_label(kind: RendererKind) -> &'static str {
     }
 }
 
-pub fn choose_initial_renderer(choice: RendererChoice, require_gl: bool, cma_kb: u64) -> RendererKind {
+pub fn choose_initial_renderer(
+    choice: RendererChoice,
+    require_gl: bool,
+    cma_kb: u64,
+) -> RendererKind {
     if require_gl {
         return RendererKind::Gl;
     }
@@ -188,7 +192,11 @@ mod tests {
             scenario: "m1-calc".to_string(),
             duration_ms: 5000,
             frames: 12,
-            cpu_ms: CpuStats { p50: 1.0, p95: 2.0, max: 3.0 },
+            cpu_ms: CpuStats {
+                p50: 1.0,
+                p95: 2.0,
+                max: 3.0,
+            },
             gpu_ms: None,
             missed_frames: 0,
             rss_kb_peak: 100,
@@ -211,7 +219,11 @@ mod tests {
         let line = FrameStatsLine {
             t_ms: 1000,
             frames: 3,
-            cpu_ms: CpuStats { p50: 1.0, p95: 2.0, max: 3.0 },
+            cpu_ms: CpuStats {
+                p50: 1.0,
+                p95: 2.0,
+                max: 3.0,
+            },
             gpu_ms: None,
             visible_px: 720 * 1600,
             layers: 4,

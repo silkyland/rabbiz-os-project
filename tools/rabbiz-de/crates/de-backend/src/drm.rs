@@ -1,8 +1,8 @@
 use std::os::unix::io::OwnedFd;
 
 use serde::Serialize;
-use smithay::backend::allocator::Fourcc as DrmFourcc;
 use smithay::backend::allocator::gbm::{GbmAllocator, GbmBufferFlags, GbmDevice};
+use smithay::backend::allocator::Fourcc as DrmFourcc;
 use smithay::backend::drm::compositor::DrmCompositor;
 use smithay::backend::drm::exporter::gbm::GbmFramebufferExporter;
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmDeviceNotifier, DrmNode, DrmSurface};
@@ -11,12 +11,8 @@ use smithay::reexports::drm::control::{
 };
 use smithay::utils::{Buffer as BufferCoords, DeviceFd, Size};
 
-pub type BackendDrmCompositor = DrmCompositor<
-    GbmAllocator<DrmDeviceFd>,
-    GbmFramebufferExporter<DrmDeviceFd>,
-    (),
-    DrmDeviceFd,
->;
+pub type BackendDrmCompositor =
+    DrmCompositor<GbmAllocator<DrmDeviceFd>, GbmFramebufferExporter<DrmDeviceFd>, (), DrmDeviceFd>;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PlaneInfo {
@@ -47,9 +43,7 @@ pub struct DrmOutputSetup {
     pub raw_formats: Vec<DrmFourcc>,
 }
 
-pub fn open_drm_device(
-    fd: OwnedFd,
-) -> Result<(DrmDevice, DrmDeviceNotifier, DrmDeviceFd), String> {
+pub fn open_drm_device(fd: OwnedFd) -> Result<(DrmDevice, DrmDeviceNotifier, DrmDeviceFd), String> {
     let drm_fd = DrmDeviceFd::new(DeviceFd::from(fd));
     let (device, notifier) = DrmDevice::new(drm_fd.clone(), false)
         .map_err(|err| format!("DrmDevice::new failed: {err}"))?;

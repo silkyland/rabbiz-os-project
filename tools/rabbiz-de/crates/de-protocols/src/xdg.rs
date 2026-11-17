@@ -37,8 +37,7 @@ impl XdgShellHandler for ProtocolState {
         // land offscreen (menus/dropdowns get slide/flip adjustments applied
         // per xdg_positioner.constraint_adjustment).
         let (w, h) = self.output_size;
-        let bounds: Rectangle<i32, smithay::utils::Logical> =
-            Rectangle::from_size((w, h).into());
+        let bounds: Rectangle<i32, smithay::utils::Logical> = Rectangle::from_size((w, h).into());
         let geometry = positioner.get_unconstrained_geometry(bounds);
         surface.with_pending_state(|state| {
             state.geometry = geometry;
@@ -69,8 +68,7 @@ impl XdgShellHandler for ProtocolState {
         token: u32,
     ) {
         let (w, h) = self.output_size;
-        let bounds: Rectangle<i32, smithay::utils::Logical> =
-            Rectangle::from_size((w, h).into());
+        let bounds: Rectangle<i32, smithay::utils::Logical> = Rectangle::from_size((w, h).into());
         let geometry = positioner.get_unconstrained_geometry(bounds);
         surface.with_pending_state(|state| {
             state.geometry = geometry;

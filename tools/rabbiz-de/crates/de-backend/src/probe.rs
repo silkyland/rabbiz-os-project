@@ -5,9 +5,9 @@ use smithay::backend::allocator::gbm::GbmDevice;
 use smithay::backend::drm::compositor::FrameFlags;
 use smithay::backend::drm::{DrmDevice, DrmDeviceFd, DrmEvent};
 use smithay::backend::egl::{EGLContext, EGLDisplay};
+use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::pixman::PixmanRenderer;
-use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
 use smithay::backend::renderer::{Bind, Color32F, ImportDma, Renderer};
 use smithay::reexports::calloop::EventLoop;
 
@@ -220,15 +220,18 @@ pub fn run_probe(require_gl: bool) -> (ProbeReport, i32) {
         last_error: None,
     };
 
-    if let Err(err) = event_loop.handle().insert_source(notifier, |event, _, st| match event {
-        DrmEvent::VBlank(_) => {
-            st.vblank_times.push(Instant::now());
-            st.compositor_ready = true;
-        }
-        DrmEvent::Error(e) => {
-            st.last_error = Some(format!("DRM event error: {e}"));
-        }
-    }) {
+    if let Err(err) = event_loop
+        .handle()
+        .insert_source(notifier, |event, _, st| match event {
+            DrmEvent::VBlank(_) => {
+                st.vblank_times.push(Instant::now());
+                st.compositor_ready = true;
+            }
+            DrmEvent::Error(e) => {
+                st.last_error = Some(format!("DRM event error: {e}"));
+            }
+        })
+    {
         let msg = format!("insert DRM notifier failed: {err}");
         errors.push(msg.clone());
         return (
@@ -306,7 +309,11 @@ pub fn run_probe(require_gl: bool) -> (ProbeReport, i32) {
     };
 
     let exit_code = if require_gl {
-        if gl_probe.ok { 0 } else { 1 }
+        if gl_probe.ok {
+            0
+        } else {
+            1
+        }
     } else if gl_probe.ok || soft_probe.ok {
         0
     } else {
@@ -354,8 +361,7 @@ fn probe_gl(
         .unwrap_or_else(|_| "unknown".to_string());
 
     let formats: Vec<_> = renderer.dmabuf_formats().into_iter().collect();
-    let mut compositor =
-        create_surface_and_compositor(drm, drm_fd, gbm, setup, formats)?;
+    let mut compositor = create_surface_and_compositor(drm, drm_fd, gbm, setup, formats)?;
 
     let interval = run_100_clear_frames(&mut compositor, &mut renderer, event_loop, state)?;
     Ok((gl_renderer_name, egl_version, interval))
@@ -376,8 +382,7 @@ fn probe_soft(
     format_names.sort();
     format_names.dedup();
 
-    let mut compositor =
-        create_surface_and_compositor(drm, drm_fd, gbm, setup, formats)?;
+    let mut compositor = create_surface_and_compositor(drm, drm_fd, gbm, setup, formats)?;
 
     let interval = run_100_clear_frames(&mut compositor, &mut renderer, event_loop, state)?;
     Ok((format_names, interval))

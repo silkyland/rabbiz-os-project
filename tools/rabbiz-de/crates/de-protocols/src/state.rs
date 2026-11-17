@@ -305,23 +305,19 @@ impl CompositorHandler for ProtocolState {
         // Toplevel first-commit mapping: the window only enters `space`
         // once the client attached a real buffer, so the shell bar and
         // focus never target a toplevel with nothing to show.
-        if let Some(pos) = self
-            .uncommitted_windows
-            .iter()
-            .position(|w| {
-                w.toplevel()
-                    .map(|t| t.wl_surface() == surface)
-                    .unwrap_or(false)
-            })
-        {
+        if let Some(pos) = self.uncommitted_windows.iter().position(|w| {
+            w.toplevel()
+                .map(|t| t.wl_surface() == surface)
+                .unwrap_or(false)
+        }) {
             // The buffer assignment was just consumed into the renderer
             // surface state by `on_commit_buffer_handler` — read it there
             // (same check smithay's xdg post_commit_hook performs).
-            let has_buffer = smithay::backend::renderer::utils::with_renderer_surface_state(
-                surface,
-                |state| state.buffer().is_some(),
-            )
-            .unwrap_or(false);
+            let has_buffer =
+                smithay::backend::renderer::utils::with_renderer_surface_state(surface, |state| {
+                    state.buffer().is_some()
+                })
+                .unwrap_or(false);
             if has_buffer {
                 let window = self.uncommitted_windows.swap_remove(pos);
                 self.space.map_element(window, (0, 0), true);

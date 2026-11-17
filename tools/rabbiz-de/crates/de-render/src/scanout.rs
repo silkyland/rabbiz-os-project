@@ -89,14 +89,12 @@ mod tests {
         let a = Id::new();
         let b = Id::new();
         let c = Id::new();
-        states.states.insert(
-            a.clone(),
-            state(RenderElementPresentationState::ZeroCopy),
-        );
-        states.states.insert(
-            b.clone(),
-            state(RenderElementPresentationState::Skipped),
-        );
+        states
+            .states
+            .insert(a.clone(), state(RenderElementPresentationState::ZeroCopy));
+        states
+            .states
+            .insert(b.clone(), state(RenderElementPresentationState::Skipped));
         states.states.insert(
             c.clone(),
             state(RenderElementPresentationState::Rendering { reason: None }),

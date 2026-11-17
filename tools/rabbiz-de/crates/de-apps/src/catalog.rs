@@ -74,10 +74,7 @@ pub fn visible_entries(entries: &[DesktopEntry]) -> Vec<DesktopEntry> {
     let mut result = Vec::new();
     for (idx, candidate) in entries.iter().enumerate() {
         let id = candidate.id.as_str();
-        if available.get(id).copied() != Some(idx)
-            || suppressed.contains(id)
-            || !seen.insert(id)
-        {
+        if available.get(id).copied() != Some(idx) || suppressed.contains(id) || !seen.insert(id) {
             continue;
         }
         result.push(candidate.clone());
@@ -116,10 +113,7 @@ mod tests {
     }
 
     fn ids(entries: &[DesktopEntry]) -> Vec<String> {
-        visible_entries(entries)
-            .into_iter()
-            .map(|e| e.id)
-            .collect()
+        visible_entries(entries).into_iter().map(|e| e.id).collect()
     }
 
     #[test]
@@ -140,7 +134,10 @@ mod tests {
         );
         assert_eq!(ids(&[entry("a21s-files")]), vec!["a21s-files"]);
         assert_eq!(
-            ids(&[entry("org.kde.calindori"), entry("org.kde.merkuro.calendar")]),
+            ids(&[
+                entry("org.kde.calindori"),
+                entry("org.kde.merkuro.calendar")
+            ]),
             vec!["org.kde.merkuro.calendar"]
         );
     }
@@ -174,12 +171,7 @@ mod tests {
         let mut other = entry("other");
         other.name = "ai.opencode".to_string();
         assert_eq!(
-            ids(&[
-                entry(""),
-                entry("ai.opencode"),
-                entry("ai.opencode"),
-                other,
-            ]),
+            ids(&[entry(""), entry("ai.opencode"), entry("ai.opencode"), other,]),
             vec!["ai.opencode", "other"]
         );
         assert!(ids(&[]).is_empty());
@@ -203,7 +195,11 @@ mod tests {
             "org.kde.qmlkonsole",
             "org.kde.koko",
         ];
-        let all: Vec<DesktopEntry> = native.iter().chain(kde.iter()).map(|id| entry(id)).collect();
+        let all: Vec<DesktopEntry> = native
+            .iter()
+            .chain(kde.iter())
+            .map(|id| entry(id))
+            .collect();
         assert_eq!(ids(&all), native);
     }
 }

@@ -5,15 +5,13 @@ use smithay::wayland::selection::data_device::{
     ClientDndGrabHandler, DataDeviceHandler, DataDeviceState, ServerDndGrabHandler,
 };
 use smithay::wayland::selection::ext_data_control::{
-    DataControlHandler as ExtDataControlHandler,
-    DataControlState as ExtDataControlState,
+    DataControlHandler as ExtDataControlHandler, DataControlState as ExtDataControlState,
 };
 use smithay::wayland::selection::primary_selection::{
     PrimarySelectionHandler, PrimarySelectionState,
 };
 use smithay::wayland::selection::wlr_data_control::{
-    DataControlHandler as WlrDataControlHandler,
-    DataControlState as WlrDataControlState,
+    DataControlHandler as WlrDataControlHandler, DataControlState as WlrDataControlState,
 };
 use smithay::wayland::selection::{SelectionHandler, SelectionSource, SelectionTarget};
 use smithay::{
