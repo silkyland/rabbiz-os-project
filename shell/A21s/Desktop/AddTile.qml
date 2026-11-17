@@ -1,5 +1,6 @@
 import QtQuick
 import A21s.Theme
+import A21s.Services
 import A21s.Widgets
 
 // "Add app" affordance at the end of the ~/Desktop grid and inside the dock.
