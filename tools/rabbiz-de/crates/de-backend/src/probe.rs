@@ -99,9 +99,9 @@ pub fn run(require_gl: bool) -> Result<(serde_json::Value, bool), SessionError> 
             gl.egl_version = setup.egl_version.clone();
             if let Some(display) = setup.egl_display.clone() {
                 match de_render::gl::create(&display) {
-                    Ok(r) => {
+                    Ok(mut r) => {
+                        gl.renderer = Some(gl_renderer_name(&mut r));
                         gles = Some(r);
-                        gl.renderer = Some(gl_renderer_name(&display));
                         gl.ok = true;
                     }
                     Err(e) => {
@@ -143,10 +143,33 @@ pub fn run(require_gl: bool) -> Result<(serde_json::Value, bool), SessionError> 
 
     let drm_report = build_drm_report(&mut setup, &output)?;
 
-    // Frame pacing measurement — GL first, soft fallback per plan.
+    // Frame pacing measurement — GL first, soft fallback per plan. The
+    // vblank notifier is a single source shared by both renderer runs.
     let mut frame_interval_ms = 1000.0 / output.refresh_hz.max(1.0);
+    let mut event_loop: EventLoop<VblankState> =
+        EventLoop::try_new().map_err(|e| SessionError::Session(format!("event loop: {e}")))?;
+    let notifier = setup
+        .notifier
+        .take()
+        .ok_or_else(|| SessionError::Session("drm notifier consumed".into()))?;
+    event_loop
+        .handle()
+        .insert_source(notifier, |event, _meta, state: &mut VblankState| {
+            if let DrmEvent::VBlank(_) = event {
+                state.vblanks += 1;
+            }
+        })
+        .map_err(|e| SessionError::Session(format!("insert drm source: {e}")))?;
+    let mut vblank_state = VblankState { vblanks: 0 };
     if let Some(r) = gles.as_mut() {
-        match pace_frames(&mut setup, &output, Renderer::Gl(r), PROBE_FRAMES) {
+        match pace_frames(
+            &mut setup,
+            &output,
+            Renderer::Gl(r),
+            PROBE_FRAMES,
+            &mut event_loop,
+            &mut vblank_state,
+        ) {
             Ok(ms) => {
                 frame_interval_ms = ms;
                 gl.frames = Some(PROBE_FRAMES);
@@ -159,7 +182,14 @@ pub fn run(require_gl: bool) -> Result<(serde_json::Value, bool), SessionError> 
         }
     }
     if let Some(mut r) = pixman {
-        match pace_frames(&mut setup, &output, Renderer::Soft(&mut r), PROBE_FRAMES) {
+        match pace_frames(
+            &mut setup,
+            &output,
+            Renderer::Soft(&mut r),
+            PROBE_FRAMES,
+            &mut event_loop,
+            &mut vblank_state,
+        ) {
             Ok(ms) => {
                 if gles.is_none() {
                     frame_interval_ms = ms;
@@ -205,8 +235,19 @@ fn select_or_report(
     }
 }
 
-fn gl_renderer_name(_display: &smithay::backend::egl::EGLDisplay) -> String {
-    "GLES".to_string()
+/// `glGetString(GL_RENDERER)` through the smithay context — e.g. "Mali-G52".
+fn gl_renderer_name(r: &mut GlesRenderer) -> String {
+    r.with_context(|gl| unsafe {
+        let ptr = gl.GetString(smithay::backend::renderer::gles::ffi::RENDERER);
+        if ptr.is_null() {
+            "GLES".to_string()
+        } else {
+            std::ffi::CStr::from_ptr(ptr as *const std::ffi::c_char)
+                .to_string_lossy()
+                .into_owned()
+        }
+    })
+    .unwrap_or_else(|_| "GLES".to_string())
 }
 
 fn build_drm_report(
@@ -227,7 +268,7 @@ fn build_drm_report(
             plane_reports.push(PlaneReport {
                 name: format!("{}-{}", kind.to_lowercase(), u32::from(p.handle)),
                 type_: kind.to_string(),
-                formats: p.formats.iter().map(|f| format!("{:?}", f.code)).collect(),
+                formats: p.formats.iter().map(|f| fourcc_name(f.code)).collect(),
             });
         }
     }
@@ -240,7 +281,7 @@ fn build_drm_report(
         formats: planes
             .primary
             .iter()
-            .flat_map(|p| p.formats.iter().map(|f| format!("{:?}", f.code)))
+            .flat_map(|p| p.formats.iter().map(|f| fourcc_name(f.code)))
             .collect(),
     })
 }
@@ -252,6 +293,8 @@ fn pace_frames(
     output: &OutputSelection,
     mut renderer: Renderer<'_>,
     frames: u32,
+    event_loop: &mut EventLoop<VblankState>,
+    state: &mut VblankState,
 ) -> Result<f64, SessionError> {
     let surface = setup
         .device
@@ -299,22 +342,6 @@ fn pace_frames(
     )
     .map_err(|e| SessionError::Session(format!("compositor: {e:?}")))?;
 
-    let mut event_loop: EventLoop<VblankState> =
-        EventLoop::try_new().map_err(|e| SessionError::Session(format!("event loop: {e}")))?;
-    let notifier = setup
-        .notifier
-        .take()
-        .ok_or_else(|| SessionError::Session("drm notifier consumed".into()))?;
-    event_loop
-        .handle()
-        .insert_source(notifier, |event, _meta, state: &mut VblankState| {
-            if let DrmEvent::VBlank(_) = event {
-                state.vblanks += 1;
-            }
-        })
-        .map_err(|e| SessionError::Session(format!("insert drm source: {e}")))?;
-    let mut state = VblankState { vblanks: 0 };
-
     // Upload a small solid texture so render_frame has real work.
     let mut intervals = Vec::with_capacity(frames as usize);
     let mut last = Instant::now();
@@ -353,7 +380,9 @@ fn pace_frames(
             .queue_frame(())
             .map_err(|e| SessionError::Session(format!("queue: {e:?}")))?;
 
-        // Wait for the vblank.
+        // Wait for the vblank, then release the pending frame — without
+        // `frame_submitted` the compositor never submits the next queued
+        // frame and every later vblank wait times out.
         let target = state.vblanks + 1;
         let deadline = Instant::now() + Duration::from_secs(2);
         while state.vblanks < target {
@@ -362,9 +391,12 @@ fn pace_frames(
                 return Err(SessionError::Session("vblank timeout".into()));
             }
             event_loop
-                .dispatch(Some(left), &mut state)
+                .dispatch(Some(left), state)
                 .map_err(|e| SessionError::Session(format!("dispatch: {e}")))?;
         }
+        compositor
+            .frame_submitted()
+            .map_err(|e| SessionError::Session(format!("submitted: {e:?}")))?;
         let now = Instant::now();
         intervals.push(now.duration_since(last).as_secs_f64() * 1000.0);
         last = now;
@@ -377,6 +409,24 @@ fn pace_frames(
     } else {
         samples.iter().sum::<f64>() / samples.len() as f64
     })
+}
+
+/// Map a DRM fourcc to the plan's uppercase name (§M0-T3 schema), falling
+/// back to the raw 4-character code.
+fn fourcc_name(code: DrmFourcc) -> String {
+    match code {
+        DrmFourcc::Argb8888 => "ARGB8888".into(),
+        DrmFourcc::Xrgb8888 => "XRGB8888".into(),
+        DrmFourcc::Abgr8888 => "ABGR8888".into(),
+        DrmFourcc::Xbgr8888 => "XBGR8888".into(),
+        DrmFourcc::Rgb565 => "RGB565".into(),
+        other => {
+            let raw = (other as u32).to_le_bytes();
+            raw.iter()
+                .map(|b| (*b as char).to_ascii_uppercase())
+                .collect()
+        }
+    }
 }
 
 struct VblankState {

@@ -8,6 +8,14 @@ use de_core::{event_loop, init, Run};
 const EXIT_CRASH_FALLBACK: i32 = 75;
 
 fn main() {
+    // smithay/drm diagnostics go to stderr; stdout stays JSON-pure (§7.21).
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "warn".into()),
+        )
+        .with_writer(std::io::stderr)
+        .try_init();
+
     let cli = match parse(std::env::args().skip(1)) {
         Ok(c) => c,
         Err(msg) => {

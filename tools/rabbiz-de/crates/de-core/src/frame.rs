@@ -46,7 +46,13 @@ impl Run {
         duration: Option<Duration>,
     ) -> std::io::Result<Self> {
         let stats_file = stats_file
-            .map(|p| OpenOptions::new().create(true).truncate(true).open(p))
+            .map(|p| {
+                OpenOptions::new()
+                    .create(true)
+                    .write(true)
+                    .truncate(true)
+                    .open(p)
+            })
             .transpose()?
             .map(BufWriter::new);
         Ok(Self {
@@ -69,13 +75,16 @@ impl Run {
         })
     }
 
-    /// Render + queue one frame on the output.
+    /// Render + queue one frame on the output. Alternates the brand
+    /// position by one physical pixel so every frame carries damage and
+    /// the vblank chain stays alive for the duration of a bench run.
     pub fn present(&mut self) -> Result<(), String> {
         let t0 = Instant::now();
+        let x = (self.frames % 2) as f64;
         match (&mut self.de.renderer, &self.de.brand) {
             (DeRenderer::Gl(r), DeTexture::Gl(buf)) => {
                 let el = TextureRenderElement::from_texture_buffer(
-                    smithay::utils::Point::<f64, smithay::utils::Physical>::from((0.0, 0.0)),
+                    smithay::utils::Point::<f64, smithay::utils::Physical>::from((x, 0.0)),
                     buf,
                     None,
                     None,
@@ -89,7 +98,7 @@ impl Run {
             }
             (DeRenderer::Soft(r), DeTexture::Soft(buf)) => {
                 let el = TextureRenderElement::from_texture_buffer(
-                    smithay::utils::Point::<f64, smithay::utils::Physical>::from((0.0, 0.0)),
+                    smithay::utils::Point::<f64, smithay::utils::Physical>::from((x, 0.0)),
                     buf,
                     None,
                     None,
@@ -103,10 +112,13 @@ impl Run {
             }
             _ => return Err("renderer/texture kind mismatch".to_string()),
         }
-        self.de
-            .compositor
-            .queue_frame(())
-            .map_err(|e| format!("queue: {e:?}"))?;
+        // EmptyFrame means the queued frame carried no damage — nothing to
+        // commit, not an error.
+        if let Err(e) = self.de.compositor.queue_frame(()) {
+            if !format!("{e:?}").contains("EmptyFrame") {
+                return Err(format!("queue: {e:?}"));
+            }
+        }
         let cpu = t0.elapsed().as_secs_f64() * 1000.0;
         self.cpu_samples.push(cpu);
         self.all_cpu.push(cpu);
@@ -114,8 +126,12 @@ impl Run {
         Ok(())
     }
 
-    /// Called on each vblank: account timing, emit stats, request next frame.
+    /// Called on each vblank: release the pending frame, account timing,
+    /// emit stats, request the next frame.
     pub fn on_vblank(&mut self) {
+        if let Err(e) = self.de.compositor.frame_submitted() {
+            eprintln!("frame_submitted: {e:?}");
+        }
         let now = Instant::now();
         if let Some(last) = self.last_vblank.replace(now) {
             let dt = last.elapsed().as_secs_f64() * 1000.0;
