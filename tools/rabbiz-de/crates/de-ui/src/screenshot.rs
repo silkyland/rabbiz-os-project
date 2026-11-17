@@ -5,8 +5,11 @@
 //! save location. Authored on the 720×1600 reference panel and mapped with
 //! `sx`/`sy` for geometry and `s = min(sx, sy)` for radii and type.
 
-use de_api::{Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
+
+const OPEN_IN_NEW: char = '\u{e89e}';
+const SHARE: char = '\u{e80d}';
 
 const REF_W: f32 = 720.0;
 const REF_H: f32 = 1600.0;
@@ -50,11 +53,13 @@ pub fn build(size: Size) -> Scene {
         DARK.text_faint,
     );
 
-    // Open is the primary action; Share sits beside it.
+    // Open is the primary action; Share sits beside it; Close dismisses.
     pill(
         &mut layer,
         sc,
         sc.rect(204.0, 1418.0, 112.0, 48.0),
+        OPEN_IN_NEW,
+        true,
         "Open",
         DARK.accent,
         DARK.accent_ink,
@@ -63,9 +68,18 @@ pub fn build(size: Size) -> Scene {
         &mut layer,
         sc,
         sc.rect(328.0, 1418.0, 112.0, 48.0),
+        SHARE,
+        false,
         "Share",
         DARK.surface_high,
         DARK.text,
+    );
+    layer.icon(
+        Point::new(672.0 * sc.sx, 1442.0 * sc.sy),
+        22.0 * sc.s,
+        icons::CLOSE,
+        DARK.text_dim,
+        false,
     );
 
     let caption = sc.style(DARK.caption_px, Weight::Regular, DARK.text_dim, 600.0);
@@ -107,13 +121,32 @@ impl Scale {
     }
 }
 
-/// A 48dp pill with a centred label; `r` is already in output pixels.
-fn pill(layer: &mut Layer, sc: Scale, r: Rect, label: &str, fill: Color, ink: Color) {
+/// A 48dp pill with a leading icon and centred label; `r` is already in output pixels.
+#[allow(clippy::too_many_arguments)]
+fn pill(
+    layer: &mut Layer,
+    sc: Scale,
+    r: Rect,
+    icon: char,
+    filled: bool,
+    label: &str,
+    fill: Color,
+    ink: Color,
+) {
     layer.rect(r, DARK.radius_pill * sc.s, fill);
-    let style = TextStyle::new(DARK.label_px * sc.s, Weight::SemiBold, ink, r.w)
+    layer.icon(
+        Point::new(r.x + 22.0 * sc.sx, r.y + r.h / 2.0),
+        18.0 * sc.s,
+        icon,
+        ink,
+        filled,
+    );
+    let text_x = r.x + 24.0 * sc.sx;
+    let text_w = (r.w - 28.0 * sc.sx).max(0.0);
+    let style = TextStyle::new(DARK.label_px * sc.s, Weight::SemiBold, ink, text_w)
         .with_align(TextAlign::Center);
     let origin_y = r.y + (r.h - style.size * 1.25) / 2.0;
-    layer.text(Point::new(r.x, origin_y), label, style);
+    layer.text(Point::new(text_x, origin_y), label, style);
 }
 
 #[cfg(test)]
@@ -150,7 +183,7 @@ mod tests {
                     radius,
                     color,
                 } => Some((*rect, *radius, *color)),
-                DrawOp::Text { .. } => None,
+                DrawOp::Text { .. } | DrawOp::Icon { .. } => None,
             })
             .collect()
     }
@@ -158,6 +191,9 @@ mod tests {
     fn uses(scene: &Scene, color: Color) -> bool {
         rects(scene).iter().any(|(_, _, used)| *used == color)
             || texts(scene).iter().any(|(_, style)| style.color == color)
+            || scene.layers.iter().flat_map(|l| l.ops.iter()).any(|op| {
+                matches!(op, DrawOp::Icon { color: c, .. } if *c == color)
+            })
     }
 
     #[test]

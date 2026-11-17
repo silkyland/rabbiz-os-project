@@ -5,7 +5,7 @@
 //! 720×1600 reference panel and mapped with `sx`/`sy` for geometry and
 //! `s = min(sx, sy)` for radii and type.
 
-use de_api::{Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
 
 const REF_W: f32 = 720.0;
@@ -74,7 +74,13 @@ pub fn build(size: Size) -> Scene {
         DARK.radius_s * sc.s,
         DARK.surface_high,
     );
-    signal(&mut layer, sc, 70.0, 792.0, DARK.accent);
+    layer.icon(
+        Point::new(70.0 * sc.sx, 792.0 * sc.sy),
+        24.0 * sc.s,
+        icons::WIFI,
+        DARK.accent,
+        true,
+    );
     two_line(
         &mut layer,
         sc,
@@ -97,7 +103,13 @@ pub fn build(size: Size) -> Scene {
         DARK.radius_s * sc.s,
         DARK.surface_high,
     );
-    fingerprint(&mut layer, sc, 70.0, 904.0, DARK.accent, DARK.surface_high);
+    layer.icon(
+        Point::new(70.0 * sc.sx, 904.0 * sc.sy),
+        24.0 * sc.s,
+        icons::FINGERPRINT,
+        DARK.accent,
+        false,
+    );
     two_line(
         &mut layer,
         sc,
@@ -107,7 +119,13 @@ pub fn build(size: Size) -> Scene {
         "Add a fingerprint to unlock",
         DARK.text_dim,
     );
-    chevron(&mut layer, sc, 666.0, 902.0);
+    layer.icon(
+        Point::new(674.0 * sc.sx, 904.0 * sc.sy),
+        24.0 * sc.s,
+        icons::CHEVRON_RIGHT,
+        DARK.text_faint,
+        false,
+    );
 
     let note = sc.style(DARK.caption_px, Weight::Regular, DARK.text_faint, 600.0);
     layer.text(
@@ -219,44 +237,6 @@ fn toggle(layer: &mut Layer, sc: Scale, x: f32, y: f32, on: bool) {
     layer.rect(sc.rect(knob_x, y + 6.0, 32.0, 32.0), 16.0 * sc.s, knob);
 }
 
-/// Forward chevron drawn as a four-step staircase of rounded bars.
-fn chevron(layer: &mut Layer, sc: Scale, x: f32, cy: f32) {
-    for i in 0..4 {
-        let t = i as f32 * 4.0;
-        layer.rect(
-            sc.rect(x + t, cy - 12.0 + t, 8.0, 4.0),
-            2.0 * sc.s,
-            DARK.text_faint,
-        );
-        if i < 3 {
-            layer.rect(
-                sc.rect(x + 8.0 - t, cy + 4.0 + t, 8.0, 4.0),
-                2.0 * sc.s,
-                DARK.text_faint,
-            );
-        }
-    }
-}
-
-/// Four signal bars, bottom-aligned, the same glyph the network rows use.
-fn signal(layer: &mut Layer, sc: Scale, cx: f32, cy: f32, ink: Color) {
-    for i in 0..4u8 {
-        let h = 6.0 + 4.0 * i as f32;
-        layer.rect(
-            sc.rect(cx - 12.5 + i as f32 * 7.0, cy + 9.0 - h, 4.0, h),
-            2.0 * sc.s,
-            ink,
-        );
-    }
-}
-
-/// Fingerprint as a sensor ring with a centre dot.
-fn fingerprint(layer: &mut Layer, sc: Scale, cx: f32, cy: f32, ink: Color, surface: Color) {
-    layer.rect(sc.rect(cx - 10.0, cy - 10.0, 20.0, 20.0), 10.0 * sc.s, ink);
-    layer.rect(sc.rect(cx - 7.0, cy - 7.0, 14.0, 14.0), 7.0 * sc.s, surface);
-    layer.rect(sc.rect(cx - 2.0, cy - 2.0, 4.0, 4.0), 2.0 * sc.s, ink);
-}
-
 /// Rabbiz as rounded rects: two ears, a head, a cream muzzle and two eyes.
 fn mark(layer: &mut Layer, sc: Scale, cx: f32, cy: f32) {
     layer.rect(
@@ -322,7 +302,7 @@ mod tests {
                     radius,
                     color,
                 } => Some((*rect, *radius, *color)),
-                DrawOp::Text { .. } => None,
+                DrawOp::Text { .. } | DrawOp::Icon { .. } => None,
             })
             .collect()
     }
@@ -330,6 +310,9 @@ mod tests {
     fn uses(scene: &Scene, color: Color) -> bool {
         rects(scene).iter().any(|(_, _, used)| *used == color)
             || texts(scene).iter().any(|(_, style)| style.color == color)
+            || scene.layers.iter().flat_map(|l| l.ops.iter()).any(|op| {
+                matches!(op, DrawOp::Icon { color: c, .. } if *c == color)
+            })
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //! happened, and the two ways out. Authored on the 720×1600 reference panel and
 //! mapped with `sx`/`sy` for geometry and `s = min(sx, sy)` for radii and type.
 
-use de_api::{Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
 
 const REF_W: f32 = 720.0;
@@ -29,20 +29,19 @@ pub fn build(size: Size) -> Scene {
         DARK.surface,
     );
 
-    // Calculator tile: a display line over four keys.
+    // Calculator tile with Material Symbol icon.
     layer.rect(
         sc.rect(332.0, 660.0, 56.0, 56.0),
         DARK.radius_m * sc.s,
         DARK.surface_low,
     );
-    layer.rect(sc.rect(344.0, 672.0, 32.0, 5.0), 2.5 * sc.s, DARK.text_dim);
-    for (dx, dy) in [(12.0, 30.0), (32.0, 30.0), (12.0, 42.0), (32.0, 42.0)] {
-        layer.rect(
-            sc.rect(332.0 + dx, 660.0 + dy, 10.0, 6.0),
-            3.0 * sc.s,
-            DARK.accent,
-        );
-    }
+    layer.icon(
+        Point::new(360.0 * sc.sx, 688.0 * sc.sy),
+        32.0 * sc.s,
+        icons::CALCULATE,
+        DARK.accent,
+        true,
+    );
 
     let title = sc
         .style(DARK.h2_px, Weight::SemiBold, DARK.text, 556.0)
@@ -155,7 +154,7 @@ mod tests {
                     radius,
                     color,
                 } => Some((*rect, *radius, *color)),
-                DrawOp::Text { .. } => None,
+                DrawOp::Text { .. } | DrawOp::Icon { .. } => None,
             })
             .collect()
     }
@@ -163,6 +162,9 @@ mod tests {
     fn uses(scene: &Scene, color: Color) -> bool {
         rects(scene).iter().any(|(_, _, used)| *used == color)
             || texts(scene).iter().any(|(_, style)| style.color == color)
+            || scene.layers.iter().flat_map(|l| l.ops.iter()).any(|op| {
+                matches!(op, DrawOp::Icon { color: c, .. } if *c == color)
+            })
     }
 
     #[test]

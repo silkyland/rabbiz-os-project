@@ -2,14 +2,14 @@
 //!
 //! Every screen is authored on the 720×1600 reference panel and mapped onto the
 //! requested output the way `boot` does it: geometry by `sx`/`sy`, radii and
-//! type by `s = min(sx, sy)`. Only `de_design::DARK` tokens are used, and every
-//! glyph is a rounded rect, so the scenes rasterize without an icon font.
+//! type by `s = min(sx, sy)`. Only `de_design::DARK` tokens are used, and system
+//! glyphs use Google Font Icons (`Material Symbols Rounded`).
 //!
 //! Each screen is one layer named after its route and opens with a full-bleed
 //! `DARK.bg` rect. The functions return a [`Scene`]; they never draw or read
 //! the OS.
 
-use de_api::{Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
+use de_api::{icons, Color, Layer, Point, Rect, Scene, Size, TextAlign, TextStyle, Weight};
 use de_design::DARK;
 
 /// Reference panel the settings compositions were authored on.
@@ -30,31 +30,24 @@ pub fn index(size: Size) -> Scene {
 
     c.paint(PAGE, 208.0, CARD, 704.0, DARK.radius_card, DARK.surface);
 
-    const ROWS: [(&str, Icon); 8] = [
-        ("Network", Icon::Signal),
-        ("Bluetooth", Icon::Bluetooth),
-        ("Display", Icon::Display),
-        ("Sound", Icon::Sound),
-        ("Notifications", Icon::Bell),
-        ("Apps", Icon::Apps),
-        ("Battery", Icon::Battery),
-        ("About", Icon::About),
+    const ROWS: [(&str, char, Color); 8] = [
+        ("Network", icons::SIGNAL_CELLULAR_ALT, DARK.accent),
+        ("Bluetooth", icons::BLUETOOTH, DARK.accent),
+        ("Display", icons::BRIGHTNESS_MEDIUM, DARK.accent),
+        ("Sound", icons::VOLUME_UP, DARK.accent),
+        ("Notifications", icons::NOTIFICATIONS, DARK.accent),
+        ("Apps", icons::APPS, DARK.accent),
+        ("Battery", icons::BATTERY_FULL, DARK.success),
+        ("About", icons::INFO, DARK.accent),
     ];
 
-    for (i, (name, glyph)) in ROWS.iter().enumerate() {
+    for (i, (name, glyph, ink)) in ROWS.iter().enumerate() {
         let y = 208.0 + i as f32 * 88.0;
 
-        // A 44px tile holds the rect-drawn glyph; copper ink keeps one accent
-        // running down the column.
+        // A 44px tile holds the icon; copper ink keeps one accent running down
+        // the column (Battery keeps the semantic success ink).
         c.paint(48.0, y + 22.0, 44.0, 44.0, DARK.radius_s, DARK.surface_high);
-        icon(
-            &mut c,
-            70.0,
-            y + 44.0,
-            DARK.accent,
-            DARK.surface_high,
-            *glyph,
-        );
+        c.icon(70.0, y + 44.0, 24.0, *glyph, *ink, false);
 
         let row = c.style(DARK.body_px, Weight::Regular, DARK.text, 400.0);
         c.label(112.0, y, 88.0, *name, row);
@@ -95,19 +88,12 @@ pub fn network(size: Size) -> Scene {
         DARK.surface_high,
     );
     c.paint(48.0, 332.0, 48.0, 48.0, DARK.radius_s, DARK.surface_low);
-    icon(
-        &mut c,
-        72.0,
-        356.0,
-        DARK.accent,
-        DARK.surface_low,
-        Icon::Signal,
-    );
+    c.icon(72.0, 356.0, 24.0, icons::WIFI, DARK.accent, true);
     let joined = c.style(DARK.body_px, Weight::SemiBold, DARK.text, 420.0);
     c.text(116.0, 330.0, "Rabbiz-Home", joined);
     let meta = c.style(DARK.caption_px, Weight::Regular, DARK.success, 420.0);
     c.text(116.0, 366.0, "Connected · 5 GHz · WPA2", meta);
-    signal(&mut c, 647.0, 372.0, 4, DARK.success, DARK.surface_low);
+    c.icon(660.0, 356.0, 22.0, icons::WIFI, DARK.success, true);
 
     // Nearby networks, each with signal strength and a lock where it is secured.
     const NETS: [(&str, u8, bool); 4] = [
@@ -122,16 +108,9 @@ pub fn network(size: Size) -> Scene {
         let style = c.style(DARK.body_px, Weight::Regular, DARK.text, 440.0);
         c.label(48.0, y, 96.0, *name, style);
         if *locked {
-            icon(
-                &mut c,
-                616.0,
-                y + 48.0,
-                DARK.text_faint,
-                DARK.surface,
-                Icon::Lock,
-            );
+            c.icon(616.0, y + 48.0, 18.0, icons::LOCK, DARK.text_faint, false);
         }
-        signal(&mut c, 647.0, y + 57.0, *bars, DARK.text, DARK.surface_high);
+        c.icon(660.0, y + 48.0, 22.0, icons::WIFI, DARK.text, *bars >= 3);
         if i + 1 < NETS.len() {
             c.paint(48.0, y + 95.5, 624.0, 1.0, 0.0, DARK.line);
         }
@@ -180,14 +159,7 @@ pub fn bluetooth(size: Size) -> Scene {
     section(&mut c, 304.0, "Paired device");
     c.paint(PAGE, 344.0, CARD, 112.0, DARK.radius_card, DARK.surface);
     c.paint(48.0, 376.0, 48.0, 48.0, DARK.radius_s, DARK.surface_high);
-    icon(
-        &mut c,
-        72.0,
-        400.0,
-        DARK.accent,
-        DARK.surface_high,
-        Icon::Sound,
-    );
+    c.icon(72.0, 400.0, 24.0, icons::VOLUME_UP, DARK.accent, true);
     let name = c.style(DARK.body_px, Weight::SemiBold, DARK.text, 420.0);
     c.text(116.0, 366.0, "Rabbiz Buds", name);
     let meta = c.style(DARK.caption_px, Weight::Regular, DARK.success, 420.0);
@@ -225,8 +197,8 @@ pub fn display(size: Size) -> Scene {
 
     section(&mut c, 180.0, "Brightness");
     // Sun glyphs at both ends of the track, filled to the current level.
-    ring(&mut c, 36.0, 240.0, 16.0, DARK.accent);
-    ring(&mut c, 660.0, 240.0, 24.0, DARK.accent_hi);
+    c.icon(36.0, 240.0, 20.0, icons::BRIGHTNESS_MEDIUM, DARK.accent, false);
+    c.icon(660.0, 240.0, 24.0, icons::BRIGHTNESS_HIGH, DARK.accent_hi, true);
     slider(&mut c, 64.0, 236.0, 560.0, 0.7);
 
     section(&mut c, 292.0, "Appearance");
@@ -305,7 +277,7 @@ pub fn sound(size: Size) -> Scene {
     section(&mut c, 180.0, "Volume");
     let value = c.style(DARK.label_px, Weight::SemiBold, DARK.text, 48.0);
     c.text(636.0, 180.0, "60%", value);
-    icon(&mut c, 36.0, 240.0, DARK.accent, DARK.bg, Icon::Sound);
+    c.icon(36.0, 240.0, 24.0, icons::VOLUME_UP, DARK.accent, true);
     slider(&mut c, 64.0, 236.0, 592.0, 0.6);
 
     const ROWS: [(&str, &str); 3] = [
@@ -391,20 +363,13 @@ pub fn session(size: Size) -> Scene {
     section(&mut c, 176.0, "Device");
     c.paint(PAGE, 208.0, CARD, 176.0, DARK.radius_card, DARK.surface);
     let rows = [
-        ("Lock now", Icon::Lock),
-        ("Restart Rabbiz DE", Icon::Restart),
+        ("Lock now", icons::LOCK),
+        ("Restart Rabbiz DE", icons::RESTART_ALT),
     ];
     for (i, (name, glyph)) in rows.iter().enumerate() {
         let y = 208.0 + i as f32 * 88.0;
         c.paint(48.0, y + 22.0, 44.0, 44.0, DARK.radius_s, DARK.surface_high);
-        icon(
-            &mut c,
-            70.0,
-            y + 44.0,
-            DARK.accent,
-            DARK.surface_high,
-            *glyph,
-        );
+        c.icon(70.0, y + 44.0, 24.0, *glyph, DARK.accent, false);
         let style = c.style(DARK.body_px, Weight::Regular, DARK.text, 380.0);
         c.label(112.0, y, 88.0, *name, style);
         chevron(&mut c, 666.0, y + 42.0, true);
@@ -504,6 +469,11 @@ impl Canvas {
         self.scene.layers[0].text(origin, text, style);
     }
 
+    fn icon(&mut self, cx: f32, cy: f32, size: f32, codepoint: char, color: Color, filled: bool) {
+        let center = Point::new(cx * self.frame.sx, cy * self.frame.sy);
+        self.scene.layers[0].icon(center, size * self.frame.s, codepoint, color, filled);
+    }
+
     /// A single line centred vertically inside the `h`-tall band at `y`.
     fn label(&mut self, x: f32, y: f32, h: f32, text: impl Into<String>, style: TextStyle) {
         let origin_y = y + (h - style.size * 1.25) / 2.0;
@@ -545,20 +515,6 @@ fn toggle(c: &mut Canvas, x: f32, y: f32, on: bool) {
     c.paint(knob_x, y + 6.0, 32.0, 32.0, 16.0, knob);
 }
 
-/// A hollow token ring of `d` reference pixels, used for the sun glyphs.
-fn ring(c: &mut Canvas, cx: f32, cy: f32, d: f32, ink: Color) {
-    c.paint(cx - d / 2.0, cy - d / 2.0, d, d, d / 2.0, ink);
-    let inner = d - 4.0;
-    c.paint(
-        cx - inner / 2.0,
-        cy - inner / 2.0,
-        inner,
-        inner,
-        inner / 2.0,
-        DARK.bg,
-    );
-}
-
 fn slider(c: &mut Canvas, x: f32, y: f32, w: f32, fraction: f32) {
     c.paint(x, y, w, 8.0, 4.0, DARK.surface_high);
     let filled = w * fraction;
@@ -581,27 +537,13 @@ fn pair_pill(c: &mut Canvas, x: f32, y: f32) {
     c.label(x, y, 44.0, "Pair", style);
 }
 
-/// Four signal bars, bottom-aligned on `baseline`, filled left to right.
-fn signal(c: &mut Canvas, x: f32, baseline: f32, lit: u8, ink: Color, idle: Color) {
-    for i in 0..4u8 {
-        let h = 6.0 + 4.0 * i as f32;
-        let color = if i < lit { ink } else { idle };
-        c.paint(x + i as f32 * 7.0, baseline - h, 4.0, h, 2.0, color);
-    }
-}
-
-/// Chevron drawn as a four-step staircase of rounded bars. `right` points it
-/// at the forward direction; the back glyph is the mirror.
 fn chevron(c: &mut Canvas, x: f32, cy: f32, right: bool) {
-    for i in 0..4 {
-        let t = i as f32 * 4.0;
-        let upper_x = if right { x + t } else { x + 12.0 - t };
-        c.paint(upper_x, cy - 12.0 + t, 8.0, 4.0, 2.0, DARK.text_faint);
-        if i < 3 {
-            let lower_x = if right { x + 8.0 - t } else { x + 4.0 + t };
-            c.paint(lower_x, cy + 4.0 + t, 8.0, 4.0, 2.0, DARK.text_faint);
-        }
-    }
+    let codepoint = if right {
+        icons::CHEVRON_RIGHT
+    } else {
+        icons::CHEVRON_LEFT
+    };
+    c.icon(x + 8.0, cy, 24.0, codepoint, DARK.text_faint, false);
 }
 
 /// Wallpaper thumbnail: a ground colour, a low sun and a horizon band.
@@ -620,76 +562,6 @@ fn mark(c: &mut Canvas, cx: f32, cy: f32) {
     c.paint(cx - 24.0, cy + 6.0, 48.0, 30.0, 15.0, DARK.mark_cream);
     c.paint(cx - 16.0, cy - 3.0, 7.0, 9.0, 3.5, DARK.bg);
     c.paint(cx + 9.0, cy - 3.0, 7.0, 9.0, 3.5, DARK.bg);
-}
-
-#[derive(Clone, Copy)]
-enum Icon {
-    Signal,
-    Bluetooth,
-    Display,
-    Sound,
-    Bell,
-    Apps,
-    Battery,
-    About,
-    Lock,
-    Restart,
-}
-
-/// Every settings glyph, drawn from rounded rects around `(cx, cy)`.
-fn icon(c: &mut Canvas, cx: f32, cy: f32, ink: Color, surface: Color, glyph: Icon) {
-    match glyph {
-        Icon::Signal => signal(c, cx - 12.0, cy + 9.0, 4, ink, ink.with_alpha(40)),
-        Icon::Bluetooth => {
-            c.paint(cx - 1.5, cy - 9.0, 3.0, 18.0, 1.5, ink);
-            c.paint(cx - 1.5, cy - 9.0, 9.0, 3.0, 1.5, ink);
-            c.paint(cx - 1.5, cy + 6.0, 9.0, 3.0, 1.5, ink);
-            c.paint(cx - 6.0, cy - 5.0, 7.0, 3.0, 1.5, ink);
-            c.paint(cx - 6.0, cy + 2.0, 7.0, 3.0, 1.5, ink);
-        }
-        Icon::Display => {
-            c.paint(cx - 11.0, cy - 8.0, 22.0, 16.0, 3.0, ink);
-            c.paint(cx - 9.0, cy - 6.0, 18.0, 12.0, 2.0, surface);
-            c.paint(cx - 5.0, cy + 9.0, 10.0, 3.0, 1.5, ink);
-        }
-        Icon::Sound => {
-            c.paint(cx - 10.0, cy - 3.0, 6.0, 6.0, 1.5, ink);
-            c.paint(cx - 5.0, cy - 8.0, 8.0, 16.0, 3.0, ink);
-            c.paint(cx + 6.0, cy - 7.0, 3.0, 3.0, 1.5, ink);
-            c.paint(cx + 10.0, cy - 4.0, 3.0, 8.0, 1.5, ink);
-        }
-        Icon::Bell => {
-            c.paint(cx - 3.0, cy - 12.0, 6.0, 4.0, 2.0, ink);
-            c.paint(cx - 8.0, cy - 9.0, 16.0, 12.0, 7.0, ink);
-            c.paint(cx - 10.0, cy + 2.0, 20.0, 4.0, 2.0, ink);
-            c.paint(cx - 2.0, cy + 7.0, 4.0, 4.0, 2.0, ink);
-        }
-        Icon::Apps => {
-            for (dx, dy) in [(-8.0, -8.0), (1.0, -8.0), (-8.0, 1.0), (1.0, 1.0)] {
-                c.paint(cx + dx, cy + dy, 7.0, 7.0, 2.0, ink);
-            }
-        }
-        Icon::Battery => {
-            c.paint(cx - 10.0, cy - 6.0, 18.0, 12.0, 3.0, ink);
-            c.paint(cx - 8.0, cy - 4.0, 14.0, 8.0, 2.0, surface);
-            c.paint(cx - 8.0, cy - 4.0, 9.0, 8.0, 2.0, DARK.success);
-            c.paint(cx + 9.0, cy - 3.0, 3.0, 6.0, 1.5, ink);
-        }
-        Icon::About => {
-            c.paint(cx - 2.0, cy - 9.0, 4.0, 4.0, 2.0, ink);
-            c.paint(cx - 2.0, cy - 3.0, 4.0, 12.0, 2.0, ink);
-        }
-        Icon::Lock => {
-            c.paint(cx - 8.0, cy - 10.0, 16.0, 14.0, 7.0, ink);
-            c.paint(cx - 5.0, cy - 7.0, 10.0, 10.0, 5.0, surface);
-            c.paint(cx - 9.0, cy - 2.0, 18.0, 14.0, 3.0, ink);
-        }
-        Icon::Restart => {
-            c.paint(cx - 9.0, cy - 9.0, 18.0, 18.0, 9.0, ink);
-            c.paint(cx - 5.0, cy - 5.0, 10.0, 10.0, 5.0, surface);
-            c.paint(cx + 1.0, cy - 11.0, 9.0, 4.0, 2.0, ink);
-        }
-    }
 }
 
 #[cfg(test)]
@@ -732,14 +604,19 @@ mod tests {
         texts(scene).iter().any(|(text, _)| text.contains(needle))
     }
 
-    /// A colour is in use when a rect or a text style carries it.
+    /// A colour is in use when a rect, icon, or text style carries it.
     fn uses(scene: &Scene, color: Color) -> bool {
-        let rect = scene
+        let rect_or_icon = scene
             .layers
             .iter()
             .flat_map(|layer| layer.ops.iter())
-            .any(|op| matches!(op, DrawOp::Rect { color: c, .. } if *c == color));
-        rect || texts(scene).iter().any(|(_, style)| style.color == color)
+            .any(|op| {
+                matches!(
+                    op,
+                    DrawOp::Rect { color: c, .. } | DrawOp::Icon { color: c, .. } if *c == color
+                )
+            });
+        rect_or_icon || texts(scene).iter().any(|(_, style)| style.color == color)
     }
 
     #[test]
@@ -799,6 +676,17 @@ mod tests {
                             assert!(
                                 origin.x + style.max_width <= w + 0.01,
                                 "{name}: {text:?} leaves the output"
+                            );
+                        }
+                        DrawOp::Icon { center, size, .. } => {
+                            let half = *size / 2.0;
+                            assert!(
+                                center.x - half >= -0.01 && center.y - half >= -0.01,
+                                "{name}: icon at {center:?} size {size}"
+                            );
+                            assert!(
+                                center.x + half <= w + 0.01 && center.y + half <= h + 0.01,
+                                "{name}: icon at {center:?} size {size}"
                             );
                         }
                     }

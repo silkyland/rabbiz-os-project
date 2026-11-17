@@ -7,6 +7,8 @@
 use de_api::{Color, Layer, Point, Rect, Scene, Size, TextStyle, Weight};
 use de_design::DARK;
 
+const CHAT_BUBBLE: char = '\u{e0cb}';
+
 const REF_W: f32 = 720.0;
 const REF_H: f32 = 1600.0;
 const LAYER: &str = "toast";
@@ -36,18 +38,19 @@ pub fn build(size: Size) -> Scene {
         DARK.glass,
     );
 
-    // 48dp app tile with a copper speech bubble.
+    // 48dp app tile with a speech bubble icon.
     layer.rect(
         sc.rect(40.0, 104.0, 48.0, 48.0),
         DARK.radius_m * sc.s,
         DARK.accent,
     );
-    layer.rect(
-        sc.rect(52.0, 114.0, 24.0, 17.0),
-        8.0 * sc.s,
+    layer.icon(
+        Point::new(64.0 * sc.sx, 128.0 * sc.sy),
+        26.0 * sc.s,
+        CHAT_BUBBLE,
         DARK.accent_ink,
+        true,
     );
-    layer.rect(sc.rect(56.0, 128.0, 8.0, 6.0), 2.0 * sc.s, DARK.accent_ink);
 
     let app = sc.style(DARK.label_px, Weight::SemiBold, DARK.text, 96.0);
     layer.text(Point::new(104.0 * sc.sx, 86.0 * sc.sy), "Messages", app);
@@ -130,7 +133,7 @@ mod tests {
                     radius,
                     color,
                 } => Some((*rect, *radius, *color)),
-                DrawOp::Text { .. } => None,
+                DrawOp::Text { .. } | DrawOp::Icon { .. } => None,
             })
             .collect()
     }
@@ -138,6 +141,9 @@ mod tests {
     fn uses(scene: &Scene, color: Color) -> bool {
         rects(scene).iter().any(|(_, _, used)| *used == color)
             || texts(scene).iter().any(|(_, style)| style.color == color)
+            || scene.layers.iter().flat_map(|l| l.ops.iter()).any(|op| {
+                matches!(op, DrawOp::Icon { color: c, .. } if *c == color)
+            })
     }
 
     #[test]
