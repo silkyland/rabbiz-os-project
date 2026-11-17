@@ -61,6 +61,7 @@ ssh "root@$DEVICE" 'pkill -x wayvnc 2>/dev/null || true'
 
 # --- 2. user unit in the gamer session -----------------------------------
 say "Writing $UNIT_PATH"
+GAMER_UID=$(ssh "root@$DEVICE" 'id -u gamer')
 ssh "root@$DEVICE" "install -d -o gamer -g gamer /home/gamer/.config/systemd/user && cat > $UNIT_PATH" <<UNIT
 [Unit]
 Description=A21s wayvnc screen mirror
@@ -69,7 +70,7 @@ StartLimitIntervalSec=0
 StartLimitBurst=0
 
 [Service]
-Environment=XDG_RUNTIME_DIR=/run/user/1001
+Environment=XDG_RUNTIME_DIR=/run/user/${GAMER_UID}
 Environment=WAYLAND_DISPLAY=wayland-0
 ExecStart=/usr/bin/wayvnc -o DSI-1 -f 30 $LISTEN
 Restart=always
@@ -86,7 +87,7 @@ ssh "root@$DEVICE" "cat > $HELPER_PATH && chmod 755 $HELPER_PATH" <<'HELPER'
 # a21s-mirror — start/stop/status of the wayvnc mirror in the gamer labwc session.
 set -eu
 UNIT=a21s-wayvnc.service
-RUNTIME=/run/user/1001
+RUNTIME=/run/user/$(id -u gamer)
 
 as_gamer() {
     runuser -u gamer -- env XDG_RUNTIME_DIR="$RUNTIME" \
@@ -152,7 +153,7 @@ HELPER
 
 # --- 4. enable + start in the running session ----------------------------
 say "Enabling and starting a21s-wayvnc in the gamer session"
-ssh "root@$DEVICE" 'runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus systemctl --user daemon-reload && a21s-mirror enable'
+ssh "root@$DEVICE" 'u=$(id -u gamer); runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/$u DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$u/bus systemctl --user daemon-reload && a21s-mirror enable'
 
 say "Done. Launch the Mac app with:"
 printf '    open "dist/Rabbiz Mirror.app"     # after ./scripts/build_mac_app.sh\n'

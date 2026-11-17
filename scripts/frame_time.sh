@@ -29,9 +29,10 @@ done
 echo "== restarting the shell with QSG_RENDER_TIMING=1 on $HOST"
 ssh "$HOST" 'bash -s' <<'REMOTE'
 set -e
+GU=$(id -u gamer)
 LW=$(pgrep -x labwc | head -1)
-WD=$(ls -t /run/user/1001/wayland-[0-9]* 2>/dev/null | grep -v "\.lock$" | head -1 | xargs -r basename)
-ENVF="XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=${WD:-wayland-0} $(tr '\0' '\n' < /proc/$LW/environ | grep -E '^(XDG_|WAYLAND_DISPLAY|DBUS_|QML|LIBSEAT|MOZ_|LANG)' | tr '\n' ' ')"
+WD=$(ls -t /run/user/$GU/wayland-[0-9]* 2>/dev/null | grep -v "\.lock$" | head -1 | xargs -r basename)
+ENVF="XDG_RUNTIME_DIR=/run/user/$GU WAYLAND_DISPLAY=${WD:-wayland-0} $(tr '\0' '\n' < /proc/$LW/environ | grep -E '^(XDG_|WAYLAND_DISPLAY|DBUS_|QML|LIBSEAT|MOZ_|LANG)' | tr '\n' ' ')"
 pkill -f 'quickshell -p /usr/share/a21s-shell/shell.qml' || true
 sleep 1
 runuser -u gamer -- env $ENVF QT_QPA_PLATFORMTHEME= QT_QUICK_CONTROLS_STYLE=Basic QSG_RENDER_TIMING=1 \

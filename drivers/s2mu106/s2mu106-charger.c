@@ -15,6 +15,7 @@
 
 #include <linux/delay.h>
 #include <linux/i2c.h>
+#include <linux/minmax.h>
 #include <linux/module.h>
 #include <linux/of.h>
 #include <linux/power_supply.h>
@@ -51,6 +52,17 @@
 #define FAST_MA(x)		(((x) / 50) - 1)		/* CTRL7: charge mA */
 #define TOPOFF_MA(x)		(((x) - 100) / 25)		/* CTRL10 nibble */
 
+#define CTRL1_INLIM_MASK	0x7f
+#define CTRL5_CV_MASK		0x7f
+#define CTRL7_FAST_MASK		0x3f
+
+/* Sysfs-writable limits: the defaults suit a host port; a wall charger
+ * can be given more (userspace picks, there is no MUIC cable detection yet). */
+#define INPUT_MA_MIN		100
+#define INPUT_MA_MAX		2000
+#define CHARGE_MA_MIN		100
+#define CHARGE_MA_MAX		2000
+
 #define CV_MV_VAL		4350
 #define INPUT_MA_VAL		1500
 #define CHARGE_MA_VAL		1400
@@ -75,6 +87,20 @@ static int s2mu106_update(struct i2c_client *c, u8 reg, u8 val, u8 mask)
 	return i2c_smbus_write_byte_data(c, reg, (v & ~mask) | (val & mask));
 }
 
+static int s2mu106_set_input_ma(struct i2c_client *c, int ma)
+{
+	ma = clamp(ma, INPUT_MA_MIN, INPUT_MA_MAX);
+	return s2mu106_update(c, S2MU106_CHG_CTRL1, INLIM_MA(ma),
+			      CTRL1_INLIM_MASK);
+}
+
+static int s2mu106_set_charge_ma(struct i2c_client *c, int ma)
+{
+	ma = clamp(ma, CHARGE_MA_MIN, CHARGE_MA_MAX);
+	return s2mu106_update(c, S2MU106_CHG_CTRL7, FAST_MA(ma),
+			      CTRL7_FAST_MASK);
+}
+
 static bool s2mu106_vbus_good(struct i2c_client *c)
 {
 	int v = i2c_smbus_read_byte_data(c, S2MU106_CHG_STATUS0);
@@ -93,9 +119,9 @@ static void s2mu106_program(struct s2mu106_charger *chg)
 	s2mu106_update(c, S2MU106_FACTORY_OFF, 0x00, 0x02);
 	s2mu106_update(c, S2MU106_VSSH_LDO, 0x10, 0x30);
 	s2mu106_update(c, S2MU106_ICR, 0x02, 0x02);
-	i2c_smbus_write_byte_data(c, S2MU106_CHG_CTRL5, CV_MV(CV_MV_VAL));
-	i2c_smbus_write_byte_data(c, S2MU106_CHG_CTRL1, INLIM_MA(INPUT_MA_VAL));
-	i2c_smbus_write_byte_data(c, S2MU106_CHG_CTRL7, FAST_MA(CHARGE_MA_VAL));
+	s2mu106_update(c, S2MU106_CHG_CTRL5, CV_MV(CV_MV_VAL), CTRL5_CV_MASK);
+	s2mu106_set_input_ma(c, INPUT_MA_VAL);
+	s2mu106_set_charge_ma(c, CHARGE_MA_VAL);
 	i2c_smbus_write_byte_data(c, S2MU106_CHG_CTRL10,
 		(TOPOFF_MA(TOPOFF1_MA) << 4) | TOPOFF_MA(TOPOFF2_MA));
 	s2mu106_update(c, S2MU106_CHG_CTRL13, FC_TIMER_16H, 0x38);
@@ -172,6 +198,29 @@ static int s2mu106_psy_get(struct power_supply *psy,
 	return 0;
 }
 
+static int s2mu106_psy_set(struct power_supply *psy,
+	enum power_supply_property psp, const union power_supply_propval *val)
+{
+	struct s2mu106_charger *chg = power_supply_get_drvdata(psy);
+
+	/* intval is in microamps */
+	switch (psp) {
+	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
+		return s2mu106_set_input_ma(chg->client, val->intval / 1000);
+	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
+		return s2mu106_set_charge_ma(chg->client, val->intval / 1000);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int s2mu106_psy_writeable(struct power_supply *psy,
+	enum power_supply_property psp)
+{
+	return psp == POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT ||
+	       psp == POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX;
+}
+
 static enum power_supply_property s2mu106_psy_props[] = {
 	POWER_SUPPLY_PROP_ONLINE,
 	POWER_SUPPLY_PROP_STATUS,
@@ -187,6 +236,8 @@ static const struct power_supply_desc s2mu106_psy_desc = {
 	.properties	= s2mu106_psy_props,
 	.num_properties	= ARRAY_SIZE(s2mu106_psy_props),
 	.get_property	= s2mu106_psy_get,
+	.set_property	= s2mu106_psy_set,
+	.property_is_writeable = s2mu106_psy_writeable,
 };
 
 static int s2mu106_probe(struct i2c_client *client)

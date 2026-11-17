@@ -236,6 +236,8 @@ Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/
 
 **Still open:** real S2MU106 MFD + MUIC + PDIC port (cable-type detection, AFC/PD 9 V fast charge, OTG, haptic); CC/Rd assertion for USB-C sources that hold VBUS off until Rd; DT node replacing `new_device` instantiation; charger IRQ wiring; sustained-charge validation across a full cycle (gauge current was seen swinging negative briefly under load — cross-check units/calibration).
 
+**Round 9 (2026-11-17) — "charges slowly" is the source, not a throttle.** On a Mac USB-C port the battery gets a steady ~1.4 A (≈5.5 W at 3.9–4.0 V, input ≈7.5 W); raising `CTRL1`/`CTRL7` to 2.0/1.8 A and toggling `ICR` (`0x7d` bit1) changed nothing, so the port is the ceiling. Measured 29 % → 50 % in ~43 min, matching 1.4 A on 5000 mAh — the gauge `%` (`RSOC>>14`) is right. Stock Samsung does 9 V AFC (~15 W); that needs the MUIC/PDIC port above. Shipped: `INPUT_CURRENT_LIMIT` and `CONSTANT_CHARGE_CURRENT_MAX` are now writable (µA, clamped 100–2000 mA; defaults still 1.5 A/1.4 A) so userspace can allow ~2.0 A on a wall charger (`echo 2000000 > /sys/class/power_supply/s2mu106-charger/input_current_limit`), and `CTRL1/5/7` are programmed with masked updates instead of whole-byte writes. Known junk: gauge `current_avg` (`MONOUT` stuck at `0x24e2`) and `voltage_avg` (`0x0001`) — the S2MU005 `MONOUTSEL` selectors (0x26/0x27) do not apply on S2MU106; ignore those two properties. Out-of-tree module vermagic must equal the running kernel (`7.3.0-g<sha>-dirty`: build with git available so `UTS_RELEASE` carries the suffix); no `MODVERSIONS`.
+
 ---
 
 ## 1. Current Verified Device State

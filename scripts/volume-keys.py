@@ -17,6 +17,7 @@ or KEY_POWER (`gpio-keys` and `s2mpu12-pwrkey`).
 """
 import glob
 import subprocess
+import pwd
 import time
 from select import select
 
@@ -26,7 +27,7 @@ from a21s_holdmenu import HoldMenu
 
 COMBO_COOLDOWN_SEC = 0.70
 VOLUME_DELAY_SEC = 0.20   # hold a lone volume press this long; a combo cancels it (no volume change / OSD)
-MARKER = "/run/user/1001/a21s-key-combo"
+MARKER = "/run/user/%d/a21s-key-combo" % pwd.getpwnam("gamer").pw_uid
 
 WATCH_KEYS = {
     ecodes.KEY_VOLUMEUP,
