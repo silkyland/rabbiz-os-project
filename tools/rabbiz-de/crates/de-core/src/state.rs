@@ -24,8 +24,11 @@ pub struct De {
     pub setup: DrmSetup,
     pub compositor: DeCompositor,
     pub renderer: DeRenderer,
-    /// The uploaded brand frame texture.
+    /// The uploaded brand frame texture (validates the renderer at init).
     pub brand: DeTexture,
+    /// Source pixels — re-uploaded each frame so every commit carries
+    /// damage and the vblank chain stays alive.
+    pub brand_px: de_api::Pixels,
     pub output: OutputSelection,
     pub started: Instant,
     /// First successful page flip has happened (gates readiness + exit code).
@@ -170,6 +173,7 @@ pub fn init(flags: &Flags) -> Result<De, InitError> {
         compositor,
         renderer,
         brand,
+        brand_px: px,
         output,
         started: Instant::now(),
         first_flip: false,

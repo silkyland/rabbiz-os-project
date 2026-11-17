@@ -75,16 +75,18 @@ impl Run {
         })
     }
 
-    /// Render + queue one frame on the output. Alternates the brand
-    /// position by one physical pixel so every frame carries damage and
-    /// the vblank chain stays alive for the duration of a bench run.
+    /// Render + queue one frame on the output. The brand pixels are
+    /// re-uploaded every frame so each commit carries full damage — a
+    /// re-used `TextureBuffer` reports no damage and `queue_frame` would
+    /// reject it with `EmptyFrame`, stalling the vblank chain.
     pub fn present(&mut self) -> Result<(), String> {
         let t0 = Instant::now();
-        let x = (self.frames % 2) as f64;
-        match (&mut self.de.renderer, &self.de.brand) {
+        let tex = de_render::upload(&mut self.de.renderer, &self.de.brand_px)
+            .map_err(|e| format!("upload: {e}"))?;
+        match (&mut self.de.renderer, &tex) {
             (DeRenderer::Gl(r), DeTexture::Gl(buf)) => {
                 let el = TextureRenderElement::from_texture_buffer(
-                    smithay::utils::Point::<f64, smithay::utils::Physical>::from((x, 0.0)),
+                    smithay::utils::Point::<f64, smithay::utils::Physical>::from((0.0, 0.0)),
                     buf,
                     None,
                     None,
@@ -98,7 +100,7 @@ impl Run {
             }
             (DeRenderer::Soft(r), DeTexture::Soft(buf)) => {
                 let el = TextureRenderElement::from_texture_buffer(
-                    smithay::utils::Point::<f64, smithay::utils::Physical>::from((x, 0.0)),
+                    smithay::utils::Point::<f64, smithay::utils::Physical>::from((0.0, 0.0)),
                     buf,
                     None,
                     None,
