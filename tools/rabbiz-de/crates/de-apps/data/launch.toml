@@ -1,0 +1,18 @@
+# RabbizOS desktop contract & per-app launch overrides.
+# Embedded at compile time via include_str!("../data/launch.toml").
+
+[contract.env]
+A21S_FORCE_SOFTWARE = "1"
+QT_QUICK_BACKEND = "software"
+
+[overrides.google-chrome]
+exec = "a21s-browser"
+args = ["--disable-gpu"]
+
+[overrides."com.google.Chrome"]
+exec = "a21s-browser"
+args = ["--disable-gpu"]
+
+[overrides.chromium]
+exec = "a21s-browser"
+args = ["--disable-gpu"]
