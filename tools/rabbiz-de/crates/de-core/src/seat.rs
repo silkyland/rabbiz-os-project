@@ -168,6 +168,7 @@ impl SeatController {
                             time: event.time_msec(),
                         },
                     );
+                    touch.frame(state);
                 }
                 Vec::new()
             }
@@ -264,6 +265,8 @@ impl SeatController {
             if let Some(touch) = state.seat.get_touch() {
                 touch.down(
                     state,
+                    // The tuple's point is the surface origin in global
+                    // space — a fullscreen app sits at (0,0).
                     Some((surface, (0.0, 0.0).into())),
                     &TouchDownEvent {
                         slot,
@@ -272,6 +275,9 @@ impl SeatController {
                         time: event.time_msec(),
                     },
                 );
+                // libinput never emits touch-frame events; clients (Qt)
+                // dispatch on frame, so end each event batch explicitly.
+                touch.frame(state);
             }
         }
         Vec::new()
