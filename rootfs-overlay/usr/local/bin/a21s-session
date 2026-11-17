@@ -71,6 +71,9 @@ SOCKET="$XDG_RUNTIME_DIR/wayland-0"
 
 to_labwc() {
     echo "a21s-session: $1 — falling back to labwc" >&2
+    # DE-mode env must not leak into labwc — a stale WAYLAND_DISPLAY makes
+    # wlroots pick its wayland backend instead of DRM.
+    unset WAYLAND_DISPLAY DISPLAY
     exec "$LABWC_LAUNCHER"
 }
 

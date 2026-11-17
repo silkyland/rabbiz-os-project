@@ -92,7 +92,25 @@ impl Run {
 
     /// Render + queue one frame on the output (only when there is damage —
     /// `EmptyFrame` is a no-op and simply lets the screen hold still).
+    /// Present one frame, retrying on a busy DRM device. Restarting right
+    /// after another compositor exits races the kernel's deferred rmfb/
+    /// restore work and the first flips can come back EBUSY — a wait is the
+    /// difference between a clean re-exec and a false 75. Generous before
+    /// the first flip (startup/restart edge), single attempt after that.
     pub fn present(&mut self) -> Result<(), String> {
+        let mut last = String::new();
+        let tries = if self.de.first_flip { 1 } else { 120 };
+        for _ in 0..tries {
+            match self.present_once() {
+                Err(e) if e.contains("busy") => last = e,
+                r => return r,
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        Err(last)
+    }
+
+    fn present_once(&mut self) -> Result<(), String> {
         let t0 = Instant::now();
         // Split `de` into field borrows so `renderer` can be passed
         // mutably alongside the rest of the scene state.
@@ -247,6 +265,10 @@ impl Run {
     /// Called after client/input dispatch — present only when a commit or
     /// shell change marked the scene dirty.
     pub fn pump(&mut self) {
+        // Prune dead elements and update output enter/leave — anvil runs
+        // this once per event-loop turn.
+        self.de.space.refresh();
+        self.de.popups.cleanup();
         if self.de.needs_present {
             self.de.needs_present = false;
             let _ = self.present().map_err(|e| eprintln!("present: {e}"));
@@ -444,6 +466,13 @@ pub fn event_loop(
                 profiling_scope_display_dispatch();
                 unsafe {
                     display.get_mut().dispatch_clients(&mut run.de).unwrap();
+                }
+                // Events we queued during dispatch (registry globals,
+                // configures, frame callbacks) only reach the client after
+                // an explicit flush — without this clients stall after
+                // wl_display.sync.
+                if let Err(e) = run.de.display_handle.flush_clients() {
+                    eprintln!("flush_clients: {e}");
                 }
                 run.pump();
                 Ok(PostAction::Continue)

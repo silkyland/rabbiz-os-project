@@ -56,6 +56,9 @@ impl De {
                 root = parent;
             }
             if let Some(window) = self.window_for_surface(&root) {
+                // Refresh the window's cached bbox — Space::element_under
+                // filters on it, so without this every hit test misses.
+                window.on_commit();
                 if &root == surface {
                     let buffer_offset = with_states(surface, |states| {
                         states

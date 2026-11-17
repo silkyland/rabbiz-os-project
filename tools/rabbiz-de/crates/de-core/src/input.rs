@@ -4,6 +4,7 @@
 //! can compute release velocity; the power key spawns `a21s-power-key
 //! toggle` detached on release.
 
+use smithay::reexports::wayland_server::Resource;
 use std::process::Command;
 
 use smithay::backend::input::{
@@ -22,6 +23,10 @@ use crate::state::De;
 impl De {
     /// Dispatch one libinput event into the seat.
     pub fn process_input_event<B: InputBackend>(&mut self, event: InputEvent<B>) {
+        // M1 bring-up aid: DE_INPUT_DEBUG=1 logs every backend event.
+        if std::env::var_os("DE_INPUT_DEBUG").is_some() {
+            eprintln!("input: {}", variant_name::<B>(&event));
+        }
         match event {
             InputEvent::Keyboard { event } => self.on_keyboard_key::<B>(event),
             InputEvent::TouchDown { event } => self.on_touch_down::<B>(event),
@@ -150,6 +155,21 @@ impl De {
         )));
         let serial = SCOUNTER.next_serial();
         let under = self.surface_under(pos).map(|(s, l)| (s, l.to_f64()));
+        if std::env::var_os("DE_INPUT_DEBUG").is_some() {
+            let info = under.as_ref().map(|(s, l)| {
+                let alive = self
+                    .display_handle
+                    .get_client(s.id())
+                    .map(|_| "alive")
+                    .unwrap_or("DEAD");
+                format!("{:?}@{l:?} client={alive}", s.id())
+            });
+            eprintln!(
+                "touch_down pos={pos:?} under={info:?} windows={} kbd={}",
+                self.space.elements().count(),
+                self.seat.get_keyboard().is_some()
+            );
+        }
         self.last_touch_pos = pos;
         if let Some((surface, _)) = &under {
             if let Some(kbd) = self.seat.get_keyboard() {
@@ -224,5 +244,29 @@ impl De {
         window
             .surface_under(rel, WindowSurfaceType::ALL)
             .map(|(s, l)| (s, l + loc))
+    }
+}
+
+/// Variant name for the `DE_INPUT_DEBUG` bring-up log.
+fn variant_name<B: InputBackend>(e: &InputEvent<B>) -> &'static str {
+    match e {
+        InputEvent::DeviceAdded { .. } => "device_added",
+        InputEvent::DeviceRemoved { .. } => "device_removed",
+        InputEvent::Keyboard { .. } => "keyboard",
+        InputEvent::PointerMotion { .. } => "pointer_motion",
+        InputEvent::PointerMotionAbsolute { .. } => "pointer_motion_abs",
+        InputEvent::PointerButton { .. } => "pointer_button",
+        InputEvent::PointerAxis { .. } => "pointer_axis",
+        InputEvent::TouchDown { .. } => "touch_down",
+        InputEvent::TouchMotion { .. } => "touch_motion",
+        InputEvent::TouchUp { .. } => "touch_up",
+        InputEvent::TouchCancel { .. } => "touch_cancel",
+        InputEvent::TouchFrame { .. } => "touch_frame",
+        InputEvent::TabletToolAxis { .. } => "tablet_axis",
+        InputEvent::TabletToolProximity { .. } => "tablet_prox",
+        InputEvent::TabletToolTip { .. } => "tablet_tip",
+        InputEvent::TabletToolButton { .. } => "tablet_button",
+        InputEvent::SwitchToggle { .. } => "switch",
+        _ => "other",
     }
 }
