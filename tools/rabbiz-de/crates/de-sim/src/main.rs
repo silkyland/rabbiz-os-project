@@ -15,6 +15,7 @@ struct Args {
     width: u32,
     height: u32,
     out: PathBuf,
+    list: bool,
 }
 
 impl Default for Args {
@@ -24,6 +25,7 @@ impl Default for Args {
             width: 720,
             height: 1600,
             out: PathBuf::new(),
+            list: false,
         }
     }
 }
@@ -49,6 +51,7 @@ fn parse_args<I: IntoIterator<Item = String>>(args: I) -> Result<Args, String> {
                     .map_err(|_| "--height must be a number")?
             }
             "--out" => parsed.out = PathBuf::from(it.next().ok_or("--out needs a value")?),
+            "--list-scenes" => parsed.list = true,
             other => return Err(format!("unknown argument: {other}")),
         }
     }
@@ -70,12 +73,21 @@ fn main() -> ExitCode {
         }
     };
 
-    if args.scene != "brand" {
-        eprintln!("de-sim: unknown scene '{}' (expected 'brand')", args.scene);
-        return ExitCode::from(2);
+    if args.list {
+        for name in de_ui::SCENES {
+            println!("{name}");
+        }
+        return ExitCode::SUCCESS;
     }
 
-    let scene = de_ui::boot_frame(Size::new(args.width, args.height));
+    let Some(scene) = de_ui::scene(&args.scene, Size::new(args.width, args.height)) else {
+        eprintln!(
+            "de-sim: unknown scene '{}' (known: {})",
+            args.scene,
+            de_ui::SCENES.join(", ")
+        );
+        return ExitCode::from(2);
+    };
     let mut paint = de_paint::Renderer::new();
     let pixmap = paint.render(&scene);
     if let Err(err) = de_paint::save_png(&pixmap, &args.out) {
