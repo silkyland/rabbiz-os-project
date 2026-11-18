@@ -74,22 +74,15 @@ pub fn notif_hit(size: Size, pos: Point, count: usize) -> Option<NotifHit> {
         .map(NotifHit::Card)
 }
 
-fn backdrop_with_veil(size: Size, _backdrop: &Pixels) -> Canvas {
-    // Transparent between the frosted surfaces. Never paint a fullscreen
-    // wallpaper, blur, or coloured veil over the underlying application.
-    Canvas::new(size)
-}
-
-/// The sheet surface itself: the blurred backdrop under a translucent veil.
-/// The compositor draws it as a separate layer revealed from the top in step
-/// with the pull, so the blur always lines up with the scene it covers while
-/// the controls slide down over it.
-#[must_use]
-pub fn render_veil(backdrop: &Pixels, tint: [u8; 4]) -> Pixels {
-    let mut c = Canvas::new(backdrop.size);
+/// The sheet surface itself: the blurred scene under the scrim, baked into
+/// the panel texture so the whole panel is one frosted surface. It stays
+/// aligned with the scene beneath whenever the panel is settled; mid-pull it
+/// shifts with the controls exactly like the frosted cards do.
+fn backdrop_with_veil(size: Size, backdrop: &Pixels, tint: [u8; 4]) -> Canvas {
+    let mut c = Canvas::new(size);
     c.blit(backdrop, Point::new(0, 0));
-    c.fill_rect(Rect::new(0, 0, backdrop.size.w, backdrop.size.h), tint);
-    c.into_pixels()
+    c.fill_rect(Rect::new(0, 0, size.w, size.h), tint);
+    c
 }
 
 fn header(c: &mut Canvas, t: &Theme, clock: &str, date: &str, backdrop: &Pixels) {
@@ -125,7 +118,7 @@ pub fn render_notifications(
     date: &str,
     items: &[Notification],
 ) -> Pixels {
-    let mut c = backdrop_with_veil(size, backdrop);
+    let mut c = backdrop_with_veil(size, backdrop, t.scrim);
     header(&mut c, t, clock, date, backdrop);
     if !items.is_empty() {
         let r = clear_all_rect(size);
@@ -317,7 +310,7 @@ pub fn render_quick(
     date: &str,
     m: &QuickModel,
 ) -> Pixels {
-    let mut c = backdrop_with_veil(size, backdrop);
+    let mut c = backdrop_with_veil(size, backdrop, t.scrim);
     header(&mut c, t, clock, date, backdrop);
     let l = quick_layout(size);
     for (r, glyph) in [(l.settings, "\u{e8b8}"), (l.power, "\u{e8ac}")] {
@@ -383,20 +376,22 @@ mod tests {
     }
 
     #[test]
-    fn panel_is_transparent_between_frosted_controls() {
+    fn panel_is_frosted_between_controls() {
         let s = Strings::default();
         let bg = backdrop();
         let px = render_quick(SIZE, &s, &tokens::DEFAULT, &bg, "16:11", "Mon", &model());
         let alpha = |x: i32, y: i32| px.data[((y * SIZE.w + x) * 4 + 3) as usize];
-        assert_eq!(alpha(0, 0), 0);
-        assert_eq!(alpha(360, 1250), 0);
+        // The whole sheet is frosted: gaps between controls show the blurred
+        // scene under the scrim, never the sharp application behind it.
+        assert_eq!(alpha(0, 0), 255);
+        assert_eq!(alpha(360, 1250), 255);
         assert!(alpha(80, 250) > 0);
     }
 
     #[test]
     fn veil_is_the_backdrop_under_a_tint() {
         let t = tokens::DEFAULT;
-        let px = render_veil(&backdrop(), t.scrim);
+        let px = backdrop_with_veil(SIZE, &backdrop(), t.scrim).into_pixels();
         let at = |x: i32, y: i32| ((y * SIZE.w + x) * 4) as usize;
         let p = &px.data[at(360, 1250)..at(360, 1250) + 4];
         assert_eq!(p[3], 255, "veil covers the whole sheet");

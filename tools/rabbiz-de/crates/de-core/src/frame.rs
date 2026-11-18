@@ -707,52 +707,25 @@ fn push_panel<R>(
     if !panel.pull.shown() {
         panel.tex = None;
         panel.tex_generation = u64::MAX;
-        panel.veil_tex = None;
-        panel.veil_tex_generation = u64::MAX;
         return;
     }
-    if panel.tex.is_none() || panel.tex_generation != panel.generation {
-        let Some(px) = panel.pixels.as_ref() else { return };
+    if panel.tex.is_none()
+        || panel.tex_generation != panel.generation
+        || panel.tex_kind != panel.kind()
+    {
+        let Some(px) = panel.active_pixels() else { return };
         panel.tex = upload_any(renderer, px);
         panel.tex_generation = panel.generation;
+        panel.tex_kind = panel.kind();
     }
-    if panel.veil_tex.is_none() || panel.veil_tex_generation != panel.generation {
-        if let Some(veil) = panel.veil.as_ref() {
-            panel.veil_tex = upload_any(renderer, veil);
-            panel.veil_tex_generation = panel.generation;
-        }
-    }
-    let (Some(tex), Some(px)) = (texture_buffer::<R>(panel.tex.as_ref()), panel.pixels.as_ref())
+    let (Some(tex), Some(px)) = (
+        texture_buffer::<R>(panel.tex.as_ref()),
+        panel.active_pixels(),
+    )
     else {
         return;
     };
     let f = panel.pull.frac().clamp(0.0, 1.0);
-    // The frosted sheet surface beneath the sliding controls: the blurred
-    // scene under the scrim, revealed from the top edge in step with the
-    // pull so every covered row stays aligned with the scene beneath it.
-    if let (Some(veil), Some(vpx)) = (texture_buffer::<R>(panel.veil_tex.as_ref()), panel.veil.as_ref())
-    {
-        let covered = f64::from((f * vpx.size.h as f32).round());
-        if covered > 0.0 {
-            elements.insert(
-                0,
-                DeElement::from(TextureRenderElement::from_texture_buffer(
-                    Point::<f64, Physical>::from((0.0, 0.0)),
-                    veil,
-                    None,
-                    Some(smithay::utils::Rectangle::new(
-                        Point::<f64, smithay::utils::Logical>::from((0.0, 0.0)),
-                        smithay::utils::Size::<f64, smithay::utils::Logical>::from((
-                            f64::from(vpx.size.w),
-                            covered,
-                        )),
-                    )),
-                    None,
-                    Kind::Unspecified,
-                )),
-            );
-        }
-    }
     let y = -(1.0 - f) * px.size.h as f32;
     let alpha = (f * 1.6).min(1.0);
     elements.insert(

@@ -78,7 +78,7 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
             canvas.blit(&px, ApiPoint::ZERO);
         }
     }
-    if let (true, Some(px)) = (de.panels.pull.shown(), de.panels.pixels.as_ref()) {
+    if let (true, Some(px)) = (de.panels.pull.shown(), de.panels.active_pixels()) {
         let f = de.panels.pull.frac().clamp(0.0, 1.0);
         let y = (-(1.0 - f) * px.size.h as f32).round() as i32;
         canvas.blit_scaled(

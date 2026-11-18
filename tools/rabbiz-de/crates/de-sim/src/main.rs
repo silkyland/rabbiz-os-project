@@ -162,12 +162,9 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
                 de_ui::panels::render_notifications(size, s, t, &blurred, "16:11", "Mon, 16 Nov", &items)
             }
             };
-            // Compose like the device does: the frosted sheet beneath the
-            // floating controls, fully open here.
-            let mut c = de_paint::Canvas::new(size);
-            c.blit(&de_ui::panels::render_veil(&blurred, t.scrim), de_api::Point::new(0, 0));
-            c.blit(&controls, de_api::Point::new(0, 0));
-            Some(c.into_pixels())
+            // The panel texture already bakes the frosted sheet beneath the
+            // controls; the sim shows it fully open.
+            Some(controls)
         }
         "status" => {
             // Full house, modelled on a real dual-SIM Android status bar:

@@ -46,18 +46,22 @@ pub(crate) struct PanelUi {
     kind: PanelKind,
     pub(crate) pull: Pull,
     start_x: i32,
-    /// The panel image for `kind` and a counter that changes with it.
-    pub(crate) pixels: Option<Pixels>,
+    /// Pre-rendered panel image per kind, so a pull never waits on a raster.
+    pub(crate) pixels: [Option<Pixels>; 2],
     pub(crate) generation: u64,
     pub(crate) tex: Option<Box<dyn std::any::Any>>,
     pub(crate) tex_generation: u64,
-    /// The frosted sheet surface beneath the controls (`panels::render_veil`),
-    /// rebuilt whenever the panel image is.
-    pub(crate) veil: Option<Pixels>,
-    pub(crate) veil_tex: Option<Box<dyn std::any::Any>>,
-    pub(crate) veil_tex_generation: u64,
-    stale: bool,
+    pub(crate) tex_kind: PanelKind,
+    stale: [bool; 2],
+    /// The blurred scene behind the glass, tagged by the wallpaper it was
+    /// captured for. A pull defers recapture to `capture_pending`.
     blur: Option<(String, Pixels)>,
+    capture_pending: bool,
+    blur_rx: Option<(String, std::sync::mpsc::Receiver<Pixels>)>,
+    /// Panel raster worker: kind index → pixels. Keeps the ~90 ms raster
+    /// off the frame path entirely.
+    render_rx: Option<(usize, u64, std::sync::mpsc::Receiver<Pixels>)>,
+    content_gen: u64,
     last_tick: Option<Instant>,
     on: [bool; 12],
     available: [bool; 12],
@@ -73,18 +77,20 @@ pub(crate) struct PanelUi {
 impl PanelUi {
     pub(crate) fn new() -> Self {
         Self {
-            kind: PanelKind::Quick,
+            kind: PanelKind::Notifications,
             pull: Pull::new(),
             start_x: 0,
-            pixels: None,
+            pixels: [None, None],
             generation: 0,
             tex: None,
             tex_generation: u64::MAX,
-            veil: None,
-            veil_tex: None,
-            veil_tex_generation: u64::MAX,
-            stale: true,
+            tex_kind: PanelKind::Quick,
+            stale: [true; 2],
             blur: None,
+            capture_pending: false,
+            blur_rx: None,
+            render_rx: None,
+            content_gen: 0,
             last_tick: None,
             on: [false; 12],
             available: [false; 12],
@@ -110,7 +116,17 @@ impl PanelUi {
     /// Forward a control action (lock screen toggles the torch too).
     pub(crate) fn request_control(&mut self, action: de_system::controls::Action) {
         self.controls.request(action);
-        self.stale = true;
+        self.stale = [true; 2];
+        self.content_gen += 1;
+    }
+
+    /// The panel image for the kind a pull would show right now.
+    pub(crate) fn active_pixels(&self) -> Option<&Pixels> {
+        self.pixels[self.kind as usize].as_ref()
+    }
+
+    pub(crate) fn kind(&self) -> PanelKind {
+        self.kind
     }
 }
 
@@ -139,7 +155,8 @@ impl De {
             id: e.id, app: e.app, title: e.title, body: e.body,
             when: format!("{} min", e.created.elapsed().as_secs() / 60), icon: None,
         }).collect();
-        self.panels.stale = true;
+        self.panels.stale = [true; 2];
+        self.panels.content_gen += 1;
         if self.panels.shown() { self.needs_present = true; }
     }
 
@@ -191,17 +208,10 @@ impl De {
             } else {
                 PanelKind::Quick
             };
-            // Capture before the panel is visible, so the glass samples the
-            // real Home/app and never captures its own previous frame.
-            if let Some(scene) = crate::composite::composite_output(self) {
-                let at = Instant::now();
-                self.panels.blur = Some((self.app_prefs.prefs().wallpaper_id.clone(),
-                    de_paint::glass::blurred_backdrop(&scene)));
-                if std::env::var_os("DE_GESTURE_DEBUG").is_some() {
-                    eprintln!("panel-backdrop blur_ms={:.2}", at.elapsed().as_secs_f64() * 1000.0);
-                }
-            }
-            self.panels.stale = true;
+            // The capture is deferred to `panel_prepare` so the input path
+            // never pays for it; the panel opens with the cached backdrop
+            // and the live-scene blur swaps in a few frames later.
+            self.panels.capture_pending = true;
             self.panels.pull.begin();
             self.panels.pull.drag(dy);
             self.panel_touch();
@@ -264,14 +274,16 @@ impl De {
                     Some(NotifHit::ClearAll) => {
                         self.panels.server.dismiss(0);
                         self.panels.notifications.clear();
-                        self.panels.stale = true;
+                        self.panels.stale = [true; 2];
+        self.panels.content_gen += 1;
                     }
                     Some(NotifHit::Card(i)) => {
                         if let Some(n) = self.panels.notifications.get(i) {
                             self.panels.server.dismiss(n.id);
                         }
                         self.panels.notifications.remove(i);
-                        self.panels.stale = true;
+                        self.panels.stale = [true; 2];
+        self.panels.content_gen += 1;
                     }
                     None => self.panel_close(),
                 }
@@ -289,7 +301,8 @@ impl De {
                             if self.app_prefs.set_do_not_disturb(on) {
                                 self.panels.on[i] = on;
                             }
-                            self.panels.stale = true;
+                            self.panels.stale = [true; 2];
+        self.panels.content_gen += 1;
                             None
                         },
                         _ => None,
@@ -349,10 +362,81 @@ impl De {
     }
 
     /// Render the panel image if the content changed (before the frame is built).
+
+    /// Keep the panel images fresh. Renders happen here — before the frame
+    /// is built — and are pre-rendered for both kinds at boot, so a pull
+    /// only ever waits on the texture upload. The expensive part of a pull
+    /// (scene capture + blur) is deferred off the input path: the capture
+    /// runs in this call, the blur on a worker thread.
     pub(crate) fn panel_prepare(&mut self) {
-        if !self.panels.pull.shown() || (self.panels.pixels.is_some() && !self.panels.stale) {
+        // The blur worker landed: swap in the live-scene backdrop.
+        if let Some((id, rx)) = self.panels.blur_rx.take() {
+            match rx.try_recv() {
+                Ok(px) => {
+                    self.panels.blur = Some((id, px));
+                    self.panels.stale = [true; 2];
+        self.panels.content_gen += 1;
+                    if self.panels.shown() {
+                        self.needs_present = true;
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    self.panels.blur_rx = Some((id, rx));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
+            }
+        }
+        // Pull-begin asked for a fresh backdrop: composite here (never in
+        // the input handler), blur off-thread.
+        if self.panels.capture_pending {
+            self.panels.capture_pending = false;
+            if let Some(scene) = crate::composite::composite_output(self) {
+                let wp_id = self.app_prefs.prefs().wallpaper_id.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let _ = tx.send(de_paint::glass::blurred_backdrop(&scene));
+                });
+                self.panels.blur_rx = Some((wp_id, rx));
+            }
+        }
+        // The raster worker landed: swap in the fresh panel image. If the
+        // content moved on while it was rendering the kind stays stale and
+        // re-queues below.
+        if let Some((k, cgen, rx)) = self.panels.render_rx.take() {
+            match rx.try_recv() {
+                Ok(px) => {
+                    self.panels.pixels[k] = Some(px);
+                    self.panels.generation += 1;
+                    if cgen == self.panels.content_gen {
+                        self.panels.stale[k] = false;
+                    }
+                    if self.panels.shown() {
+                        self.needs_present = true;
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    self.panels.render_rx = Some((k, cgen, rx));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
+            }
+        }
+        // One kind in flight at a time, the visible kind first — spreads
+        // the boot pre-render and content updates across pumps.
+        if self.panels.render_rx.is_some() {
             return;
         }
+        let other = match self.panels.kind {
+            PanelKind::Notifications => PanelKind::Quick,
+            PanelKind::Quick => PanelKind::Notifications,
+        };
+        let kind = [self.panels.kind, other]
+            .into_iter()
+            .find(|k| {
+                self.panels.pixels[*k as usize].is_none() || self.panels.stale[*k as usize]
+            });
+        let Some(kind) = kind else {
+            return;
+        };
         let size = Size::new(self.output.width as i32, self.output.height as i32);
         let wp_id = self.app_prefs.prefs().wallpaper_id.clone();
         if self.panels.blur.as_ref().map(|(id, _)| id.as_str()) != Some(wp_id.as_str()) {
@@ -361,37 +445,26 @@ impl De {
         }
         let (status, date) = self.shell_meta();
         let strings = self.strings.clone();
-        let t = tokens::DEFAULT;
         let Some((_, backdrop)) = self.panels.blur.as_ref() else {
             return;
         };
-        let raster_at = Instant::now();
-        let px = match self.panels.kind {
-            PanelKind::Notifications => panels::render_notifications(
-                size,
-                &strings,
-                &t,
-                backdrop,
-                &status.clock,
-                &date,
-                &self.panels.notifications,
-            ),
-            PanelKind::Quick => {
-                let m = self.quick_model();
-                let Some((_, backdrop)) = self.panels.blur.as_ref() else {
-                    return;
-                };
-                panels::render_quick(size, &strings, &t, backdrop, &status.clock, &date, &m)
-            }
-        };
-        let veil = panels::render_veil(backdrop, t.scrim);
-        if std::env::var_os("RABBIZ_DE_MOTION_TRACE").is_some() {
-            eprintln!("panel-raster cpu_ms={:.3}", raster_at.elapsed().as_secs_f64() * 1000.0);
-        }
-        self.panels.pixels = Some(px);
-        self.panels.veil = Some(veil);
-        self.panels.generation += 1;
-        self.panels.stale = false;
+        let backdrop = backdrop.clone();
+        let notifications = self.panels.notifications.clone();
+        let quick = matches!(kind, PanelKind::Quick).then(|| self.quick_model());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let px = match quick {
+                Some(m) => panels::render_quick(
+                    size, &strings, &tokens::DEFAULT, &backdrop, &status.clock, &date, &m,
+                ),
+                None => panels::render_notifications(
+                    size, &strings, &tokens::DEFAULT, &backdrop, &status.clock, &date,
+                    &notifications,
+                ),
+            };
+            let _ = tx.send(px);
+        });
+        self.panels.render_rx = Some((kind as usize, self.panels.content_gen, rx));
     }
 
     /// Switch to a shell screen from a panel (the app keeps running).
