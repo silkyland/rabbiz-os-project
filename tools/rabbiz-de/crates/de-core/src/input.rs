@@ -497,6 +497,11 @@ impl De {
                             );
                         }
                     }
+                    Some(de_ui::home::HomeHit::Drawer) => {
+                        self.nav.go(Screen::Drawer);
+                        self.shell_dirty = true;
+                        self.needs_present = true;
+                    }
                     Some(de_ui::home::HomeHit::Search) => {
                         self.nav.go(Screen::Search);
                         self.shell_dirty = true;

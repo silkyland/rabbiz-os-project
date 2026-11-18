@@ -14,6 +14,7 @@ charging = "กำลังชาร์จ"
 fully_charged = "ชาร์จเต็มแล้ว"
 
 [home]
+search_pill = "ค้นหา"
 search_hint = "ค้นหาแอปและอื่น ๆ"
 
 [drawer]

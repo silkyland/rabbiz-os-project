@@ -14,12 +14,19 @@ use de_paint::{text, Canvas};
 use crate::chrome::{self, style, IconEntry, StatusInfo};
 use crate::i18n::Strings;
 
-/// Grid geometry (§7.18): 4 columns × 4 rows from y=312, 168×160 cells.
+/// Geometry follows the Stitch light home (docs/DE-DESIGN-LIGHT-TOKENS.md,
+/// assets/design/light-v1/home.png) scaled to 720 px: a big clock and date
+/// at the left, a rounded search card, 4 columns of 112 px tiles, a small
+/// "Search" pill and a floating five-slot dock.
 const CELL_W: i32 = 168;
-const CELL_H: i32 = 160;
-const GRID_Y: i32 = 312;
-const SEARCH_Y: i32 = 1242;
-const DOCK_Y: i32 = 1392;
+const CELL_H: i32 = 172;
+const GRID_Y: i32 = 580;
+const ICON: i32 = 112;
+const DOCK_ICON: i32 = 100;
+/// Left edge of the clock, date and search card.
+const LEFT: i32 = 44;
+const SEARCH_CARD_Y: i32 = 414;
+const SEARCH_CARD_H: i32 = 124;
 /// Icons per home page (4×4).
 pub const PAGE_SIZE: usize = 16;
 
@@ -89,8 +96,10 @@ pub enum HomeHit {
     Grid(usize),
     /// Dock slot index.
     Dock(usize),
-    /// The search pill (→ opens search/drawer).
+    /// The search card (→ opens search).
     Search,
+    /// The small "Search" pill above the dock (→ opens the app drawer).
+    Drawer,
 }
 
 fn grid_cell(size: Size, index: usize) -> Rect {
@@ -100,21 +109,26 @@ fn grid_cell(size: Size, index: usize) -> Rect {
 }
 
 fn dock_shelf(size: Size) -> Rect {
-    Rect::new(
-        chrome::MARGIN,
-        DOCK_Y.min(size.h - 240),
-        chrome::content_w(size),
-        120,
-    )
+    Rect::new(16, size.h - 220, size.w - 32, 150)
+}
+
+fn search_card(size: Size) -> Rect {
+    Rect::new(LEFT, SEARCH_CARD_Y, size.w - LEFT * 2, SEARCH_CARD_H)
+}
+
+/// The small "Search" pill above the dock: opens the app drawer.
+fn drawer_pill(size: Size) -> Rect {
+    Rect::new((size.w - 200) / 2, size.h - 308, 200, 56)
 }
 
 fn grid_icon(cell: Rect) -> Rect {
-    Rect::new(cell.x + (CELL_W - 96) / 2, cell.y + 8, 96, 96)
+    Rect::new(cell.x + (CELL_W - ICON) / 2, cell.y + 6, ICON, ICON)
 }
 
 fn dock_icon(dock: Rect, index: usize, slots: usize) -> Rect {
-    let x = dock.x + 40 + index as i32 * ((dock.w - 80 - 88) / (slots - 1) as i32);
-    Rect::new(x, dock.y + 16, 88, 88)
+    let pad = 30;
+    let x = dock.x + pad + index as i32 * ((dock.w - pad * 2 - DOCK_ICON) / (slots - 1) as i32);
+    Rect::new(x, dock.y + (dock.h - DOCK_ICON) / 2, DOCK_ICON, DOCK_ICON)
 }
 
 /// Exact painted icon bounds for a launch from a grid cell or dock slot.
@@ -123,7 +137,7 @@ pub fn icon_rect(size: Size, hit: HomeHit, dock_len: usize) -> Option<Rect> {
     match hit {
         HomeHit::Grid(i) => Some(grid_icon(grid_cell(size, i))),
         HomeHit::Dock(i) => Some(dock_icon(dock_shelf(size), i, dock_len.clamp(4, 6))),
-        HomeHit::Search => None,
+        HomeHit::Search | HomeHit::Drawer => None,
     }
 }
 
@@ -132,21 +146,18 @@ pub fn icon_rect(size: Size, hit: HomeHit, dock_len: usize) -> Option<Rect> {
 /// [`crate::gestures::Gesture::Tap`].
 #[must_use]
 pub fn hit_test(size: Size, pos: Point, apps_on_page: usize, dock_len: usize) -> Option<HomeHit> {
-    let sp = Rect::new(
-        chrome::MARGIN,
-        SEARCH_Y.min(size.h - 420),
-        chrome::content_w(size),
-        64,
-    );
-    if sp.contains(pos) {
+    if search_card(size).contains(pos) {
         return Some(HomeHit::Search);
+    }
+    if drawer_pill(size).contains(pos) {
+        return Some(HomeHit::Drawer);
     }
     for i in 0..apps_on_page.min(PAGE_SIZE) {
         if grid_cell(size, i).contains(pos) {
             return Some(HomeHit::Grid(i));
         }
     }
-    let slots = dock_len.clamp(4, 6);
+    let slots = dock_slots(dock_len);
     for i in 0..dock_len.min(slots) {
         if dock_icon(dock_shelf(size), i, slots).contains(pos) {
             return Some(HomeHit::Dock(i));
@@ -167,7 +178,7 @@ pub enum DropTarget {
 /// Number of dock slots painted for `dock_len` pinned apps.
 #[must_use]
 pub fn dock_slots(dock_len: usize) -> usize {
-    dock_len.clamp(4, 6)
+    dock_len.clamp(5, 6)
 }
 
 /// Which drop target `pos` points at while an icon is being dragged: the
@@ -206,15 +217,51 @@ pub fn drop_rect(size: Size, target: DropTarget, dock_len: usize) -> Rect {
     }
 }
 
+/// Top of the page-dots strip (between the dock and the gesture bar).
+#[must_use]
+pub fn dots_y(size: Size) -> i32 {
+    let dock = dock_shelf(size);
+    dock.y + dock.h + 12
+}
+
+/// The page-dots row for `page` of `count`, as a strip `size.w` wide
+/// painted at [`dots_y`]; the pager shows one per settled page.
+#[must_use]
+pub fn render_dots(size: Size, t: &Theme, count: usize, page: usize) -> Pixels {
+    let mut c = Canvas::new(Size::new(size.w, 12));
+    let dots_w = count as i32 * 20 - 12;
+    let mut x = (size.w - dots_w) / 2;
+    for i in 0..count {
+        let (d, col) = if i == page { (10, t.accent) } else { (8, t.text3) };
+        c.fill_rounded_rect(Rect::new(x, 1, d, d), 999.0, col);
+        x += 20;
+    }
+    c.into_pixels()
+}
+
 /// Only the icon grid of one page, on a transparent canvas: the layer the
 /// pager slides while the rest of the home screen stays put.
 #[must_use]
 pub fn render_grid(size: Size, t: &Theme, apps: &[IconEntry]) -> Pixels {
-    let mut c = Canvas::new(size);
+    let mut c = Canvas::new(Size::new(size.w, grid_band_h()));
     for (i, e) in apps.iter().take(PAGE_SIZE).enumerate() {
-        draw_icon(&mut c, t, e, grid_cell(size, i));
+        let mut cell = grid_cell(size, i);
+        cell.y -= GRID_Y;
+        draw_icon(&mut c, t, e, cell);
     }
     c.into_pixels()
+}
+
+/// Height of the strip [`render_grid`] returns (it is blitted at [`grid_band_y`]).
+#[must_use]
+pub const fn grid_band_h() -> i32 {
+    CELL_H * 4
+}
+
+/// Top of the grid strip on screen.
+#[must_use]
+pub const fn grid_band_y() -> i32 {
+    GRID_Y
 }
 
 /// Render the home screen.
@@ -231,34 +278,57 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     };
     chrome::status_bar_on_wallpaper(&mut c, t, &m.status);
 
-    // Compact Smart Widget: time, date, charging note (glass card).
-    let hero = Rect::new(chrome::MARGIN, 88, chrome::content_w(size), 184);
-    c.fill_rounded_rect(hero, tokens::RADIUS_CARD, t.glass);
+    // Clock and date, left-aligned, straight on the wallpaper.
+    let clock_style = text::LabelStyle {
+        size: 156.0,
+        line_height: 164.0,
+        weight: 400,
+        tnum: true,
+        color: t.text,
+        ..text::LabelStyle::default()
+    };
+    chrome::draw(&mut c, m.clock, &clock_style, LEFT - 4, 118, None);
+    if !m.date.is_empty() {
+        let date_style = text::LabelStyle {
+            size: 30.0,
+            line_height: 38.0,
+            weight: 600,
+            color: t.text,
+            ..text::LabelStyle::default()
+        };
+        chrome::draw(&mut c, m.date, &date_style, LEFT, 318, None);
+    }
+
+    // Search card: glass, hint text, mic and camera buttons.
+    let card = search_card(size);
+    c.fill_rounded_rect(card, 44.0, t.glass);
     chrome::draw(
         &mut c,
-        m.clock,
-        &style::h2(t.text),
-        hero.x + 24,
-        hero.y + 24,
+        "\u{e8b6}",
+        &text::LabelStyle::icon(32.0, t.text3),
+        card.x + 32,
+        card.y + (card.h - 40) / 2,
         None,
     );
-    if !m.date.is_empty() {
+    chrome::draw(
+        &mut c,
+        s.get("home.search_hint"),
+        &style::body(t.text2),
+        card.x + 84,
+        card.y + (card.h - 34) / 2,
+        Some(card.w - 84 - 170),
+    );
+    let d = 60;
+    for (i, glyph) in ["\u{e029}", "\u{e412}"].into_iter().enumerate() {
+        let x = card.x + card.w - 24 - d * (2 - i as i32) - 12 * (1 - i as i32);
+        let r = Rect::new(x, card.y + (card.h - d) / 2, d, d);
+        c.fill_rounded_rect(r, 999.0, t.glass_hi);
         chrome::draw(
             &mut c,
-            m.date,
-            &style::label(t.text2),
-            hero.x + 24,
-            hero.y + 76,
-            None,
-        );
-    }
-    if !m.charging.is_empty() {
-        chrome::draw(
-            &mut c,
-            m.charging,
-            &style::caption(t.accent),
-            hero.x + 24,
-            hero.y + hero.h - 44,
+            glyph,
+            &text::LabelStyle::icon(30.0, t.accent),
+            r.x + (d - 34) / 2,
+            r.y + (d - 34) / 2,
             None,
         );
     }
@@ -269,58 +339,48 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
         draw_icon(&mut c, t, e, cell);
     }
 
-    // Page dots between grid and search pill.
-    if m.page_count > 1 {
-        let dots_w = m.page_count as i32 * 20 - 12;
-        let mut x = (size.w - dots_w) / 2;
-        let y = SEARCH_Y - 56;
-        for i in 0..m.page_count {
-            let (d, col) = if i == m.page {
-                (10, t.accent)
-            } else {
-                (8, t.text3)
-            };
-            c.fill_rounded_rect(Rect::new(x, y, d, d), 999.0, col);
-            x += 20;
-        }
-    }
-
-    // Search pill.
-    let sp = Rect::new(
-        chrome::MARGIN,
-        SEARCH_Y.min(size.h - 420),
-        chrome::content_w(size),
-        64,
-    );
-    c.fill_rounded_rect(sp, tokens::RADIUS_PILL, t.glass);
+    // Small "Search" pill above the dock (opens the drawer).
+    let pill = drawer_pill(size);
+    c.fill_rounded_rect(pill, tokens::RADIUS_PILL, t.glass);
     chrome::draw(
         &mut c,
         "\u{e8b6}",
-        &text::LabelStyle::icon(26.0, t.text3),
-        sp.x + 24,
-        sp.y + 18,
+        &text::LabelStyle::icon(28.0, t.accent),
+        pill.x + 30,
+        pill.y + 13,
         None,
     );
     chrome::draw(
         &mut c,
-        s.get("home.search_hint"),
-        &style::label(t.text3),
-        sp.x + 64,
-        sp.y + 18,
+        s.get("home.search_pill"),
+        &style::body(t.text),
+        pill.x + 72,
+        pill.y + 11,
         None,
     );
 
-    // Dock: glass shelf, pinned icons (or empty slots up to 4).
+    // Page dots, tucked between the dock and the gesture bar.
+    if m.page_count > 1 {
+        c.blit(
+            &render_dots(size, t, m.page_count, m.page),
+            Point::new(0, dots_y(size)),
+        );
+    }
+
+    // Dock: floating glass shelf, pinned icons (empty slots hinted).
     let dock = dock_shelf(size);
-    c.fill_rounded_rect(dock, tokens::RADIUS_SHEET, t.glass);
-    let slots = m.dock.len().clamp(4, 6);
+    c.fill_rounded_rect(dock, 60.0, t.glass);
+    let slots = dock_slots(m.dock.len());
     for i in 0..slots {
         let r = dock_icon(dock, i, slots);
         if let Some(e) = m.dock.get(i) {
             chrome::draw_app_icon(&mut c, t, e, r);
         } else {
-            // Empty slot hint.
-            c.fill_rounded_rect(r, tokens::ICON_TILE_RADIUS * (88.0 / 96.0), t.surface2);
+            c.fill_rounded_rect(
+                r,
+                tokens::ICON_TILE_RADIUS * (DOCK_ICON as f32 / 96.0),
+                t.surface2,
+            );
         }
     }
     chrome::nav_pill(&mut c, t);
@@ -333,7 +393,7 @@ fn draw_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, cell: Rect) {
         let (w, h) = (px.width() as i32, px.height() as i32);
         c.blit(
             &Pixels::new(Size::new(w, h), px.data().to_vec()),
-            Point::new(cell.x + (CELL_W - w) / 2, cell.y + 108),
+            Point::new(cell.x + (CELL_W - w) / 2, cell.y + ICON + 14),
         );
     }
 }
@@ -369,9 +429,9 @@ mod tests {
             Some(DropTarget::Grid(9))
         );
         // Far left of the dock catches slot 0, far right the last slot.
-        let y = DOCK_Y + 60;
+        let y = dock_shelf(size).y + 60;
         assert_eq!(drop_target(size, Point::new(40, y), 4), Some(DropTarget::Dock(0)));
-        assert_eq!(drop_target(size, Point::new(690, y), 4), Some(DropTarget::Dock(3)));
+        assert_eq!(drop_target(size, Point::new(690, y), 4), Some(DropTarget::Dock(4)));
         assert_eq!(drop_target(size, Point::new(690, y), 6), Some(DropTarget::Dock(5)));
         // Above the dock's catch zone, outside the grid: nothing.
         assert_eq!(drop_target(size, Point::new(360, 100), 4), None);
@@ -388,9 +448,9 @@ mod tests {
         let size = Size::new(720, 1600);
         let apps = vec![IconEntry::new("a", "A")];
         let px = render_grid(size, &tokens::DEFAULT, &apps);
-        assert_eq!(px.size, size);
-        // Top-left corner (status area) is untouched.
-        assert_eq!(&px.data[0..4], &[0, 0, 0, 0]);
+        assert_eq!(px.size, Size::new(720, grid_band_h()));
+        // The strip corner away from the first icon is untouched.
+        assert_eq!(&px.data[(px.size.w as usize - 1) * 4..px.size.w as usize * 4], &[0, 0, 0, 0]);
     }
 
     #[test]
@@ -417,17 +477,24 @@ mod tests {
             ),
             Some(HomeHit::Grid(3))
         );
-        // Search pill centre (y = min(SEARCH_Y, h-420) = 1180 at 1600).
+        // Search card centre.
         assert_eq!(
-            hit_test(size, Point::new(360, 1180 + 32), 16, 4),
+            hit_test(size, Point::new(360, SEARCH_CARD_Y + SEARCH_CARD_H / 2), 16, 4),
             Some(HomeHit::Search)
         );
-        // First dock slot centre: dock.x=24, slot0 x = 24+40 = 64 → centre 108.
+        // The small pill above the dock opens the drawer.
+        let p = drawer_pill(size);
         assert_eq!(
-            hit_test(size, Point::new(108, DOCK_Y + 16 + 44), 16, 4),
+            hit_test(size, Point::new(p.x + p.w / 2, p.y + p.h / 2), 16, 4),
+            Some(HomeHit::Drawer)
+        );
+        // First dock slot centre.
+        let d0 = dock_icon(dock_shelf(size), 0, 5);
+        assert_eq!(
+            hit_test(size, Point::new(d0.x + d0.w / 2, d0.y + d0.h / 2), 16, 4),
             Some(HomeHit::Dock(0))
         );
-        // Wallpaper between grid and pill hits nothing.
-        assert_eq!(hit_test(size, Point::new(360, 1100), 16, 4), None);
+        // Wallpaper beside the pill hits nothing.
+        assert_eq!(hit_test(size, Point::new(100, 1330), 16, 4), None);
     }
 }

@@ -42,18 +42,27 @@ struct IconDrag {
     target: Option<DropTarget>,
 }
 
-struct Layers {
+/// Pixel layers of the home screen while the pager moves: the icon-less
+/// base, one icon grid and one dots strip per page. They are uploaded once
+/// as textures; each frame only repositions them (no per-frame raster).
+pub(crate) struct Layers {
     key: u64,
-    base: Pixels,
-    pages: HashMap<usize, Pixels>,
+    pub(crate) base: Pixels,
+    pub(crate) pages: HashMap<usize, Pixels>,
+    pub(crate) dots: HashMap<usize, Pixels>,
 }
 
 pub(crate) struct HomeUi {
     pager: Pager,
     axis: Axis,
     last_tick: Option<Instant>,
-    layers: Option<Layers>,
+    pub(crate) layers: Option<Layers>,
     drag: Option<IconDrag>,
+    /// Uploaded copies of `layers` (renderer-specific texture ids).
+    pub(crate) tex_key: u64,
+    pub(crate) base_tex: Option<Box<dyn std::any::Any>>,
+    pub(crate) page_tex: HashMap<usize, Box<dyn std::any::Any>>,
+    pub(crate) dots_tex: HashMap<usize, Box<dyn std::any::Any>>,
 }
 
 impl HomeUi {
@@ -64,12 +73,25 @@ impl HomeUi {
             last_tick: None,
             layers: None,
             drag: None,
+            tex_key: 0,
+            base_tex: None,
+            page_tex: HashMap::new(),
+            dots_tex: HashMap::new(),
         }
     }
 
     /// A pager drag or settle is in progress (compose from layers).
     pub(crate) fn paging(&self) -> bool {
         self.pager.animating()
+    }
+
+    /// Pager position in pages (for placing the layers).
+    pub(crate) fn pos(&self) -> f32 {
+        self.pager.pos()
+    }
+
+    pub(crate) fn layers_key(&self) -> Option<u64> {
+        self.layers.as_ref().map(|l| l.key)
     }
 
     pub(crate) fn dragging_icon(&self) -> bool {
@@ -197,11 +219,25 @@ impl De {
         self.home_dirty();
     }
 
+    /// A pager drag or settle is running (frame-time logging hook).
+    pub(crate) fn home_ui_paging(&self) -> bool {
+        self.home_ui.paging()
+    }
+
+    /// When the event loop must wake to draw the next settle frame. A
+    /// finished frame with no damage requests no vblank, so the spring
+    /// needs its own timer (same contract as the launch morph).
+    pub(crate) fn home_wake_at(&self, interval: std::time::Duration) -> Option<Instant> {
+        let ui = &self.home_ui;
+        (ui.pager.animating() && !ui.pager.dragging()).then(|| Instant::now() + interval)
+    }
+
     /// Long-press on the home screen: lift the icon under the finger.
     /// Returns `false` when nothing icon-like is there (the caller opens
     /// the empty-home menu instead).
     pub(crate) fn home_lift_icon(&mut self, pos: Point) -> bool {
         if !self.home_live() {
+            eprintln!("home: long-press ignored (home not live)");
             return false;
         }
         let g = self.home_geometry();
@@ -217,6 +253,7 @@ impl De {
             },
             _ => return false,
         };
+        eprintln!("home: lifted {id}");
         self.home_ui.drag = Some(IconDrag {
             id,
             from,
@@ -243,6 +280,7 @@ impl De {
             return;
         };
         let g = self.home_geometry();
+        eprintln!("home: dropped {} on {:?}", d.id, d.target);
         match d.target {
             Some(DropTarget::Grid(i)) => {
                 let global = self.home_page * home::PAGE_SIZE + i;
@@ -271,80 +309,96 @@ impl De {
         self.home_dirty();
     }
 
-    /// Compose the home frame from cached layers while paging.
-    pub(crate) fn home_composed(
-        &mut self,
-        size: Size,
-        s: &de_ui::i18n::Strings,
-        t: &tokens::Theme,
-        m: &home::HomeModel<'_>,
-        grid_ids: &[String],
-    ) -> Pixels {
+    /// Whether the compositor should show the layered home this frame.
+    pub(crate) fn home_layers_active(&self) -> bool {
+        self.home_ui.paging() && self.home_live()
+    }
+
+    /// Bring the layers up to date for the pager's current position
+    /// (builds only what changed; the first frame of a drag pays once).
+    pub(crate) fn home_layers_frame(&mut self) {
+        let size = Size::new(self.output.width as i32, self.output.height as i32);
+        let t = tokens::DEFAULT;
+        let s = self.strings.clone();
+        let (status, date) = self.shell_meta();
+        let prefs = self.app_prefs.prefs().clone();
+        let grid: Vec<String> = self
+            .catalog
+            .home_order(&prefs)
+            .iter()
+            .map(|e| e.id.clone())
+            .collect();
+        let dock_ids: Vec<String> = self.catalog.dock(&prefs).iter().map(|e| e.id.clone()).collect();
+        let page_count = home::pages_for(grid.len());
         let mut h = DefaultHasher::new();
-        (
-            m.clock,
-            m.date,
-            &grid_ids,
-            self.app_prefs.prefs().wallpaper_id.as_str(),
-        )
-            .hash(&mut h);
-        m.dock.iter().for_each(|e| e.id.hash(&mut h));
+        (status.clock.as_str(), date.as_str(), &grid, &dock_ids, prefs.wallpaper_id.as_str()).hash(&mut h);
         let key = h.finish();
         if self.home_ui.layers.as_ref().map(|l| l.key) != Some(key) {
-            let mut base_model = home::HomeModel {
-                status: m.status.clone(),
-                clock: m.clock,
-                date: m.date,
-                charging: m.charging,
-                wallpaper: m.wallpaper,
+            let wallpaper = self.wallpaper_for(&prefs.wallpaper_id, size);
+            let dock = self.app_icons(&dock_ids);
+            let model = home::HomeModel {
+                status: status.clone(),
+                clock: &status.clock,
+                date: &date,
+                charging: "",
+                wallpaper: Some(&wallpaper),
                 apps: &[],
-                dock: m.dock,
-                page: self.home_ui.pager.page(),
-                page_count: m.page_count,
+                dock: &dock,
+                page: 0,
+                page_count: 1, // dots travel as their own layer
             };
-            base_model.page = self.home_ui.pager.page();
             self.home_ui.layers = Some(Layers {
                 key,
-                base: home::render(size, s, t, &base_model),
+                base: home::render(size, &s, &t, &model),
                 pages: HashMap::new(),
+                dots: HashMap::new(),
             });
         }
         let pos = self.home_ui.pager.pos();
         let first = pos.floor() as i64;
-        let mut canvas = de_paint::Canvas::new(size);
-        let layers = self.home_ui.layers.as_ref().expect("layers just built");
-        canvas.blit(&layers.base, Point::ZERO);
-        let mut needed = Vec::new();
-        for p in [first, first + 1] {
-            if p >= 0 && (p as usize) < m.page_count {
-                needed.push(p as usize);
+        let near = pos.round().max(0.0) as usize;
+        let mut want: Vec<usize> = [first, first + 1]
+            .into_iter()
+            .filter(|p| *p >= 0 && (*p as usize) < page_count)
+            .map(|p| p as usize)
+            .collect();
+        want.dedup();
+        for p in want {
+            if self.home_ui.layers.as_ref().is_some_and(|l| l.pages.contains_key(&p)) {
+                continue;
+            }
+            let ids: Vec<String> = grid
+                .iter()
+                .skip(p * home::PAGE_SIZE)
+                .take(home::PAGE_SIZE)
+                .cloned()
+                .collect();
+            let icons = self.app_icons(&ids);
+            let px = home::render_grid(size, &t, &icons);
+            if let Some(l) = self.home_ui.layers.as_mut() {
+                l.pages.insert(p, px);
             }
         }
-        for p in needed {
-            if !self
-                .home_ui
-                .layers
-                .as_ref()
-                .is_some_and(|l| l.pages.contains_key(&p))
-            {
-                let ids: Vec<String> = grid_ids
-                    .iter()
-                    .skip(p * home::PAGE_SIZE)
-                    .take(home::PAGE_SIZE)
-                    .cloned()
-                    .collect();
-                let icons = self.app_icons(&ids);
-                let px = home::render_grid(size, t, &icons);
-                if let Some(l) = self.home_ui.layers.as_mut() {
-                    l.pages.insert(p, px);
-                }
-            }
-            let x = ((p as f32 - pos) * size.w as f32).round() as i32;
-            if let Some(px) = self.home_ui.layers.as_ref().and_then(|l| l.pages.get(&p)) {
-                canvas.blit(px, Point::new(x, 0));
+        if page_count > 1 {
+            if let Some(l) = self.home_ui.layers.as_mut() {
+                let near = near.min(page_count - 1);
+                l.dots
+                    .entry(near)
+                    .or_insert_with(|| home::render_dots(size, &t, page_count, near));
             }
         }
-        canvas.into_pixels()
+    }
+
+    /// The cover-scaled wallpaper for `id` (cached).
+    pub(crate) fn wallpaper_for(&mut self, id: &str, size: Size) -> Pixels {
+        match &self.wallpaper {
+            Some((cached, px)) if cached == id => px.clone(),
+            _ => {
+                let px = de_paint::wallpaper::bundled(id, size);
+                self.wallpaper = Some((id.to_owned(), px.clone()));
+                px
+            }
+        }
     }
 
     /// Paint the lifted icon and its landing spot over the home frame.

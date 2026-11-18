@@ -280,7 +280,11 @@ impl IconEntry {
 /// tile + plum initial (same look as `de-apps::icons::tile_icon`).
 pub fn draw_app_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, r: Rect) {
     if let Some(px) = &e.icon {
-        c.blit(px, r.origin());
+        if px.size.w == r.w && px.size.h == r.h {
+            c.blit(px, r.origin());
+        } else {
+            c.blit_scaled(px, r, 1.0);
+        }
     } else {
         c.fill_rounded_rect(
             r,
@@ -303,7 +307,7 @@ pub fn draw_app_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, r: Rect) {
             let (w, h) = (px.width() as i32, px.height() as i32);
             c.blit(
                 &de_api::Pixels::new(de_api::Size::new(w, h), px.data().to_vec()),
-                Point::new(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2),
+                Point::new(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2 + r.h / 5),
             );
         }
     }

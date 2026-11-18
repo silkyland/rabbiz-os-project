@@ -25,7 +25,7 @@ impl De {
         let size = Size::new(self.output.width as i32, self.output.height as i32);
         let s = self.strings.clone();
         let t = tokens::DEFAULT;
-        let status = Self::status_info();
+        let (status, date) = self.shell_meta();
         let base = match self.nav.current {
             Screen::Recents => {
                 let m = self.recents_model();
@@ -41,13 +41,13 @@ impl De {
                 de_ui::search::render(size, &s, &t, "", &rows)
             }
             Screen::Shade => de_ui::shade::render(size, &s, &t, &status.clock),
-            Screen::Lock => de_ui::lock::render(size, &s, &t, &status.clock, &clock_date()),
+            Screen::Lock => de_ui::lock::render(size, &s, &t, &status.clock, &date),
             Screen::Power => de_ui::power::render(size, &s, &t),
             Screen::Error => {
                 let app = self.launch_error.clone().unwrap_or_else(|| "app".into());
                 de_ui::error::render(size, &s, &t, &app)
             }
-            _ => self.home_pixels(size, &s, &t, status),
+            _ => self.home_pixels(size, &s, &t, status, &date),
         };
         let base = self.overlay_icon_drag(base);
         self.overlay_shell_menu(base)
@@ -61,6 +61,7 @@ impl De {
         s: &de_ui::i18n::Strings,
         t: &tokens::Theme,
         status: StatusInfo,
+        date: &str,
     ) -> Pixels {
         let prefs = self.app_prefs.prefs().clone();
         let wp_id = prefs.wallpaper_id.clone();
@@ -96,7 +97,7 @@ impl De {
         let apps = self.app_icons(&page_ids);
         let dock = self.app_icons(&dock_ids);
         let clock = status.clock.clone();
-        let date = clock_date();
+        let date = date.to_owned();
         let m = de_ui::home::HomeModel {
             status,
             clock: &clock,
@@ -108,11 +109,25 @@ impl De {
             page,
             page_count: de_ui::home::pages_for(ordered.len()),
         };
-        if self.home_ui.paging() {
-            let ids: Vec<String> = ordered.iter().map(|e| e.id.clone()).collect();
-            return self.home_composed(size, s, t, &m, &ids);
-        }
         de_ui::home::render(size, s, t, &m)
+    }
+
+    /// Status bar data and the date line. Polling sysfs and forking `date`
+    /// costs tens of milliseconds on the A21s, so while frames are being
+    /// drawn back to back (paging, dragging) the last reading is reused for
+    /// up to two seconds instead of being fetched per frame.
+    pub(crate) fn shell_meta(&mut self) -> (StatusInfo, String) {
+        let now = std::time::Instant::now();
+        if let Some((at, minute, status, date)) = &self.meta_cache {
+            if *minute == self.shell_minute
+                && now.duration_since(*at) < std::time::Duration::from_secs(2)
+            {
+                return (status.clone(), date.clone());
+            }
+        }
+        let (status, date) = (Self::status_info(), clock_date());
+        self.meta_cache = Some((now, self.shell_minute, status.clone(), date.clone()));
+        (status, date)
     }
 
     /// Visible app ids under current prefs.
@@ -135,7 +150,7 @@ impl De {
         let icon = self
             .icon_cache
             .entry(id.to_owned())
-            .or_insert_with(|| de_apps::icons::rasterize_icon(id, &icon_name, &label, 96));
+            .or_insert_with(|| de_apps::icons::rasterize_icon(id, &icon_name, &label, 128));
         IconEntry {
             id: id.to_owned(),
             label,

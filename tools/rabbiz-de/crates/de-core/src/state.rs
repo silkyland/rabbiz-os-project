@@ -127,6 +127,8 @@ pub struct De {
     pub gesture_bar: Option<Box<dyn std::any::Any>>,
     /// Last minute rendered into the shell frame (re-raster on change).
     pub shell_minute: u64,
+    /// Last status-bar/date reading (`shell.rs`, reused for 2 s).
+    pub(crate) meta_cache: Option<(std::time::Instant, u64, de_ui::chrome::StatusInfo, String)>,
     /// Last touch position in logical coords (`TouchUp` carries none).
     pub last_touch_pos: smithay::utils::Point<f64, smithay::utils::Logical>,
 
@@ -493,6 +495,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         shell_tex: None,
         gesture_bar: None,
         shell_minute: u64::MAX,
+        meta_cache: None,
         last_touch_pos: (0.0, 0.0).into(),
         direct_scanout: 0,
         primary_composite: 0,

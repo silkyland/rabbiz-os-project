@@ -140,12 +140,24 @@ impl Run {
         self.de.advance_home(t0);
         // Shell surface: re-raster on dirty or when the clock minute rolls.
         let minute = minute_of_day();
-        if (matches!(self.de.foreground, crate::state::Foreground::Shell)
-            || self.de.morph.is_some())
+        // While the pager moves the home screen is drawn from layers (see
+        // `home_ui.rs`): no whole-screen re-raster, no whole-screen upload.
+        let layered = self.de.home_layers_active();
+        if layered {
+            self.de.home_layers_frame();
+        }
+        if !layered
+            && (matches!(self.de.foreground, crate::state::Foreground::Shell)
+                || self.de.morph.is_some())
             && (self.de.shell_dirty || self.de.shell_minute != minute || self.de.shell_px.is_none())
         {
             self.de.shell_minute = minute;
+            let t_raster = Instant::now();
             self.de.shell_px = Some(self.de.shell_pixels());
+            let raster_ms = t_raster.elapsed().as_secs_f64() * 1000.0;
+            if raster_ms > 25.0 && self.de.home_ui_paging() {
+                eprintln!("home raster slow: {raster_ms:.1} ms while paging");
+            }
             self.de.shell_dirty = false;
             self.de.shell_tex = None; // force texture re-upload
         }
@@ -166,6 +178,7 @@ impl Run {
             direct_scanout,
             foreground,
             morph,
+            home_ui,
             ..
         } = de;
         let mut parts = FrameParts {
@@ -181,6 +194,8 @@ impl Run {
             direct_scanout,
             foreground: *foreground,
             morph,
+            home: home_ui,
+            layered,
             now: t0,
         };
         let queued = match renderer {
@@ -229,6 +244,9 @@ struct FrameParts<'a> {
     direct_scanout: &'a mut u64,
     foreground: crate::state::Foreground,
     morph: &'a mut Option<WindowMorph>,
+    home: &'a mut crate::home_ui::HomeUi,
+    /// Draw the home screen from `home` layers instead of `shell_tex`.
+    layered: bool,
     now: Instant,
 }
 
@@ -269,6 +287,13 @@ where
     }
     if show_app {
         push_window_elements(&mut elements, renderer, de.space);
+    } else if de.layered && de.home.layers_key().is_some() {
+        sync_home_textures(renderer, de.home);
+        push_home_layers::<R>(
+            &mut elements,
+            de.home,
+            de_api::Size::new(de.output.width as i32, de.output.height as i32),
+        );
     } else if let Some(tex) = texture_buffer::<R>(de.shell_tex.as_ref()) {
         elements.push(DeElement::from(tex_el::<R>(
             tex,
@@ -453,6 +478,7 @@ impl Run {
                 .morph
                 .as_ref()
                 .and_then(|morph| morph.next_frame_at(interval)),
+            self.de.home_wake_at(interval),
         ]
         .into_iter()
         .flatten()
@@ -590,6 +616,80 @@ where
     )
     .ok()
     .map(|b| Box::new(b) as Box<dyn std::any::Any>)
+}
+
+/// Upload the home layers that have no texture yet (drops stale ones when
+/// the layer set was rebuilt).
+fn sync_home_textures<R: ImportMem>(r: &mut R, h: &mut crate::home_ui::HomeUi)
+where
+    R::TextureId: 'static,
+{
+    let Some(key) = h.layers_key() else { return };
+    if h.tex_key != key || h.base_tex.is_none() {
+        h.tex_key = key;
+        h.base_tex = None;
+        h.page_tex.clear();
+        h.dots_tex.clear();
+    }
+    let Some(layers) = h.layers.as_ref() else { return };
+    if h.base_tex.is_none() {
+        h.base_tex = upload_any(r, &layers.base);
+    }
+    for (p, px) in &layers.pages {
+        if !h.page_tex.contains_key(p) {
+            if let Some(t) = upload_any(r, px) {
+                h.page_tex.insert(*p, t);
+            }
+        }
+    }
+    for (p, px) in &layers.dots {
+        if !h.dots_tex.contains_key(p) {
+            if let Some(t) = upload_any(r, px) {
+                h.dots_tex.insert(*p, t);
+            }
+        }
+    }
+}
+
+/// Push the home layers front to back: dots, page grids at their slid
+/// positions, then the base. Positions are whole pixels.
+fn push_home_layers<R: ImportAll>(
+    elements: &mut Vec<DeElement<R>>,
+    h: &crate::home_ui::HomeUi,
+    size: de_api::Size,
+) where
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    let width = size.w;
+    let pos = h.pos();
+    let near = pos.round().max(0.0) as usize;
+    if let Some(tex) = texture_buffer::<R>(h.dots_tex.get(&near)) {
+        let y = de_ui::home::dots_y(size);
+        elements.push(DeElement::from(tex_el::<R>(
+            tex,
+            Point::<f64, Physical>::from((0.0, f64::from(y))),
+        )));
+    }
+    let mut pages: Vec<usize> = h.page_tex.keys().copied().collect();
+    pages.sort_unstable();
+    for p in pages {
+        let x = ((p as f32 - pos) * width as f32).round();
+        if x <= -(width as f32) || x >= width as f32 {
+            continue;
+        }
+        if let Some(tex) = texture_buffer::<R>(h.page_tex.get(&p)) {
+            elements.push(DeElement::from(tex_el::<R>(
+                tex,
+                Point::<f64, Physical>::from((f64::from(x), f64::from(de_ui::home::grid_band_y()))),
+            )));
+        }
+    }
+    if let Some(tex) = texture_buffer::<R>(h.base_tex.as_ref()) {
+        elements.push(DeElement::from(tex_el::<R>(
+            tex,
+            Point::<f64, Physical>::from((0.0, 0.0)),
+        )));
+    }
 }
 
 fn texture_buffer<R: ImportAll>(

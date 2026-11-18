@@ -14,6 +14,7 @@ charging = "Charging"
 fully_charged = "Fully charged"
 
 [home]
+search_pill = "Search"
 search_hint = "Search apps and more"
 
 [drawer]
