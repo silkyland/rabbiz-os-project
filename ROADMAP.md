@@ -59,12 +59,13 @@
 - **Objective:** Reduce idle power, expose battery/charging to Steam (`upower`), enable thermal throttling and sleep/wake.
 - **Detail:** See [devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md).
 - **Tasks:**
-  - [x] Switch both CPU frequency policies to `schedutil` (observed on A21s on 2026-11-18).
-  - [ ] Verify `cpuidle` residency.
-  - [ ] Port `s2mu106` MFD, Fuel Gauge, and Charger (`power_supply` class) + install `upower`.
+  - [ ] Switch both CPU frequency policies to `schedutil` (was observed `schedutil` on 2026-11-18, now `performance` again — userspace-owned per udev rule; [finding](devices/samsung/a21s/findings/2026-11-18-thermal-cpuidle-cpufreq-state.md)).
+  - [x] Verify `cpuidle` residency — **zero idle states registered**: the DT declares no `idle-states`, CPUs only get WFI ([finding](devices/samsung/a21s/findings/2026-11-18-thermal-cpuidle-cpufreq-state.md)).
+  - [x] Fuel Gauge + Charger via `power_supply` + `upower` — both visible in upower, real charge/discharge logged ([interface doc](devices/samsung/a21s/docs/a21s-power-supply-interface.md)). MFD port not done; FG rename patch pending a boot-able kernel.
   - [x] Read Exynos TMU temperatures with per-sensor eFuse trim and cross-check with ACPM on the A21s. [Calibration finding](devices/samsung/a21s/findings/2026-11-18-tmu-efuse-temperature.md).
-  - [ ] Boot-test the new A21s DTB and verify CPU passive cooling. Temporary critical zones were enabled for the [90-second Panfrost run](devices/samsung/a21s/findings/2026-11-18-panfrost-thermal-run.md).
-  - [ ] Verify backlight control and Suspend-to-RAM.
+  - [ ] Boot-test the new A21s DTB and verify CPU passive cooling. **Blocked:** kexec black-screens foreign-built kernels ([incident](devices/samsung/a21s/findings/2026-11-18-kexec-container-kernel-black.md)); awaiting flash decision. `/sys/class/thermal/` is currently **empty** — no zones at all.
+  - [x] Verify backlight control — single sysfs node `13070000.dsi.0`, 0–255 DCS `0x51`, [interface doc](devices/samsung/a21s/docs/a21s-backlight-interface.md).
+  - [ ] Suspend-to-RAM — untested; queued behind the device lock.
 
 ### M6: Cellular Modem (`cpif`) & Voice Call — todo
 - **Objective:** Enable Exynos 850 Baseband (`CP`) for SIM, 4G Data, SMS, and Voice Calls.
