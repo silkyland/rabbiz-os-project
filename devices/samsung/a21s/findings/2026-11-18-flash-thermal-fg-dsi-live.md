@@ -46,8 +46,16 @@ the device.
   functional proof needs an underrun event — the 10-cycle compositor
   acceptance test is still to run.
 
+## Post-flash load tests (same day)
+
+- Full-load `yes` ×8 cores for 2×90 s: zone temps climb 44 → 76-77 °C
+  and plateau — passive trip (80 °C) never reached; `cur_state` stayed
+  `0/15`, freq pinned at 1.846 GHz. Sensing verified end-to-end.
+- **Passive cooling verified**: lowered `trip_point_0_temp` to 70 °C,
+  re-ran the load — at 69.5 °C the cooling device stepped to
+  `cur_state=1/15` and `scaling_cur_freq` dropped 1846 → 1742 MHz
+  (exactly one OPP). Trip restored to 80 °C afterwards.
+
 ## Not yet verified
 
-- Passive cooling actually dropping frequency under a sustained load
-  (trip is 80 °C, idle sits ~44 °C).
 - The underrun restart path firing (needs the wedge or a forced fault).

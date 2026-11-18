@@ -1,0 +1,73 @@
+From: Devin kernel lane <kernel@rabbizos>
+Date: Wed, 18 Nov 2026
+Subject: [PATCH] a21s: add PSCI cpu-sleep idle-state to all cpus
+
+!!! DO NOT FLASH WITHOUT THE COMPANION KERNEL QUIRK !!!
+
+Adds a "cpu-sleep" idle-state (arm,idle-state + arm,psci-suspend-param)
+and wires cpu-idle-states on all 8 cpus (cpucl0 0x0-0x3, cpucl1
+0x100-0x103). Param <0x10000> = affinity-level-1 (cluster) power down,
+matching the convention used by exynos2200/gs101 dtsi.
+
+KNOWN BLOCKER (findings a21s-modem-power-findings.md 5.3): the vendor
+secure firmware on SM-A217F has "messed up MPIDRs" — Alexey Klimov's
+working cpuidle patches exist but are not upstreamable and not public:
+"needs some argument shift in one of the PSCI calls" (linux-arm-kernel,
+Aug 2026). Flashing this DTS alone means the kernel will issue
+CPU_SUSPEND with a *standard* MPIDR to firmware that expects a shifted
+one — outcome untested on this device (likely NOT_SUPPORTED, possibly
+suspending the wrong CPU). Only flash together with the MPIDR-shift
+quirk or after a successful on-device CPU_SUSPEND probe.
+
+cpuidle-psci requires arm,psci-suspend-param (states without it are
+skipped), so the WFI-only fallback needs no DT change — architectural
+WFI already works today.
+
+Lane: kernel. Device: samsung/a21s.
+---
+ arch/arm64/boot/dts/exynos/exynos850-a217f.dts | 31 ++++++++++++++--
+ 1 file changed, 28 insertions(+), 3 deletions(-)
+
+--- a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
++++ b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
+@@ -1457,12 +1457,34 @@
+ 	};
+ };
+ 
+-/* ---- cpuidle hooks -------------------------------------------------
+- * Vendor/PSCI cpuidle needs the exynos850-pmu patch series + PSCI
+- * MPIDR workaround (findings 5.3). Cooling cells added now so thermal
+- * cooling-maps can bind later; harmless without idle-states. */
+-&cpu0 { #cooling-cells = <2>; };
+-&cpu4 { #cooling-cells = <2>; };
++/* ---- cpuidle -------------------------------------------------------
++ * PSCI cpuidle on A21s is BLOCKED on a kernel-side quirk: vendor
++ * firmware has broken MPIDRs and needs a shifted CPU_SUSPEND argument
++ * (Klimov, linux-arm-kernel Aug 2026; patch not public). The states
++ * below are the correct DT description but MUST NOT be booted without
++ * that workaround - see patch header. */
++&cpus {
++	idle-states {
++		cpu_sleep: cpu-sleep {
++			compatible = "arm,idle-state";
++			idle-state-name = "cpu-sleep";
++			arm,psci-suspend-param = <0x10000>;
++			local-timer-stop;
++			entry-latency-us = <200>;
++			exit-latency-us = <250>;
++			min-residency-us = <1000>;
++		};
++	};
++};
++
++&cpu0 { #cooling-cells = <2>; cpu-idle-states = <&cpu_sleep>; };
++&cpu1 { cpu-idle-states = <&cpu_sleep>; };
++&cpu2 { cpu-idle-states = <&cpu_sleep>; };
++&cpu3 { cpu-idle-states = <&cpu_sleep>; };
++&cpu4 { #cooling-cells = <2>; cpu-idle-states = <&cpu_sleep>; };
++&cpu5 { cpu-idle-states = <&cpu_sleep>; };
++&cpu6 { cpu-idle-states = <&cpu_sleep>; };
++&cpu7 { cpu-idle-states = <&cpu_sleep>; };
+ 
+ /* ---- cellular modem: Shannon s318ap CPIF ---------------------------
+  * Node lives under &soc above (see cpif@14020000). Mirrors vendor
