@@ -38,14 +38,14 @@ pub(crate) fn spawn(display: &mut DisplayHandle, socket_name: &str) -> io::Resul
             .env("WAYLAND_DISPLAY", socket_name)
             .spawn()
     };
-    let child = match launch("rabbiz-osk", OwnedFd::from(client.try_clone()?)) {
+    let (name, child) = match launch("rabbiz-osk", OwnedFd::from(client.try_clone()?)) {
         // Existing images may still have the pre-rename binary.
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
-            launch("a21s-osk", OwnedFd::from(client))?
+            ("a21s-osk", launch("a21s-osk", OwnedFd::from(client))?)
         }
-        result => result?,
+        result => ("rabbiz-osk", result?),
     };
-    eprintln!("rabbiz-de: started rabbiz-osk pid={}", child.id());
+    eprintln!("rabbiz-de: started {name} pid={}", child.id());
     Ok(OskProcess(child))
 }
 
