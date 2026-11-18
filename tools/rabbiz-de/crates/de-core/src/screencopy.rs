@@ -41,6 +41,8 @@ pub(crate) fn init(dh: &DisplayHandle) -> GlobalId {
 
 struct FrameData {
     rect: Rectangle<i32, Logical>,
+    /// A frame may be copied once; a second `copy` is `already_used`.
+    used: std::sync::atomic::AtomicBool,
 }
 
 impl GlobalDispatch<ZwlrScreencopyManagerV1, ()> for De {
@@ -89,17 +91,22 @@ impl Dispatch<ZwlrScreencopyManagerV1, ()> for De {
             return;
         }
         let version = resource.version();
-        let frame = init.init(frame, FrameData { rect });
-        // One `buffer` event per shm format we can write (v1 semantics; for
-        // v3 clients this is the whole offer — no `linux_dmabuf` follows).
-        for format in [wl_shm::Format::Argb8888, wl_shm::Format::Xrgb8888] {
-            frame.buffer(
-                format.into(),
-                rect.size.w as u32,
-                rect.size.h as u32,
-                rect.size.w as u32 * 4,
-            );
-        }
+        let frame = init.init(
+            frame,
+            FrameData {
+                rect,
+                used: std::sync::atomic::AtomicBool::new(false),
+            },
+        );
+        // Protocol: `buffer` is sent ONCE (one shm format offer), never
+        // per-format — grim sends `copy` per `buffer` event, and a second
+        // copy must fail with `already_used`.
+        frame.buffer(
+            wl_shm::Format::Argb8888.into(),
+            rect.size.w as u32,
+            rect.size.h as u32,
+            rect.size.w as u32 * 4,
+        );
         if version >= 3 {
             frame.buffer_done();
         }
@@ -116,25 +123,36 @@ impl Dispatch<ZwlrScreencopyFrameV1, FrameData> for De {
         _dh: &DisplayHandle,
         _init: &mut DataInit<'_, Self>,
     ) {
-        match request {
-            zwlr_screencopy_frame_v1::Request::Copy { buffer } => {
-                if !state.screencopy_copy(frame, &buffer, data.rect, false) {
-                    frame.failed();
-                }
-            }
-            zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer } => {
-                if buffer_ok(&buffer, data.rect) {
-                    state.screencopy_pending.push(PendingCapture {
-                        frame: frame.clone(),
-                        buffer,
-                        rect: data.rect,
-                    });
-                } else {
-                    frame.failed();
-                }
-            }
-            zwlr_screencopy_frame_v1::Request::Destroy => {}
-            _ => {}
+        let with_damage =
+            matches!(request, zwlr_screencopy_frame_v1::Request::CopyWithDamage { .. });
+        let buffer = match request {
+            zwlr_screencopy_frame_v1::Request::Copy { buffer }
+            | zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer } => buffer,
+            zwlr_screencopy_frame_v1::Request::Destroy => return,
+            _ => return,
+        };
+        if data.used.swap(true, std::sync::atomic::Ordering::Relaxed) {
+            frame.post_error(
+                zwlr_screencopy_frame_v1::Error::AlreadyUsed as u32,
+                "frame already used to copy a buffer",
+            );
+            return;
+        }
+        if !buffer_ok(&buffer, data.rect) {
+            frame.post_error(
+                zwlr_screencopy_frame_v1::Error::InvalidBuffer as u32,
+                "buffer size/format does not match the offer",
+            );
+            return;
+        }
+        if with_damage {
+            state.screencopy_pending.push(PendingCapture {
+                frame: frame.clone(),
+                buffer,
+                rect: data.rect,
+            });
+        } else if !state.screencopy_copy(frame, &buffer, data.rect) {
+            frame.failed();
         }
     }
 
@@ -157,11 +175,7 @@ impl De {
         frame: &ZwlrScreencopyFrameV1,
         buffer: &WlBuffer,
         rect: Rectangle<i32, Logical>,
-        _with_damage: bool,
     ) -> bool {
-        if !buffer_ok(buffer, rect) {
-            return false;
-        }
         let Some(full) = composite_output(self) else {
             return false;
         };
