@@ -1,0 +1,56 @@
+S2MU106 charger + S2MU106 fuel gauge — charge/discharge sampler
+=================================================================
+Device: SM-A217F, kernel 7.3.0-g14a425b3a7dc-dirty (#12), 2026-11-18.
+15 s sample loop on the device writing to /root/fg-log.txt.
+Columns: epoch online status charge_type capacity voltage_now(uV)
+         current_now(uA) current_avg(uA) fg_status
+
+Cable unplug ~1794994512..1794994542 (~30 s), then replugged.
+online flip reached the driver within one 15 s sample (1 s driver poll).
+current_avg=-2305176 on EVERY line = pinned bogus MONOUT read, not data.
+1794994256 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349853 current_now=60302 current_avg=-2305176 status=Full
+1794994271 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4351074 current_now=60791 current_avg=-2305176 status=Full
+1794994286 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350585 current_now=62011 current_avg=-2305176 status=Full
+1794994301 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349609 current_now=58593 current_avg=-2305176 status=Full
+1794994317 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350952 current_now=54443 current_avg=-2305176 status=Full
+1794994332 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350219 current_now=63476 current_avg=-2305176 status=Full
+1794994347 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350463 current_now=58105 current_avg=-2305176 status=Full
+1794994362 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350585 current_now=44921 current_avg=-2305176 status=Full
+1794994377 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350830 current_now=45410 current_avg=-2305176 status=Full
+1794994392 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350219 current_now=37597 current_avg=-2305176 status=Full
+1794994407 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350585 current_now=56152 current_avg=-2305176 status=Full
+1794994422 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350463 current_now=62011 current_avg=-2305176 status=Full
+1794994437 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349731 current_now=44433 current_avg=-2305176 status=Full
+1794994452 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349731 current_now=42968 current_avg=-2305176 status=Full
+1794994467 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350097 current_now=62500 current_avg=-2305176 status=Full
+1794994482 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350341 current_now=48583 current_avg=-2305176 status=Full
+1794994497 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349975 current_now=45654 current_avg=-2305176 status=Full
+1794994512 online=0 status=Discharging charge_type=Unknown capacity=100 voltage_now=4312988 current_now=-344727 current_avg=-2305176 status=Discharging
+1794994527 online=0 status=Discharging charge_type=Unknown capacity=99 voltage_now=4305786 current_now=-312012 current_avg=-2305176 status=Discharging
+1794994542 online=1 status=Charging charge_type=Fast capacity=99 voltage_now=4350830 current_now=111328 current_avg=-2305176 status=Full
+1794994557 online=1 status=Charging charge_type=Fast capacity=99 voltage_now=4350463 current_now=88867 current_avg=-2305176 status=Full
+1794994573 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350830 current_now=64453 current_avg=-2305176 status=Full
+1794994588 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350952 current_now=55419 current_avg=-2305176 status=Full
+1794994603 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350708 current_now=57617 current_avg=-2305176 status=Full
+1794994618 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349853 current_now=56640 current_avg=-2305176 status=Full
+1794994633 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350952 current_now=56152 current_avg=-2305176 status=Full
+1794994648 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350708 current_now=58837 current_avg=-2305176 status=Full
+1794994663 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350341 current_now=32470 current_avg=-2305176 status=Full
+1794994678 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350097 current_now=40283 current_avg=-2305176 status=Full
+1794994693 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349853 current_now=35644 current_avg=-2305176 status=Full
+1794994708 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350341 current_now=46630 current_avg=-2305176 status=Full
+1794994723 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349731 current_now=38085 current_avg=-2305176 status=Full
+1794994738 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350341 current_now=44921 current_avg=-2305176 status=Full
+1794994753 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349975 current_now=31250 current_avg=-2305176 status=Full
+1794994768 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350585 current_now=43457 current_avg=-2305176 status=Full
+1794994783 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350097 current_now=40283 current_avg=-2305176 status=Full
+1794994798 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350097 current_now=38818 current_avg=-2305176 status=Full
+1794994813 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349731 current_now=25634 current_avg=-2305176 status=Full
+1794994829 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349853 current_now=24902 current_avg=-2305176 status=Full
+1794994844 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349731 current_now=44433 current_avg=-2305176 status=Full
+1794994859 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349853 current_now=29785 current_avg=-2305176 status=Full
+1794994874 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350708 current_now=44921 current_avg=-2305176 status=Full
+1794994889 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4349731 current_now=33935 current_avg=-2305176 status=Full
+1794994904 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350219 current_now=29785 current_avg=-2305176 status=Full
+1794994919 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350097 current_now=29785 current_avg=-2305176 status=Full
+1794994934 online=1 status=Charging charge_type=Fast capacity=100 voltage_now=4350585 current_now=39306 current_avg=-2305176 status=Full

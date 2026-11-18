@@ -9,6 +9,7 @@ date: 2026-11-18
 evidence:
   - cmd: "cat /sys/class/power_supply/s2mu005-fuel-gauge/{voltage_avg,voltage_now,current_avg}"
   - file: devices/samsung/a21s/findings/logs/2026-11-18-s2mu106-charger-online-props.txt
+  - file: devices/samsung/a21s/findings/logs/2026-11-18-fuel-gauge-charge-discharge.txt
 supersedes: []
 related:
   - devices/samsung/a21s/docs/a21s-modem-power-findings.md
@@ -66,5 +67,10 @@ kernel flash, the node renames and the avg files disappear.
 - The backport itself on-device: the container-built Image (clang 19)
   kexec'd to a black screen (see `2026-11-18-kexec-container-kernel-black.md`),
   so the reduced descriptor is L1 until the next proper flash.
-- Whether SOC% tracks a real discharge curve (long-window sampler running;
-  see `logs/`).
+- A long discharge curve: the observed unplug window was only ~30 s
+  (capacity 100→99→100, current −344/−312 mA, voltage 4.35→4.31 V — see
+  `logs/2026-11-18-fuel-gauge-charge-discharge.txt`). Whether SOC% tracks
+  a multi-hour real discharge — and how far the FG's NVM profile diverges
+  without the vendor `battery_data` table — remains open.
+- `online` transition latency ≤1 s is guaranteed by the driver poll but
+  only bounded to ≤15 s by this log's sample period.
