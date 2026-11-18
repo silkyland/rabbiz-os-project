@@ -59,6 +59,28 @@ make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) Image dtbs mo
 make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/socs/exynos850/drivers/scsc modules
 ```
 
+### 4a. macOS: container build against the prepared kernel tree
+
+On the Mac the pinned kernel source + output live in the Docker volume
+`a21s-kbuild` (`/work/linux` = source, `/work/out` = `O=` output dir with
+`Module.symvers`; kernel release `7.3.0-g14a425b3a7dc-dirty`, built by
+Debian clang 19.1.7). Use the `rabbizos-kbuild:usb-investigation` image —
+it has the matching clang 19. `a21s-kimg:latest` ships clang 14 and
+fails on `-fstrict-flex-arrays=3` / `-ftrivial-auto-var-init=zero`.
+
+```bash
+# Out-of-tree module, e.g. the S2MU106 charger:
+docker run --rm -v a21s-kbuild:/work \
+  -v "$PWD/socs/exynos850/drivers/s2mu106":/tmp/s2mu106 \
+  rabbizos-kbuild:usb-investigation \
+  make -C /work/out ARCH=arm64 LLVM=1 M=/tmp/s2mu106 modules
+# -> s2mu106-charger.ko lands in the mounted driver dir (gitignored)
+```
+
+`src/linux` on the host is a sparse checkout (a few DRM sources for
+reading only) — it cannot build. Do not run `git checkout`/`restore` in
+it expecting a full tree; build inside the volume or run the bootstrap.
+
 ---
 
 ## 5. Deploy & Test Safely
