@@ -29,6 +29,11 @@ impl XdgShellHandler for De {
         ));
         de_protocols::configure_fullscreen(&surface, size);
         de_protocols::set_ssd(&surface);
+        // A mapped toplevel resolves the pending launch and takes the
+        // screen (launcher morph lands with the transition renderer).
+        self.launch
+            .on_toplevel_mapped(Some(&crate::snapshots::window_app_id(&surface)));
+        self.foreground = crate::state::Foreground::App;
         let window = Window::new_wayland_window(surface);
         self.space.map_element(window, (0, 0), true);
         self.needs_present = true;
@@ -58,6 +63,8 @@ impl XdgShellHandler for De {
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        self.snapshots
+            .forget(&crate::snapshots::window_app_id(&surface));
         let window = self
             .space
             .elements()
@@ -69,6 +76,11 @@ impl XdgShellHandler for De {
             .cloned();
         if let Some(window) = window {
             self.space.unmap_elem(&window);
+        }
+        // Last window gone → the shell reappears.
+        if self.space.elements().next().is_none() {
+            self.foreground = crate::state::Foreground::Shell;
+            self.shell_dirty = true;
         }
         self.needs_present = true;
     }

@@ -1,0 +1,8 @@
+Material Icons (MaterialIcons-Regular.ttf)
+Copyright 2014 Google Inc.
+Licensed under the Apache License, Version 2.0.
+https://github.com/google/material-design-icons
+https://www.apache.org/licenses/LICENSE-2.0
+
+Bundled so a21s-osk draws its keys with Google's icon font without installing a
+font package on the device.

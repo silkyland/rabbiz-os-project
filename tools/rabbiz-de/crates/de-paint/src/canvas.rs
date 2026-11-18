@@ -92,6 +92,25 @@ impl Canvas {
         blit_premultiplied(&mut self.pixmap, src, dst.x, dst.y);
     }
 
+    /// Blit only `region` of `src` at `dst` (scroll/parallax crops without
+    /// materialising a slice).
+    pub fn blit_region(&mut self, src: &Pixels, region: Rect, dst: Point) {
+        let r = region.intersect(Rect::from_origin_size(Point::ZERO, src.size));
+        let Some(r) = r else {
+            return;
+        };
+        let mut slice = Pixels::empty(r.size());
+        for y in 0..r.h {
+            let (si, di) = (
+                (((r.y + y) * src.size.w + r.x) * 4) as usize,
+                ((y * r.w) * 4) as usize,
+            );
+            let n = (r.w * 4) as usize;
+            slice.data[di..di + n].copy_from_slice(&src.data[si..si + n]);
+        }
+        blit_premultiplied(&mut self.pixmap, &slice, dst.x, dst.y);
+    }
+
     /// Consume into `de-api` premultiplied pixels.
     #[must_use]
     pub fn into_pixels(self) -> Pixels {

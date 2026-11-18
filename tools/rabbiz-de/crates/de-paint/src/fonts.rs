@@ -20,8 +20,11 @@ pub const NOTO_THAI_REGULAR: &[u8] =
 pub const NOTO_THAI_SEMIBOLD: &[u8] =
     include_bytes!("../../../assets/fonts/NotoSansThai-SemiBold.ttf");
 /// Material Icons Round (system glyphs, Apache 2.0).
+///
+/// TTF-converted: the upstream CFF/OTF shapes but swash cannot rasterize CFF
+/// outlines, so the bundled copy is a quadratic `glyf` build (see SOURCE.txt).
 pub const MATERIAL_ICONS: &[u8] =
-    include_bytes!("../../../assets/fonts/MaterialIconsRound-Regular.otf");
+    include_bytes!("../../../assets/fonts/MaterialIconsRound-Regular.ttf");
 
 /// Font family name used in `Attrs` for Latin/Thai body text.
 pub const FAMILY_NOTO: &str = "Noto Sans";

@@ -123,6 +123,48 @@ pub struct De {
     /// M1-T4 counters (observed from `render_frame` results).
     pub direct_scanout: u64,
     pub primary_composite: u64,
+
+    // --- M3: launcher runtime ---
+    /// Shell back-stack (which screen is up when `foreground == Shell`).
+    pub nav: de_ui::nav::Nav,
+    /// Whether the screen shows a fullscreen app or a shell surface.
+    pub foreground: Foreground,
+    /// System-gesture recognizer (edge-back / home / recents / shade).
+    pub gestures: de_ui::gestures::GestureTracker,
+    /// The active touch is a shell gesture — never delivered to clients.
+    pub touch_claimed: bool,
+    /// Current home page index.
+    pub home_page: usize,
+    /// desktop-id → spawn → first toplevel bookkeeping + timeout.
+    pub launch: crate::launch::LaunchTracker,
+    /// Last launch failure (shown by the error screen).
+    pub launch_error: Option<String>,
+    /// Last shm frame per app for the recents rail (LRU).
+    pub snapshots: crate::snapshots::SnapshotCache,
+    /// Scanned `.desktop` catalog.
+    pub catalog: de_apps::catalog::Catalog,
+    /// Hide/pin/dock + wallpaper prefs (`~/.config/rabbiz-de/prefs.json`).
+    pub app_prefs: de_apps::prefs::AppPrefs,
+    /// Shell i18n catalog (LANG-derived).
+    pub strings: de_ui::i18n::Strings,
+    /// Shell frame needs re-raster (nav/status/page/prefs changed).
+    pub shell_dirty: bool,
+    /// Latest rasterized shell frame (uploaded lazily by the frame pump).
+    pub shell_px: Option<de_api::Pixels>,
+    /// Cached wallpaper: `(id, pixels)` — reloaded when the id changes.
+    pub wallpaper: Option<(String, de_api::Pixels)>,
+    /// Icon bitmap cache by desktop-id (PNG decode + scale is not free).
+    pub icon_cache: std::collections::HashMap<String, de_api::Pixels>,
+}
+
+/// What the screen is showing (M3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Foreground {
+    /// A shell surface (home/drawer/recents/…) — app windows keep running
+    /// but are not composited.
+    Shell,
+    /// A fullscreen app window owns the screen.
+    App,
 }
 
 /// Errors during initialization.
@@ -165,6 +207,21 @@ pub fn cma_free_kb() -> u64 {
                 .and_then(|l| l.split_whitespace().nth(1)?.parse().ok())
         })
         .unwrap_or(0)
+}
+
+/// Shell locale from `LANG` (falls back to English).
+fn shell_locale() -> de_ui::i18n::Locale {
+    let lang = std::env::var("LANG").unwrap_or_default();
+    let code = lang.split(['.', '_']).next().unwrap_or("en");
+    de_ui::i18n::Locale::from_code(code)
+}
+
+/// Catalog scan locales: Thai first when the shell is Thai.
+fn shell_locales() -> Vec<String> {
+    match shell_locale() {
+        de_ui::i18n::Locale::Th => vec!["th".into(), "en".into()],
+        de_ui::i18n::Locale::En => vec!["en".into()],
+    }
 }
 
 /// Current process RSS in KiB (`/proc/self/status VmRSS`).
@@ -379,6 +436,32 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         last_touch_pos: (0.0, 0.0).into(),
         direct_scanout: 0,
         primary_composite: 0,
+
+        nav: {
+            let mut n = de_ui::nav::Nav::new();
+            n.booted();
+            n.unlock(); // → Home; lock/unlock lands with M4.
+            n
+        },
+        foreground: Foreground::Shell,
+        gestures: de_ui::gestures::GestureTracker::new({
+            let mut c = de_ui::gestures::GestureConfig::a21s();
+            c.output_w = output.width as i32;
+            c.output_h = output.height as i32;
+            c
+        }),
+        touch_claimed: false,
+        home_page: 0,
+        launch: crate::launch::LaunchTracker::new(),
+        launch_error: None,
+        snapshots: crate::snapshots::SnapshotCache::default(),
+        catalog: de_apps::catalog::Catalog::scan(&shell_locales()),
+        app_prefs: de_apps::prefs::AppPrefs::load(),
+        strings: de_ui::i18n::Strings::load(shell_locale()),
+        shell_dirty: true,
+        shell_px: None,
+        wallpaper: None,
+        icon_cache: std::collections::HashMap::new(),
     })
 }
 

@@ -133,6 +133,12 @@ separate `PanelWindow` and therefore not part of the captured sheet.)*
   sheet (landscape, short heights, long translations) takes the vertical drag.
 - Long-press on Wi-Fi / Bluetooth / Devices still opens the connectivity panel
   (`ShellState.connPanelOpen` + `connPanelTab`), unchanged.
+- **Taps are inert on the top bar (owner request 2026-11-17)** — the status bar
+  and the collapsed 32 px strip are pull handles only: a plain tap neither opens
+  the shade nor picks its page (`shadeMode` is chosen when the drag starts), and
+  the island capsule no longer reacts to taps (the heads-up still times out and
+  the notification stays in the shade). Pull-to-open, pull-to-close and the tap
+  on the bottom grab zone to close are unchanged.
 
 ### Notification grouping (`Panels/NotificationGroups.js`)
 

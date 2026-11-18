@@ -49,7 +49,8 @@ carries `time_ms` (CLOCK_MONOTONIC ms) — required for spring velocity
 
 Services (`services.rs`): `ServicesSnapshot` (plain `Clone` data: `wifi`,
 `bluetooth`, `battery`, `volume`, `brightness_pct`, `dnd`, `airplane`,
-`notifications`, `media`, `media_playing`); `ServiceCommand` enum
+`notifications`, `media`, `media_playing`, `privacy: PrivacyState{camera,mic,location}`
+— added in M3-T1 (integration lane); `ServiceCommand` enum
 (`SetBrightness(u8)`, `SetVolume(u8)`, `SetMuted`, `SetWifiEnabled`,
 `ConnectWifi{ssid,psk}`, `SetBluetoothEnabled`, `SetDnd`, `SetAirplane`,
 `DismissNotification(u32)`, `ClearNotifications`, `Media{PlayPause,Next,Prev}`,

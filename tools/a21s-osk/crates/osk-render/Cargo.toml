@@ -1,0 +1,15 @@
+[package]
+name = "osk-render"
+description = "Host PNG snapshots of osk-core layouts (tiny-skia + cosmic-text); the same scene code the Wayland surface will paint"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+osk-core = { path = "../osk-core" }
+tiny-skia = "0.11"
+cosmic-text = "0.12"
+
+[dev-dependencies]
+tiny-skia = "0.11"

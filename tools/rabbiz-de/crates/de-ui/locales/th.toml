@@ -22,6 +22,7 @@ title = "แอปทั้งหมด"
 [recents]
 title = "แอปล่าสุด"
 empty = "ไม่มีแอปล่าสุด"
+clear_all = "ล้างทั้งหมด"
 
 [shade]
 notifications = "การแจ้งเตือน"
@@ -50,6 +51,10 @@ brightness = "ความสว่าง"
 
 [search]
 hint = "ค้นหา"
+apps = "แอป"
+actions = "คำสั่งของแอป"
+settings = "การตั้งค่า"
+none = "ไม่พบผลลัพธ์"
 
 [error]
 app_not_responding = "แอปไม่ตอบสนอง"

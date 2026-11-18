@@ -8,9 +8,9 @@ use de_paint::Canvas;
 use crate::chrome::{self, style};
 use crate::i18n::Strings;
 
-pub fn render(size: Size, s: &Strings, t: &Theme, volume: f32, label: &str, glyph: &str) -> de_api::Pixels {
+pub fn render(size: Size, _s: &Strings, t: &Theme, volume: f32, label: &str, glyph: &str) -> de_api::Pixels {
     let mut c = Canvas::filled(size, t.bg);
-    chrome::status_bar(&mut c, s, t, "", "");
+    chrome::status_bar(&mut c, t, &chrome::StatusInfo::default());
     let pill = Rect::new(24, (size.h - 420) / 2, 96, 420);
     c.fill_rounded_rect(pill, tokens::RADIUS_PILL, t.surface2);
     // Glyph at top.

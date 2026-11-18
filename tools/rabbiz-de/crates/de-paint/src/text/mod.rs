@@ -188,9 +188,13 @@ mod tests {
 
     #[test]
     fn icon_glyph_renders() {
-        // Material "wifi" codepoint.
-        let px = icon("\u{e63e}", 24.0, [255, 255, 255, 255]);
-        assert!(px.is_some());
-        assert!(px.unwrap().width() >= 20);
+        // Material "wifi" codepoint. Must contain real ink — a shaped-but-
+        // unrasterizable glyph (e.g. CFF outlines under swash) still returns
+        // a pixmap with the font's advance box, so `is_some` alone is not
+        // proof it drew anything.
+        let px = icon("\u{e63e}", 24.0, [255, 255, 255, 255]).expect("icon pixmap");
+        assert!(px.width() >= 20);
+        let ink = px.data().chunks(4).filter(|c| c[3] > 10).count();
+        assert!(ink > 20, "icon glyph rasterized with no ink");
     }
 }

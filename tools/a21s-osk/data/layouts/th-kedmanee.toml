@@ -1,0 +1,160 @@
+# Thai Kedmanee — RabbitOS on-screen keyboard layout (a21s-osk).
+#
+# Rows follow the existing squeekboard override (rootfs-overlay/.../keyboards/th.yaml) so the
+# keyboard the owner already types on maps 1:1 onto the new one. Thai has no spaces, so the
+# space bar is labelled ไทย and the action key is the field action.
+
+id = "th-kedmanee"
+name = "ไทย (Kedmanee)"
+language = "th"
+
+[geometry]
+width_px = 720.0
+key_height_px = 62.0
+gap_px = 5.0
+margin_px = 5.0
+strip_height_px = 40.0
+
+[keys.shift]
+action = "shift"
+label = "shift"
+icon = "keyboard_capslock"
+width = 1.5
+
+[keys.backspace]
+action = "backspace"
+label = "backspace"
+icon = "backspace"
+width = 1.5
+
+[keys.return]
+action = "return"
+label = "return"
+icon = "keyboard_return"
+width = 1.5
+
+[keys.space]
+action = "space"
+label = "ไทย"
+width = 5.0
+
+[keys."?123"]
+action = "layer"
+layer = "numbers"
+label = "๑๒๓"
+width = 1.5
+
+[keys."=</"]
+action = "layer"
+layer = "symbols"
+label = "=</"
+width = 1.5
+
+[keys.abc]
+action = "layer"
+layer = "base"
+label = "กขค"
+width = 1.5
+
+[keys.emoji]
+action = "panel"
+panel = "emoji"
+label = "emoji"
+icon = "mood"
+width = 1.0
+
+[keys.language]
+action = "language"
+label = "language"
+icon = "language"
+width = 1.0
+
+[[layer]]
+name = "base"
+insets = [0.0, 0.0, 0.0, 0.0, 0.0]
+rows = [
+    "ๅ / _ ภ ถ ุ ึ ค ต จ ข ช",
+    "ๆ ไ ำ พ ะ ั ี ร น ย บ ล",
+    "ฟ ห ก ด เ ้ ่ า ส ว ง ฃ",
+    "shift ผ ป แ อ ิ ื ท ม ใ ฝ backspace",
+    "?123 , emoji language space . return",
+]
+
+[[layer]]
+name = "numbers"
+insets = [0.0, 0.0, 0.0, 0.0, 0.0]
+rows = [
+    "๑ ๒ ๓ ๔ ๕ ๖ ๗ ๘ ๙ ๐",
+    "1 2 3 4 5 6 7 8 9 0",
+    "@ # $ % & - _ + ( )",
+    "=</ , \" ' : ; ! ? backspace",
+    "abc , emoji language space . return",
+]
+
+[[layer]]
+name = "symbols"
+insets = [0.0, 0.0, 0.0, 0.0]
+rows = [
+    "~ ` | · √ π τ ÷ × ¶",
+    "© ® £ € ¥ ^ ° * { }",
+    "?123 \\ / < > = [ ] backspace",
+    "abc , emoji language space . return",
+]
+
+[[layer]]
+name = "emoji"
+insets = [0.0, 0.0, 0.0, 0.0]
+rows = [
+    "😀 😂 😍 🥰 😎 🤔 😭 😡 👍 👎",
+    "❤️ 🔥 ✨ 🎉 🎂 🌹 ☀️ 🌙 ⭐ 💯",
+    "🙏 👋 🤝 💪 🙌 👌 ✌️ 🤞 🫶 🤙",
+    "abc , emoji language space . return",
+]
+
+# Thai long-press alternates: the tone marks and vowels that share a key on a real Kedmanee
+# keyboard, plus the rare consonants that squeekboard kept on a separate "upper" view
+# (ฤ ฆ ฏ ฎ ษ ศ) — Thai has no case, so shift stays reserved for the Thai digits.
+# Owner reference (Gboard Thai, 2026-11-17): the top row is the Kedmanee letter row and the
+# Arabic digits are its shift hints (shift commits 1…0). Thai digits live on the ?123 page.
+[shifted]
+"ๅ" = "1"
+"/" = "2"
+"_" = "3"
+"ภ" = "4"
+"ถ" = "5"
+"ุ" = "6"
+"ึ" = "7"
+"ค" = "8"
+"ต" = "9"
+"จ" = "0"
+
+[alternates]
+"ฟ" = ["ฤ"]
+"ก" = ["๊", "๋", "ฏ"]
+"ข" = ["ฃ", "๋"]
+"ค" = ["ฅ", "๊"]
+"ง" = ["ํ"]
+"จ" = ["๊"]
+"ช" = ["ํ", "ซ", "ศ"]
+"ญ" = ["์"]
+"ด" = ["็", "ฎ"]
+"ต" = ["์", "ฏ"]
+"ท" = ["์"]
+"น" = ["์"]
+"บ" = ["์"]
+"ป" = ["์"]
+"ม" = ["์"]
+"ย" = ["์"]
+"ร" = ["์"]
+"ล" = ["์"]
+"ส" = ["์", "ษ"]
+"ห" = ["์", "ฆ"]
+"อ" = ["์"]
+"า" = ["้", "่", "๊", "๋"]
+"ิ" = ["ี", "ึ", "ื"]
+"ี" = ["ิ", "ึ", "ื"]
+"ุ" = ["ู"]
+"่" = ["้", "๊", "๋"]
+"้" = ["่", "๊", "๋"]
+"แ" = ["แ", "โ", "ใ", "ไ"]
+"เ" = ["เ", "แ", "โ", "ใ", "ไ"]

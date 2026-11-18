@@ -26,7 +26,12 @@ toggle)
         -m sm.puri.OSK0.SetVisible "$next" >/dev/null 2>&1
     ;;
 lang-next)
-    # Reorder input-sources so the target layout is first AND point
+    # a21s-osk answers on org.rabbiz.OSK1 and cycles inside its own layouts (no gsettings).
+    if gdbus call --session -d sm.puri.OSK0 -o /org/rabbiz/OSK1 \
+        -m org.rabbiz.OSK1.NextLanguage >/dev/null 2>&1; then
+        exit 0
+    fi
+    # squeekboard path: reorder input-sources so the target layout is first AND point
     # 'current' at index 0 — covers both watch semantics.
     src=$(gsettings get org.gnome.desktop.input-sources sources 2>/dev/null)
     case "$src" in

@@ -112,6 +112,25 @@ impl Run {
 
     fn present_once(&mut self) -> Result<(), String> {
         let t0 = Instant::now();
+        // A pending launch that never produced a toplevel fails visibly —
+        // the error screen, not a wedged morph.
+        if let Some(id) = self.de.launch.check_timeout() {
+            eprintln!("launch: {id} timed out waiting for a toplevel");
+            self.de.launch_error = Some(format!("{id}: did not start"));
+            self.de.foreground = crate::state::Foreground::Shell;
+            self.de.nav.go(de_ui::nav::Screen::Error);
+            self.de.shell_dirty = true;
+        }
+        // Shell surface: re-raster on dirty or when the clock minute rolls.
+        let minute = minute_of_day();
+        if matches!(self.de.foreground, crate::state::Foreground::Shell)
+            && (self.de.shell_dirty || self.de.stub_minute != minute || self.de.shell_px.is_none())
+        {
+            self.de.stub_minute = minute;
+            self.de.shell_px = Some(self.de.shell_pixels());
+            self.de.shell_dirty = false;
+            self.de.shell_stub = None; // force texture re-upload
+        }
         // Split `de` into field borrows so `renderer` can be passed
         // mutably alongside the rest of the scene state.
         let de = &mut self.de;
@@ -120,26 +139,28 @@ impl Run {
             compositor,
             space,
             shell_stub,
+            shell_px,
             gesture_bar,
-            stub_minute,
             output,
             output_obj,
             clock,
             primary_composite,
             direct_scanout,
+            foreground,
             ..
         } = de;
         let mut parts = FrameParts {
             compositor,
             space,
             shell_stub,
+            shell_px,
             gesture_bar,
-            stub_minute,
             output,
             output_obj,
             clock,
             primary_composite,
             direct_scanout,
+            foreground: *foreground,
         };
         match renderer {
             DeRenderer::Gl(r) => render_with(&mut parts, r)?,
@@ -158,13 +179,14 @@ struct FrameParts<'a> {
     compositor: &'a mut de_backend::probe::DeCompositor,
     space: &'a mut smithay::desktop::Space<smithay::desktop::Window>,
     shell_stub: &'a mut Option<Box<dyn std::any::Any>>,
+    shell_px: &'a mut Option<de_api::Pixels>,
     gesture_bar: &'a mut Option<Box<dyn std::any::Any>>,
-    stub_minute: &'a mut u64,
     output: &'a de_backend::drm::OutputSelection,
     output_obj: &'a smithay::output::Output,
     clock: &'a smithay::utils::Clock<smithay::utils::Monotonic>,
     primary_composite: &'a mut u64,
     direct_scanout: &'a mut u64,
+    foreground: crate::state::Foreground,
 }
 
 fn render_with<R>(de: &mut FrameParts<'_>, renderer: &mut R) -> Result<(), String>
@@ -175,18 +197,13 @@ where
         + smithay::backend::renderer::Bind<smithay::backend::allocator::dmabuf::Dmabuf>,
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
 {
-    // Lazy shell-stub texture (home screen w/ clock). Re-raster when the
-    // minute changes — otherwise the cached texture gives no damage and
-    // the frame is simply EmptyFrame (screen holds still).
-    let minute = minute_of_day();
-    if *de.stub_minute != minute || de.shell_stub.is_none() {
-        *de.stub_minute = minute;
-        *de.shell_stub = None;
-        let px = de_ui::shell_stub::home(de_api::Size::new(
-            de.output.width as i32,
-            de.output.height as i32,
-        ));
-        *de.shell_stub = upload_any(renderer, &px);
+    // Upload the latest shell frame as a texture (re-rastered upstream in
+    // `present_once` on dirty/minute change — the cached texture otherwise
+    // produces no damage and the frame is simply EmptyFrame).
+    if de.shell_stub.is_none() {
+        if let Some(px) = de.shell_px.as_ref() {
+            *de.shell_stub = upload_any(renderer, px);
+        }
     }
     if de.gesture_bar.is_none() {
         let px = de_ui::shell_stub::gesture_bar(de_api::Size::new(
@@ -197,8 +214,9 @@ where
     }
 
     let mut elements: Vec<DeElement<R>> = Vec::new();
-    let has_windows = de.space.elements().next().is_some();
-    if !has_windows {
+    let show_app = de.foreground == crate::state::Foreground::App
+        && de.space.elements().next().is_some();
+    if !show_app {
         if let Some(tex) = texture_buffer::<R>(de.shell_stub.as_ref()) {
             elements.push(DeElement::from(tex_el::<R>(
                 tex,

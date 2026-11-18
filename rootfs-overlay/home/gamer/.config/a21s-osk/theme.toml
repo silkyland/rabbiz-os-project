@@ -1,0 +1,5 @@
+# a21s-osk theme. The shell's Appearance service will rewrite this file at K7; until then it is
+# edited by hand and applied live with:
+#   gdbus call --session -d sm.puri.OSK0 -o /org/rabbiz/OSK1 -m org.rabbiz.OSK1.ReloadTheme
+mode = "dark"
+# accent = "#8ab4f8"

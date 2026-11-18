@@ -1,0 +1,169 @@
+# English (US) — RabbitOS on-screen keyboard layout (a21s-osk).
+#
+# The plan reference is docs/PLAN-keyboard.md §5. Key geometry is normalised per row, so
+# `width` only shapes ratios; `insets` shifts a whole row inward by letter-key units.
+
+id = "en-us"
+name = "English (US)"
+language = "en"
+
+[geometry]
+width_px = 720.0
+key_height_px = 62.0
+gap_px = 5.0
+margin_px = 5.0
+strip_height_px = 40.0
+
+[keys.shift]
+action = "shift"
+label = "shift"
+icon = "keyboard_capslock"
+width = 1.5
+
+[keys.backspace]
+action = "backspace"
+label = "backspace"
+icon = "backspace"
+width = 1.5
+
+[keys.return]
+action = "return"
+label = "return"
+icon = "keyboard_return"
+width = 1.5
+
+[keys.space]
+action = "space"
+label = "English"
+width = 4.5
+
+[keys."?123"]
+action = "layer"
+layer = "numbers"
+label = "?123"
+width = 1.5
+
+[keys."=</"]
+action = "layer"
+layer = "symbols"
+label = "=</"
+width = 1.5
+
+[keys.abc]
+action = "layer"
+layer = "base"
+label = "abc"
+width = 1.5
+
+[keys.emoji]
+action = "panel"
+panel = "emoji"
+label = "emoji"
+icon = "mood"
+width = 1.0
+
+[keys.".com"]
+action = "text"
+text = ".com"
+label = ".com"
+width = 1.5
+
+[keys.clipboard]
+action = "text"
+text = ""
+label = "📋"
+width = 1.0
+
+[keys.language]
+action = "language"
+label = "language"
+icon = "language"
+width = 1.0
+
+[[layer]]
+name = "base"
+insets = [0.0, 0.0, 0.5, 0.0, 0.0]
+rows = [
+    "1 2 3 4 5 6 7 8 9 0",
+    "q w e r t y u i o p",
+    "a s d f g h j k l",
+    "shift z x c v b n m backspace",
+    "?123 , emoji language space . return",
+]
+
+[[layer]]
+name = "numbers"
+insets = [0.0, 0.0, 0.0, 0.0]
+rows = [
+    "1 2 3 4 5 6 7 8 9 0",
+    "@ # $ % & - _ + ( )",
+    "=</ , \" ' : ; ! ? backspace",
+    "abc , emoji language space . return",
+]
+
+[[layer]]
+name = "symbols"
+insets = [0.0, 0.0, 0.0, 0.0]
+rows = [
+    "~ ` | · √ π τ ÷ × ¶",
+    "© ® £ € ¥ ^ ° * { }",
+    "?123 \\ / < > = [ ] backspace",
+    "abc , emoji language space . return",
+]
+
+[[layer]]
+name = "emoji"
+insets = [0.0, 0.0, 0.0, 0.0]
+rows = [
+    "😀 😂 😍 🥰 😎 🤔 😭 😡 👍 👎",
+    "❤️ 🔥 ✨ 🎉 🎂 🌹 ☀️ 🌙 ⭐ 💯",
+    "🙏 👋 🤝 💪 🙌 👌 ✌️ 🤞 🫶 🤙",
+    "abc , emoji language space . return",
+]
+
+# Purpose-specific layouts (zwp_text_input_v3 content_type: email / url / digits). The keyboard
+# switches to these layers when the focused field asks for them.
+[[layer]]
+name = "email"
+insets = [0.0, 0.0, 0.0, 0.0]
+rows = [
+    "q w e r t y u i o p",
+    "a s d f g h j k l",
+    "shift z x c v b n m backspace",
+    "?123 @ .com : language space . return",
+]
+
+[[layer]]
+name = "url"
+insets = [0.0, 0.0, 0.0, 0.0]
+rows = [
+    "q w e r t y u i o p",
+    "a s d f g h j k l",
+    "shift z x c v b n m backspace",
+    "?123 / .com : language space . return",
+]
+
+[[layer]]
+name = "num"
+insets = [0.0, 0.0, 0.0, 0.0]
+rows = [
+    "1 2 3",
+    "4 5 6",
+    "7 8 9",
+    "abc 0 language backspace",
+]
+
+# Long-press alternates (Gboard-style). Own-language accents only; digits come from the
+# number row, which this layout keeps visible on every layer.
+[alternates]
+a = ["à", "á", "â", "ä", "æ", "ã", "å", "ā"]
+e = ["è", "é", "ê", "ë", "ē", "ę", "ė"]
+i = ["ì", "í", "î", "ï", "ī", "į"]
+o = ["ò", "ó", "ô", "ö", "õ", "ø", "ō", "œ"]
+u = ["ù", "ú", "û", "ü", "ū"]
+y = ["ý", "ÿ"]
+c = ["ç", "ć", "č"]
+n = ["ñ", "ń"]
+s = ["ß", "ś", "š"]
+"." = [",", "?", "!", ":", ";", "…"]
+"," = ["!", "?", ";", ":"]

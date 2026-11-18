@@ -16,7 +16,7 @@ const SECTIONS: &[&str] = &[
 
 pub fn render_index(size: Size, s: &Strings, t: &Theme, clock: &str) -> de_api::Pixels {
     let mut c = Canvas::filled(size, t.bg);
-    chrome::status_bar(&mut c, s, t, clock, "");
+    chrome::status_bar(&mut c, t, &chrome::StatusInfo::new(clock, ""));
     chrome::draw(&mut c, s.get("settings.title"), &style::h2(t.text), chrome::MARGIN, chrome::STATUS_H + 24, None);
     let mut y = chrome::STATUS_H + 96;
     for (i, key) in SECTIONS.iter().enumerate() {

@@ -6,7 +6,6 @@ use de_api::{Point, Rect, Size};
 use de_design::tokens::{self, Theme};
 use de_paint::{text, Canvas};
 
-use crate::i18n::Strings;
 
 /// Status bar height incl. cutout inset (§7.17: 56 px).
 pub const STATUS_H: i32 = tokens::STATUS_BAR_HEIGHT;
@@ -71,20 +70,127 @@ pub fn draw_centered_x(c: &mut Canvas, s: &str, st: &text::LabelStyle, cx: i32, 
     }
 }
 
-/// 56 px status bar: clock left (tnum), battery % + Wi-Fi right.
-pub fn status_bar(c: &mut Canvas, s: &Strings, t: &Theme, clock: &str, battery: &str) {
-    let w = c.size().w;
-    // Left cutout inset 72 px — clock starts right of it.
-    draw(c, clock, &style::label(t.text), tokens::CUTOUT_INSET, 14, None);
-    // Battery pct right-aligned.
-    if let Some(px) = text::label(battery, style::label(t.text), None) {
-        let (bw, bh) = (px.width() as i32, px.height() as i32);
-        c.blit(
-            &de_api::Pixels::new(de_api::Size::new(bw, bh), px.data().to_vec()),
-            Point::new(w - MARGIN - bw, 14),
-        );
+/// What the status bar paints (M3-T1): built from `ServicesSnapshot` + the
+/// clock string the compositor formats (the shell never reads time itself).
+#[derive(Debug, Clone, Default)]
+pub struct StatusInfo {
+    pub clock: String,
+    /// `None` = no battery present.
+    pub battery_pct: Option<u8>,
+    pub charging: bool,
+    pub battery_full: bool,
+    /// Wi-Fi shown when `Some`; the glyph itself encodes on/off today.
+    pub wifi: Option<bool>,
+    pub bluetooth: bool,
+    pub dnd: bool,
+    pub airplane: bool,
+    /// Privacy dots (camera/mic in use right now).
+    pub privacy_cam: bool,
+    pub privacy_mic: bool,
+}
+
+impl StatusInfo {
+    /// Clock + plain battery text (skeleton/sim convenience).
+    #[must_use]
+    pub fn new(clock: &str, battery: &str) -> Self {
+        Self {
+            clock: clock.into(),
+            battery_pct: battery.trim_end_matches('%').parse().ok(),
+            ..Self::default()
+        }
     }
-    let _ = s;
+
+    /// From a live services snapshot (device path).
+    #[must_use]
+    pub fn from_snapshot(snap: &de_api::services::ServicesSnapshot, clock: &str) -> Self {
+        use de_api::services::{BluetoothState, WifiState};
+        Self {
+            clock: clock.into(),
+            battery_pct: snap.battery.percent,
+            charging: snap.battery.charging,
+            battery_full: snap.battery.full,
+            wifi: match snap.wifi {
+                WifiState::Connected { .. } | WifiState::Connecting | WifiState::Disconnected => {
+                    Some(true)
+                }
+                WifiState::Disabled => Some(false),
+                WifiState::Unknown => None,
+            },
+            bluetooth: matches!(snap.bluetooth, BluetoothState::On | BluetoothState::Connected { .. }),
+            dnd: snap.dnd,
+            airplane: snap.airplane,
+            privacy_cam: snap.privacy.camera,
+            privacy_mic: snap.privacy.mic,
+        }
+    }
+}
+
+/// 56 px status bar: clock left (tnum), privacy dots beside it, then
+/// airplane/DND/BT/Wi-Fi glyphs and the battery block right-aligned.
+pub fn status_bar(c: &mut Canvas, t: &Theme, info: &StatusInfo) {
+    status_bar_fg(c, t, info, t.text);
+}
+
+/// Status bar over wallpaper/imagery: plum scrim band + cream glyphs so it
+/// stays readable on any wallpaper (the light theme's `t.text` is dark plum
+/// and disappears on dark wallpapers).
+pub fn status_bar_on_wallpaper(c: &mut Canvas, t: &Theme, info: &StatusInfo) {
+    c.fill_rect(
+        Rect::new(0, 0, c.size().w, tokens::STATUS_BAR_HEIGHT),
+        [0x10, 0x0B, 0x14, 0x59], // plum ~35%
+    );
+    status_bar_fg(c, t, info, [0xFF, 0xF8, 0xF0, 0xFF]); // cream
+}
+
+fn status_bar_fg(c: &mut Canvas, t: &Theme, info: &StatusInfo, fg: [u8; 4]) {
+    let w = c.size().w;
+    let ic = |col: [u8; 4]| text::LabelStyle::icon(22.0, col);
+    let fg_dim = [fg[0], fg[1], fg[2], (u16::from(fg[3]) * 3 / 5) as u8];
+    // Left: clock after the 72 px cutout inset.
+    let clock_r = draw(c, &info.clock, &style::label(fg), tokens::CUTOUT_INSET, 14, None);
+    // Privacy dots right after the clock (green camera/mic, §7.17).
+    let mut dot_x = clock_r.x + clock_r.w + 12;
+    for active in [info.privacy_cam, info.privacy_mic] {
+        if !active {
+            continue;
+        }
+        c.fill_rounded_rect(Rect::new(dot_x, 22, 10, 10), 999.0, t.success);
+        dot_x += 16;
+    }
+    // Right edge, right→left: battery, wifi, bt, dnd, airplane.
+    let mut x = w - MARGIN;
+    if let Some(pct) = info.battery_pct {
+        let label = format!("{pct}");
+        if let Some(px) = text::label(&label, style::label(fg), None) {
+            let (bw, bh) = (px.width() as i32, px.height() as i32);
+            x -= bw;
+            c.blit(
+                &de_api::Pixels::new(de_api::Size::new(bw, bh), px.data().to_vec()),
+                Point::new(x, 14),
+            );
+        }
+        let g = if info.charging || info.battery_full {
+            "\u{e1a3}" // battery_charging_full
+        } else {
+            "\u{e1a4}" // battery_full
+        };
+        let col = if info.charging { t.accent } else { fg };
+        let r = draw(c, g, &ic(col), x - 26, 14, None);
+        x = r.x - 8;
+    }
+    for (show, g, col) in [
+        (info.wifi.unwrap_or(false), "\u{e63e}", fg),         // wifi
+        (info.wifi == Some(false), "\u{e648}", fg_dim),       // wifi_off
+        (info.bluetooth, "\u{e1a7}", fg),                     // bluetooth
+        (info.dnd, "\u{e644}", fg),                           // do_not_disturb_on
+        (info.airplane, "\u{e195}", t.accent),                // airplanemode_active
+    ] {
+        if !show {
+            continue;
+        }
+        let r = draw(c, g, &ic(col), x - 26, 14, None);
+        x = r.x - 6;
+    }
 }
 
 /// 200×8 nav pill at the bottom (y = h - 24).
@@ -92,6 +198,55 @@ pub fn nav_pill(c: &mut Canvas, t: &Theme) {
     let size = c.size();
     let r = Rect::new((size.w - 200) / 2, size.h - 24, 200, 8);
     c.fill_rounded_rect(r, 4.0, t.text3);
+}
+
+/// An app tile for home/drawer/search/recents: icon pixels when the
+/// compositor resolved them (`de-apps::icons`), else the shell draws the
+/// first-party sand tile + initial.
+#[derive(Debug, Clone)]
+pub struct IconEntry {
+    pub id: String,
+    pub label: String,
+    pub icon: Option<de_api::Pixels>,
+}
+
+impl IconEntry {
+    /// Plain labelled tile (golden/sim path — no asset lookup).
+    #[must_use]
+    pub fn new(id: &str, label: &str) -> Self {
+        Self { id: id.into(), label: label.into(), icon: None }
+    }
+}
+
+/// Draw an app icon inside `r`: real pixels when present, else the sand
+/// tile + plum initial (same look as `de-apps::icons::tile_icon`).
+pub fn draw_app_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, r: Rect) {
+    match &e.icon {
+        Some(px) => c.blit(px, r.origin()),
+        None => {
+            c.fill_rounded_rect(r, tokens::ICON_TILE_RADIUS * (r.w as f32 / 96.0), t.icon_tile);
+            let letter: String = e
+                .label
+                .chars()
+                .find(|ch| ch.is_alphanumeric())
+                .map(|ch| ch.to_uppercase().collect())
+                .unwrap_or_else(|| "?".into());
+            let st = text::LabelStyle {
+                size: r.w as f32 * 0.44,
+                line_height: r.w as f32 * 0.5,
+                weight: 600,
+                color: t.icon_glyph,
+                ..Default::default()
+            };
+            if let Some(px) = text::label(&letter, st, None) {
+                let (w, h) = (px.width() as i32, px.height() as i32);
+                c.blit(
+                    &de_api::Pixels::new(de_api::Size::new(w, h), px.data().to_vec()),
+                    Point::new(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2),
+                );
+            }
+        }
+    }
 }
 
 /// Grouped-card row: 88 px row, `line` divider, label left, value+chevron right.

@@ -15,13 +15,16 @@ License: SIL Open Font License 1.1 (see OFL.txt)
 
 ## Material Icons Round (Apache 2.0)
 
-Source: repo copy of `shell/assets/fonts/MaterialIconsRound-Regular.otf`
-(Google Fonts "Material Icons Round" family, Apache License 2.0).
-Used for system glyphs (Outlined/Filled states) per plan §7.17 Icons row.
+Source: `MaterialIconsRound-Regular.ttf` was converted CFF→TrueType
+(fontTools `otf2ttf` snippet, Cu2QuPen, max_err=1.0) from the repo copy of
+`shell/assets/fonts/MaterialIconsRound-Regular.otf` (Google Fonts
+"Material Icons Round" family, Apache License 2.0). swash cannot rasterize
+CFF outlines — the OTF shaped correctly but drew zero pixels.
+Original OTF SHA-256: bad85e5454b6288104ce03806c37323bcd8f145e3094e727860173ac8c91062e
 
 | File | SHA-256 |
 |---|---|
-| MaterialIconsRound-Regular.otf | bad85e5454b6288104ce03806c37323bcd8f145e3094e727860173ac8c91062e |
+| MaterialIconsRound-Regular.ttf | df78fb1e73db6f55365f3be64356ac03253da0584e0eca989bbe429cb3babf9d |
 
 ## OFL.txt
 

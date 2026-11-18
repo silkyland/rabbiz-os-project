@@ -9,7 +9,8 @@ import A21s.Services
 import A21s.Widgets
 
 // Android-style status bar with a morphing Dynamic Island / Heads-Up
-// Notification capsule, airplane/DND indicators, and shade tap toggle.
+// Notification capsule, airplane/DND indicators, and a pull-to-open shade
+// handle (taps are inert — see tapArea below).
 PanelWindow {
     id: bar
 
@@ -210,29 +211,34 @@ PanelWindow {
     }
 
     // Pull down on the status bar to open the shade (Android 12+ split): the half you start
-    // on picks the page — left = notifications + media, right = quick settings. A plain tap
-    // still toggles the shade. Before this, the bar only had onClicked, so dragging from the
-    // top bar did nothing at all.
+    // on picks the page — left = notifications + media, right = quick settings.
+    // The bar is a pull handle ONLY: taps are inert (owner request 2026-11-17) because a
+    // stray touch on the top strip kept opening the shade — e.g. while reaching for a
+    // button at the top of an app. A tap must not even pick the page, so shadeMode is
+    // chosen when the drag actually starts, not on press.
     MouseArea {
         id: tapArea
         anchors.fill: parent
+        property real pressX: 0
         property real pressY: 0
         property real pressProgress: 0
         property bool dragging: false
 
         onPressed: (m) => {
+            pressX = m.x
             pressY = m.y
             pressProgress = ShellState.shadeProgress
             dragging = false
-            if (ShellState.shadeProgress < 0.05)
-                ShellState.shadeMode = m.x < width / 2 ? "notifications" : "settings"
         }
         onPositionChanged: (m) => {
             if (!pressed)
                 return
             var dy = m.y - pressY
-            if (!dragging && Math.abs(dy) > 8)
+            if (!dragging && Math.abs(dy) > 8) {
                 dragging = true
+                if (ShellState.shadeProgress < 0.05)
+                    ShellState.shadeMode = pressX < width / 2 ? "notifications" : "settings"
+            }
             if (dragging) {
                 var range = Math.max(1, (bar.screen ? bar.screen.height : 1600)
                                         - Theme.shadeHandleZone)
@@ -240,12 +246,9 @@ PanelWindow {
             }
         }
         onReleased: (m) => {
-            if (!dragging) {
-                // Plain tap: same instant toggle the bar always had.
-                ShellState.shadeProgress = ShellState.shadeOpen ? 0 : 1
-            } else {
+            // Tap (no drag): do nothing at all — the finger left the progress untouched.
+            if (dragging)
                 ShellState.shadeSnapRequested(ShellState.shadeProgress > 0.3 ? 1 : 0)
-            }
         }
         onCanceled: {
             if (dragging)
@@ -305,18 +308,10 @@ PanelWindow {
             }
         }
 
-        TapHandler {
-            onTapped: {
-                if (bar.toastActive) {
-                    bar.toastActive = false
-                    toastTimer.stop()
-                    ShellState.shadeProgress = 1
-                } else if (SystemControl.flashlightOn) {
-                    SystemControl.setFlashlight(false)
-                } else if (Media.isPlaying) {
-                    Media.togglePlaying()
-                }
-            }
-        }
+        // Deliberately no TapHandler (owner request 2026-11-17): the capsule is status-bar
+        // chrome, so a stray touch must not dismiss a heads-up, switch the torch off or
+        // pause the music under it. The toast still auto-hides after toastTimer and the
+        // notification stays in the shade; media/torch controls live in the shade and on
+        // the lock screen.
     }
 }
