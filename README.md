@@ -13,7 +13,7 @@ system under active development; hardware support and remaining work are listed 
 
 <p align="center"><img src="assets/branding/rabbiz-mascot-flat.svg" width="240" alt="Rabbiz, the plum rabbit mascot, waving"></p>
 
-[Contributing](CONTRIBUTING.md) · [Lanes](docs/LANES.md) · [Brand & mascot](docs/BRAND.md) · [Desktop shell](docs/DESKTOP-SHELL.md) · [Roadmap](ROADMAP.md)
+[Contributing](CONTRIBUTING.md) · [Add a device](docs/NEW-DEVICE.md) · [Lanes](docs/LANES.md) · [Brand & mascot](docs/BRAND.md) · [Desktop shell](docs/DESKTOP-SHELL.md) · [Roadmap](ROADMAP.md)
 
 ## Support the project
 

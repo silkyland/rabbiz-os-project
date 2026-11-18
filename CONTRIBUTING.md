@@ -65,6 +65,10 @@ evidence earns `verified`. Refuted findings are kept (marked `refuted`) so nobod
 
 ## 6. Adding a new device
 
+Start with [docs/NEW-DEVICE.md](docs/NEW-DEVICE.md): **report your device first** (issue template
+"Device report"), check it is a safe candidate, and write down a recovery path before flashing.
+Then:
+
 1. Copy `devices/_template/` to `devices/<vendor>/<codename>/` (lowercase; the model number goes
    in `device.toml`, because one codename can cover several model numbers).
 2. Fill `device.toml` honestly — unknown fields stay `unknown`, not guessed.

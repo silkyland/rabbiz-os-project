@@ -1,0 +1,86 @@
+name: Device report
+description: Tell us which phone or tablet you want to run RabbizOS on (before you flash anything)
+title: "Device: <brand> <model>"
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read docs/NEW-DEVICE.md in the repository first.
+        **Do not post serial numbers, IMEI, real MAC addresses, Wi-Fi names or IP addresses.**
+  - type: input
+    id: brand
+    attributes:
+      label: Brand
+      placeholder: Samsung
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Marketing name and model number
+      description: For example "Galaxy A21s, SM-A217F". Codename too if you know it.
+    validations:
+      required: true
+  - type: input
+    id: soc
+    attributes:
+      label: SoC
+      description: Chipset name (for example Exynos 850, Snapdragon 8s Gen 3).
+    validations:
+      required: true
+  - type: input
+    id: memory
+    attributes:
+      label: RAM and storage
+  - type: input
+    id: stock_os
+    attributes:
+      label: Current OS and version
+      description: For example Android 13, One UI 5.
+  - type: dropdown
+    id: bootloader
+    attributes:
+      label: Bootloader
+      options:
+        - Unlocked
+        - Locked, unlock is possible
+        - Locked, unlock not possible or not known
+        - I do not know
+    validations:
+      required: true
+  - type: dropdown
+    id: recovery
+    attributes:
+      label: Do you know how to restore stock firmware (download or recovery mode)?
+      options:
+        - Yes, I have tested it
+        - Yes, but not tested
+        - No
+    validations:
+      required: true
+  - type: dropdown
+    id: lane
+    attributes:
+      label: What do you want to do?
+      options:
+        - Bring up this device (kernel lane)
+        - Test existing images on this device
+        - Work on the desktop environment (de lane, no device needed)
+        - Docs only
+    validations:
+      required: true
+  - type: textarea
+    id: probe
+    attributes:
+      label: Output of scripts/probe_device.sh (optional)
+      description: Delete the "dumpsys deviceidle whitelist" section (it lists installed apps) and any personal values before pasting.
+      render: text
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Checks
+      options:
+        - label: I removed serial numbers, IMEI, real MAC addresses, Wi-Fi names and IP addresses.
+          required: true
+        - label: I understand flashing can brick the device and I have a way to restore stock.
+          required: true
