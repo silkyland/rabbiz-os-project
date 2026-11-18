@@ -159,17 +159,8 @@ easings against an independent double-precision evaluation of the published coor
 with an absolute progress tolerance of 0.00001. Existing transitions keep their current
 curve assignments. [Reference easing paths](https://github.com/material-components/material-components-android/blob/1.13.0/docs/theming/Motion.md#curves-easing--duration)
 
-**P6. A written transition-pattern catalogue.** Map every DE screen change to one of the six patterns so
-motion stops being decided case by case:
-
-| DE event | Pattern | Note |
-|---|---|---|
-| App icon to app window (M3-T5 launch/close morph) | container transform | the "starting window" is the persistent container |
-| Settings sub-pages (P15) | forward / backward | slide + fade; reduced motion: crossfade |
-| Home pages, dock page switch | lateral | grouped slide, follows the finger |
-| Switching between top-level surfaces (home, drawer, recents) | top level or container transform | decide per surface; not yet specified in the plan |
-| Shade (from top), drawer / OSK (from bottom), power menu, OSD, toasts | enter and exit | direction from the edge they live on; no scale |
-| App cold start before the first frame | skeleton / starting window | the brand frame (P0) already plays this role |
+**P6. A written transition-pattern catalogue.** The [DE plan catalogue](DE-PLAN.md#transition-pattern-catalogue)
+maps the v1 screen changes to the six patterns and records the current playback scope.
 
 **P7. Audit for scale-in dialogs.** Per M3, in-screen enter/exit avoids scale because it implies elevation.
 Check `power`, `osd`, toasts and menus in `de-ui` for scale-in and replace with edge-direction expansion

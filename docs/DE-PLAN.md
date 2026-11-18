@@ -252,7 +252,8 @@ All values are device pixels at the 720×1600 panel; the same tokens are multipl
 4. Every animation is interruptible: a new touch or target retargets the same spring keeping position and velocity; nothing is blocked until an animation ends.
 5. Press feedback starts on touch-down: scale 0.96 over 90 ms, release with `snappy`. No dead-time before feedback.
 
-**Shared-element transitions (v1 list; everything else is a 160 ms crossfade):** icon <-> app (P12, extended: close is the exact reverse and can be dragged), home <-> drawer (icons stay, wallpaper blur ramps), quick-toggle chevron -> inline sub-sheet (P6), recents card <-> app, lock -> home on unlock (clock and notifications fade/scale out 0.96, home icons fade/scale in from 0.96, wallpaper settles from 1.04 to 1.0).
+**Transition patterns.** Use the catalogue below to choose which surfaces move together and where
+they enter. `de-design::motion::Transition::timing` gives the reference tiers and exit policies.
 
 **Rhythm.** One family per screen (do not mix presets inside one transition). Staggered entrances: step 20 ms, at most 8 items, only for drawer grid and notification stack. Nothing longer than 600 ms. Elements that move together share the same preset and start frame.
 
@@ -261,6 +262,45 @@ All values are device pixels at the 720×1600 panel; the same tokens are multipl
 **Acceptance.** Host test: the spring solver settles within tolerance, preserves velocity on retarget, and never overshoots for bounce 0. Device: `scripts/de_bench.sh --scenario launcher` meets p95 <= 16.6 ms with the springs on; an interruption test (reverse a drawer or app-close drag mid-flight) shows no jump; owner feel review on the A21s before the presets are frozen.
 
 **Open items.** Haptic ticks on toggle/snap (depends on whether the A21s vibrator is reachable from the DE; unverified). Whether `rubber` applies to every scroll view or only lists. Real Honor/iOS curves were not measured: do not claim parity, only familiarity.
+
+#### Transition pattern catalogue
+
+These patterns are design hypotheses for the v1 screen contracts. Use the same pattern on the
+return path when the surface can be retrieved. The reduced-motion and safe-mode fallbacks in
+§7.17a take priority over the choreography below.
+
+| Screen change or interaction | Pattern | Intended motion |
+|---|---|---|
+| Splash → brand → lock, including first-run entry and handoff to lock or Home (P0, P1, P19) | Top level | Fade through black between unrelated startup surfaces. |
+| Brand or starting window while waiting for content (P0, P12) | Skeleton | Keep a stable placeholder and fade in ready content over it. |
+| Lock ↔ Home (P1, P2) | Top level | Track the swipe on the lock surface, then fade between destinations. Fingerprint unlock uses the fade directly. |
+| Home/app ↔ Recents overview, or Home ↔ Settings index (P2, P4, P15) | Top level | Fade between destinations. Resuming from a specific card uses the card-to-app transform. |
+| Launcher, dock, drawer or search result ↔ app window (P2, P3, P12, P14) | Container transform | Expand the source tile into the window. Use the same container for a close back to a known tile. |
+| Recents card ↔ its app window (P4, P12) | Container transform | Resize the matching snapshot into the window and shrink it back when returning to the card. |
+| Search pill ↔ Search (P2, P14) | Container transform | Carry the input field from the pill into the search surface. The OSK has its own bottom-edge motion. |
+| Connectivity tile ↔ inline detail sheet (P6) | Container transform | Expand the tile into its Wi-Fi or Bluetooth detail surface. |
+| Settings index ↔ category ↔ detail, and first-run steps (P15, P19) | Forward / backward | Slide along the horizontal navigation axis and fade. Back reverses the direction. |
+| Home/dock pages, hero cards, Recents cards, and app quick-switch (P2, P4, P13) | Lateral | Slide peers together along the horizontal axis. |
+| Notification Center ↔ Control Center (P6) | Lateral | Move the two panes together on a horizontal swipe. |
+| Control Center ↔ expanded quick settings or editor (P6, P7) | Forward / backward | Advance through the settings hierarchy. Back restores the previous surface. |
+| Home ↔ Drawer (P3) | Enter and exit | Bring the drawer in from the bottom. On close it comes to rest just beyond that edge. |
+| Current content ↔ Shade or immersive status bar (P5, P6) | Enter and exit | Track the top-edge pull and return to the same edge on dismissal. |
+| Recents swipe-dismiss and Clear all, or notification card dismissal (P4, P8) | Enter and exit | Committed removal accelerates through the exit edge. |
+| Notification, charging and launch-message toasts (P8, P12, P20) | Enter and exit | Slide from the top. A swipe dismissal continues through the top edge. |
+| Power menu (P9) | Enter and exit | Reveal the sheet from the bottom and fade the scrim separately. |
+| Volume and brightness OSD (P10, P11) | Enter and exit | Translate the pill from the left edge and back. |
+| OSK show/hide (P13) | Enter and exit | Translate from the bottom. Keep the focused field above the keyboard. |
+| Predictive back and app-to-Home swipe (P13) | Enter and exit | Follow the gesture edge. When an icon/window pair is available, its committed morph uses the container-transform row. |
+| Contextual actions, connection dialogs and recovery sheets (P3, P15, P18) | Enter and exit | Reveal from the invoking edge or expand from the anchor along one axis. |
+| Screenshot flash and thumbnail (P16) | Enter and exit | Fade the flash and bring the thumbnail up from the bottom into its lower-right position. |
+| Screen off ↔ wake to lock (P17) | Top level | Fade through black at the display handoff. |
+| Charging pill and its status indicator (P20) | Enter and exit | Reveal the pill briefly, then fade it as the persistent indicator updates. |
+
+The navigation enum lists the shell surfaces. The compositor currently switches surfaces and
+foreground state directly. Not tested on device. [Screen list](../tools/rabbiz-de/crates/de-ui/src/nav.rs)
+[Gestures](../tools/rabbiz-de/crates/de-core/src/input.rs) [App mapping](../tools/rabbiz-de/crates/de-core/src/xdg.rs)
+
+The host morph driver exercises the app container transform. [Host morph](../tools/rabbiz-de/crates/de-ui/src/launch_morph.rs)
 
 ### 7.18 Screen contracts (v1)
 
