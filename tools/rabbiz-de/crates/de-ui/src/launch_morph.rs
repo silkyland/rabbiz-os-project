@@ -7,7 +7,7 @@
 //! drives it with real frame deltas and retargets mid-flight.
 
 use de_api::{Pixels, Point, Rect};
-use de_design::motion::SpringPreset;
+use de_design::motion::{MotionKind, SpringPreset};
 use de_design::tokens::{self, Theme};
 use de_paint::{animation::SpringValue, Canvas};
 
@@ -109,7 +109,7 @@ impl MorphAnimator {
     pub fn new(from: f32) -> Self {
         // §7.17a: app open/close uses Smooth (450 ms, zero bounce).
         Self {
-            spring: SpringValue::new(from, SpringPreset::Smooth),
+            spring: SpringValue::new(from, SpringPreset::Smooth, MotionKind::Spatial),
             target: from,
         }
     }

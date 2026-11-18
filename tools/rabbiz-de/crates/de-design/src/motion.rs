@@ -4,6 +4,15 @@
 //! All numbers are starting hypotheses pending owner feel review on the A21s;
 //! they are typed constants so a single edit retunes the whole system.
 
+/// The property driven by a motion channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MotionKind {
+    /// Position, rotation, size or corner radius. Uses the preset's bounce.
+    Spatial,
+    /// Opacity, color or blur radius. Stays between the animation endpoints.
+    Effects,
+}
+
 /// Spring preset names (§7.17a table). `duration` = settle time within 1 %,
 /// `bounce` = fractional overshoot at first crossing (0 = critically damped).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -36,6 +45,15 @@ impl SpringPreset {
             Self::Smooth => 0.0,
             Self::Snappy => 0.12,
             Self::Soft => 0.25,
+        }
+    }
+
+    /// Effects are critically damped regardless of preset.
+    #[must_use]
+    pub const fn bounce_for(self, kind: MotionKind) -> f32 {
+        match kind {
+            MotionKind::Spatial => self.bounce(),
+            MotionKind::Effects => 0.0,
         }
     }
 

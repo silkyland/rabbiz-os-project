@@ -3,7 +3,7 @@
 //! `SpringPreset`'s duration/bounce; retargeting preserves velocity, which is
 //! what makes gestures interruptible.
 
-use de_design::motion::{self, DegradeLevel, SpringPreset};
+use de_design::motion::{self, DegradeLevel, MotionKind, SpringPreset};
 
 /// Clock feeding all animations; `now_s` is seconds since compositor start.
 #[derive(Debug, Default)]
@@ -31,8 +31,8 @@ struct Osc {
 }
 
 impl Osc {
-    fn of(p: SpringPreset) -> Self {
-        let bounce = p.bounce().max(0.0);
+    fn of(p: SpringPreset, kind: MotionKind) -> Self {
+        let bounce = p.bounce_for(kind).max(0.0);
         // Overshoot = e^(-ζπ/√(1-ζ²)) → ζ = -ln(b)/√(π²+ln²b); bounce 0 → ζ=1.
         let zeta = if bounce <= 0.0 {
             1.0
@@ -78,18 +78,20 @@ pub struct SpringValue {
     pub target: f32,
     pub velocity: f32,
     pub preset: SpringPreset,
+    kind: MotionKind,
     /// Settled when within this epsilon of target and velocity is negligible.
     pub epsilon: f32,
 }
 
 impl SpringValue {
     #[must_use]
-    pub fn new(initial: f32, preset: SpringPreset) -> Self {
+    pub fn new(initial: f32, preset: SpringPreset, kind: MotionKind) -> Self {
         Self {
             value: initial,
             target: initial,
             velocity: 0.0,
             preset,
+            kind,
             epsilon: 0.001,
         }
     }
@@ -124,9 +126,18 @@ impl SpringValue {
             self.snap();
             return false;
         }
-        let (v, vel) = Osc::of(self.preset).step(self.value, self.velocity, self.target, dt_s);
-        self.value = v;
-        self.velocity = vel;
+        let (value, velocity) =
+            Osc::of(self.preset, self.kind).step(self.value, self.velocity, self.target, dt_s);
+        let (value, velocity) = match self.kind {
+            MotionKind::Spatial => (value, velocity),
+            // Critical damping can still overshoot with inherited velocity.
+            MotionKind::Effects => {
+                let bounded = value.clamp(self.value.min(self.target), self.value.max(self.target));
+                (bounded, if bounded == value { velocity } else { 0.0 })
+            }
+        };
+        self.value = value;
+        self.velocity = velocity;
         if self.settled() {
             self.snap();
             return false;
@@ -214,9 +225,54 @@ impl FrameGovernor {
 mod tests {
     use super::*;
 
+    const PRESETS: [(SpringPreset, f32); 3] = [
+        (SpringPreset::Smooth, 0.0),
+        (SpringPreset::Snappy, 0.12),
+        (SpringPreset::Soft, 0.25),
+    ];
+
+    #[test]
+    fn effects_stay_between_endpoints() {
+        for (preset, _) in PRESETS {
+            for (from, to) in [(0.0_f32, 1.0_f32), (1.0, 0.0), (0.25, 0.75)] {
+                for velocity in [-100.0, 0.0, 100.0] {
+                    let bounds = from.min(to)..=from.max(to);
+                    let mut spring = SpringValue::new(from, preset, MotionKind::Effects);
+                    spring.retarget_with_velocity(to, velocity);
+                    assert!(bounds.contains(&spring.value));
+                    for _ in 0..2000 {
+                        spring.advance(0.001);
+                        assert!(bounds.contains(&spring.value), "{preset:?}: {spring:?}");
+                    }
+                    assert_eq!(spring.value, to);
+                    assert!(spring.settled());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn spatial_bounce_respects_each_preset_limit() {
+        for (preset, bounce) in PRESETS {
+            let mut spring = SpringValue::new(0.0, preset, MotionKind::Spatial);
+            spring.retarget(1.0);
+            let mut peak = spring.value;
+            for _ in 0..2000 {
+                spring.advance(0.001);
+                peak = peak.max(spring.value);
+                assert!(spring.value >= 0.0, "{preset:?}: {spring:?}");
+            }
+            assert!(peak <= 1.0 + bounce + 1e-5, "{preset:?}: peak={peak}");
+            assert!(
+                (peak - (1.0 + bounce)).abs() < 1e-4,
+                "{preset:?}: peak={peak}"
+            );
+        }
+    }
+
     #[test]
     fn spring_converges() {
-        let mut s = SpringValue::new(0.0, SpringPreset::Smooth);
+        let mut s = SpringValue::new(0.0, SpringPreset::Smooth, MotionKind::Spatial);
         s.retarget(100.0);
         for _ in 0..240 {
             s.advance(1.0 / 60.0);
@@ -226,7 +282,7 @@ mod tests {
 
     #[test]
     fn snappy_overshoots() {
-        let mut s = SpringValue::new(0.0, SpringPreset::Snappy);
+        let mut s = SpringValue::new(0.0, SpringPreset::Snappy, MotionKind::Spatial);
         s.retarget(100.0);
         let mut max_v = 0.0f32;
         for _ in 0..240 {
@@ -240,7 +296,7 @@ mod tests {
 
     #[test]
     fn retarget_preserves_velocity() {
-        let mut s = SpringValue::new(0.0, SpringPreset::Snappy);
+        let mut s = SpringValue::new(0.0, SpringPreset::Snappy, MotionKind::Spatial);
         s.retarget_with_velocity(50.0, 400.0);
         let v0 = s.velocity;
         s.retarget(10.0);
@@ -249,7 +305,7 @@ mod tests {
 
     #[test]
     fn projection_uses_quarter_second() {
-        let mut s = SpringValue::new(100.0, SpringPreset::Smooth);
+        let mut s = SpringValue::new(100.0, SpringPreset::Smooth, MotionKind::Spatial);
         s.velocity = -800.0;
         assert_eq!(s.projected_release(), -100.0);
     }

@@ -1,8 +1,8 @@
 # DE motion: what Material 3 teaches us (study + proposals)
 
-Status: **research and proposals**, not applied to code. Lane: `de`. Written 2026-11-18.
+Status: **research and proposals**. P1 is implemented. Lane: `de`. Written 2026-11-18.
 Like every rule here this is a hypothesis: the numbers below are starting points to be tuned by
-feel on the A21s, and any change to `de-design` must update the goldens and record the decision in
+feel on the A21s, and any change to `de-design` must check the goldens and record the decision in
 the same change (see [DE-PLAN.md](DE-PLAN.md) §7.17a and `tools/rabbiz-de/crates/de-design/src/motion.rs`).
 
 ## 0. What was actually read
@@ -104,6 +104,8 @@ Each proposal says what to change and how to know it worked. None touches the fr
 **P1. Split motion into spatial and effects.** Today a preset like `Snappy` (12 % bounce) can be applied
 to anything. Add a kind (`Spatial` | `Effects`) and make effects (opacity, colour, blur radius) clamp to
 no overshoot; overshoot on opacity >1 or negative blur is a bug, not a style.
+Effects now use critical damping at the selected preset duration. The solver also bounds each
+step between its current value and target, dropping velocity when it crosses a bound.
 *Done when:* a unit test shows an effects spring never leaves [0,1] for any preset, and a golden-frame
 test of the launch morph keeps opacity monotonic.
 

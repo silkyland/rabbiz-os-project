@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 
 use de_api::{Pixels, Rect};
+use de_design::motion::{MotionKind, SpringPreset};
 
 use crate::animation::SpringValue;
 
@@ -30,19 +31,13 @@ pub struct Layer {
 
 impl Layer {
     #[must_use]
-    pub fn new(
-        id: LayerId,
-        content: Pixels,
-        x: f32,
-        y: f32,
-        preset: de_design::motion::SpringPreset,
-    ) -> Self {
+    pub fn new(id: LayerId, content: Pixels, x: f32, y: f32, preset: SpringPreset) -> Self {
         Self {
             id,
             content,
-            x: SpringValue::new(x, preset),
-            y: SpringValue::new(y, preset),
-            opacity: SpringValue::new(1.0, preset),
+            x: SpringValue::new(x, preset, MotionKind::Spatial),
+            y: SpringValue::new(y, preset, MotionKind::Spatial),
+            opacity: SpringValue::new(1.0, preset, MotionKind::Effects),
             radius: 0.0,
             visible: true,
         }
@@ -97,13 +92,7 @@ impl LayerTree {
     }
 
     /// Push a layer on top; returns its id.
-    pub fn push(
-        &mut self,
-        content: Pixels,
-        x: f32,
-        y: f32,
-        preset: de_design::motion::SpringPreset,
-    ) -> LayerId {
+    pub fn push(&mut self, content: Pixels, x: f32, y: f32, preset: SpringPreset) -> LayerId {
         self.next_id += 1;
         let id = self.next_id;
         self.layers.push(Layer::new(id, content, x, y, preset));
@@ -170,7 +159,6 @@ impl TextureCache {
 mod tests {
     use super::*;
     use de_api::Size;
-    use de_design::motion::SpringPreset;
 
     fn px(w: i32, h: i32) -> Pixels {
         Pixels::empty(Size::new(w, h))
@@ -185,6 +173,17 @@ mod tests {
         // Settled layer reports no damage.
         let mut l2 = Layer::new(2, px(10, 10), 0.0, 0.0, SpringPreset::Smooth);
         assert!(l2.advance(1.0 / 60.0).is_none());
+    }
+
+    #[test]
+    fn layer_opacity_stays_in_range_with_a_bouncy_preset() {
+        let mut layer = Layer::new(1, px(10, 10), 0.0, 0.0, SpringPreset::Soft);
+        layer.opacity.retarget(0.0);
+        for _ in 0..120 {
+            layer.advance(1.0 / 60.0);
+            assert!((0.0..=1.0).contains(&layer.opacity.value));
+        }
+        assert_eq!(layer.opacity.value, 0.0);
     }
 
     #[test]
