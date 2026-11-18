@@ -14,6 +14,23 @@ use de_design::tokens;
 
 use crate::image::decode_png;
 
+const EMBER: &[u8] = include_bytes!("../../../assets/wallpapers/ember.png");
+
+/// The compositor's built-in wallpaper. Sunset is the legacy Ember choice.
+#[must_use]
+pub fn bundled(id: &str, size: Size) -> Pixels {
+    if matches!(id, tokens::WALLPAPER_DEFAULT | "sunset") {
+        if let Ok(pixels) = decode_png(EMBER) {
+            return if pixels.size == size {
+                pixels
+            } else {
+                cover_scale(&pixels, size)
+            };
+        }
+    }
+    wallpaper(None, id, size)
+}
+
 /// Per-id gradient stops (top → mid → bottom), premultiplied-ready sRGB.
 /// Tuned to sit behind Cream Glass: warm, low-saturation, darker up top.
 fn stops(id: &str) -> Option<[[u8; 3]; 3]> {
@@ -159,6 +176,15 @@ pub fn apply_grain(px: &mut Pixels, amount: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bundled_ember_replaces_the_legacy_sunset_placeholder() {
+        let size = Size::new(720, 1600);
+        let image = decode_png(EMBER).expect("embedded Ember image decodes");
+        assert_eq!(image.size, size);
+        assert_eq!(bundled("sunset", size), image);
+        assert_eq!(bundled(tokens::WALLPAPER_DEFAULT, size), image);
+    }
 
     #[test]
     fn procedural_is_deterministic() {

@@ -65,7 +65,7 @@ impl De {
         let wallpaper = match &self.wallpaper {
             Some((id, px)) if *id == wp_id => px.clone(),
             _ => {
-                let px = de_paint::wallpaper::wallpaper(None, &wp_id, size);
+                let px = de_paint::wallpaper::bundled(&wp_id, size);
                 self.wallpaper = Some((wp_id, px.clone()));
                 px
             }
