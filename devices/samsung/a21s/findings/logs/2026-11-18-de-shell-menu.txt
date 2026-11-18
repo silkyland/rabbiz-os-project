@@ -1,0 +1,19 @@
+Shell context menu on the A21s, 2026-11-18 (rabbiz-de release from 94463c0, sha256 6395839649bfe1a1..., kernel 7.3.0-g14a425b3a7dc-dirty)
+Input came from a local VNC client (rfb_click.py, unauthenticated loopback) through zwlr_virtual_pointer; screenshots with grim.
+
+1. right-click at (360,1060) on the empty home screen
+   -> grim frame shows the menu (Change wallpaper / Settings / Lock screen) opened at x=16..376, y=1060..1362: it flipped left of the
+      anchor because it would not fit on the right. Image: 2026-11-18-de-shell-menu-open.png
+2. left-click at (600,300), outside the menu
+   -> the next frame has the same SHA-256 as the frame taken before the menu was opened (39819f77f639...): the menu closed and
+      nothing else changed.
+3. right-click again, then left-click at (190,1116) (the middle of the first row, "Change wallpaper"), run twice
+   -> the menu closed, but the frame showed no wallpaper change and prefs.json still had "deWallpaperId": "ember".
+      Expected: next_id("ember") = "dusk" (a dark gradient). The cause was not found.
+   -> in one of the runs the journal later showed `launch: sm.puri.Chatty` and the shell census showed a window while foreground=Shell:
+      an app was launched during the test; which click did it was not established. It was killed afterwards.
+4. a later grim capture was a dark frame with only the gesture bar while the shell frame dump showed the home screen (page 3).
+   composite_output (used by screencopy) draws windows when foreground==App even if no window exists, while the renderer
+   shows the shell in that case; the two conditions differ.
+Not run: Chrome / Qt / GTK popup menus, touch long-press, keyboard navigation of the menu.
+Device left clean: test files and the launched app removed; DE, OSK and wayvnc running.
