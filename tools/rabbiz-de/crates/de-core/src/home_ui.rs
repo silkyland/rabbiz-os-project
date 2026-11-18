@@ -35,11 +35,13 @@ enum DragFrom {
     Dock(usize),
 }
 
-struct IconDrag {
+pub(crate) struct IconDrag {
+    pub(crate) px: Pixels,
+    dock_len: usize,
     id: String,
     from: DragFrom,
-    pos: Point,
-    target: Option<DropTarget>,
+    pub(crate) pos: Point,
+    pub(crate) target: Option<DropTarget>,
 }
 
 /// Pixel layers of the home screen while the pager moves: the icon-less
@@ -57,7 +59,9 @@ pub(crate) struct HomeUi {
     axis: Axis,
     last_tick: Option<Instant>,
     pub(crate) layers: Option<Layers>,
-    drag: Option<IconDrag>,
+    pub(crate) drag: Option<IconDrag>,
+    pub(crate) drag_tex: Option<Box<dyn std::any::Any>>,
+    pub(crate) hl_tex: Option<Box<dyn std::any::Any>>,
     /// Uploaded copies of `layers` (renderer-specific texture ids).
     pub(crate) tex_key: u64,
     pub(crate) base_tex: Option<Box<dyn std::any::Any>>,
@@ -66,6 +70,14 @@ pub(crate) struct HomeUi {
 }
 
 impl HomeUi {
+    /// Top-left of the lifted icon and the landing-spot highlight, if any.
+    pub(crate) fn drag_overlay(&self, size: Size) -> Option<(Point, Option<de_api::Rect>)> {
+        let d = self.drag.as_ref()?;
+        let at = Point::new(d.pos.x - 56, d.pos.y - 112 - 24);
+        let hl = d.target.map(|t| home::drop_rect(size, t, d.dock_len));
+        Some((at, hl))
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             pager: Pager::new(1),
@@ -73,6 +85,8 @@ impl HomeUi {
             last_tick: None,
             layers: None,
             drag: None,
+            drag_tex: None,
+            hl_tex: None,
             tex_key: 0,
             base_tex: None,
             page_tex: HashMap::new(),
@@ -196,6 +210,7 @@ impl De {
     pub(crate) fn home_drag_cancelled(&mut self) {
         self.home_drag_released(0.0);
         if self.home_ui.drag.take().is_some() {
+            self.home_ui.drag_tex = None;
             self.home_dirty();
         }
     }
@@ -254,7 +269,17 @@ impl De {
             _ => return false,
         };
         eprintln!("home: lifted {id}");
+        let px = {
+            let side = 112;
+            let mut c = de_paint::Canvas::new(Size::new(side, side));
+            if let Some(icon) = self.app_icon(&id).icon {
+                c.blit_scaled(&icon, de_api::Rect::new(0, 0, side, side), 0.95);
+            }
+            c.into_pixels()
+        };
         self.home_ui.drag = Some(IconDrag {
+            px,
+            dock_len: g.dock.len(),
             id,
             from,
             pos,
@@ -269,7 +294,9 @@ impl De {
         if let Some(d) = self.home_ui.drag.as_mut() {
             d.pos = pos;
             d.target = home::drop_target(g.size, pos, g.dock.len());
-            self.home_dirty();
+            // Only the lifted icon moves: the compositor repositions its
+            // texture, the home frame underneath is not re-rastered.
+            self.needs_present = true;
         }
     }
 
@@ -279,6 +306,7 @@ impl De {
         let Some(d) = self.home_ui.drag.take() else {
             return;
         };
+        self.home_ui.drag_tex = None;
         let g = self.home_geometry();
         eprintln!("home: dropped {} on {:?}", d.id, d.target);
         match d.target {
@@ -399,35 +427,5 @@ impl De {
                 px
             }
         }
-    }
-
-    /// Paint the lifted icon and its landing spot over the home frame.
-    pub(crate) fn overlay_icon_drag(&mut self, base: Pixels) -> Pixels {
-        let Some(d) = self.home_ui.drag.as_ref() else {
-            return base;
-        };
-        let (id, pos, target) = (d.id.clone(), d.pos, d.target);
-        let size = base.size;
-        let dock_len = self.home_geometry().dock.len();
-        let t = tokens::DEFAULT;
-        let mut canvas = de_paint::Canvas::new(size);
-        canvas.blit(&base, Point::ZERO);
-        if let Some(target) = target {
-            let r = home::drop_rect(size, target, dock_len);
-            let mut c = t.accent;
-            c[3] = 70;
-            canvas.fill_rounded_rect(r, tokens::ICON_TILE_RADIUS, c);
-        }
-        if let Some(icon) = self.app_icon(&id).icon {
-            let icon_side = 112;
-            let r = de_api::Rect::new(
-                pos.x - icon_side / 2,
-                pos.y - icon_side - 24,
-                icon_side,
-                icon_side,
-            );
-            canvas.blit_scaled(&icon, r, 0.95);
-        }
-        canvas.into_pixels()
     }
 }

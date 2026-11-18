@@ -40,7 +40,8 @@ pub fn render(
         if y + 88 > sheet.y + sheet.h {
             break;
         }
-        chrome::settings_row(&mut c, t, y, r, "", i == 0, false);
+        let last = i + 1 == rows.len() || y + 88 * 2 > sheet.y + sheet.h;
+        chrome::settings_row(&mut c, t, y, r, "", i == 0, last);
         y += 88;
     }
     chrome::nav_pill(&mut c, t);

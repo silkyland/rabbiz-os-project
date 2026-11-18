@@ -61,13 +61,11 @@ pub fn render(
         56,
     );
     c.fill_rounded_rect(sf, tokens::RADIUS_PILL, t.surface2);
-    chrome::draw(
+    chrome::draw_ink_centered(
         &mut c,
         "\u{e8b6}",
         &text::LabelStyle::icon(24.0, t.text3),
-        sf.x + 24,
-        sf.y + 16,
-        None,
+        Rect::new(sf.x + 16, sf.y, 40, sf.h),
     );
     chrome::draw(
         &mut c,
@@ -109,7 +107,7 @@ pub fn render(
                     &e.label,
                     &style::body(t.text),
                     76,
-                    y + 28,
+                    y + 23,
                     Some(list.w - 76 - 16),
                 );
                 y += ROW_H;

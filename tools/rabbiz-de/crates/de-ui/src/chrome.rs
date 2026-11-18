@@ -76,6 +76,23 @@ pub fn blit_centered(c: &mut Canvas, px: &de_api::Pixels, y: i32) {
     c.blit(px, Point::new(x, y));
 }
 
+/// Draw `s` so its visible glyph (not its text box) is centred in `r`.
+/// Used for icon glyphs in buttons and for the letter on a tile.
+pub fn draw_ink_centered(c: &mut Canvas, s: &str, st: &text::LabelStyle, r: Rect) {
+    let Some(px) = text::label(s, *st, None) else {
+        return;
+    };
+    let (x0, y0, x1, y1) = text::ink_bounds(&px).unwrap_or((0, 0, px.width() as i32, px.height() as i32));
+    let (w, h) = (px.width() as i32, px.height() as i32);
+    c.blit(
+        &de_api::Pixels::new(de_api::Size::new(w, h), px.data().to_vec()),
+        Point::new(
+            r.x + (r.w - (x1 - x0)) / 2 - x0,
+            r.y + (r.h - (y1 - y0)) / 2 - y0,
+        ),
+    );
+}
+
 /// Draw a label; returns the rect the pixels occupy.
 pub fn draw(
     c: &mut Canvas,
@@ -303,13 +320,7 @@ pub fn draw_app_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, r: Rect) {
             color: t.icon_glyph,
             ..Default::default()
         };
-        if let Some(px) = text::label(&letter, st, None) {
-            let (w, h) = (px.width() as i32, px.height() as i32);
-            c.blit(
-                &de_api::Pixels::new(de_api::Size::new(w, h), px.data().to_vec()),
-                Point::new(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2 + r.h / 5),
-            );
-        }
+        draw_ink_centered(c, &letter, &st, r);
     }
 }
 
@@ -325,31 +336,36 @@ pub fn settings_row(
 ) {
     let w = c.size().w;
     let r = Rect::new(MARGIN, y, w - MARGIN * 2, 88);
-    let radius = if first || last {
-        tokens::RADIUS_CARD
+    // Only the group's outer corners are round: the first row paints a
+    // rounded block that reaches into the next row, the last one up into the
+    // previous row (same fill, so the overlap is invisible).
+    let reach = tokens::RADIUS_CARD as i32;
+    if first && !last {
+        c.fill_rounded_rect(Rect::new(r.x, y, r.w, r.h + reach), tokens::RADIUS_CARD, t.surface1);
+    } else if last && !first {
+        c.fill_rounded_rect(Rect::new(r.x, y - reach, r.w, r.h + reach), tokens::RADIUS_CARD, t.surface1);
+    } else if first && last {
+        c.fill_rounded_rect(r, tokens::RADIUS_CARD, t.surface1);
     } else {
-        0.0
-    };
-    c.fill_rounded_rect(r, radius, t.surface1);
+        c.fill_rect(r, t.surface1);
+    }
     if !first {
         c.fill_rect(Rect::new(r.x + 16, y, r.w - 32, 1), t.line);
     }
-    draw(c, name, &style::body(t.text), r.x + 24, y + 30, None);
+    draw(c, name, &style::body(t.text), r.x + 24, y + 26, None);
     if let Some(px) = text::label(value, style::body(t.text3), None) {
         let (vw, vh) = (px.width() as i32, px.height() as i32);
         c.blit(
             &de_api::Pixels::new(de_api::Size::new(vw, vh), px.data().to_vec()),
-            Point::new(r.x + r.w - 24 - vw - 24, y + 30),
+            Point::new(r.x + r.w - 24 - vw - 24, y + 26),
         );
     }
     // chevron_right glyph.
-    draw(
+    draw_ink_centered(
         c,
         "\u{e5cc}",
         &text::LabelStyle::icon(24.0, t.text3),
-        r.x + r.w - 36,
-        y + 32,
-        None,
+        Rect::new(r.x + r.w - 48, y, 32, r.h),
     );
 }
 

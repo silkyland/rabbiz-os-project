@@ -194,8 +194,15 @@ fn tile_icon(label: &str, size: i32) -> Pixels {
     };
     if let Some(px) = text::label(&letter, style, None) {
         let (w, h) = (px.width() as i32, px.height() as i32);
+        let (x0, y0, x1, y1) = text::ink_bounds(&px).unwrap_or((0, 0, w, h));
         let p = Pixels::new(Size::new(w, h), px.data().to_vec());
-        c.blit(&p, de_api::Point::new((size - w) / 2, (size - h) / 2 + size / 5));
+        c.blit(
+            &p,
+            de_api::Point::new(
+                (size - (x1 - x0)) / 2 - x0,
+                (size - (y1 - y0)) / 2 - y0,
+            ),
+        );
     }
     c.into_pixels()
 }

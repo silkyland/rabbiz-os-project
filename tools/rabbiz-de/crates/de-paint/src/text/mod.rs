@@ -96,6 +96,27 @@ impl LabelStyle {
 ///
 /// Returns `None` when the text shapes to nothing. The pixmap is premultiplied
 /// RGBA8, ready for `Canvas::blit`.
+/// Bounding box of the visible (non-transparent) pixels as
+/// `(x0, y0, x1, y1)`, exclusive at the far end. Glyph boxes carry line
+/// height and side bearings, so centring a box centres the padding, not
+/// the glyph: centre the ink instead.
+#[must_use]
+pub fn ink_bounds(px: &Pixmap) -> Option<(i32, i32, i32, i32)> {
+    let (w, h) = (px.width() as i32, px.height() as i32);
+    let (mut x0, mut y0, mut x1, mut y1) = (w, h, -1, -1);
+    for y in 0..h {
+        for x in 0..w {
+            if px.data()[((y * w + x) * 4 + 3) as usize] > 8 {
+                x0 = x0.min(x);
+                x1 = x1.max(x);
+                y0 = y0.min(y);
+                y1 = y1.max(y);
+            }
+        }
+    }
+    (x1 >= 0).then_some((x0, y0, x1 + 1, y1 + 1))
+}
+
 #[must_use]
 pub fn label(text: &str, style: LabelStyle, max_width: Option<i32>) -> Option<Pixmap> {
     if text.is_empty() {

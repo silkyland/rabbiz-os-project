@@ -40,8 +40,8 @@ pub fn render_index(size: Size, s: &Strings, t: &Theme, clock: &str) -> de_api::
         if y + 88 > size.h - chrome::NAV_H - 16 {
             break;
         }
-        let _ = i;
-        chrome::settings_row(&mut c, t, y, s.get(key), "", i == 0, false);
+        let last = i + 1 == SECTIONS.len() || y + 88 * 2 > size.h - chrome::NAV_H - 16;
+        chrome::settings_row(&mut c, t, y, s.get(key), "", i == 0, last);
         y += 88;
     }
     let _ = Rect::new(0, 0, 0, 0);

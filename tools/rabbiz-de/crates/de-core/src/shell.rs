@@ -49,7 +49,6 @@ impl De {
             }
             _ => self.home_pixels(size, &s, &t, status, &date),
         };
-        let base = self.overlay_icon_drag(base);
         self.overlay_shell_menu(base)
     }
 

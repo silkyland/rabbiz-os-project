@@ -41,13 +41,11 @@ pub fn render(size: Size, s: &Strings, t: &Theme, query: &str, rows: &[SearchRow
     // Query field with trailing caret when a query is present.
     let field = Rect::new(chrome::MARGIN, 96, chrome::content_w(size), 72);
     c.fill_rounded_rect(field, tokens::RADIUS_PILL, t.surface2);
-    chrome::draw(
+    chrome::draw_ink_centered(
         &mut c,
         "\u{e8b6}",
         &text::LabelStyle::icon(26.0, t.text3),
-        field.x + 24,
-        field.y + 22,
-        None,
+        Rect::new(field.x + 16, field.y, 44, field.h),
     );
     let shown = if query.is_empty() {
         s.get("search.hint")
@@ -64,7 +62,10 @@ pub fn render(size: Size, s: &Strings, t: &Theme, query: &str, rows: &[SearchRow
         Some(field.w - 88),
     );
     if !query.is_empty() {
-        c.fill_rect(Rect::new(r.x + r.w + 2, r.y + 2, 3, r.h - 4), t.accent);
+        c.fill_rect(
+            Rect::new(r.x + r.w + 2, field.y + (field.h - 36) / 2, 3, 36),
+            t.accent,
+        );
     }
 
     // Grouped rows: kind order of first appearance, fixed kind sequence.

@@ -302,13 +302,11 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     // Search card: glass, hint text, mic and camera buttons.
     let card = search_card(size);
     c.fill_rounded_rect(card, 44.0, t.glass);
-    chrome::draw(
+    chrome::draw_ink_centered(
         &mut c,
         "\u{e8b6}",
         &text::LabelStyle::icon(32.0, t.text3),
-        card.x + 32,
-        card.y + (card.h - 40) / 2,
-        None,
+        Rect::new(card.x + 28, card.y, 48, card.h),
     );
     chrome::draw(
         &mut c,
@@ -323,14 +321,7 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
         let x = card.x + card.w - 24 - d * (2 - i as i32) - 12 * (1 - i as i32);
         let r = Rect::new(x, card.y + (card.h - d) / 2, d, d);
         c.fill_rounded_rect(r, 999.0, t.glass_hi);
-        chrome::draw(
-            &mut c,
-            glyph,
-            &text::LabelStyle::icon(30.0, t.accent),
-            r.x + (d - 34) / 2,
-            r.y + (d - 34) / 2,
-            None,
-        );
+        chrome::draw_ink_centered(&mut c, glyph, &text::LabelStyle::icon(30.0, t.accent), r);
     }
 
     // 4×4 grid for the current page.
@@ -342,13 +333,11 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     // Small "Search" pill above the dock (opens the drawer).
     let pill = drawer_pill(size);
     c.fill_rounded_rect(pill, tokens::RADIUS_PILL, t.glass);
-    chrome::draw(
+    chrome::draw_ink_centered(
         &mut c,
         "\u{e8b6}",
         &text::LabelStyle::icon(28.0, t.accent),
-        pill.x + 30,
-        pill.y + 13,
-        None,
+        Rect::new(pill.x + 22, pill.y, 40, pill.h),
     );
     chrome::draw(
         &mut c,
@@ -375,13 +364,8 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
         let r = dock_icon(dock, i, slots);
         if let Some(e) = m.dock.get(i) {
             chrome::draw_app_icon(&mut c, t, e, r);
-        } else {
-            c.fill_rounded_rect(
-                r,
-                tokens::ICON_TILE_RADIUS * (DOCK_ICON as f32 / 96.0),
-                t.surface2,
-            );
         }
+        // Empty slots stay invisible: the dock is a floating glass bar, not a grid of holes.
     }
     chrome::nav_pill(&mut c, t);
     c.into_pixels()
@@ -389,7 +373,7 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
 
 fn draw_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, cell: Rect) {
     chrome::draw_app_icon(c, t, e, grid_icon(cell));
-    if let Some(px) = text::label_clamped(&e.label, style::label(t.text), 150, 2) {
+    if let Some(px) = text::label_clamped(&e.label, style::label(t.text), 150, 1) {
         let (w, h) = (px.width() as i32, px.height() as i32);
         c.blit(
             &Pixels::new(Size::new(w, h), px.data().to_vec()),

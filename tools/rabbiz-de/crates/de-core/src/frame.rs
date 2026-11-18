@@ -300,6 +300,8 @@ where
             Point::<f64, Physical>::from((0.0, 0.0)),
         )));
     }
+    // The lifted icon rides on top of the home frame as its own texture.
+    push_drag_overlay::<R>(&mut elements, renderer, de.home, de.output);
     // Gesture bar on top of everything.
     let bar_y = f64::from(de.output.height) - f64::from(de_ui::chrome::NAV_H);
     if let Some(tex) = texture_buffer::<R>(de.gesture_bar.as_ref()) {
@@ -618,6 +620,62 @@ where
     .map(|b| Box::new(b) as Box<dyn std::any::Any>)
 }
 
+/// Lifted icon + landing highlight, in front of everything else.
+fn push_drag_overlay<R>(
+    elements: &mut Vec<DeElement<R>>,
+    renderer: &mut R,
+    home: &mut crate::home_ui::HomeUi,
+    output: &de_backend::drm::OutputSelection,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    if home.drag.is_none() {
+        return;
+    }
+    let size = de_api::Size::new(output.width as i32, output.height as i32);
+    sync_drag_textures(renderer, home);
+    let Some((at, hl)) = home.drag_overlay(size) else {
+        return;
+    };
+    if let (Some(rect), Some(tex)) = (hl, texture_buffer::<R>(home.hl_tex.as_ref())) {
+        elements.insert(0, DeElement::from(tex_el_sized::<R>(tex, rect)));
+    }
+    if let Some(tex) = texture_buffer::<R>(home.drag_tex.as_ref()) {
+        elements.insert(
+            0,
+            DeElement::from(tex_el::<R>(
+                tex,
+                Point::<f64, Physical>::from((f64::from(at.x), f64::from(at.y))),
+            )),
+        );
+    }
+}
+
+/// Upload the lifted icon (and the shared highlight) once per drag.
+fn sync_drag_textures<R: ImportMem>(r: &mut R, h: &mut crate::home_ui::HomeUi)
+where
+    R::TextureId: 'static,
+{
+    if h.drag_tex.is_none() {
+        if let Some(d) = h.drag.as_ref() {
+            h.drag_tex = upload_any(r, &d.px);
+        }
+    }
+    if h.hl_tex.is_none() {
+        let t = de_design::tokens::DEFAULT;
+        let mut c = de_paint::Canvas::new(de_api::Size::new(112, 112));
+        let mut col = t.accent;
+        col[3] = 70;
+        c.fill_rounded_rect(
+            de_api::Rect::new(0, 0, 112, 112),
+            de_design::tokens::ICON_TILE_RADIUS,
+            col,
+        );
+        h.hl_tex = upload_any(r, &c.into_pixels());
+    }
+}
+
 /// Upload the home layers that have no texture yet (drops stale ones when
 /// the layer set was rebuilt).
 fn sync_home_textures<R: ImportMem>(r: &mut R, h: &mut crate::home_ui::HomeUi)
@@ -711,6 +769,25 @@ where
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
 {
     TextureRenderElement::from_texture_buffer(loc, buf, None, None, None, Kind::Unspecified)
+}
+
+/// A texture scaled to fill `rect` (the landing highlight spans icons of
+/// different sizes).
+fn tex_el_sized<R: ImportAll>(
+    buf: &smithay::backend::renderer::element::texture::TextureBuffer<R::TextureId>,
+    rect: de_api::Rect,
+) -> TextureRenderElement<R::TextureId>
+where
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    TextureRenderElement::from_texture_buffer(
+        Point::<f64, Physical>::from((f64::from(rect.x), f64::from(rect.y))),
+        buf,
+        None,
+        None,
+        Some(smithay::utils::Size::<i32, smithay::utils::Logical>::from((rect.w, rect.h))),
+        Kind::Unspecified,
+    )
 }
 
 fn summarize(v: &[f64]) -> TimingSummary {

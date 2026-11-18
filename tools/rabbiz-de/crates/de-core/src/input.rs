@@ -355,6 +355,11 @@ impl De {
     fn on_gesture_event(&mut self, ev: GestureEvent, time_ms: u64) {
         use crate::state::Foreground;
         use de_ui::nav::Screen;
+        if !matches!(ev, GestureEvent::Progress { .. } | GestureEvent::HoldDrag { .. })
+            && std::env::var_os("DE_GESTURE_DEBUG").is_some()
+        {
+            eprintln!("gesture: {ev:?}");
+        }
         let g = match ev {
             GestureEvent::Progress {
                 zone: Zone::NavBar,
