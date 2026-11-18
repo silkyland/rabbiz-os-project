@@ -1,6 +1,6 @@
 # DE motion: what Material 3 teaches us (study + proposals)
 
-Status: **research and proposals**. P1 through P5 have host-side policy. Lane: `de`.
+Status: **research and proposals**. P1 through P5 have host-side policy. P6 and P7 are documented. Lane: `de`.
 Written 2026-11-18.
 Like every rule here this is a hypothesis: the numbers below are starting points to be tuned by
 feel on the A21s, and any change to `de-design` must check the goldens and record the decision in
@@ -162,9 +162,19 @@ curve assignments. [Reference easing paths](https://github.com/material-componen
 **P6. A written transition-pattern catalogue.** The [DE plan catalogue](DE-PLAN.md#transition-pattern-catalogue)
 maps the v1 screen changes to the six patterns and records the current playback scope.
 
-**P7. Audit for scale-in dialogs.** Per M3, in-screen enter/exit avoids scale because it implies elevation.
-Check `power`, `osd`, toasts and menus in `de-ui` for scale-in and replace with edge-direction expansion
-(the press-feedback scale `PRESS_SCALE` is a different thing and stays). Not audited yet.
+**P7. Audit for scale-in dialogs.** For overlays that enter or exit, use edge translation or an
+anchored reveal along one axis. `PRESS_SCALE` remains available for touch-down feedback.
+
+| Surface | Source audit |
+|---|---|
+| Power menu | The renderer paints a fixed centered sheet and scrim from a single layout. The bottom-sheet position and transition specified for P9 need a live input and presentation path. [Power renderer](../tools/rabbiz-de/crates/de-ui/src/power.rs) [Shell dispatch](../tools/rabbiz-de/crates/de-core/src/shell.rs) |
+| Volume/brightness OSD | The pill has a fixed rectangle against the left edge. The simulator renders a single frame, and the live shell dispatcher has no OSD render case. [OSD renderer](../tools/rabbiz-de/crates/de-ui/src/osd.rs) [Simulator scenes](../tools/rabbiz-de/crates/de-sim/src/main.rs) [Shell dispatch](../tools/rabbiz-de/crates/de-core/src/shell.rs) |
+| Screenshot toast | The simulator paints a fixed 160×96 thumbnail. The screenshot trigger and thumbnail lifetime are pending in M4-T8. [Screenshot renderer](../tools/rabbiz-de/crates/de-ui/src/screenshot.rs) [M4](DE-PLAN.md#m4-system-surfaces-and-services-effort-l) |
+| Notification, charging and launch-message toasts | The dedicated toast renderers are pending. Launch failures currently select the static error sheet. [P8, P12 and P20](DE-PLAN.md#718-screen-contracts-v1) [Launch timeout](../tools/rabbiz-de/crates/de-core/src/frame.rs) [Error renderer](../tools/rabbiz-de/crates/de-ui/src/error.rs) |
+| Menus | The drawer's long-press action sheet is pending. Wayland app popups are tracked and positioned by the compositor. Their contents and animation belong to the client. [Drawer gesture](../tools/rabbiz-de/crates/de-core/src/input.rs) [Popup handler](../tools/rabbiz-de/crates/de-core/src/xdg.rs) |
+
+The audited shell renderers contain no scale-in or scale-out transitions to replace. The remaining
+work needs overlay lifecycle and compositor wiring. Not tested on device. [Overlay motion finding](../findings/2026-11-18-de-overlay-motion-wiring.md)
 
 **P8. Scale by form factor.** M3 values differ per device class. When the device profile says `tablet`,
 multiply durations by a factor read from the profile rather than hard-coding the phone numbers; handset
