@@ -13,6 +13,26 @@ pub enum MotionKind {
     Effects,
 }
 
+/// Session-wide spring tuning. Standard preserves the original presets.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum MotionScheme {
+    #[default]
+    Standard,
+    Expressive,
+}
+
+impl MotionScheme {
+    /// Expressive adds bounce to the small-control spatial preset. Soft
+    /// already uses the system ceiling. Smooth covers apps and sheets.
+    #[must_use]
+    pub const fn spring_bounce(self, preset: SpringPreset, kind: MotionKind) -> f32 {
+        match (self, preset, kind) {
+            (Self::Expressive, SpringPreset::Snappy, MotionKind::Spatial) => 0.16,
+            _ => preset.bounce_for(kind),
+        }
+    }
+}
+
 /// Spring preset names (§7.17a table). `duration` = settle time within 1 %,
 /// `bounce` = fractional overshoot at first crossing (0 = critically damped).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,6 +209,52 @@ pub const REDUCED_MOTION_MS: u32 = 120;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn standard_reproduces_every_preset() {
+        assert_eq!(MotionScheme::default(), MotionScheme::Standard);
+        for (preset, duration, bounce) in [
+            (SpringPreset::Smooth, 0.450_f32, 0.0_f32),
+            (SpringPreset::Snappy, 0.350, 0.12),
+            (SpringPreset::Soft, 0.500, 0.25),
+        ] {
+            assert_eq!(preset.duration_s().to_bits(), duration.to_bits());
+            assert_eq!(
+                MotionScheme::Standard
+                    .spring_bounce(preset, MotionKind::Spatial)
+                    .to_bits(),
+                bounce.to_bits()
+            );
+            assert_eq!(
+                MotionScheme::Standard
+                    .spring_bounce(preset, MotionKind::Effects)
+                    .to_bits(),
+                0
+            );
+        }
+    }
+
+    #[test]
+    fn expressive_only_raises_small_spatial_bounce() {
+        let expressive = MotionScheme::Expressive;
+        let snappy = expressive.spring_bounce(SpringPreset::Snappy, MotionKind::Spatial);
+        assert!(snappy > SpringPreset::Snappy.bounce() && snappy <= SpringPreset::BOUNCE_MAX);
+        assert_eq!(
+            expressive.spring_bounce(SpringPreset::Smooth, MotionKind::Spatial),
+            SpringPreset::APP_MOTION_BOUNCE_MAX
+        );
+        assert_eq!(
+            expressive.spring_bounce(SpringPreset::Soft, MotionKind::Spatial),
+            SpringPreset::Soft.bounce()
+        );
+        for preset in [
+            SpringPreset::Smooth,
+            SpringPreset::Snappy,
+            SpringPreset::Soft,
+        ] {
+            assert_eq!(expressive.spring_bounce(preset, MotionKind::Effects), 0.0);
+        }
+    }
 
     #[test]
     fn beziers_hit_endpoints() {

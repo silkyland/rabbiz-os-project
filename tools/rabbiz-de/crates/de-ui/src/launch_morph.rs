@@ -9,7 +9,10 @@
 use de_api::{Pixels, Point, Rect};
 use de_design::motion::{MotionKind, SpringPreset};
 use de_design::tokens::{self, Theme};
-use de_paint::{animation::SpringValue, Canvas};
+use de_paint::{
+    animation::{AnimationClock, SpringValue},
+    Canvas,
+};
 
 use crate::chrome::{self, style, IconEntry};
 use crate::transitions::{ease_out, fade_in, lerp, lerp_rect, with_opacity};
@@ -121,8 +124,8 @@ impl MorphAnimator {
     }
 
     /// Advance by `dt_s`; returns current progress.
-    pub fn advance(&mut self, dt_s: f32) -> f32 {
-        self.spring.advance(dt_s);
+    pub fn advance(&mut self, dt_s: f32, clock: &AnimationClock) -> f32 {
+        self.spring.advance(dt_s, clock);
         self.spring.value.clamp(0.0, 1.0)
     }
 
@@ -157,15 +160,16 @@ mod tests {
 
     #[test]
     fn animator_reaches_and_reverses() {
+        let clock = AnimationClock::new();
         let mut m = MorphAnimator::new(0.0);
         m.retarget(true);
         for _ in 0..120 {
-            m.advance(1.0 / 60.0);
+            m.advance(1.0 / 60.0, &clock);
         }
         assert!(m.progress() > 0.95);
         m.retarget(false);
         for _ in 0..120 {
-            m.advance(1.0 / 60.0);
+            m.advance(1.0 / 60.0, &clock);
         }
         assert!(m.progress() < 0.05);
     }

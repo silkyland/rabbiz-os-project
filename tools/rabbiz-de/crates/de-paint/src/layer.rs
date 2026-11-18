@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use de_api::{Pixels, Rect};
 use de_design::motion::{MotionKind, SpringPreset};
 
-use crate::animation::SpringValue;
+use crate::animation::{AnimationClock, SpringValue};
 
 /// Unique layer id.
 pub type LayerId = u64;
@@ -62,9 +62,11 @@ impl Layer {
 
     /// Advance all channels by `dt_s`; returns damage union of old+new bounds
     /// when the layer moved (None when static and visible-content unchanged).
-    pub fn advance(&mut self, dt_s: f32) -> Option<Rect> {
+    pub fn advance(&mut self, dt_s: f32, clock: &AnimationClock) -> Option<Rect> {
         let before = self.bounds();
-        let a = self.x.advance(dt_s) | self.y.advance(dt_s) | self.opacity.advance(dt_s);
+        let a = self.x.advance(dt_s, clock)
+            | self.y.advance(dt_s, clock)
+            | self.opacity.advance(dt_s, clock);
         if !a {
             return None;
         }
@@ -166,24 +168,40 @@ mod tests {
 
     #[test]
     fn layer_animation_damages_union() {
+        let clock = AnimationClock::new();
         let mut l = Layer::new(1, px(10, 10), 0.0, 0.0, SpringPreset::Smooth);
         l.x.retarget(50.0);
-        let d = l.advance(1.0 / 60.0).expect("moving layer damages");
+        let d = l.advance(1.0 / 60.0, &clock).expect("moving layer damages");
         assert!(d.x <= 0 && d.w > 10, "{d:?}");
         // Settled layer reports no damage.
         let mut l2 = Layer::new(2, px(10, 10), 0.0, 0.0, SpringPreset::Smooth);
-        assert!(l2.advance(1.0 / 60.0).is_none());
+        assert!(l2.advance(1.0 / 60.0, &clock).is_none());
     }
 
     #[test]
     fn layer_opacity_stays_in_range_with_a_bouncy_preset() {
+        let clock = AnimationClock::new();
         let mut layer = Layer::new(1, px(10, 10), 0.0, 0.0, SpringPreset::Soft);
         layer.opacity.retarget(0.0);
         for _ in 0..120 {
-            layer.advance(1.0 / 60.0);
+            layer.advance(1.0 / 60.0, &clock);
             assert!((0.0..=1.0).contains(&layer.opacity.value));
         }
         assert_eq!(layer.opacity.value, 0.0);
+    }
+
+    #[test]
+    fn expressive_layer_uses_clock_scheme_for_position() {
+        let clock =
+            AnimationClock::with_motion(de_design::motion::MotionScheme::Expressive, false, false);
+        let mut layer = Layer::new(1, px(10, 10), 0.0, 0.0, SpringPreset::Snappy);
+        layer.x.retarget(1.0);
+        let mut peak = layer.x.value;
+        for _ in 0..500 {
+            layer.advance(0.001, &clock);
+            peak = peak.max(layer.x.value);
+        }
+        assert!(peak > 1.0 + SpringPreset::Snappy.bounce(), "peak={peak}");
     }
 
     #[test]

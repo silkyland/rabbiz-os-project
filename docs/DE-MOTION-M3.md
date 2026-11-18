@@ -1,6 +1,7 @@
 # DE motion: what Material 3 teaches us (study + proposals)
 
-Status: **research and proposals**. P1 is implemented. Lane: `de`. Written 2026-11-18.
+Status: **research and proposals**. P1 and the P2 spring policy are implemented. Lane: `de`.
+Written 2026-11-18.
 Like every rule here this is a hypothesis: the numbers below are starting points to be tuned by
 feel on the A21s, and any change to `de-design` must check the goldens and record the decision in
 the same change (see [DE-PLAN.md](DE-PLAN.md) §7.17a and `tools/rabbiz-de/crates/de-design/src/motion.rs`).
@@ -117,6 +118,12 @@ software, and overshoot enlarges the animated damage area and adds frames; the D
 bounce on app motion. This is a hypothesis to settle by owner feel review.
 *Done when:* the scheme is one value read by the animation clock, and tests prove `Standard` reproduces
 current numbers bit-for-bit.
+
+The clock defaults to Standard. Expressive raises spatial `Snappy` bounce from 12 % to 16 %.
+`Soft` stays at the 25 % ceiling and `Smooth` stays at zero for apps and sheets. Reduced motion
+or safe mode selects Standard with zero spring bounce. The existing fallback durations and curves
+still apply. The retained-layer and morph drivers accept the clock. A user-facing setting and live
+compositor integration are deferred until the compositor drives these animations.
 
 **P3. Speed tiers by element size.** Define `Fast | Default | Slow` and choose from the covered-area
 fraction, instead of per-screen presets. Proposed starting mapping onto DE's existing ladder

@@ -3,12 +3,14 @@
 //! `SpringPreset`'s duration/bounce; retargeting preserves velocity, which is
 //! what makes gestures interruptible.
 
-use de_design::motion::{self, DegradeLevel, MotionKind, SpringPreset};
+use de_design::motion::{self, DegradeLevel, MotionKind, MotionScheme, SpringPreset};
 
 /// Clock feeding all animations; `now_s` is seconds since compositor start.
 #[derive(Debug, Default)]
 pub struct AnimationClock {
     pub now_s: f64,
+    scheme: MotionScheme,
+    no_bounce: bool,
 }
 
 impl AnimationClock {
@@ -16,6 +18,37 @@ impl AnimationClock {
     pub fn new() -> Self {
         Self::default()
     }
+
+    /// Configure the session's spring policy. The caller still selects the
+    /// fallback animation when its motion or degradation policy requires it.
+    #[must_use]
+    pub fn with_motion(scheme: MotionScheme, reduced_motion: bool, safe_mode: bool) -> Self {
+        let no_bounce = reduced_motion || safe_mode;
+        Self {
+            scheme: if no_bounce {
+                MotionScheme::Standard
+            } else {
+                scheme
+            },
+            no_bounce,
+            ..Self::default()
+        }
+    }
+
+    /// The effective scheme for this clock.
+    #[must_use]
+    pub fn scheme(&self) -> MotionScheme {
+        self.scheme
+    }
+
+    fn spring_bounce(&self, preset: SpringPreset, kind: MotionKind) -> f32 {
+        if self.no_bounce {
+            0.0
+        } else {
+            self.scheme.spring_bounce(preset, kind)
+        }
+    }
+
     pub fn tick(&mut self, dt_s: f64) {
         self.now_s += dt_s;
     }
@@ -31,8 +64,8 @@ struct Osc {
 }
 
 impl Osc {
-    fn of(p: SpringPreset, kind: MotionKind) -> Self {
-        let bounce = p.bounce_for(kind).max(0.0);
+    fn of(p: SpringPreset, bounce: f32) -> Self {
+        let bounce = bounce.max(0.0);
         // Overshoot = e^(-ζπ/√(1-ζ²)) → ζ = -ln(b)/√(π²+ln²b); bounce 0 → ζ=1.
         let zeta = if bounce <= 0.0 {
             1.0
@@ -121,20 +154,20 @@ impl SpringValue {
 
     /// Advance the spring by `dt_s` (closed-form, no allocation).
     /// Returns `true` if still animating.
-    pub fn advance(&mut self, dt_s: f32) -> bool {
+    pub fn advance(&mut self, dt_s: f32, clock: &AnimationClock) -> bool {
         if self.settled() {
             self.snap();
             return false;
         }
+        let bounce = clock.spring_bounce(self.preset, self.kind);
         let (value, velocity) =
-            Osc::of(self.preset, self.kind).step(self.value, self.velocity, self.target, dt_s);
-        let (value, velocity) = match self.kind {
-            MotionKind::Spatial => (value, velocity),
-            // Critical damping can still overshoot with inherited velocity.
-            MotionKind::Effects => {
-                let bounded = value.clamp(self.value.min(self.target), self.value.max(self.target));
-                (bounded, if bounded == value { velocity } else { 0.0 })
-            }
+            Osc::of(self.preset, bounce).step(self.value, self.velocity, self.target, dt_s);
+        // Critical damping can still overshoot with inherited velocity.
+        let (value, velocity) = if clock.no_bounce || self.kind == MotionKind::Effects {
+            let bounded = value.clamp(self.value.min(self.target), self.value.max(self.target));
+            (bounded, if bounded == value { velocity } else { 0.0 })
+        } else {
+            (value, velocity)
         };
         self.value = value;
         self.velocity = velocity;
@@ -232,7 +265,33 @@ mod tests {
     ];
 
     #[test]
+    fn restricted_motion_overrides_expressive() {
+        for (reduced_motion, safe_mode) in [(true, false), (false, true), (true, true)] {
+            let clock =
+                AnimationClock::with_motion(MotionScheme::Expressive, reduced_motion, safe_mode);
+            assert_eq!(clock.scheme(), MotionScheme::Standard);
+            for (preset, _) in PRESETS {
+                assert_eq!(
+                    clock.spring_bounce(preset, MotionKind::Spatial).to_bits(),
+                    0
+                );
+                let mut spring = SpringValue::new(0.0, preset, MotionKind::Spatial);
+                spring.retarget_with_velocity(1.0, 100.0);
+                for _ in 0..2000 {
+                    spring.advance(0.001, &clock);
+                    assert!(
+                        (0.0..=1.0).contains(&spring.value),
+                        "{preset:?}: {spring:?}"
+                    );
+                }
+                assert_eq!(spring.value, 1.0);
+            }
+        }
+    }
+
+    #[test]
     fn effects_stay_between_endpoints() {
+        let clock = AnimationClock::new();
         for (preset, _) in PRESETS {
             for (from, to) in [(0.0_f32, 1.0_f32), (1.0, 0.0), (0.25, 0.75)] {
                 for velocity in [-100.0, 0.0, 100.0] {
@@ -241,7 +300,7 @@ mod tests {
                     spring.retarget_with_velocity(to, velocity);
                     assert!(bounds.contains(&spring.value));
                     for _ in 0..2000 {
-                        spring.advance(0.001);
+                        spring.advance(0.001, &clock);
                         assert!(bounds.contains(&spring.value), "{preset:?}: {spring:?}");
                     }
                     assert_eq!(spring.value, to);
@@ -253,12 +312,13 @@ mod tests {
 
     #[test]
     fn spatial_bounce_respects_each_preset_limit() {
+        let clock = AnimationClock::new();
         for (preset, bounce) in PRESETS {
             let mut spring = SpringValue::new(0.0, preset, MotionKind::Spatial);
             spring.retarget(1.0);
             let mut peak = spring.value;
             for _ in 0..2000 {
-                spring.advance(0.001);
+                spring.advance(0.001, &clock);
                 peak = peak.max(spring.value);
                 assert!(spring.value >= 0.0, "{preset:?}: {spring:?}");
             }
@@ -272,21 +332,23 @@ mod tests {
 
     #[test]
     fn spring_converges() {
+        let clock = AnimationClock::new();
         let mut s = SpringValue::new(0.0, SpringPreset::Smooth, MotionKind::Spatial);
         s.retarget(100.0);
         for _ in 0..240 {
-            s.advance(1.0 / 60.0);
+            s.advance(1.0 / 60.0, &clock);
         }
         assert!((s.value - 100.0).abs() < 0.5, "v={}", s.value);
     }
 
     #[test]
     fn snappy_overshoots() {
+        let clock = AnimationClock::new();
         let mut s = SpringValue::new(0.0, SpringPreset::Snappy, MotionKind::Spatial);
         s.retarget(100.0);
         let mut max_v = 0.0f32;
         for _ in 0..240 {
-            s.advance(1.0 / 60.0);
+            s.advance(1.0 / 60.0, &clock);
             max_v = max_v.max(s.value);
         }
         // 12 % bounce → peak ≥ ~104 past the target.
