@@ -1,0 +1,67 @@
+A21s ambient-light reproduction, 2026-11-18 Asia/Bangkok
+Kernel: 7.3.0-g14a425b3a7dc-dirty
+vdd_sensor_1p8 state=enabled microvolts=1800000
+backlight=153/255
+a21s-chub: CHUB ALIVE! (code=0x800..0x27400 ipc=0x27400)
+a21s-chub: rx cmd=4 type=255 sub=27 plen=24 data=00 00 4e 02 18 00 00 00 08 01 00 04 00 00 80 99 00 00 00 00 00 00 00 00
+
+Baseline samples, no controlled illumination
+2026-11-18T12:54:16+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:18+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:20+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:22+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:24+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:26+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:28+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:30+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:32+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:34+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:36+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:38+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:40+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:42+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:44+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:46+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:48+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:50+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:52+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:54+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:56+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:54:58+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:00+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:02+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:04+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:06+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:08+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:10+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:12+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:14+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:16+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:18+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:20+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:22+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:55:24+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+
+Follow-up started after owner reported that the flashlight was on the sensor area
+2026-11-18T12:56:41+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:42+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:43+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:44+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:45+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:46+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:47+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:48+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:49+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:50+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:51+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:52+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:53+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:54+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:55+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:56+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:57+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:58+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:56:59+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:57:00+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:57:01+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
+2026-11-18T12:57:02+07:00 iio_lux=0 raw=0 proxy_lux=0.00 accel_z=0
