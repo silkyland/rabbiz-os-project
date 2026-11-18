@@ -739,12 +739,17 @@ fn upload_keymap(keyboard: &ZwpVirtualKeyboardV1) {
         eprintln!("rabbiz-osk: cannot create keymap fd");
         return;
     };
-    if file.write_all(KEYMAP.as_bytes()).is_err() {
+    // wl_keyboard.keymap convention: the text is NUL-terminated and `size` includes the NUL.
+    // smithay drops the last byte as the terminator, so without it the final `;` is cut off and
+    // the keymap fails to parse ("xkbcommon: ERROR ... unexpected end of file" under rabbiz-de).
+    let mut bytes = KEYMAP.as_bytes().to_vec();
+    bytes.push(0);
+    if file.write_all(&bytes).is_err() {
         eprintln!("rabbiz-osk: cannot write keymap");
         return;
     }
     let fd = std::os::fd::AsFd::as_fd(&file);
-    keyboard.keymap(1 /* wl_keyboard.keymap_format.xkb_v1 */, fd, KEYMAP.len() as u32);
+    keyboard.keymap(1 /* wl_keyboard.keymap_format.xkb_v1 */, fd, bytes.len() as u32);
 }
 
 fn tempfile_memfd() -> std::io::Result<std::fs::File> {
