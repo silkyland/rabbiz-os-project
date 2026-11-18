@@ -1,7 +1,7 @@
 import QtQuick
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets
 
 // 48 px round icon action. The kit's IconButton is 44 px, just under the phone tap-target
 // rule in docs/BASE-APPS.md, so row actions (delete) and the banner dismiss use this.

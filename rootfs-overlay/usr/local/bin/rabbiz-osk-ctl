@@ -1,5 +1,5 @@
 #!/bin/sh
-# rabbiz-osk-ctl — system-level squeekboard control for a21s-shell.
+# rabbiz-osk-ctl — system-level squeekboard control for rabbiz-shell.
 #
 #   toggle      force show/hide the OSK via sm.puri.OSK0 D-Bus — works even
 #               in apps with no text-input-v3 (terminals, XWayland, games)

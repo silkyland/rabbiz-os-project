@@ -4,8 +4,8 @@
 Usage: rabbiz-appearance --accent '#3B82F6' [--light] [--bg '#0A0A0C' --surface '#131316'
                          --card '#17171B' --text '#F4F4F5' --dim '#A1A1AA'] [--no-gsettings]
 Writes (idempotent, as the invoking user):
-  ~/.local/share/color-schemes/A21s.colors   KDE/Qt colour scheme (Breeze style recoloured)
-  ~/.config/kdeglobals                       [General] ColorScheme=A21s, [Icons], fonts kept
+  ~/.local/share/color-schemes/Rabbiz.colors   KDE/Qt colour scheme (Breeze style recoloured)
+  ~/.config/kdeglobals                       [General] ColorScheme=Rabbiz, [Icons], fonts kept
   gsettings org.gnome.desktop.interface      color-scheme / accent-color for GTK4, libadwaita, Chromium
 """
 import argparse, configparser, os, subprocess, sys
@@ -43,8 +43,8 @@ sections = {
                           "ForegroundNormal": "255,255,255"},
 }
 cs = os.path.join(home, ".local/share/color-schemes"); os.makedirs(cs, exist_ok=True)
-with open(os.path.join(cs, "A21s.colors"), "w") as f:
-    f.write("[General]\nName=A21s\nColorScheme=A21s\n\n")
+with open(os.path.join(cs, "Rabbiz.colors"), "w") as f:
+    f.write("[General]\nName=Rabbiz\nColorScheme=Rabbiz\n\n")
     for s, kv in sections.items():
         f.write(f"[{s}]\n" + "".join(f"{k}={v}\n" for k, v in kv.items()) + "\n")
     f.write(f"[WM]\nactiveBackground={rgb(a.surface)}\nactiveForeground={rgb(a.text)}\n"
@@ -55,7 +55,7 @@ cp = configparser.RawConfigParser(); cp.optionxform = str
 cp.read(kg)
 for s in ("General", "Icons", "KDE"):
     if not cp.has_section(s): cp.add_section(s)
-cp.set("General", "ColorScheme", "A21s")
+cp.set("General", "ColorScheme", "Rabbiz")
 cp.set("Icons", "Theme", "breeze" if a.light else "breeze-dark")
 cp.set("KDE", "widgetStyle", "Breeze")
 cp.set("KDE", "AccentColor", rgb(a.accent))

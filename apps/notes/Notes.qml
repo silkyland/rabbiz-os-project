@@ -3,16 +3,16 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets
-import A21sKit
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets
+import RabbizKit
 import "NotesLogic.js" as Notes
 
 // Notes — in-house replacement for marknote (docs/BASE-APPS.md).
 // Two screens in one maximized window: the list (search, newest first, floating New note) and
 // the editor (title + plain-text body, autosave ~800 ms after typing stops). Notes live one per
-// file under ~/.local/share/a21s-notes/<timestamp>.json, written atomically (tmp + mv) and read
+// file under ~/.local/share/rabbiz-notes/<timestamp>.json, written atomically (tmp + mv) and read
 // back as newline-separated records. All layout values come from Theme; the accent comes from
 // ShellPrefs so the app follows the shell's accent, and Theme.light follows the shell theme.
 ApplicationWindow {
@@ -55,7 +55,7 @@ ApplicationWindow {
     readonly property var visibleNotes: Notes.searchNotes(win.notes, win.query)
     readonly property var pendingNote: win.findNote(win.deletingId)
     readonly property string notesDir: (Quickshell.env("HOME") || "/home/gamer")
-                                        + "/.local/share/a21s-notes"
+                                        + "/.local/share/rabbiz-notes"
 
     readonly property string listSubtitle: {
         if (!win.loaded) return "Opening\u2026"
@@ -530,7 +530,7 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             icon: "error_outline"
                             title: "Couldn't read your notes"
-                            hint: "New notes still save to ~/.local/share/a21s-notes."
+                            hint: "New notes still save to ~/.local/share/rabbiz-notes."
                         }
 
                         // Notes exist, but the search matched none: offer the way back.
@@ -581,7 +581,7 @@ ApplicationWindow {
                             anchors.centerIn: parent
                             icon: "hourglass_empty"
                             title: "Opening your notes\u2026"
-                            hint: "Reading from ~/.local/share/a21s-notes"
+                            hint: "Reading from ~/.local/share/rabbiz-notes"
                         }
                     }
                 }

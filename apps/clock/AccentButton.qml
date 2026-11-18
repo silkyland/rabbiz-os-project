@@ -1,13 +1,13 @@
 import QtQuick
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets
 
 // Accent pill, 48 px tall — the local twin of the kit's PrimaryButton.
-// Why a copy: apps/A21sKit/PrimaryButton.qml uses MaterialIcon but does not import
-// A21s.Widgets, so loading it fails with "MaterialIcon is not a type" and takes the whole app
-// down. A21sKit is lead-owned, so the app keeps its own until that import is fixed; then this
-// file can be deleted and the call sites switched back to A21sKit.PrimaryButton.
+// Why a copy: apps/RabbizKit/PrimaryButton.qml uses MaterialIcon but does not import
+// Rabbiz.Widgets, so loading it fails with "MaterialIcon is not a type" and takes the whole app
+// down. RabbizKit is lead-owned, so the app keeps its own until that import is fixed; then this
+// file can be deleted and the call sites switched back to RabbizKit.PrimaryButton.
 Rectangle {
     id: root
     property string text: ""

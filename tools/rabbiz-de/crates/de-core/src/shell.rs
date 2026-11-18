@@ -116,7 +116,7 @@ impl De {
     }
 
     /// `IconEntry`s for `desktop_ids`, resolving real icons through the
-    /// cache (first-party `a21s-*` get the sand-tile glyph).
+    /// cache (first-party `rabbiz-*`/`a21s-*` get the sand-tile glyph).
     fn app_icons(&mut self, desktop_ids: &[String]) -> Vec<IconEntry> {
         let mut out = Vec::with_capacity(desktop_ids.len());
         for id in desktop_ids {

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+GenericName=Terminal
+Comment=In-house A21s Terminal
+Exec=rabbiz-terminal
+Icon=rabbiz-terminal
+Categories=Utility;
+Terminal=false
+StartupNotify=true

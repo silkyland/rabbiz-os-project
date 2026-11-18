@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Calculator
+GenericName=Calculator
+Comment=In-house A21s calculator
+Exec=rabbiz-calculator
+Icon=rabbiz-calculator
+Categories=Utility;
+Terminal=false
+StartupNotify=true

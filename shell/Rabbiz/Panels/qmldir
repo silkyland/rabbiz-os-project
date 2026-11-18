@@ -1,0 +1,15 @@
+module Rabbiz.Panels
+
+StatusBar 1.0 StatusBar.qml
+Shade 1.0 Shade.qml
+QuickSettings 1.0 QuickSettings.qml
+ConnectivityPanel 1.0 ConnectivityPanel.qml
+NavBar 1.0 NavBar.qml
+PowerMenu 1.0 PowerMenu.qml
+HudOverlay 1.0 HudOverlay.qml
+CaptureFlash 1.0 CaptureFlash.qml
+NotificationCenter 1.0 NotificationCenter.qml
+NotificationCard 1.0 NotificationCard.qml
+NotificationGroups 1.0 NotificationGroups.js
+NotificationServer 1.0 NotificationServer.qml
+LockScreen 1.0 LockScreen.qml

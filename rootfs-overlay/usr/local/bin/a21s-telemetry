@@ -5,7 +5,7 @@
 # processes every 3 seconds (review finding "3 s telemetry fork storm"). Bash reads
 # files with the `$(<file)` builtin and `read`, so this script spawns nothing; only
 # `df` is an external command. Output keeps the exact section markers the QML parser
-# already understands, so shell/A21s/Services/SystemControl.qml needs no new parsing.
+# already understands, so shell/Rabbiz/Services/SystemControl.qml needs no new parsing.
 set -u
 
 emit_file() {   # emit_file <path> <default>

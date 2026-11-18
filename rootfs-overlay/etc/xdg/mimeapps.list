@@ -1,8 +1,8 @@
 # System-wide defaults shipped with the image (no per-user setup needed).
 # Images (screenshots, downloads) open in the in-house Photos app.
 [Default Applications]
-image/png=a21s-photos.desktop
-image/jpeg=a21s-photos.desktop
-image/webp=a21s-photos.desktop
-image/gif=a21s-photos.desktop
-image/bmp=a21s-photos.desktop
+image/png=rabbiz-photos.desktop
+image/jpeg=rabbiz-photos.desktop
+image/webp=rabbiz-photos.desktop
+image/gif=rabbiz-photos.desktop
+image/bmp=rabbiz-photos.desktop

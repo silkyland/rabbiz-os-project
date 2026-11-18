@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Notes
+GenericName=Notes
+Comment=In-house A21s Notes
+Exec=rabbiz-notes
+Icon=rabbiz-notes
+Categories=Utility;
+Terminal=false
+StartupNotify=true

@@ -3,10 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets
-import A21sKit
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets
+import RabbizKit
 import "TerminalLogic.js" as Term
 
 // Terminal — in-house replacement for qmlkonsole (docs/BASE-APPS.md), MVP only.
@@ -38,7 +38,7 @@ ApplicationWindow {
     readonly property int maxEntries: 30
     readonly property int maxOutputChars: 12000
     readonly property var chips: ["ls", "pwd", "df -h", "ip a", "uname -a"]
-    readonly property string historyPath: win.home + "/.local/share/a21s-terminal/history.json"
+    readonly property string historyPath: win.home + "/.local/share/rabbiz-terminal/history.json"
 
     // Touch metric: one 48 px height shared by chips, input and action pills.
     readonly property int controlH: Theme.spaceXL

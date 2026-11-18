@@ -52,7 +52,7 @@ impl LaunchTracker {
     /// Called from `new_toplevel`. A pending launch resolves on the *first*
     /// toplevel that maps after spawn — app_id correlation is fuzzy (the
     /// Chrome wrapper's app_id is `google-chrome` while the launched id is
-    /// `a21s-browser`), so an exact match isn't required. Returns the
+    /// `rabbiz-browser`), so an exact match isn't required. Returns the
     /// resolved desktop-id.
     pub fn on_toplevel_mapped(&mut self, app_id: Option<&str>) -> Option<String> {
         let p = self.pending.take()?;

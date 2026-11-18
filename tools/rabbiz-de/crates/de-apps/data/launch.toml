@@ -6,11 +6,11 @@
 #   [overrides."<desktop-id>".env] # optional extra env on top of the contract
 #
 # Exact desktop-id matches only — no globs. Third-party wrappers keep their
-# own branding/flags; e.g. Chrome launches through `a21s-browser` so
+# own branding/flags; e.g. Chrome launches through `rabbiz-browser` so
 # `--disable-gpu` and the 1.5 scale stay in one place.
 
 [overrides."google-chrome"]
-exec = "a21s-browser"
+exec = "rabbiz-browser"
 
 [overrides."com.google.Chrome"]
-exec = "a21s-browser"
+exec = "rabbiz-browser"

@@ -128,7 +128,7 @@ function historyDown(history, index, draft) {
     return { index: index + 1, text: list[index + 1], moved: true };
 }
 
-// Parse ~/.local/share/a21s-terminal/history.json. Bad JSON, a non-array or junk
+// Parse ~/.local/share/rabbiz-terminal/history.json. Bad JSON, a non-array or junk
 // entries all fall back to an empty history instead of breaking the app.
 function loadHistory(raw, limit) {
     var data = null;

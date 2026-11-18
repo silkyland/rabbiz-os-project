@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Phone
+GenericName=Dialer
+Comment=Make phone calls (rabbiz-shell)
+Exec=rabbiz-dialer
+Icon=rabbiz-dialer
+Categories=Network;Telephony;
+Terminal=false
+StartupNotify=true

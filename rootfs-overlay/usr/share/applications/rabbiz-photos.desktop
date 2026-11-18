@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Photos
+GenericName=Photo viewer
+Comment=In-house A21s Photos
+Exec=rabbiz-photos %f
+MimeType=image/png;image/jpeg;image/webp;image/gif;image/bmp;
+Icon=rabbiz-gallery
+Categories=Utility;
+Terminal=false
+StartupNotify=true

@@ -3,10 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets
-import A21sKit
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets
+import RabbizKit
 import "PhotosLogic.js" as PhotosLogic
 
 // Photos — in-house replacement for pix (docs/BASE-APPS.md).
@@ -35,8 +35,8 @@ ApplicationWindow {
     readonly property real swipeThreshold: Theme.spaceXL * 1.5
 
     property var photos: []
-    // Set by `a21s-photos <file>` (xdg-open / the screenshot toast): jump straight into the viewer on it.
-    property string openPath: Quickshell.env("A21S_PHOTOS_OPEN") || ""
+    // Set by `rabbiz-photos <file>` (xdg-open / the screenshot toast): jump straight into the viewer on it.
+    property string openPath: Quickshell.env("RABBIZ_PHOTOS_OPEN") || ""
     property bool scanning: false
     property string scanError: ""
     property int viewerIndex: -1

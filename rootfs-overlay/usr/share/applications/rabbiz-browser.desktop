@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Google Chrome
+GenericName=Web Browser
+Comment=Browse the web (Google Chrome)
+Exec=rabbiz-browser
+Icon=/opt/google/chrome/product_logo_256.png
+Categories=Network;WebBrowser;
+Terminal=false
+StartupNotify=true

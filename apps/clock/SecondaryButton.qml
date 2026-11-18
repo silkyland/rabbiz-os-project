@@ -1,6 +1,6 @@
 import QtQuick
-import A21s.Theme
-import A21s.Widgets
+import Rabbiz.Theme
+import Rabbiz.Widgets
 
 // Bordered 48 px pill for the secondary action next to PrimaryButton (Start/Pause + Reset).
 Rectangle {

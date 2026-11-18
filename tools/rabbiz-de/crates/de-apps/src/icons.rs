@@ -2,7 +2,7 @@
 //! hicolor theme, rasterize to the shell's 96 px box, cache the result.
 //!
 //! Rules from plan §7.17:
-//! - Rabbiz apps (`a21s-*`): 96 px sand tile (#DAC9B3 base, radius 28) with a
+//! - Rabbiz apps (`rabbiz-*`, legacy `a21s-*`): 96 px sand tile (#DAC9B3 base, radius 28) with a
 //!   plum glyph — first letter of the app name until per-app glyphs land.
 //! - Third-party apps: original icon in a 96 px box, no recolor (Chrome keeps
 //!   its logo, KDE apps keep theirs).
@@ -72,10 +72,11 @@ pub fn lookup(icon_name: &str) -> Option<PathBuf> {
     candidates(icon_name).into_iter().find(|p| p.is_file())
 }
 
-/// Whether `desktop_id` is a first-party Rabbiz app (`a21s-*`).
+/// Whether `desktop_id` is a first-party Rabbiz app (`rabbiz-*`; legacy
+/// `a21s-*` ids count too so pre-rename entries keep their branding).
 #[must_use]
 pub fn is_rabbiz_app(desktop_id: &str) -> bool {
-    desktop_id.strip_prefix("a21s-").is_some() || desktop_id == "rabbiz-de"
+    desktop_id.strip_prefix("rabbiz-").is_some() || desktop_id.strip_prefix("a21s-").is_some()
 }
 
 /// Rasterize the icon for `desktop_id` + `icon_name` + display `label`
@@ -176,7 +177,7 @@ mod tests {
 
     #[test]
     fn rabbiz_detection() {
-        assert!(is_rabbiz_app("a21s-calculator"));
+        assert!(is_rabbiz_app("rabbiz-calculator"));
         assert!(is_rabbiz_app("rabbiz-de"));
         assert!(!is_rabbiz_app("org.kde.dolphin"));
         assert!(!is_rabbiz_app("google-chrome"));

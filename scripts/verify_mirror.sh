@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # verify_mirror.sh — prove the Mac client can decode the device's VNC stream.
 #   ./scripts/verify_mirror.sh [/tmp/out.png]
-# Needs wayvnc running on the device (`ssh root@172.16.42.1 a21s-mirror start`).
+# Needs wayvnc running on the device (`ssh root@172.16.42.1 rabbiz-mirror start`).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-OUT=${1:-/tmp/a21s-mirror-verify.png}
+OUT=${1:-/tmp/rabbiz-mirror-verify.png}
 HOST=${DEVICE:-172.16.42.1}
 
-BIN="$(swift build --package-path tools/a21s-mirror -c release --show-bin-path)/A21sMirror"
+BIN="$(swift build --package-path tools/rabbiz-mirror -c release --show-bin-path)/RabbizMirror"
 [ -x "$BIN" ] || { echo "build first: ./scripts/build_mac_app.sh" >&2; exit 1; }
 
 "$BIN" --selftest --host "$HOST" --out "$OUT" --frames 20 --timeout 25

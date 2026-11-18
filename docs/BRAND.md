@@ -59,23 +59,23 @@ desktop ID to equivalent Linux apps, without changing their commands or vendor f
 
 | Icon | Launcher desktop IDs |
 |---|---|
-| Phone | `a21s-dialer`, `org.gnome.Calls` |
-| Messages | `a21s-sms`, `sm.puri.Chatty` |
-| Settings | `a21s-settings`, `org.kde.mobile.plasmasettings` |
-| Files | `a21s-files`, `org.kde.index`, `org.kde.dolphin` |
-| Calendar | `a21s-calendar`, `org.kde.merkuro.calendar`, `org.kde.merkuro`, `org.kde.calindori` |
-| Clock | `a21s-clock`, `org.kde.kclock` |
-| Calculator | `a21s-calculator`, `org.kde.kalk` |
-| Weather | `a21s-weather`, `org.kde.kweather` |
-| Notes | `a21s-notes`, `org.kde.marknote`, `org.kde.buho` |
-| Photos | `a21s-gallery`, `a21s-photos`, `org.kde.pix`, `org.kde.koko` |
-| Terminal | `a21s-terminal`, `org.kde.qmlkonsole`, `org.kde.konsole` |
-| Browser | `a21s-browser`, `google-chrome`, `chromium`, `org.kde.angelfish` |
-| Music | `a21s-music`, `org.kde.elisa`, `org.kde.vvave` |
-| Recorder | `a21s-recorder`, `org.kde.krecorder` |
-| Contacts | `a21s-contacts`, `org.gnome.Contacts`, `org.kde.merkuro.contact`, `org.kde.merkuro.contacts` |
-| Mail | `a21s-mail`, `org.kde.merkuro.mail`, `org.gnome.Geary` |
-| Videos | `a21s-video`, `mpv`, `vlc` |
+| Phone | `rabbiz-dialer`, `org.gnome.Calls` |
+| Messages | `rabbiz-sms`, `sm.puri.Chatty` |
+| Settings | `rabbiz-settings`, `org.kde.mobile.plasmasettings` |
+| Files | `rabbiz-files`, `org.kde.index`, `org.kde.dolphin` |
+| Calendar | `rabbiz-calendar`, `org.kde.merkuro.calendar`, `org.kde.merkuro`, `org.kde.calindori` |
+| Clock | `rabbiz-clock`, `org.kde.kclock` |
+| Calculator | `rabbiz-calculator`, `org.kde.kalk` |
+| Weather | `rabbiz-weather`, `org.kde.kweather` |
+| Notes | `rabbiz-notes`, `org.kde.marknote`, `org.kde.buho` |
+| Photos | `rabbiz-gallery`, `rabbiz-photos`, `org.kde.pix`, `org.kde.koko` |
+| Terminal | `rabbiz-terminal`, `org.kde.qmlkonsole`, `org.kde.konsole` |
+| Browser | `rabbiz-browser`, `google-chrome`, `chromium`, `org.kde.angelfish` |
+| Music | `rabbiz-music`, `org.kde.elisa`, `org.kde.vvave` |
+| Recorder | `rabbiz-recorder`, `org.kde.krecorder` |
+| Contacts | `rabbiz-contacts`, `org.gnome.Contacts`, `org.kde.merkuro.contact`, `org.kde.merkuro.contacts` |
+| Mail | `rabbiz-mail`, `org.kde.merkuro.mail`, `org.gnome.Geary` |
+| Videos | `rabbiz-video`, `mpv`, `vlc` |
 
 Editable SVG sources live in
 `rootfs-overlay/usr/share/icons/hicolor/scalable/apps/a21s-*.svg`.
@@ -122,7 +122,7 @@ priority, fallback, hidden entries and duplicate IDs.
 | Flat full-body character | [rabbiz-mascot-flat.svg](../assets/branding/rabbiz-mascot-flat.svg) | [PNG](../assets/branding/rabbiz-mascot-flat.png) | Canonical 2D flat mascot |
 | Six-pose character sheet | [rabbiz-poses.svg](../assets/branding/rabbiz-poses.svg) | [PNG](../assets/branding/rabbiz-poses.png) | Standing, waving, celebrating, thinking, resting, holding a tablet |
 | Illustrated character | — | [Transparent PNG](../assets/branding/rabbiz-mascot-illustration.png) | Additional generated character artwork |
-| Mirror app icon | [AppIcon.svg](../tools/a21s-mirror/Assets/AppIcon.svg) | [PNG](../tools/a21s-mirror/Assets/AppIcon.png), [ICNS](../tools/a21s-mirror/Assets/AppIcon.icns) | Rabbit with paired-screen badge |
+| Mirror app icon | [AppIcon.svg](../tools/rabbiz-mirror/Assets/AppIcon.svg) | [PNG](../tools/rabbiz-mirror/Assets/AppIcon.png), [ICNS](../tools/rabbiz-mirror/Assets/AppIcon.icns) | Rabbit with paired-screen badge |
 
 SVG sources are self-contained. The pose sheet is 1536 × 1024 and the wordmark is 1024 × 360. Other vector PNG exports are 1024 × 1024 except the generated
 illustration, which retains its original dimensions and transparency. The flat
@@ -138,8 +138,8 @@ and require no image-generation service or extra runtime dependencies.
 ## Naming and implementation
 
 The repository directory may still be `android-arm-linux`. Device commands,
-services, QML modules, paths, and Swift target names such as `a21s-shell`,
-`A21s.*`, `tools/a21s-mirror`, and `A21sMirror` retain their technical names.
+services, QML modules, paths, and Swift target names such as `rabbiz-shell`,
+`Rabbiz.*`, `tools/rabbiz-mirror`, and `RabbizMirror` are the technical names (pre-rename: `A21s.*`, `a21s-mirror`, `A21sMirror`).
 Historical research records and paths are preserved. The branding changes do not
 rename the remote repository or change the device's installed OS metadata.
 

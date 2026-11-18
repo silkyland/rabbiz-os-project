@@ -5,6 +5,6 @@ const run = (d) => spawnSync("node", [new URL("../../scripts/check_shell_seams.m
 assert.equal(run("pass").status, 0, run("pass").stderr);
 const bad = run("fail");
 assert.notEqual(bad.status, 0);
-assert.match(bad.stderr, /Windowing must not import A21s\.Desktop/);
+assert.match(bad.stderr, /Windowing must not import Rabbiz\.Desktop/);
 assert.match(bad.stderr, /relative\/path import/);
 console.log("seams checker fires: ok");

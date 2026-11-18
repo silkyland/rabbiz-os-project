@@ -24,17 +24,17 @@ GU=\$(id -u gamer)
 LW=\$(pgrep -x labwc | head -1)
 WD=\$(ls -t /run/user/\$GU/wayland-[0-9]* 2>/dev/null | grep -v '\.lock\$' | head -1 | xargs -r basename)
 ENVF="XDG_RUNTIME_DIR=/run/user/\$GU WAYLAND_DISPLAY=\${WD:-wayland-0} \$(tr '\0' '\n' < /proc/\$LW/environ | grep -E '^(XDG_|WAYLAND_DISPLAY|DBUS_|QML|LIBSEAT|MOZ_|LANG)' | tr '\n' ' ')"
-PAT='quickshell -p /usr/share/a21s-shell/shell.qml'
+PAT='quickshell -p /usr/share/rabbiz-shell/shell.qml'
 ticks() { awk '{print \$14+\$15}' /proc/\$1/stat; }
 
 start_shell() {  # mode timing
   local mode=\$1 timing=\$2 extra="" t=""
-  [ "\$mode" = software ] && extra="A21S_SHELL_CMA_FLOOR_KB=999999999"
+  [ "\$mode" = software ] && extra="RABBIZ_SHELL_CMA_FLOOR_KB=999999999"
   [ "\$timing" = 1 ] && t="QSG_RENDER_TIMING=1 WAYLAND_DEBUG=client"
   pkill -f "\$PAT" || true
   sleep 2
   runuser -u gamer -- env \$ENVF QT_QPA_PLATFORMTHEME= QT_QUICK_CONTROLS_STYLE=Basic \$extra \$t \
-    setsid a21s-shell >/tmp/perf-shell.log 2>&1 </dev/null &
+    setsid rabbiz-shell >/tmp/perf-shell.log 2>&1 </dev/null &
   sleep 9
   QS=\$(pgrep -f "\$PAT" | head -1)
   echo "MODE \$mode backend=\$(tr '\0' '\n' </proc/\$QS/environ | grep -E '^QT_QUICK_BACKEND=' | head -1) cma_free_kb=\$(awk '/^CmaFree:/{print \$2}' /proc/meminfo) shell_pid=\$QS"

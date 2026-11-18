@@ -1,6 +1,6 @@
 # Desktop shell rewrite — plan (M7 v2)
 
-The public system name is **RabbizOS**; `a21s-shell` and `A21s.*` remain the implementation names. Brand assets: [BRAND.md](BRAND.md).
+The public system name is **RabbizOS**; `rabbiz-shell` and `Rabbiz.*` are the implementation names. Brand assets: [BRAND.md](BRAND.md).
 
 > Status: **proposed**, branch `feat/desktop-shell-rewrite`. Decisions below marked **D#** were
 > answered by the owner on 2026-11-16; everything marked **H#** is a hypothesis to prove on the
@@ -14,7 +14,7 @@ The public system name is **RabbizOS**; `a21s-shell` and `A21s.*` remain the imp
 4. The first screen is a **real desktop**.
 
 Answers: **D1** home = a *touch-first desktop* (wallpaper, icons/widgets, dock, drawer, real windows),
-inputs in priority order **touch → mouse/keyboard → gamepad**. **D3** (2026-11-16) Xiaomi Pad 7 Pro is *not planned now*. **D4** Steam is an ordinary app inside the desktop, not a separate session (**solved with nested Weston — ADR-8**). **D5** (2026-11-16) we may wrap/override app looks with our own theme, and `A21s.Theme` may be rewritten from scratch. **D2** replace all home-grown QML apps
+inputs in priority order **touch → mouse/keyboard → gamepad**. **D3** (2026-11-16) Xiaomi Pad 7 Pro is *not planned now*. **D4** Steam is an ordinary app inside the desktop, not a separate session (**solved with nested Weston — ADR-8**). **D5** (2026-11-16) we may wrap/override app looks with our own theme, and `Rabbiz.Theme` may be rewritten from scratch. **D2** replace all home-grown QML apps
 with real Linux apps.
 
 ## 2. Where the current code disagrees with the request (evidence)
@@ -30,13 +30,13 @@ with real Linux apps.
 ## 3. Target architecture
 
 ```
-a21s-phone-session.service ─ labwc  (policy: window rules by form factor)
+rabbiz-session.service ─ labwc  (policy: window rules by form factor)
    ├─ quickshell  shell.qml  (wiring only)
-   │    A21s.Desktop     wallpaper · icon grid · widgets · dock · app drawer
-   │    A21s.Windowing   launch flow · morph overlay · task switcher · window policy
-   │    A21s.Panels      status bar · nav/gesture bar · shade · quick settings · power · HUD
-   │    A21s.Services    NM · BlueZ · UPower · audio · telephony · Appearance (contract writer)
-   │    A21s.Theme       tokens (derived from the appearance source of truth)
+   │    Rabbiz.Desktop     wallpaper · icon grid · widgets · dock · app drawer
+   │    Rabbiz.Windowing   launch flow · morph overlay · task switcher · window policy
+   │    Rabbiz.Panels      status bar · nav/gesture bar · shade · quick settings · power · HUD
+   │    Rabbiz.Services    NM · BlueZ · UPower · audio · telephony · Appearance (contract writer)
+   │    Rabbiz.Theme       tokens (derived from the appearance source of truth)
    └─ real apps (Qt/KDE-first) as ordinary Wayland toplevels
 ```
 
@@ -51,7 +51,7 @@ a21s-phone-session.service ─ labwc  (policy: window rules by form factor)
 ### 3.2 Desktop Contract — what "respect our DE" means, concretely
 
 One **appearance source of truth** (accent, dark/light, font, scale, icon theme, wallpaper), written
-by `A21s.Services.Appearance` into every channel apps actually read:
+by `Rabbiz.Services.Appearance` into every channel apps actually read:
 
 | Channel | Read by | Written how |
 |---|---|---|
@@ -63,7 +63,7 @@ by `A21s.Services.Appearance` into every channel apps actually read:
 | Scale | all | single `QT_SCALE_FACTOR`/`GDK_SCALE` from the shell, not per-wrapper `1.5` hacks |
 | Input method | all | unchanged (squeekboard; `QT_IM_MODULE` stays unset — AGENTS.md) |
 
-Today three wrappers each set their own env (`a21s-files` → `QT_SCALE_FACTOR=1.5`, Chrome
+Today three wrappers each set their own env (`rabbiz-files` → `QT_SCALE_FACTOR=1.5`, Chrome
 → `--force-device-scale-factor=1.5`, labwc env → `QT_SCALE_FACTOR=1`, `QT_QPA_PLATFORMTHEME=`
 empty). That inconsistency is exactly what the contract removes.
 
@@ -80,7 +80,7 @@ empty). That inconsistency is exactly what the contract removes.
 | Calendar/Contacts | `merkuro` | Qt | installed |
 | Dialer / SMS | `gnome-calls` + `chatty` now; `plasma-dialer` + `spacebar` if packaged | GTK / Qt | installed; **keep our Dialer/SMS QML until M6 modem works** |
 | Settings | shell-owned (see O1) | Qt | rewrite thin |
-| Browser | Chrome ARM64 (`a21s-browser`) | Chromium | works |
+| Browser | Chrome ARM64 (`rabbiz-browser`) | Chromium | works |
 
 ### 3.4 Morph animation (**H3**)
 
@@ -99,7 +99,7 @@ keeps native pad handling. Shell QML uses `KeyNavigation`/`activeFocus`, never t
 
 | ID | Goal | Exit criterion |
 |---|---|---|
-| M7.0 | Retrofit: split `A21s.Components` into Desktop / Windowing / Panels / Widgets; add seam checker | `scripts/check.sh` green; shell still boots on device; move commits contain moves only |
+| M7.0 | Retrofit: split `Rabbiz.Components` into Desktop / Windowing / Panels / Widgets; add seam checker | `scripts/check.sh` green; shell still boots on device; move commits contain moves only |
 | M7.1 | **Launch slice**: tap dock icon → starting-window morph → real Kalk window → home | works on device; `LaunchFlow` test green on host |
 | M7.2 | Desktop Contract v1: Appearance service + env unification + portals | change dark/accent once → Kalk, Dolphin, Chrome all follow (screenshots) |
 | M7.3 | Desktop surface: wallpaper, icon grid, widgets, dock, drawer | home screen is a desktop, 60 fps-ish on software Qt Quick (**H5**, measure) |
@@ -124,7 +124,7 @@ Answered: Pad 7 Pro → not now (D3); Steam → normal app (D4). Consequences:
   only as far as mouse/keyboard + external display are wanted (still open, see below). The form-factor
   seam stays (one `formFactor` property) so adding modes later is cheap.
 - Steam = `a21s-steam` (gamescope window in labwc) listed in the drawer like any app, same launch/morph
-  path. `steamos-session.service` + `a21s-session-switch` are no longer part of the UX (ADR-8); keep the unit
+  path. `steamos-session.service` + `rabbiz-session-switch` are no longer part of the UX (ADR-8); keep the unit
   file installed as a recovery boot only, and stop investing in session-switch hardening.
 
 Still open:
@@ -148,7 +148,7 @@ Still open:
 |---|---|---|
 | S4 disk + apps | **All target Qt apps already installed**: `kalk kclock marknote buho index-fm dolphin maui-pix vvave merkuro plasma-settings xdg-desktop-portal(-kde)`. **Not packaged**: `plasma-dialer`, `spacebar` (keep `gnome-calls` + `chatty`). **Disk is the blocker: 377 MB free of 22 G (99 %)**. | `scripts/verify_apps.sh`. Biggest installed packages: `linux-firmware-intel` 414 MiB, `linux-aarch64` 386 MiB, `qt6-webengine` 273 MiB, `gcc` 189 MiB, `llvm-libs` 164 MiB, `webkit2gtk-4.1` 159 MiB, `linux-firmware-nvidia` 153 MiB, `linux-firmware-atheros` 141 MiB. Steam data in `~gamer/.local` = 8.8 G. Nothing removed yet — needs owner OK (see §6). |
 | S1 close-morph snapshot | **Likely feasible.** `labwc` binary contains `ext_image_copy_capture` + `ext_foreign_toplevel_image_capture` + `ext_foreign_toplevel_list`; Quickshell contains `ScreencopyView` backed by `ext_image_copy_capture`. | Found by `strings`, **not run**. Next: a 20-line QML test that captures a Kalk toplevel into `ScreencopyView`. |
-| S3 portals | `xdg-desktop-portal` + `-gtk` + `-kde` backends are running on the user bus; `labwc-portals.conf` prefers `wlr` (no `xdg-desktop-portal-wlr` installed) with `*` fallback. | FileChooser **not tested**. `XDG_CURRENT_DESKTOP=labwc` (not `a21s-shell` as `labwc/environment` sets — the live session value differs, to investigate in M7.2). |
+| S3 portals | `xdg-desktop-portal` + `-gtk` + `-kde` backends are running on the user bus; `labwc-portals.conf` prefers `wlr` (no `xdg-desktop-portal-wlr` installed) with `*` fallback. | FileChooser **not tested**. `XDG_CURRENT_DESKTOP=labwc` (not `rabbiz-shell` as `labwc/environment` sets — the live session value differs, to investigate in M7.2). |
 | S2 plasma-settings | **Runs without plasmashell** (screenshot taken, 144 MB RSS, no stderr) with a mobile sidebar: Keyboard, Display, Wallpaper, Colors & Themes, Text & Fonts, Animations, Default Applications, Notifications, Window Management, Screen Locking, Region & Language, Day-Night Cycle, Users, Autostart. **No Wi-Fi, Bluetooth, Network, Sound or Battery pages** (Networking = Online Accounts only). It rendered **light**, ignoring our dark `kdeglobals` because `QT_QPA_PLATFORMTHEME` is empty in the session env — a live proof of why the Desktop Contract is needed. | Confirms ADR-6: appearance/default-apps/keyboard KCMs can be reused; Wi-Fi/BT/sound/battery panels must stay shell-owned. Which KCMs actually *work* when opened (not just listed) is untested. |
 | S5 frame time | Not run. Free RAM ≈ 1.0 GB with the shell up. | Needs the desktop surface (M7.3) or a synthetic QML load. |
 
@@ -162,8 +162,8 @@ Also found: device Wi-Fi (`wlan0`) is `disconnected`; USB is the only link; SSH 
 Owner: apps that look bad may be themed over, and `Theme.qml` may be rewritten from the ground up.
 Evidence for doing it: Plasma Settings rendered light/default on our dark device (§8 S2). Plan for M7.2:
 
-1. **One palette definition** (`shell/A21s/Theme/palette` data: dark + light, accent, radii, motion) is the only source.
-2. **Generators** (run by `A21s.Services.Appearance` at session start and on change): a Qt/KDE colour scheme (`~/.local/share/color-schemes/A21s.colors` + `kdeglobals`), GTK 3/4 overrides (`gtk.css` + `gsettings`), cursor/icon/font settings; `QT_QPA_PLATFORMTHEME=kde` set once in the session env (fixes the light render). **GTK3 has no `color-scheme`**, so the generator also writes `~/.config/gtk-3.0/settings.ini` with `gtk-application-prefer-dark-theme` and restarts squeekboard (it reads GTK settings only at startup) — without that the on-screen keyboard stayed light in dark mode.
+1. **One palette definition** (`shell/Rabbiz/Theme/palette` data: dark + light, accent, radii, motion) is the only source.
+2. **Generators** (run by `Rabbiz.Services.Appearance` at session start and on change): a Qt/KDE colour scheme (`~/.local/share/color-schemes/Rabbiz.colors` + `kdeglobals`), GTK 3/4 overrides (`gtk.css` + `gsettings`), cursor/icon/font settings; `QT_QPA_PLATFORMTHEME=kde` set once in the session env (fixes the light render). **GTK3 has no `color-scheme`**, so the generator also writes `~/.config/gtk-3.0/settings.ini` with `gtk-application-prefer-dark-theme` and restarts squeekboard (it reads GTK settings only at startup) — without that the on-screen keyboard stayed light in dark mode.
 3. **Rewrite `Theme.qml`** as a thin reader of that palette (no literal colours), keeping today's token *names* as aliases until M7.0 moves are done, so nothing breaks mid-retrofit.
 4. Limits (honest): a colour scheme + Breeze style recolours Qt/KDE apps well; GTK4/libadwaita and Chromium only follow `color-scheme` + accent, not arbitrary shapes. Deep restyling of those is out of scope; per-app CSS only where it is ugly enough to matter (decide per app after M7.4 screenshots).
 
@@ -173,8 +173,8 @@ Evidence for doing it: Plasma Settings rendered light/default on our dark device
 |---|---|---|
 | M7.0 split `Components` | **done** | Widgets/Windowing/Desktop/Panels; shell loads with no errors; home unchanged; seam checker green |
 | M7.1 launch slice | **done** | `quickshell ipc call launcher launch kalk` -> starting window -> real Kalk window -> state idle (2-3 s); same for kclock, index, marknote |
-| M7.2 desktop contract v1 | **done (apps)** | `rabbiz-appearance` + `Appearance` service write `A21s.colors`, `kdeglobals [Colors:*]`, gsettings; Kalk/KClock render the dark A21s palette. GTK/Chromium only follow `color-scheme` (not verified visually) |
-| M7.3 desktop surface | **partly done** | home page renamed `~/Desktop` (`DesktopView`); icon grid + dock are user-editable (drag to reorder / move between surfaces, long-press menu: open, rename & icon, move, add, remove), persisted in `~/.config/a21s-shell/desktop.json`; widgets not built |
+| M7.2 desktop contract v1 | **done (apps)** | `rabbiz-appearance` + `Appearance` service write `Rabbiz.colors`, `kdeglobals [Colors:*]`, gsettings; Kalk/KClock render the dark Rabbiz palette. GTK/Chromium only follow `color-scheme` (not verified visually) |
+| M7.3 desktop surface | **partly done** | home page renamed `~/Desktop` (`DesktopView`); icon grid + dock are user-editable (drag to reorder / move between surfaces, long-press menu: open, rename & icon, move, add, remove), persisted in `~/.config/rabbiz-shell/desktop.json`; widgets not built |
 | M7.4 swap base apps | **done** | home/drawer use `org.kde.*`; Calculator/Clock/Notes/Gallery/Files/Spotify QML + wrappers deleted (~4 k lines); Spotify removed entirely (owner request; Widevine is unavailable so the web player could not play anyway). Dialer/SMS/Settings QML kept (D1/ADR-6) |
 | M7.5 form factors | not started | only `handset` is in scope (D3) |
 | M7.6 close morph | not started | S1 says ScreencopyView is available, untested |
@@ -183,7 +183,7 @@ Evidence for doing it: Plasma Settings rendered light/default on our dark device
 | M7.10 home editing (drag & drop, align) | not started | `HANDOFF-DESKTOP-SHELL.md` §7.1 |
 | M7.11 clipboard system | not started | §7.2; `wl-clipboard`/`cliphist` not installed, labwc has data-control |
 | M7.12 on-screen keyboard rework | not started | §7.3; triage squeekboard bugs first |
-| Theme v2 (light/dark + glass) | **landed** | `Theme.light` switches the whole palette (bg/surface/card/text/tiles) and the shell chrome follows live; glass tokens (#AARRGGBB) give translucent shade/drawer/dock/cards. The shell now starts through `a21s-shell` → checksum-gated `a21s-qt-gpu`; dock/drawer use live scene blur, shade blurs one fresh pre-open screen capture. Apps keep software rendering through `Appearance.appEnvironment`. GPU-unavailable startup falls back to translucent software glass. [Implementation and device verification](../devices/samsung/a21s/docs/a21s-qt-gpu-scanout.md#shell-integration). Text drawn on the wallpaper uses `onWallpaper` so the clock stays readable in light mode. Legacy Dialer/SMS do not bind `Theme.light` yet |
+| Theme v2 (light/dark + glass) | **landed** | `Theme.light` switches the whole palette (bg/surface/card/text/tiles) and the shell chrome follows live; glass tokens (#AARRGGBB) give translucent shade/drawer/dock/cards. The shell now starts through `rabbiz-shell` → checksum-gated `a21s-qt-gpu`; dock/drawer use live scene blur, shade blurs one fresh pre-open screen capture. Apps keep software rendering through `Appearance.appEnvironment`. GPU-unavailable startup falls back to translucent software glass. [Implementation and device verification](../devices/samsung/a21s/docs/a21s-qt-gpu-scanout.md#shell-integration). Text drawn on the wallpaper uses `onWallpaper` so the clock stays readable in light mode. Legacy Dialer/SMS do not bind `Theme.light` yet |
 | review findings (7 open) | **done, 2 gaps** | WWAN radio not modem power; no `rfkill`; FIFO queues; one `a21s-telemetry` process (stops asleep); "Rotate" label; `schedutil` default; PSK via stdin pty (`rabbiz-wifi-connect`). New polkit rule allows `gamer` NM only (ADR-9). Verified: `nmcli radio wifi off/on` as gamer, join of an unsaved network (HTTP 301), `nmcli connection add`. Open: PSK update of an existing profile (pty timeout), Settings UI path not exercised |
 | M7.8 Settings v2 | **done with gaps** | app already wired to services; verified Wi-Fi list + join dialog, accent live update, volume slider -> `wpctl` 0.71, new light/dark switch (`color-scheme` + `kdeglobals`), Display&S sleep. Fixed: `rabbiz-appearance` never set `accent-color`. Open: BT pair (no device in range), typed Wi-Fi join |
 | M7.6 close morph | **done** | `ScreencopyView` of the output (SHM, no GL), one frozen frame shrunk onto the app icon; capture before minimize; fallback = gradient+icon. Verified with slowed morph + burst screenshots |

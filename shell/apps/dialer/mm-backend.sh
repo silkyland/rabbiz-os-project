@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# mm-backend.sh — ModemManager call/SMS reference for a21s-shell Telephony.
+# mm-backend.sh — ModemManager call/SMS reference for rabbiz-shell Telephony.
 #
 # STATUS: REFERENCE / FUTURE — intentionally NOT wired into the shell yet.
 #
@@ -9,7 +9,7 @@
 # Phase 4/M6 of devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md. Once cpif lands and a
 # userspace telephony stack can drive it, a privileged helper can exec this
 # script (or speak org.freedesktop.ModemManager1 over D-Bus directly) and
-# bridge A21s.Services.Telephony via its `backend` hook:
+# bridge Rabbiz.Services.Telephony via its `backend` hook:
 #
 #   Telephony.backend = {
 #       dial(number), answer(), hangup(), sendSms(number, body),

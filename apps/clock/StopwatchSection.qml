@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
-import A21s.Theme
-import A21sKit
+import Rabbiz.Theme
+import RabbizKit
 import "ClockLogic.js" as ClockLogic
 
 // Stopwatch tab: centiseconds, pause/resume that keeps the banked time, and laps newest

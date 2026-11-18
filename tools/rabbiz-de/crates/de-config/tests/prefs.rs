@@ -24,7 +24,7 @@ fn defaults_match_decision_14() {
 #[test]
 fn seeds_from_legacy_once_and_never_writes_it() {
     let dir = tmpdir("legacy");
-    let legacy = dir.join("a21s-shell").join("prefs.json");
+    let legacy = dir.join("rabbiz-shell").join("prefs.json");
     std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
     std::fs::write(
         &legacy,
@@ -42,7 +42,7 @@ fn seeds_from_legacy_once_and_never_writes_it() {
     // Saving the DE prefs must not touch the legacy file.
     let before = std::fs::read_to_string(&legacy).unwrap();
     let mut p2 = p.clone();
-    p2.pin_dock("a21s-calculator");
+    p2.pin_dock("rabbiz-calculator");
     p2.save_to(&own).unwrap();
     assert_eq!(std::fs::read_to_string(&legacy).unwrap(), before);
 }
@@ -62,7 +62,7 @@ fn save_is_atomic_and_backs_up() {
     let own = dir.join("prefs.json");
 
     let mut p = Prefs::default();
-    p.pin_dock("a21s-files");
+    p.pin_dock("rabbiz-files");
     p.save_to(&own).unwrap();
     assert!(own.exists());
     assert!(!own.with_extension("json.tmp").exists());
@@ -74,7 +74,7 @@ fn save_is_atomic_and_backs_up() {
     let bak = own.with_extension("json.bak");
     assert!(bak.exists());
     let restored = Prefs::from_json(&std::fs::read_to_string(&bak).unwrap()).unwrap();
-    assert_eq!(restored.dock, vec!["a21s-files"]);
+    assert_eq!(restored.dock, vec!["rabbiz-files"]);
     assert!(!restored.is_hidden("org.kde.dolphin"));
 
     let again = Prefs::from_json(&std::fs::read_to_string(&own).unwrap()).unwrap();
@@ -107,7 +107,7 @@ fn dock_pin_dedupes_and_caps_at_six() {
 #[test]
 fn json_roundtrip_uses_de_keys() {
     let mut p = Prefs::default();
-    p.pin_dock("a21s-calculator");
+    p.pin_dock("rabbiz-calculator");
     p.set_hidden("foo", true);
     let text = p.to_json();
     assert!(text.contains("\"deAccent\""));

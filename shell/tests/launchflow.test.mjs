@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 // QML JS libraries start with `.pragma library`, which is not valid JS: strip it, run the rest.
-const src = readFileSync(new URL("../A21s/Windowing/LaunchFlow.js", import.meta.url), "utf8")
+const src = readFileSync(new URL("../Rabbiz/Windowing/LaunchFlow.js", import.meta.url), "utf8")
   .replace(/^\.pragma library\s*$/m, "");
 const box = { module: { exports: {} } };
 vm.runInNewContext(src, box);

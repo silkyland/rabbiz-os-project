@@ -2,13 +2,13 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell.Io
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets as Components
-import A21s.Windowing as Windowing
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets as Components
+import Rabbiz.Windowing as Windowing
 
-// Standalone Settings app — launched by the `a21s-settings` wrapper
-// (QML2_IMPORT_PATH=/usr/share/a21s-shell exec qml6 Settings.qml).
+// Standalone Settings app — launched by the `rabbiz-settings` wrapper
+// (QML2_IMPORT_PATH=/usr/share/rabbiz-shell exec qml6 Settings.qml).
 // labwc maximizes this window automatically (Android-style fullscreen).
 ApplicationWindow {
     id: win
@@ -1779,7 +1779,7 @@ ApplicationWindow {
                 spacing: Theme.spaceM
 
                 Text {
-                    text: "a21s-shell"
+                    text: "rabbiz-shell"
                     color: Theme.text
                     font.pixelSize: Theme.fontHeadline
                 }

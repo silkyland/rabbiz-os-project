@@ -12,9 +12,9 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 DEVICE=${DEVICE:-172.16.42.1}
 LISTEN="172.16.42.1 127.0.0.1"
-CACHE="tools/a21s-mirror/.cache/pkgs"
+CACHE="tools/rabbiz-mirror/.cache/pkgs"
 UNIT_PATH="/home/gamer/.config/systemd/user/a21s-wayvnc.service"
-HELPER_PATH="/usr/local/bin/a21s-mirror"
+HELPER_PATH="/usr/local/bin/rabbiz-mirror"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -84,7 +84,7 @@ UNIT
 say "Writing $HELPER_PATH"
 ssh "root@$DEVICE" "cat > $HELPER_PATH && chmod 755 $HELPER_PATH" <<'HELPER'
 #!/bin/sh
-# a21s-mirror — start/stop/status of the wayvnc mirror in the gamer labwc session.
+# rabbiz-mirror — start/stop/status of the wayvnc mirror in the gamer labwc session.
 set -eu
 UNIT=a21s-wayvnc.service
 RUNTIME=/run/user/$(id -u gamer)
@@ -145,7 +145,7 @@ enable)
     wait_listening
     ;;
 *)
-    echo "usage: a21s-mirror {start|stop|restart|status|logs|enable}" >&2
+    echo "usage: rabbiz-mirror {start|stop|restart|status|logs|enable}" >&2
     exit 2
     ;;
 esac
@@ -153,11 +153,11 @@ HELPER
 
 # --- 4. enable + start in the running session ----------------------------
 say "Enabling and starting a21s-wayvnc in the gamer session"
-ssh "root@$DEVICE" 'u=$(id -u gamer); runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/$u DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$u/bus systemctl --user daemon-reload && a21s-mirror enable'
+ssh "root@$DEVICE" 'u=$(id -u gamer); runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/$u DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$u/bus systemctl --user daemon-reload && rabbiz-mirror enable'
 
 say "Done. Launch the Mac app with:"
 printf '    open "dist/Rabbiz Mirror.app"     # after ./scripts/build_mac_app.sh\n'
-printf '    ssh root@%s a21s-mirror status\n' "$DEVICE"
+printf '    ssh root@%s rabbiz-mirror status\n' "$DEVICE"
 if [ "$LISTEN" = "0.0.0.0" ]; then
     warn "wayvnc has no authentication and is now reachable from the LAN. Use only on trusted networks."
 fi

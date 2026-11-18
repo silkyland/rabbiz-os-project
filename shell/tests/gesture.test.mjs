@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-const src = readFileSync(new URL("../A21s/Windowing/Gesture.js", import.meta.url), "utf8").replace(/^\.pragma library\s*$/m, "");
+const src = readFileSync(new URL("../Rabbiz/Windowing/Gesture.js", import.meta.url), "utf8").replace(/^\.pragma library\s*$/m, "");
 const box = { module: { exports: {} } }; vm.runInNewContext(src, box); const g = box.module.exports;
 
 // home: long swipe, fast short flick, plain tap; not a tiny drag

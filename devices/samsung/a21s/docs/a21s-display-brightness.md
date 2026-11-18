@@ -35,7 +35,7 @@ Device integration command (intentionally changes the saved value to 64%):
 
 ```sh
 runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 \
-  WAYLAND_DISPLAY=wayland-0 QML_IMPORT_PATH=/usr/share/a21s-shell \
+  WAYLAND_DISPLAY=wayland-0 QML_IMPORT_PATH=/usr/share/rabbiz-shell \
   QT_QUICK_BACKEND=software quickshell -p /tmp/brightness-integration.qml
 ```
 

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Messages
+GenericName=SMS
+Comment=Send and receive text messages (rabbiz-shell)
+Exec=rabbiz-sms
+Icon=rabbiz-sms
+Categories=Network;Telephony;
+Terminal=false
+StartupNotify=true

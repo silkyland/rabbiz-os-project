@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 
-const src = readFileSync(new URL("../A21s/Panels/NotificationGroups.js", import.meta.url), "utf8")
+const src = readFileSync(new URL("../Rabbiz/Panels/NotificationGroups.js", import.meta.url), "utf8")
     .replace(/^\.pragma library\s*$/m, "");
 const box = { module: { exports: {} } };
 vm.runInNewContext(src, box);

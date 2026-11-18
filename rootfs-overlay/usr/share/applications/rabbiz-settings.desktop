@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Settings
+GenericName=System Settings
+Comment=Configure Wi-Fi, Bluetooth, display and more (rabbiz-shell)
+Exec=rabbiz-settings
+Icon=rabbiz-settings
+Categories=Settings;
+Terminal=false
+StartupNotify=true

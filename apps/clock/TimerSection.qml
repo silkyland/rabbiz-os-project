@@ -1,8 +1,8 @@
 import QtQuick
 import QtQuick.Layouts
-import A21s.Theme
-import A21s.Services
-import A21sKit
+import Rabbiz.Theme
+import Rabbiz.Services
+import RabbizKit
 import "ClockLogic.js" as ClockLogic
 
 // Timer tab. The countdown is driven by an absolute deadline and a 200 ms tick, so it cannot

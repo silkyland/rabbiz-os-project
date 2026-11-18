@@ -124,7 +124,7 @@ pub fn window_app_id(toplevel: &ToplevelSurface) -> String {
 /// Copy the window's committed `wl_shm` buffer into `Pixels` (RGBA bytes).
 ///
 /// Returns `None` for dmabuf/EGL clients — the A21s forces software
-/// toolkits for shell-launched apps (`A21S_FORCE_SOFTWARE=1`), so the
+/// toolkits for shell-launched apps (`RABBIZ_FORCE_SOFTWARE=1`), so the
 /// common path *is* shm; GPU clients keep the icon fallback in the rail.
 #[allow(unsafe_code)] // smithay hands us a raw pool pointer, scoped to the closure.
 pub fn capture_window(window: &Window) -> Option<Pixels> {

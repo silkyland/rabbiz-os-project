@@ -1,6 +1,6 @@
 //! DE prefs (M3-T7, Decision 14): the DE owns
 //! `~/.config/rabbiz-de/prefs.json` — atomic writes, `.bak` backup, and a
-//! one-time read of the legacy `~/.config/a21s-shell/prefs.json` for defaults.
+//! one-time read of the legacy `~/.config/rabbiz-shell/prefs.json` for defaults.
 //! The legacy file is never written (the QML `ShellPrefs.save()` serialises a
 //! fixed key set and would erase unknown keys).
 
@@ -63,6 +63,13 @@ impl Prefs {
     /// Legacy QML shell file — read-only for us.
     #[must_use]
     pub fn legacy_path() -> PathBuf {
+        config_home().join("rabbiz-shell").join("prefs.json")
+    }
+
+    /// Pre-rename legacy path (`a21s-shell` → `rabbiz-shell`, 2026-11): kept
+    /// so a device whose config dir was never migrated still seeds defaults.
+    #[must_use]
+    fn legacy_a21s_path() -> PathBuf {
         config_home().join("a21s-shell").join("prefs.json")
     }
 
@@ -70,7 +77,11 @@ impl Prefs {
     /// (one-time hint read — still never written).
     #[must_use]
     pub fn load() -> Self {
-        Self::load_from(&Self::path(), &Self::legacy_path())
+        let own = Self::load_from(&Self::path(), &Self::legacy_path());
+        if own == Self::default() {
+            return Self::load_from(&Self::path(), &Self::legacy_a21s_path());
+        }
+        own
     }
 
     /// Load `own`, falling back to legacy-seeded defaults.

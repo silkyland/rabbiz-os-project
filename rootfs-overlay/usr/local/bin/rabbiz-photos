@@ -1,0 +1,6 @@
+#!/bin/sh
+# rabbiz-photos — in-house Photos (docs/BASE-APPS.md). Deployed by scripts/deploy_shell.sh.
+# `rabbiz-photos [file]`: with a file (xdg-open passes %f) the viewer opens on it.
+if [ -n "${1:-}" ] && [ -f "$1" ]; then export RABBIZ_PHOTOS_OPEN="$(readlink -f "$1")"; shift; fi
+export QML_IMPORT_PATH=/usr/share/rabbiz-shell:/usr/share/rabbiz-apps
+exec a21s-qt-render quickshell -p /usr/share/rabbiz-apps/photos/Photos.qml "$@"

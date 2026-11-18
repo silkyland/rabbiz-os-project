@@ -1,13 +1,13 @@
 import QtQuick
 import QtQuick.Layouts
-import A21s.Theme
-import A21s.Services
-import A21sKit
+import Rabbiz.Theme
+import Rabbiz.Services
+import RabbizKit
 import "ClockLogic.js" as ClockLogic
 
 // Alarm tab. Persistence and the once-a-day ringing tick live in Clock.qml; this file only
 // edits the list and hands the complete new array back through `alarmsEdited`, so there is
-// exactly one writer for ~/.local/share/a21s-clock/alarms.json.
+// exactly one writer for ~/.local/share/rabbiz-clock/alarms.json.
 Item {
     id: root
     property var alarms: []

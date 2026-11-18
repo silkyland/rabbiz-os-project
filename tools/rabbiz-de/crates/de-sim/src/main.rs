@@ -43,10 +43,10 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
                 })
                 .collect();
             let dock: Vec<de_ui::chrome::IconEntry> = [
-                "a21s-calculator",
-                "a21s-files",
-                "a21s-browser",
-                "a21s-settings",
+                "rabbiz-calculator",
+                "rabbiz-files",
+                "rabbiz-browser",
+                "rabbiz-settings",
             ]
             .iter()
             .map(|id| de_ui::chrome::IconEntry::new(id, &id[5..]))
@@ -78,9 +78,9 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
         }
         "recents" => {
             let m = de_ui::recents::RecentsModel::new(vec![
-                de_ui::recents::RecentEntry::new("a21s-calculator", "Calculator"),
-                de_ui::recents::RecentEntry::new("a21s-files", "Files"),
-                de_ui::recents::RecentEntry::new("a21s-browser", "Browser"),
+                de_ui::recents::RecentEntry::new("rabbiz-calculator", "Calculator"),
+                de_ui::recents::RecentEntry::new("rabbiz-files", "Files"),
+                de_ui::recents::RecentEntry::new("rabbiz-browser", "Browser"),
             ]);
             Some(de_ui::recents::render(size, s, t, &sim_status(), &m))
         }
@@ -114,21 +114,21 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             let rows = vec![
                 de_ui::search::SearchRow {
                     kind: de_ui::search::SearchKind::App,
-                    id: "a21s-calculator".into(),
+                    id: "rabbiz-calculator".into(),
                     title: "Calculator".into(),
                     subtitle: "Utilities".into(),
                     icon: None,
                 },
                 de_ui::search::SearchRow {
                     kind: de_ui::search::SearchKind::App,
-                    id: "a21s-calendar".into(),
+                    id: "rabbiz-calendar".into(),
                     title: "Calendar".into(),
                     subtitle: "Productivity".into(),
                     icon: None,
                 },
                 de_ui::search::SearchRow {
                     kind: de_ui::search::SearchKind::Action,
-                    id: "a21s-camera".into(),
+                    id: "rabbiz-camera".into(),
                     title: "Take a photo".into(),
                     subtitle: "Camera".into(),
                     icon: None,

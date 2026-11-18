@@ -1,6 +1,0 @@
-#!/bin/sh
-# a21s-settings — launch the a21s-shell Settings app via quickshell (services need
-# Quickshell.Io / Quickshell.Services — plain qml6 cannot load them).
-# Deployed to /usr/local/bin/ by scripts/deploy_shell.sh, which sets +x.
-export QML_IMPORT_PATH=/usr/share/a21s-shell
-exec a21s-qt-render quickshell -p /usr/share/a21s-shell/apps/settings/Settings.qml "$@"

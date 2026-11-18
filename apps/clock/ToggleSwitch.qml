@@ -1,6 +1,6 @@
 import QtQuick
-import A21s.Theme
-import A21s.Services
+import Rabbiz.Theme
+import Rabbiz.Services
 
 // 56 x 32 switch with a 48 px tall hit area. The app cannot rely on QtQuick.Controls' Switch
 // styling (it follows the platform style, which is not pinned on the device), so the alarm

@@ -5,7 +5,7 @@ Description=Hold an open fd on exynos-drm card0 so drm_lastclose never fires
 # open means the last-close path never runs during compositor switches.
 DefaultDependencies=no
 After=systemd-udev-settle.service
-Before=display-manager.service a21s-phone-session.service steamos-session.service
+Before=display-manager.service rabbiz-session.service steamos-session.service
 
 [Service]
 Type=simple

@@ -1,8 +1,8 @@
-// Device integration probe: run with QML_IMPORT_PATH=/usr/share/a21s-shell.
+// Device integration probe: run with QML_IMPORT_PATH=/usr/share/rabbiz-shell.
 // Intentionally persists 64%; use it before a reboot verification.
 import QtQuick
 import Quickshell
-import A21s.Services
+import Rabbiz.Services
 
 Scope {
     property var backlight: Brightness

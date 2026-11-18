@@ -63,7 +63,7 @@ The platform combines **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + Ste
 │   ├── a21s-wifi-bluetooth.md
 │   ├── a21s-wlbt-reverse-engineering.md
 │   └── a21s-power-battery-modem-plan.md
-├── tools/a21s-mirror/     # macOS screen-mirror app (Swift/AppKit, RFB/ZRLE client)
+├── tools/rabbiz-mirror/     # macOS screen-mirror app (Swift/AppKit, RFB/ZRLE client)
 ├── scripts/               # Host probe/helper scripts (legacy Android scripts marked obsolete)
 ├── AGENTS.md              # Ground rules & verified facts for coding agents
 └── ROADMAP.md             # Milestone status and next steps
@@ -89,7 +89,7 @@ See **[docs/BUILD.md](docs/BUILD.md)** for full details (patches applied, `CONFI
 
 ## Mirror the phone on a Mac
 
-A native macOS app (`tools/a21s-mirror/`) shows the phone screen and controls it with the
+A native macOS app (`tools/rabbiz-mirror/`) shows the phone screen and controls it with the
 Mac's mouse/keyboard over VNC (wayvnc inside `labwc` — no ADB, no Android):
 
 ```bash
@@ -98,7 +98,7 @@ Mac's mouse/keyboard over VNC (wayvnc inside `labwc` — no ADB, no Android):
 ./scripts/verify_mirror.sh         # end-to-end RFB check (writes a 720x1600 PNG)
 ```
 
-Details: **[docs/a21s-mirror.md](docs/a21s-mirror.md)**.
+Details: **[docs/rabbiz-mirror.md](docs/rabbiz-mirror.md)**.
 
 ---
 
@@ -110,7 +110,7 @@ Details: **[docs/a21s-mirror.md](docs/a21s-mirror.md)**.
 - **Wi-Fi & Bluetooth Bring-up Guide:** [devices/samsung/a21s/docs/a21s-wifi-bluetooth.md](devices/samsung/a21s/docs/a21s-wifi-bluetooth.md)
 - **Battery, Power & Modem Plan:** [devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md)
 - **Mainline Boot & GPU Results:** [devices/samsung/a21s/docs/a21s-mainline-boot.md](devices/samsung/a21s/docs/a21s-mainline-boot.md), [devices/samsung/a21s/docs/a21s-native-gpu.md](devices/samsung/a21s/docs/a21s-native-gpu.md)
-- **Mac Screen Mirror (mouse/keyboard control):** [docs/a21s-mirror.md](docs/a21s-mirror.md)
+- **Mac Screen Mirror (mouse/keyboard control):** [docs/rabbiz-mirror.md](docs/rabbiz-mirror.md)
 
 ## Project identity & upstream credits
 

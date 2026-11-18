@@ -1,0 +1,720 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_NAME="Galaxy A21s"
+USER_RUNTIME="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+STATE_DIR="${USER_RUNTIME}/a21s-spotify"
+CACHE_DIR="${HOME}/.cache/a21s-spotify"
+SYS_CACHE_DIR="${CACHE_DIR}/sys"
+PID_FILE="${STATE_DIR}/librespot.pid"
+LOG_FILE="${STATE_DIR}/librespot.log"
+MPV_PID_FILE="${STATE_DIR}/mpv.pid"
+MPV_LOG_FILE="${STATE_DIR}/mpv.log"
+MPV_SOCK="${STATE_DIR}/mpv.sock"
+EVENT_FILE="${STATE_DIR}/event.env"
+SELF_BIN="/usr/local/bin/rabbiz-spotify-ctl"
+if [ ! -x "${SELF_BIN}" ]; then
+    SELF_BIN="$(realpath "$0")"
+fi
+
+PRESET_COUNT=8
+
+ensure_dirs() {
+    mkdir -p "${STATE_DIR}" "${CACHE_DIR}" "${SYS_CACHE_DIR}"
+}
+
+sanitize_line() {
+    printf '%s' "${1:-}" | tr '\r\n' '  '
+}
+
+read_event_var() {
+    local want="$1"
+    [ -f "${EVENT_FILE}" ] || return 0
+    while IFS='=' read -r k v; do
+        if [ "${k}" = "${want}" ]; then
+            printf '%s' "${v}"
+            return 0
+        fi
+    done < "${EVENT_FILE}"
+}
+
+write_event_file() {
+    ensure_dirs
+    local ev="$1"
+    local status="$2"
+    local title="$3"
+    local artist="$4"
+    local album="$5"
+    local art="$6"
+    local source="$7"
+    local idx="${8:--1}"
+    local url="${9:-}"
+    local tmp_file="${EVENT_FILE}.tmp.$$"
+
+    {
+        printf 'EVT_EVENT=%s\n' "$(sanitize_line "${ev}")"
+        printf 'EVT_STATUS=%s\n' "$(sanitize_line "${status}")"
+        printf 'EVT_TITLE=%s\n' "$(sanitize_line "${title}")"
+        printf 'EVT_ARTIST=%s\n' "$(sanitize_line "${artist}")"
+        printf 'EVT_ALBUM=%s\n' "$(sanitize_line "${album}")"
+        printf 'EVT_ART=%s\n' "$(sanitize_line "${art}")"
+        printf 'EVT_SOURCE=%s\n' "$(sanitize_line "${source}")"
+        printf 'EVT_INDEX=%s\n' "$(sanitize_line "${idx}")"
+        printf 'EVT_URL=%s\n' "$(sanitize_line "${url}")"
+    } > "${tmp_file}"
+    mv -f "${tmp_file}" "${EVENT_FILE}"
+}
+
+update_event_status() {
+    local status="$1"
+    local ev="${2:-state}"
+    local title artist album art source idx url
+    title="$(read_event_var EVT_TITLE)"
+    artist="$(read_event_var EVT_ARTIST)"
+    album="$(read_event_var EVT_ALBUM)"
+    art="$(read_event_var EVT_ART)"
+    source="$(read_event_var EVT_SOURCE)"
+    idx="$(read_event_var EVT_INDEX)"
+    url="$(read_event_var EVT_URL)"
+    write_event_file "${ev}" "${status}" "${title}" "${artist}" "${album}" "${art}" "${source}" "${idx:-0}" "${url}"
+}
+
+handle_onevent() {
+    ensure_dirs
+    local ev="${PLAYER_EVENT:-unknown}"
+    local existing_title existing_artist existing_album existing_art existing_status
+    existing_status="$(read_event_var EVT_STATUS)"
+    existing_title="$(read_event_var EVT_TITLE)"
+    existing_artist="$(read_event_var EVT_ARTIST)"
+    existing_album="$(read_event_var EVT_ALBUM)"
+    existing_art="$(read_event_var EVT_ART)"
+
+    local new_status="${existing_status:-Idle}"
+    case "${ev}" in
+        playing|started|track_changed|changed)
+            new_status="Playing"
+            ;;
+        paused)
+            new_status="Paused"
+            ;;
+        stopped|session_disconnected)
+            new_status="Stopped"
+            ;;
+    esac
+
+    local new_title="${NAME:-${existing_title}}"
+    local new_artist="${ARTISTS:-${existing_artist}}"
+    local new_album="${ALBUM:-${existing_album}}"
+    local new_art=""
+    if [ -n "${COVERS:-}" ]; then
+        new_art="$(printf '%s' "${COVERS}" | tr '\n' ' ' | awk '{print $1}')"
+    else
+        new_art="${existing_art}"
+    fi
+
+    write_event_file "${ev}" "${new_status}" "${new_title}" "${new_artist}" "${new_album}" "${new_art}" "Spotify Connect" "-1" ""
+}
+
+connect_pid() {
+    if [ -f "${PID_FILE}" ]; then
+        local pid
+        pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+            printf '%s\n' "${pid}"
+            return 0
+        fi
+    fi
+    local matched
+    matched="$(pgrep -u "$(id -u)" -x librespot 2>/dev/null | head -n1 || true)"
+    if [ -n "${matched}" ]; then
+        printf '%s\n' "${matched}"
+        return 0
+    fi
+    return 1
+}
+
+mpv_pid() {
+    if [ -f "${MPV_PID_FILE}" ]; then
+        local pid
+        pid="$(cat "${MPV_PID_FILE}" 2>/dev/null || true)"
+        if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+            printf '%s\n' "${pid}"
+            return 0
+        fi
+    fi
+    local matched
+    matched="$(pgrep -u "$(id -u)" -f "input-ipc-server=${MPV_SOCK}" 2>/dev/null | head -n1 || true)"
+    if [ -n "${matched}" ]; then
+        printf '%s\n' "${matched}"
+        return 0
+    fi
+    return 1
+}
+
+mpv_ipc() {
+    local payload="$1"
+    [ -S "${MPV_SOCK}" ] || return 1
+    python3 - "${MPV_SOCK}" "${payload}" <<'PY' 2>/dev/null
+import json, socket, sys
+sock_path, payload = sys.argv[1], sys.argv[2]
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(0.35)
+s.connect(sock_path)
+s.sendall((payload + "\n").encode("utf-8"))
+buf = b""
+while b"\n" not in buf:
+    chunk = s.recv(4096)
+    if not chunk:
+        break
+    buf += chunk
+s.close()
+if buf:
+    line = buf.split(b"\n", 1)[0].decode("utf-8", "replace")
+    data = json.loads(line)
+    val = data.get("data", "")
+    if val is not None:
+        if isinstance(val, bool):
+            print("true" if val else "false")
+        else:
+            print(val)
+PY
+}
+
+mpv_status_triple() {
+    [ -S "${MPV_SOCK}" ] || return 1
+    python3 - "${MPV_SOCK}" <<'PY' 2>/dev/null
+import json, socket, sys
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.settimeout(0.25)
+s.connect(sys.argv[1])
+def get_prop(name):
+    s.sendall((json.dumps({"command": ["get_property", name]}) + "\n").encode("utf-8"))
+    buf = b""
+    while b"\n" not in buf:
+        chunk = s.recv(4096)
+        if not chunk:
+            break
+        buf += chunk
+    if not buf:
+        return None
+    obj = json.loads(buf.split(b"\n", 1)[0].decode("utf-8", "replace"))
+    return obj.get("data") if obj.get("error") == "success" else None
+paused = bool(get_prop("pause"))
+pos = get_prop("time-pos") or 0.0
+dur = get_prop("duration") or 0.0
+s.close()
+print(f"{'Paused' if paused else 'Playing'}|{pos:.2f}|{dur:.2f}")
+PY
+}
+
+preset_line() {
+    case "$1" in
+        0) printf '0|Studio Sound Check (48kHz)|Galaxy A21s Audio|Built-in Speaker Calibration||/usr/share/rabbiz-shell/assets/audio/loud.wav|Local Audio\n' ;;
+        1) printf '1|Pure Reference Tone 440Hz|Exynos ABOX DSP|Hardware Tone Check||/usr/share/rabbiz-shell/assets/audio/test_tone.wav|Local Audio\n' ;;
+        2) printf '2|Speaker Quick Chime|SMA1303 Class-D|Amp Reference||/usr/share/rabbiz-shell/assets/audio/s16-48k.wav|Local Audio\n' ;;
+        3) printf '3|Groove Salad (Chill / Ambient)|SomaFM Live|24/7 Internet Radio||https://ice1.somafm.com/groovesalad-128-mp3|Live Radio\n' ;;
+        4) printf '4|Lush (Vocals & Downtempo)|SomaFM Live|24/7 Internet Radio||https://ice1.somafm.com/lush-128-mp3|Live Radio\n' ;;
+        5) printf '5|Beat Blender (Deep House)|SomaFM Live|24/7 Internet Radio||https://ice1.somafm.com/beatblender-128-mp3|Live Radio\n' ;;
+        6) printf '6|Indie Pop Rocks!|SomaFM Live|24/7 Internet Radio||https://ice1.somafm.com/indiepop-128-mp3|Live Radio\n' ;;
+        7) printf '7|Electronic / Synthwave|SomaFM DEF CON|24/7 Internet Radio||https://ice1.somafm.com/defcon-128-mp3|Live Radio\n' ;;
+        *) return 1 ;;
+    esac
+}
+
+cmd_list_presets() {
+    local i=0
+    while [ "${i}" -lt "${PRESET_COUNT}" ]; do
+        preset_line "${i}"
+        i=$((i + 1))
+    done
+}
+
+cmd_stop_player() {
+    local pid=""
+    if pid="$(mpv_pid 2>/dev/null)"; then
+        kill "${pid}" 2>/dev/null || true
+        sleep 0.15
+        kill -9 "${pid}" 2>/dev/null || true
+    fi
+    pkill -u "$(id -u)" -f "input-ipc-server=${MPV_SOCK}" 2>/dev/null || true
+    rm -f "${MPV_PID_FILE}" "${MPV_SOCK}"
+    local src
+    src="$(read_event_var EVT_SOURCE)"
+    if [ "${src}" != "Spotify Connect" ] && [ -f "${EVENT_FILE}" ]; then
+        update_event_status "Stopped" "stopped"
+    fi
+    printf 'Stopped audio player\n'
+}
+
+play_url_internal() {
+    local url="$1"
+    local title="$2"
+    local artist="$3"
+    local album="$4"
+    local art_url="$5"
+    local source="${6:-A21s Player}"
+    local idx="${7:--1}"
+
+    ensure_dirs
+    if ! command -v mpv >/dev/null 2>&1; then
+        printf 'mpv binary not found\n' >&2
+        return 1
+    fi
+
+    if [ -x /usr/local/bin/a21s-volume ]; then
+        /usr/local/bin/a21s-volume ensure-amp >/dev/null 2>&1 || true
+    fi
+
+    # Stop previous mpv cleanly before starting the next track
+    local old_pid=""
+    if old_pid="$(mpv_pid 2>/dev/null)"; then
+        kill "${old_pid}" 2>/dev/null || true
+        sleep 0.1
+        kill -9 "${old_pid}" 2>/dev/null || true
+    fi
+    rm -f "${MPV_PID_FILE}" "${MPV_SOCK}"
+
+    nohup mpv \
+        --no-video \
+        --no-terminal \
+        --force-window=no \
+        --ao=pulse,pipewire \
+        --audio-client-name="Galaxy A21s Music" \
+        --cache=yes \
+        --demuxer-max-bytes=2M \
+        --audio-buffer=0.2 \
+        --loop-file=no \
+        --input-ipc-server="${MPV_SOCK}" \
+        "${url}" \
+        >"${MPV_LOG_FILE}" 2>&1 </dev/null &
+    local pid=$!
+    printf '%s\n' "${pid}" > "${MPV_PID_FILE}"
+
+    write_event_file "playing" "Playing" "${title}" "${artist}" "${album}" "${art_url}" "${source}" "${idx}" "${url}"
+
+    sleep 0.25
+    if kill -0 "${pid}" 2>/dev/null; then
+        printf 'Playing: %s - %s (pid=%s)\n' "${title}" "${artist}" "${pid}"
+        return 0
+    fi
+
+    update_event_status "Stopped" "stopped"
+    printf 'mpv exited immediately for %s (see %s)\n' "${url}" "${MPV_LOG_FILE}" >&2
+    return 1
+}
+
+cmd_play_index() {
+    local raw_idx="${1:-0}"
+    local idx
+    idx="$(awk -v v="${raw_idx}" -v n="${PRESET_COUNT}" 'BEGIN { i = int(v); if (i < 0) i = 0; i = i % n; printf "%d", i }')"
+    local line=""
+    line="$(preset_line "${idx}")"
+    local _id title artist album art url src
+    IFS='|' read -r _id title artist album art url src <<< "${line}"
+    play_url_internal "${url}" "${title}" "${artist}" "${album}" "${art}" "${src}" "${idx}"
+}
+
+cmd_play_url() {
+    local url="${1:-}"
+    local title="${2:-Track Preview}"
+    local artist="${3:-Artist}"
+    local album="${4:-Preview}"
+    local art_url="${5:-}"
+    if [ -z "${url}" ]; then
+        printf 'Missing URL for play-url\n' >&2
+        return 2
+    fi
+    play_url_internal "${url}" "${title}" "${artist}" "${album}" "${art_url}" "Music Search" "-1"
+}
+
+cmd_search_json() {
+    local query="${*:-lofi}"
+    python3 - "${query}" <<'PY'
+import json, sys, urllib.parse, urllib.request
+
+query = " ".join(sys.argv[1:]).strip() or "lofi"
+url = "https://itunes.apple.com/search?" + urllib.parse.urlencode({
+    "media": "music",
+    "entity": "song",
+    "limit": "18",
+    "term": query,
+})
+
+req = urllib.request.Request(url, headers={"User-Agent": "A21s-Music/1.0"})
+with urllib.request.urlopen(req, timeout=8.0) as resp:
+    data = json.loads(resp.read().decode("utf-8", "replace"))
+
+def clean(val):
+    return str(val or "").replace("|", " ").replace("\r", " ").replace("\n", " ").strip()
+
+idx = 0
+for item in data.get("results", []):
+    preview = clean(item.get("previewUrl"))
+    if not preview:
+        continue
+    title = clean(item.get("trackName") or item.get("collectionName") or "Untitled")
+    artist = clean(item.get("artistName") or "Unknown Artist")
+    album = clean(item.get("collectionName") or "")
+    art = clean(item.get("artworkUrl100") or item.get("artworkUrl60") or "")
+    if "100x100bb" in art:
+        art = art.replace("100x100bb", "300x300bb")
+    print(f"{idx}|{title}|{artist}|{album}|{art}|{preview}")
+    idx += 1
+PY
+}
+
+cmd_web_app() {
+    local target_url="${1:-https://open.spotify.com}"
+    if command -v angelfish >/dev/null 2>&1; then
+        nohup env \
+            QT_QPA_PLATFORM=wayland \
+            QT_QUICK_BACKEND=software \
+            QT_QUICK_CONTROLS_MOBILE=1 \
+            QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu" \
+            angelfish "${target_url}" >/dev/null 2>&1 </dev/null &
+        printf 'Launched Spotify Web in Angelfish\n'
+        return 0
+    fi
+    if command -v xdg-open >/dev/null 2>&1; then
+        nohup xdg-open "${target_url}" >/dev/null 2>&1 </dev/null &
+        printf 'Launched %s\n' "${target_url}"
+        return 0
+    fi
+    printf 'No web browser (angelfish) installed\n' >&2
+    return 1
+}
+
+cmd_start_connect() {
+    ensure_dirs
+    if connect_pid >/dev/null 2>&1; then
+        printf 'Spotify Connect already running (pid=%s)\n' "$(connect_pid)"
+        return 0
+    fi
+
+    if ! command -v librespot >/dev/null 2>&1; then
+        printf 'librespot binary not found\n' >&2
+        return 1
+    fi
+
+    nohup librespot \
+        --name "${APP_NAME}" \
+        --device-type smartphone \
+        --backend pulseaudio \
+        --bitrate 320 \
+        --enable-volume-normalisation \
+        --cache "${CACHE_DIR}" \
+        --system-cache "${SYS_CACHE_DIR}" \
+        --cache-size-limit 512M \
+        --onevent "${SELF_BIN}" \
+        >"${LOG_FILE}" 2>&1 </dev/null &
+    local pid=$!
+    printf '%s\n' "${pid}" > "${PID_FILE}"
+    sleep 0.2
+    if kill -0 "${pid}" 2>/dev/null; then
+        printf 'Started Spotify Connect receiver "%s" (pid=%s)\n' "${APP_NAME}" "${pid}"
+        return 0
+    fi
+    printf 'librespot failed to stay running; see %s\n' "${LOG_FILE}" >&2
+    return 1
+}
+
+cmd_stop_connect() {
+    local pid=""
+    if pid="$(connect_pid 2>/dev/null)"; then
+        kill "${pid}" 2>/dev/null || true
+        sleep 0.2
+        kill -9 "${pid}" 2>/dev/null || true
+    fi
+    pkill -u "$(id -u)" -x librespot 2>/dev/null || true
+    rm -f "${PID_FILE}"
+    printf 'Stopped Spotify Connect receiver\n'
+}
+
+cmd_restart_connect() {
+    cmd_stop_connect
+    cmd_start_connect
+}
+
+cmd_volume() {
+    local pct="${1:-}"
+    if [ -x /usr/local/bin/a21s-volume ]; then
+        if [ -z "${pct}" ]; then
+            /usr/local/bin/a21s-volume get
+        else
+            /usr/local/bin/a21s-volume set "${pct}"
+        fi
+        return 0
+    fi
+    if [ -z "${pct}" ]; then
+        wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || true
+        return 0
+    fi
+    local clamped
+    clamped="$(awk -v v="${pct}" 'BEGIN { n = int(v + 0.5); if (n < 0) n = 0; if (n > 100) n = 100; printf "%d", n }')"
+    wpctl set-mute @DEFAULT_AUDIO_SINK@ 0 2>/dev/null || true
+    wpctl set-volume @DEFAULT_AUDIO_SINK@ "${clamped}%" 2>/dev/null || \
+        pactl set-sink-volume @DEFAULT_SINK@ "${clamped}%" 2>/dev/null || true
+}
+
+active_mpris_player() {
+    command -v playerctl >/dev/null 2>&1 || return 1
+    local players
+    players="$(playerctl -l 2>/dev/null || true)"
+    [ -n "${players}" ] || return 1
+    local p
+    for p in ${players}; do
+        case "${p}" in
+            *spotify*|*angelfish*|*chromium*)
+                printf '%s\n' "${p}"
+                return 0
+                ;;
+        esac
+    done
+    printf '%s\n' "${players%%$'\n'*}"
+    return 0
+}
+
+cmd_play_pause() {
+    if mpv_pid >/dev/null 2>&1 && [ -S "${MPV_SOCK}" ]; then
+        mpv_ipc '{"command":["cycle","pause"]}' >/dev/null || true
+        local paused=""
+        paused="$(mpv_ipc '{"command":["get_property","pause"]}' || echo "false")"
+        if [ "${paused}" = "true" ]; then
+            update_event_status "Paused" "paused"
+            printf 'Paused\n'
+        else
+            update_event_status "Playing" "playing"
+            printf 'Playing\n'
+        fi
+        return 0
+    fi
+
+    local p=""
+    if p="$(active_mpris_player 2>/dev/null)"; then
+        playerctl -p "${p}" play-pause 2>/dev/null && return 0
+    fi
+    if [ -f "${HOME}/.cache/spotify-player/credentials.json" ] && command -v spotify_player >/dev/null 2>&1; then
+        spotify_player playback play-pause >/dev/null 2>&1 && return 0 || true
+    fi
+
+    local last_url last_title last_artist last_album last_art last_src last_idx
+    last_url="$(read_event_var EVT_URL)"
+    last_idx="$(read_event_var EVT_INDEX)"
+    if [ -n "${last_url}" ]; then
+        last_title="$(read_event_var EVT_TITLE)"
+        last_artist="$(read_event_var EVT_ARTIST)"
+        last_album="$(read_event_var EVT_ALBUM)"
+        last_art="$(read_event_var EVT_ART)"
+        last_src="$(read_event_var EVT_SOURCE)"
+        play_url_internal "${last_url}" "${last_title:-Track}" "${last_artist:-Artist}" "${last_album:-}" "${last_art:-}" "${last_src:-A21s Player}" "${last_idx:--1}"
+        return $?
+    fi
+    cmd_play_index 0
+}
+
+cmd_next() {
+    if mpv_pid >/dev/null 2>&1; then
+        local cur_idx
+        cur_idx="$(read_event_var EVT_INDEX)"
+        case "${cur_idx}" in
+            ''|-*) cur_idx=0 ;;
+            *)     cur_idx=$(( (cur_idx + 1) % PRESET_COUNT )) ;;
+        esac
+        cmd_play_index "${cur_idx}"
+        return 0
+    fi
+
+    local p=""
+    if p="$(active_mpris_player 2>/dev/null)"; then
+        playerctl -p "${p}" next 2>/dev/null && return 0
+    fi
+    if [ -f "${HOME}/.cache/spotify-player/credentials.json" ] && command -v spotify_player >/dev/null 2>&1; then
+        spotify_player playback next >/dev/null 2>&1 && return 0 || true
+    fi
+
+    local src cur_idx
+    src="$(read_event_var EVT_SOURCE)"
+    cur_idx="$(read_event_var EVT_INDEX)"
+    if [ "${src}" != "Spotify Connect" ] && [ -n "${cur_idx}" ]; then
+        case "${cur_idx}" in
+            ''|-*) cur_idx=0 ;;
+            *)     cur_idx=$(( (cur_idx + 1) % PRESET_COUNT )) ;;
+        esac
+        cmd_play_index "${cur_idx}"
+        return 0
+    fi
+    cmd_play_index 0
+}
+
+cmd_prev() {
+    if mpv_pid >/dev/null 2>&1; then
+        local cur_idx
+        cur_idx="$(read_event_var EVT_INDEX)"
+        case "${cur_idx}" in
+            ''|-*) cur_idx=0 ;;
+            *)     cur_idx=$(( (cur_idx - 1 + PRESET_COUNT) % PRESET_COUNT )) ;;
+        esac
+        cmd_play_index "${cur_idx}"
+        return 0
+    fi
+
+    local p=""
+    if p="$(active_mpris_player 2>/dev/null)"; then
+        playerctl -p "${p}" previous 2>/dev/null && return 0
+    fi
+    if [ -f "${HOME}/.cache/spotify-player/credentials.json" ] && command -v spotify_player >/dev/null 2>&1; then
+        spotify_player playback previous >/dev/null 2>&1 && return 0 || true
+    fi
+
+    cmd_play_index $((PRESET_COUNT - 1))
+}
+
+cmd_tui() {
+    nohup env \
+        QT_QPA_PLATFORM=wayland \
+        QT_QUICK_BACKEND=software \
+        QT_QUICK_CONTROLS_MOBILE=1 \
+        qmlkonsole -e spotify_player >/dev/null 2>&1 </dev/null &
+}
+
+cmd_status() {
+    local connect_running=0
+    local connect_pid_val=""
+    if connect_pid_val="$(connect_pid 2>/dev/null)"; then
+        connect_running=1
+    fi
+
+    local player_name="" player_status="Idle" title="" artist="" album="" art_url=""
+    local pos_sec="0" dur_sec="0" cur_idx="-1" cur_url=""
+
+    if mpv_pid >/dev/null 2>&1; then
+        local mpv_triple=""
+        mpv_triple="$(mpv_status_triple || true)"
+        if [ -n "${mpv_triple}" ]; then
+            IFS='|' read -r player_status pos_sec dur_sec <<< "${mpv_triple}"
+        else
+            player_status="$(read_event_var EVT_STATUS)"
+            player_status="${player_status:-Playing}"
+        fi
+        player_name="$(read_event_var EVT_SOURCE)"
+        player_name="${player_name:-A21s Player}"
+        title="$(read_event_var EVT_TITLE)"
+        artist="$(read_event_var EVT_ARTIST)"
+        album="$(read_event_var EVT_ALBUM)"
+        art_url="$(read_event_var EVT_ART)"
+        cur_idx="$(read_event_var EVT_INDEX)"
+        cur_url="$(read_event_var EVT_URL)"
+    elif player_name="$(active_mpris_player 2>/dev/null)"; then
+        player_status="$(playerctl -p "${player_name}" status 2>/dev/null || printf 'Idle')"
+        title="$(playerctl -p "${player_name}" metadata title 2>/dev/null || true)"
+        artist="$(playerctl -p "${player_name}" metadata artist 2>/dev/null || true)"
+        album="$(playerctl -p "${player_name}" metadata album 2>/dev/null || true)"
+        art_url="$(playerctl -p "${player_name}" metadata mpris:artUrl 2>/dev/null || true)"
+    fi
+
+    if [ -z "${title}" ] && [ -f "${EVENT_FILE}" ]; then
+        local evt_status evt_title evt_artist evt_album evt_art evt_src evt_idx evt_url
+        evt_status="$(read_event_var EVT_STATUS)"
+        evt_title="$(read_event_var EVT_TITLE)"
+        evt_artist="$(read_event_var EVT_ARTIST)"
+        evt_album="$(read_event_var EVT_ALBUM)"
+        evt_art="$(read_event_var EVT_ART)"
+        evt_src="$(read_event_var EVT_SOURCE)"
+        evt_idx="$(read_event_var EVT_INDEX)"
+        evt_url="$(read_event_var EVT_URL)"
+
+        # If a local/mpv track finished naturally, clear stale Playing status
+        if [ "${evt_src}" != "Spotify Connect" ] && [ "${evt_status}" = "Playing" ] && ! mpv_pid >/dev/null 2>&1; then
+            evt_status="Stopped"
+            update_event_status "Stopped" "ended"
+        fi
+
+        if [ -n "${evt_title}" ]; then
+            if [ "${evt_src}" != "Spotify Connect" ] || [ "${connect_running}" -eq 1 ]; then
+                player_status="${evt_status:-Stopped}"
+                player_name="${evt_src}"
+                title="${evt_title}"
+                artist="${evt_artist}"
+                album="${evt_album}"
+                art_url="${evt_art}"
+                cur_idx="${evt_idx:--1}"
+                cur_url="${evt_url}"
+            fi
+        fi
+    fi
+
+    local vol_pct=50
+    local muted=0
+    local wp_out=""
+    wp_out="$(wpctl get-volume @DEFAULT_AUDIO_SINK@ 2>/dev/null || true)"
+    if [ -n "${wp_out}" ]; then
+        vol_pct="$(printf '%s' "${wp_out}" | awk '{for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+(\.[0-9]+)?$/) { printf "%d", ($i * 100) + 0.5; exit }}')"
+        if printf '%s' "${wp_out}" | grep -q 'MUTED'; then
+            muted=1
+        fi
+    fi
+
+    local sink=""
+    sink="$(pactl get-default-sink 2>/dev/null || true)"
+
+    local ip_addr=""
+    ip_addr="$(ip -4 -o addr show dev wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1 || true)"
+    if [ -z "${ip_addr}" ]; then
+        ip_addr="$(ip -4 -o addr show scope global 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -n1 || true)"
+    fi
+
+    local sp_auth=0
+    if [ -f "${HOME}/.cache/spotify-player/credentials.json" ] || [ -f "${SYS_CACHE_DIR}/credentials.json" ]; then
+        sp_auth=1
+    fi
+
+    printf 'CONNECT_NAME=%s\n' "$(sanitize_line "${APP_NAME}")"
+    printf 'CONNECT_RUNNING=%s\n' "${connect_running}"
+    printf 'CONNECT_PID=%s\n' "$(sanitize_line "${connect_pid_val}")"
+    printf 'PLAYER_SOURCE=%s\n' "$(sanitize_line "${player_name}")"
+    printf 'PLAYER_STATUS=%s\n' "$(sanitize_line "${player_status}")"
+    printf 'TITLE=%s\n' "$(sanitize_line "${title}")"
+    printf 'ARTIST=%s\n' "$(sanitize_line "${artist}")"
+    printf 'ALBUM=%s\n' "$(sanitize_line "${album}")"
+    printf 'ART_URL=%s\n' "$(sanitize_line "${art_url}")"
+    printf 'VOLUME=%s\n' "${vol_pct:-50}"
+    printf 'MUTED=%s\n' "${muted}"
+    printf 'SINK=%s\n' "$(sanitize_line "${sink}")"
+    printf 'IP=%s\n' "$(sanitize_line "${ip_addr}")"
+    printf 'AUTH_READY=%s\n' "${sp_auth}"
+    printf 'POS_SEC=%s\n' "${pos_sec}"
+    printf 'DUR_SEC=%s\n' "${dur_sec}"
+    printf 'INDEX=%s\n' "${cur_idx:--1}"
+    printf 'URL=%s\n' "$(sanitize_line "${cur_url}")"
+}
+
+# librespot invokes --onevent PROGRAM with no positional arguments and PLAYER_EVENT in env
+if [ $# -eq 0 ] && [ -n "${PLAYER_EVENT:-}" ]; then
+    handle_onevent
+    exit 0
+fi
+
+cmd="${1:-status}"
+shift || true
+
+case "${cmd}" in
+    start-connect)   cmd_start_connect ;;
+    stop-connect)    cmd_stop_connect ;;
+    restart-connect) cmd_restart_connect ;;
+    play-index)      cmd_play_index "${1:-0}" ;;
+    play-url)        cmd_play_url "${1:-}" "${2:-}" "${3:-}" "${4:-}" "${5:-}" ;;
+    play-pause)      cmd_play_pause ;;
+    next)            cmd_next ;;
+    prev|previous)   cmd_prev ;;
+    stop-player)     cmd_stop_player ;;
+    list-presets)    cmd_list_presets ;;
+    search-json)     cmd_search_json "$@" ;;
+    web-app)         cmd_web_app "${1:-https://open.spotify.com}" ;;
+    volume)          cmd_volume "${1:-}" ;;
+    tui|auth)        cmd_tui ;;
+    status)          cmd_status ;;
+    *)
+        printf 'Usage: %s {start-connect|stop-connect|restart-connect|play-index <n>|play-url <url> [title] [artist] [album] [art]|play-pause|next|prev|stop-player|list-presets|search-json <q>|web-app [url]|volume <0-100>|tui|status}\n' "$0" >&2
+        exit 2
+        ;;
+esac

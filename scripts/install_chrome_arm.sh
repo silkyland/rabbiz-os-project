@@ -10,7 +10,7 @@
 #
 # Result: /opt/google/chrome + /usr/bin/google-chrome-stable + the deb's own
 # google-chrome.desktop; session integration comes from rootfs-overlay's
-# a21s-browser wrapper/.desktop (--disable-gpu is mandatory on exynos-drm).
+# rabbiz-browser wrapper/.desktop (--disable-gpu is mandatory on exynos-drm).
 
 set -euo pipefail
 TARGET="${1:-root@172.16.42.1}"
@@ -28,4 +28,4 @@ ssh "${TARGET}" 'set -e
   rm -rf /tmp/chrome-extract /tmp/chrome-arm64.deb /etc/cron.daily/google-chrome 2>/dev/null || true
   echo "chrome version: $(/opt/google/chrome/chrome --version 2>/dev/null || echo unknown)"
 '
-echo ">> Done. Launch via 'a21s-browser' or the 'Browser' icon."
+echo ">> Done. Launch via 'rabbiz-browser' or the 'Browser' icon."

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offscreen preview of the shade's QML pages (no device, no compositor).
 
-Renders `A21s.Panels.QuickSettings` and `A21s.Panels.NotificationCenter` with
+Renders `Rabbiz.Panels.QuickSettings` and `Rabbiz.Panels.NotificationCenter` with
 the real QML at the phone's 720x1600 frame, so layout/theme work can be checked
 on a host. `Quickshell` is a Wayland layer-shell + D-Bus library, so the handful
 of types these pages touch (Process, FileView, SystemClock, the notification
@@ -59,10 +59,10 @@ STUBS = {
 }
 
 PREVIEW_QML = r"""import QtQuick
-import A21s.Theme
-import A21s.Services
-import A21s.Panels
-import A21s.Widgets
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Panels
+import Rabbiz.Widgets
 
 // Offscreen preview host: reproduces the shade's content frame (720x1600, the
 // status bar strip and the 20 px gutter) so Panels can be rendered without a

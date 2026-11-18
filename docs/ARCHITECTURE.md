@@ -59,7 +59,7 @@ Samsung S-Boot (BL1/BL2, locked by e-fuse)
 Dependency direction is enforced by `scripts/check_shell_seams.mjs` (run `scripts/check.sh`).
 `shell.qml` is wiring only and may import anything; nothing imports it.
 
-| Module (`shell/A21s/<X>`) | Owns | May import | Status |
+| Module (`shell/Rabbiz/<X>`) | Owns | May import | Status |
 |---|---|---|---|
 | `Theme` | design tokens, derived from the appearance source of truth | — | exists |
 | `Services` | singletons over system backends (NM, BlueZ, UPower, audio, telephony, Appearance writer); no UI | `Theme` | exists |
@@ -81,7 +81,7 @@ user data, not a hardcoded list.
 | Layer | File | Responsibility |
 |---|---|---|
 | Model rules (no Qt) | `Desktop/IconLayout.js` | membership, order (`move`/`transfer`/`add`/`remove`), per-icon overrides, JSON parse/serialize. Node-tested by `shell/tests/iconlayout.test.mjs`. Dock caps at 5 (720 px panel). |
-| Persistence + resolution | `Desktop/DesktopLayout.qml` (singleton) | `~/.config/a21s-shell/desktop.json` (atomic write + file watcher), maps ids to `DesktopEntries` (installed entry, else seed placeholder), migrates saved ids to a newly installed alias. |
+| Persistence + resolution | `Desktop/DesktopLayout.qml` (singleton) | `~/.config/rabbiz-shell/desktop.json` (atomic write + file watcher), maps ids to `DesktopEntries` (installed entry, else seed placeholder), migrates saved ids to a newly installed alias. |
 | Surfaces | `Desktop/DesktopView.qml` (the `~/Desktop` PanelWindow) | grid + dock from `DesktopLayout.desktopIds`/`dockIds`, drag target math, drop hole/caret, `~/Desktop` location chip, `desktop` IPC hooks. |
 | Interaction + visuals | `Desktop/AppIcon.qml`, `DragGhost.qml`, `AddTile.qml`, `IconContextMenu.qml`, `IconEditor.qml`, `AppPicker.qml` | tap = launch, long-press (420 ms) or right-click = context menu, hold-and-drag = move (ghost follows the finger, source slot becomes a hole), tap-outside dismisses. |
 
@@ -124,12 +124,12 @@ Invariants:
 
 ### 8. Steam is an ordinary desktop app, not a session — **nested Weston; Big Picture verified, game frames open** (2026-11-16)
 - **Decision (D4):** Steam launches like any app: `a21s-steam` runs `weston --backend=wayland --renderer=pixman --fullscreen --shell=kiosk --xwayland` as ONE labwc toplevel and the native ARM64 Steam client inside it (`dbus-run-session`, `-gamepadui`, CEF GPU off).
-- **Why not the obvious ways (device evidence):** Steam on labwc's XWayland dies (`DRM_IOCTL_MODE_CREATE_DUMB failed: Permission denied`); `gamescope` nested: `vulkan: failed to find physical device`; the old `steam` shim ran `a21s-session-switch steamos`, which stops the phone session.
+- **Why not the obvious ways (device evidence):** Steam on labwc's XWayland dies (`DRM_IOCTL_MODE_CREATE_DUMB failed: Permission denied`); `gamescope` nested: `vulkan: failed to find physical device`; the old `steam` shim ran `rabbiz-session-switch steamos`, which stops the phone session.
 - **Verified 2026-11-16 (second session, launched via `ipc call launcher launch steam`, captured with grim):** Big Picture home renders, logged in, with online content (What's New / Friends / Trending) after ~2 min; a `a21s-touch` tap on a game tile opens that game's page, so touch reaches the nested compositor; `steam://rungameid/433950` logs "Adding process for gameID 433950", creates the Proton prefix and runs FEX + `winedevice.exe`; `steam -shutdown` removes Steam and Weston in <=14 s; RAM 82 MB free / 547 MB available at Big Picture, 100-120 MB free during the game attempt; the starting-window morph releases as before.
 - **Still broken / not verified:** the game itself renders black inside the nested Weston (FEX on one core at ~100 %, no frames after 2 min), no gamepad input test, and a FEX server process is orphaned after Steam exits. A second `a21s-steam <url>` can start another Weston before it notices Steam is already running.
-- **Gotchas:** `SDL_VIDEODRIVER=x11` is mandatory — the session exports `wayland` (a21s-phone-session) and Steam's CEF/SDL then dies with `SDL_Init failed: wayland not available`, black-screening Big Picture; fixed `--width/--height` renders black inside labwc, use `--fullscreen` only; Weston publishes no `app_id` (title "Weston Compositor - wayland-fullscreen"); never run `steamos-session` while the phone session owns the seat (killing it left labwc with no usable display until reboot); Steam needs working Wi-Fi — without it the client sits at "Logging in..." forever and the webhelper respawn-loops.
+- **Gotchas:** `SDL_VIDEODRIVER=x11` is mandatory — the session exports `wayland` (rabbiz-labwc-session) and Steam's CEF/SDL then dies with `SDL_Init failed: wayland not available`, black-screening Big Picture; fixed `--width/--height` renders black inside labwc, use `--fullscreen` only; Weston publishes no `app_id` (title "Weston Compositor - wayland-fullscreen"); never run `steamos-session` while the phone session owns the seat (killing it left labwc with no usable display until reboot); Steam needs working Wi-Fi — without it the client sits at "Logging in..." forever and the webhelper respawn-loops.
 - **Open finding:** exporting `LD_LIBRARY_PATH` before `dbus-run-session` makes dbus-activated services inherit Steam's bundled libcurl, so `xdg-desktop-portal-kde` exits 127 (`undefined symbol: nghttp2_option_set_no_rfc9113_leading_and_trailing_ws_validation`). A scoped-LD variant (`env LD_LIBRARY_PATH=...` after `--`) removed the portal crash but the client bootstrap then failed to find its runtime service; not resolved.
-- `steamos-session.service` / `a21s-session-switch` stay installed as a recovery path only.
+- `steamos-session.service` / `rabbiz-session-switch` stay installed as a recovery path only.
 
 ### 7. One shell, window policy per form factor (2026-11-16)
 - **Decision:** `handset` maximizes, `tablet`/`desktop` float (only `handset` built now; Pad 7 Pro deferred); the shell and apps are identical across modes.
@@ -137,18 +137,18 @@ Invariants:
 
 ### 10. Base apps are first-party QML again (2026-11-16)
 - **Decision (owner):** the six base apps — photos, music, notes, clock, calculator, terminal — are written in-house under
-  `apps/<name>/` and share `apps/A21sKit` (one tone, Theme tokens only), instead of KDE/Maui apps pulled from Arch.
+  `apps/<name>/` and share `apps/RabbizKit` (one tone, Theme tokens only), instead of KDE/Maui apps pulled from Arch.
 - **Why:** reduce third-party dependence and get one consistent, phone-first UI (the KDE apps each bring their own
   desktop assumptions); this narrows D2 rather than reversing it — Settings/Dialer/SMS were already ours, and
   GTK/Chromium/Steam stay third-party.
-- **How:** each app is one `ApplicationWindow` QML file launched by `quickshell -p /usr/share/a21s-apps/<app>/<App>.qml`
-  through an `a21s-<app>` wrapper; pure logic lives in a plain `.js` with a node test (e.g. `apps/calculator/Calc.js`);
+- **How:** each app is one `ApplicationWindow` QML file launched by `quickshell -p /usr/share/rabbiz-apps/<app>/<App>.qml`
+  through an `rabbiz-<app>` wrapper; pure logic lives in a plain `.js` with a node test (e.g. `apps/calculator/Calc.js`);
   deployed by `scripts/deploy_shell.sh`. Tone rules and per-app MVP live in [BASE-APPS.md](BASE-APPS.md).
 - **Rejected:** patching/upstreaming the KDE apps (not our code, slow), a single monolithic "apps" QML file (no ownership).
 
 ### 9. Polkit: the single phone user may control NetworkManager without auth (2026-11-16)
-- **Decision:** `/etc/polkit-1/rules.d/51-a21s-shell.rules` returns `YES` for subject `gamer` on every
-  `org.freedesktop.NetworkManager.*` action; nothing else is relaxed (seat handover stays in `50-a21s-session.rules`,
+- **Decision:** `/etc/polkit-1/rules.d/51-rabbiz-shell.rules` returns `YES` for subject `gamer` on every
+  `org.freedesktop.NetworkManager.*` action; nothing else is relaxed (seat handover stays in `50-rabbiz-session.rules`,
   systemd/package actions still need auth).
 - **Why:** labwc has no polkit authentication agent, so NM answered "Insufficient privileges" for `nmcli device wifi
   connect` and `nmcli connection add` (verified on the device); the Wi-Fi panel could not change anything. `gamer` is

@@ -1,6 +1,6 @@
 import QtQuick
-import A21s.Theme
-import A21s.Widgets
+import Rabbiz.Theme
+import Rabbiz.Widgets
 
 // Round icon action for the photo viewer. 60 px so the thumb target is well above the
 // 48 px floor even with the glyph centred; the kit's IconButton is 44 px for headers.

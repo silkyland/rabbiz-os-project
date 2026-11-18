@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 import unittest
 
-LAUNCHER = Path(__file__).resolve().parents[3] / "rootfs-overlay/usr/local/bin/a21s-shell"
+LAUNCHER = Path(__file__).resolve().parents[3] / "rootfs-overlay/usr/local/bin/rabbiz-shell"
 
 
 class ShellLauncherTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class ShellLauncherTests(unittest.TestCase):
             env = dict(os.environ, PATH=directory + os.pathsep + os.defpath,
                        QT_QUICK_BACKEND="rhi", LD_PRELOAD="", DRI_PRIME="gpu",
                        __EGL_VENDOR_LIBRARY_FILENAMES="private.json", QSG_RHI_BACKEND="opengl",
-                       A21S_SHELL_CMA_FLOOR_KB=floor_kb)
+                       RABBIZ_SHELL_CMA_FLOOR_KB=floor_kb)
             return subprocess.run(["/bin/bash", str(LAUNCHER)], env=env,
                                   capture_output=True, text=True)
 

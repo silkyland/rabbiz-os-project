@@ -6,12 +6,12 @@
 #
 # Installs:
 #   /usr/local/bin/rabbiz-de            (binary)
-#   /usr/local/bin/a21s-session         (mode selector wrapper)
-#   /etc/systemd/system/a21s-phone-session.service  (ExecStart→a21s-session)
+#   /usr/local/bin/rabbiz-session         (mode selector wrapper)
+#   /etc/systemd/system/rabbiz-session.service  (ExecStart→rabbiz-session)
 #   /usr/local/bin/a21s-power-key       (rabbiz-de detection)
 # then daemon-reloads and verifies the unit's ExecStart. The DE stays
 # opt-in: no /etc/rabbiz-de/enabled marker is written here — enable it
-# with `a21s-session --de`, a user mode file, or the root marker.
+# with `rabbiz-session --de`, a user mode file, or the root marker.
 # Runs a post-copy `probe --json` sanity check under the device lock and
 # restores the session state.
 set -euo pipefail
@@ -21,35 +21,49 @@ BIN="${2:-$REPO_ROOT/tools/rabbiz-de/target/release/rabbiz-de}"
 OVL="$REPO_ROOT/rootfs-overlay"
 
 [[ -f "$BIN" ]] || { echo "no binary at $BIN — build first (de_build.sh --release)" >&2; exit 2; }
-for f in "$OVL/usr/local/bin/a21s-session" \
+for f in "$OVL/usr/local/bin/rabbiz-session" \
          "$OVL/usr/local/bin/a21s-power-key" \
-         "$OVL/etc/systemd/system/a21s-phone-session.service"; do
+         "$OVL/etc/systemd/system/rabbiz-session.service"; do
     [[ -f "$f" ]] || { echo "missing $f" >&2; exit 2; }
 done
 
 scp -q "$BIN" "$HOST:/tmp/rabbiz-de.new"
-scp -q "$OVL/usr/local/bin/a21s-session" "$HOST:/tmp/a21s-session.new"
+scp -q "$OVL/usr/local/bin/rabbiz-session" "$HOST:/tmp/rabbiz-session.new"
 scp -q "$OVL/usr/local/bin/a21s-power-key" "$HOST:/tmp/a21s-power-key.new"
-scp -q "$OVL/etc/systemd/system/a21s-phone-session.service" \
-    "$HOST:/tmp/a21s-phone-session.service.new"
+scp -q "$OVL/etc/systemd/system/rabbiz-session.service" \
+    "$HOST:/tmp/rabbiz-session.service.new"
 
 REMOTE_SCRIPT=$(mktemp)
 trap 'rm -f "$REMOTE_SCRIPT"' EXIT
 cat > "$REMOTE_SCRIPT" <<'REMOTE'
 set -e
 install -m 0755 -o root -g root /tmp/rabbiz-de.new /usr/local/bin/rabbiz-de
-install -m 0755 -o root -g root /tmp/a21s-session.new /usr/local/bin/a21s-session
+install -m 0755 -o root -g root /tmp/rabbiz-session.new /usr/local/bin/rabbiz-session
 install -m 0755 -o root -g root /tmp/a21s-power-key.new /usr/local/bin/a21s-power-key
-install -m 0644 -o root -g root /tmp/a21s-phone-session.service.new \
-  /etc/systemd/system/a21s-phone-session.service
-rm -f /tmp/rabbiz-de.new /tmp/a21s-session.new /tmp/a21s-power-key.new \
-      /tmp/a21s-phone-session.service.new
+install -m 0644 -o root -g root /tmp/rabbiz-session.service.new \
+  /etc/systemd/system/rabbiz-session.service
+rm -f /tmp/rabbiz-de.new /tmp/rabbiz-session.new /tmp/a21s-power-key.new \
+      /tmp/rabbiz-session.service.new
 
 systemctl daemon-reload
 
+# Rename migration (a21s-* → rabbiz-*, 2026-11): hand over enablement and
+# drop the superseded unit file — the new unit's [Install] Alias keeps the
+# old name resolving for polkit and stray scripts.
+if systemctl is-enabled a21s-phone-session.service >/dev/null 2>&1; then
+  was_enabled=1
+  systemctl disable a21s-phone-session.service
+fi
+rm -f /etc/systemd/system/a21s-phone-session.service
+if [ "${was_enabled:-0}" = "1" ]; then
+  systemctl enable rabbiz-session.service
+fi
+# Stale launchers — superseded by rabbiz-session / rabbiz-labwc-session.
+rm -f /usr/local/bin/a21s-session /usr/local/bin/a21s-phone-session
+
 # Verify the unit really starts the selector wrapper.
-es=$(systemctl cat a21s-phone-session.service | awk '/^ExecStart=/{print $1}')
-[ "$es" = "ExecStart=/usr/local/bin/a21s-session" ] || {
+es=$(systemctl cat rabbiz-session.service | awk '/^ExecStart=/{print $1}')
+[ "$es" = "ExecStart=/usr/local/bin/rabbiz-session" ] || {
   echo "ExecStart mismatch: $es" >&2; exit 1; }
 
 # Probe sanity check — skipped when DE_DEPLOY_SKIP_PROBE=1 (expanded on the
@@ -57,7 +71,7 @@ es=$(systemctl cat a21s-phone-session.service | awk '/^ExecStart=/{print $1}')
 # committing can hit the Exynos cold-enable DSI wedge (devices/samsung/a21s/docs/HANDOFF.md §0);
 # probe is proven separately by de_probe.sh.
 if [ "__SKIP_PROBE__" != "1" ]; then
-  unit=a21s-phone-session.service
+  unit=rabbiz-session.service
   was_active=$(systemctl is-active "$unit" || true)
   [ "$was_active" = "active" ] && systemctl stop "$unit"
   trap '[ "$was_active" = "active" ] && systemctl start "$unit" || true' EXIT
@@ -72,4 +86,4 @@ sed -i.bak "s/__SKIP_PROBE__/${DE_DEPLOY_SKIP_PROBE:-0}/g" "$REMOTE_SCRIPT"
 rm -f "$REMOTE_SCRIPT.bak"
 "$REPO_ROOT/scripts/device_session.sh" "$HOST" < "$REMOTE_SCRIPT"
 
-echo "de_deploy: installed; DE remains opt-in (a21s-session default = labwc)"
+echo "de_deploy: installed; DE remains opt-in (rabbiz-session default = labwc)"

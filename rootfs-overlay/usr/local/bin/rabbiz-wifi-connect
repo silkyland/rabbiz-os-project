@@ -9,7 +9,7 @@
 # A keyfile would be cleaner but NetworkManager's `connection load` is root-only
 # regardless of polkit (verified: "failed to load connection: access denied").
 #
-# Requires rootfs-overlay/etc/polkit-1/rules.d/51-a21s-shell.rules: without it nmcli
+# Requires rootfs-overlay/etc/polkit-1/rules.d/51-rabbiz-shell.rules: without it nmcli
 # answers "Insufficient privileges" because labwc has no polkit auth agent.
 set -u
 

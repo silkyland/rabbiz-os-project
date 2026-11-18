@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Music
+GenericName=Music player
+Comment=In-house A21s Music
+Exec=rabbiz-music
+Icon=rabbiz-music
+Categories=Utility;
+Terminal=false
+StartupNotify=true

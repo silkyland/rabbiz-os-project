@@ -123,7 +123,7 @@ findings, including unfinished work. Included in the snapshot:
   preferred-app/deduplication policy with its host tests.
 - Native Rabbiz Mirror Swift sources, icons, build/setup/verification scripts
   and the existing mirror findings. `swift build -c release --package-path
-  tools/a21s-mirror` passed in this session; no new hardware mirror test was
+  tools/rabbiz-mirror` passed in this session; no new hardware mirror test was
   run while the owner was travelling.
 - `docs/PLAN-keyboard.md`: retained as **plan only**, with its verified,
   unverified and decision tags. `tools/rabbiz-osk/spikes/s2-render/Cargo.toml`

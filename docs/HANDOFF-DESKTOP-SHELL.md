@@ -16,11 +16,11 @@
 | M7.4 base apps are real Linux apps; QML Calc/Clock/Notes/Gallery/Files/Spotify deleted | **done, verified** |
 | OSK language toggle + full Thai (owner request 2026-11-16) | **layout shipped; Latin verified, Thai view not yet** — squeekboard has no long-press support and no cycle action (`show_prefs`/`set_view`/`erase`/`lock_view` only, and upstream has no toggle feature), so EN/TH now live as views of ONE custom layout at `~/.local/share/squeekboard/keyboards/us.yaml`: the globe slot is `TH` in Latin views and `EN` in Thai views (`set_view`, instant, no popover), and a small keyboard icon still opens the layout popover. squeekboard confirmed `Loaded layout Path: .../keyboards/us.yaml`; the visual/tap pass could not finish because the device rebooted twice and the shell segfaulted while CMA was down to 23 MiB (dmabuf probing in the crash log — the GPU/CMA task's F2 leak, not this YAML). Re-check when the device is free: open a text field, confirm TH/EN keys, tap TH, type a Thai character. The Thai views were then expanded to a Gboard-like full set: 11 keys per row, all Thai letters + tone marks, a `ไทย`-labelled space bar, comma, an emoji page (static palette; squeekboard has **no clipboard support** — only a KEY_PASTE constant, no paste action), and TH/EN/emoji/prefs keys in every bottom row. The Latin view was verified on screen (123 / ☺ / TH / globe / space / . / return); the Thai page could not be captured because another task kept taking the device (a Calculator window appeared between two of our taps) |
 | OSK theme (owner report 2026-11-16) | **fixed** — squeekboard is GTK3 and ignored `gsettings color-scheme`, so it stayed light in dark mode; `rabbiz-appearance` now writes `~/.config/gtk-3.0/settings.ini` (`gtk-application-prefer-dark-theme`) and restarts squeekboard (it reads GTK settings only at start). Verified with screenshots: light theme → light keyboard, dark theme → dark keyboard. Restarting the OSK takes ~0.5 s, which is why it only happens when the value actually changes |
-| Browser cleanup (owner request 2026-11-16) | **done** — `angelfish` (the non-Chrome browser) removed with `pacman -Rns` (it also took `qt6-websockets` + `futuresql`); `qt6-webengine` stayed because KDE PIM still needs it (remove Merkuro Mail to free another ~270 MB). `a21s-browser` = Google Chrome and remains the only browser; it used to open a KDE-wallet password dialog on start, now `--password-store=basic` is passed and Chrome opens its New Tab page directly (verified). The drawer still lists "Browser" (our entry) and "Google Chrome" (package entry) — hide one later if it bothers |
-| Launcher-IPC crash 2026-11-16 ~15:03 | **not the base apps** — `ipc call launcher launch a21s-clock` produced a Quickshell **segfault** (crash `064lx4lot`, signal 11) whose qslog ends in dmabuf format probing, and the device was then **cleanly rebooted** by another task's GPU/CMA testing (systemd "Reached target System Reboot", not a panic). The five apps render fine started through their wrappers with `QT_QUICK_BACKEND=software`. Re-verify the launcher path once the GPU task is settled; do not attribute this to the apps without evidence |
-| Base apps in-house (owner decision 2026-11-16) | **all six render + interaction spot checks pass; KDE originals removed** — `apps/{calculator,clock,notes,photos,music,terminal}` share `A21sKit` ([BASE-APPS.md](BASE-APPS.md)); each launched on the device under the device lock and screenshotted in the shell tone (no QML errors in their logs). Wrappers + `A21s <App>` desktop entries deployed. Verified : photos viewer+swipe, music playback, terminal command via PTY, notes autosave JSON, clock alarm persisted; `pacman -Rns` removed kalk/kclock/marknote/elisa/qmlkonsole, then koko + maui-pix (the entries the home photo icon resolved to). Tapping the home Gallery icon now launches the in-house Photos (process verified). The seed lists in `Desktop/IconLayout.js` now prefer `a21s-photos`/`a21s-terminal` (the `a21s-gallery.desktop`/`org.kde.qmlkonsole.desktop` shims only cover the fallbacks). Still unverified: alarm actually ringing, note Thai typing/list round-trip, calculator tap-through. See BASE-APPS.md §5 |
+| Browser cleanup (owner request 2026-11-16) | **done** — `angelfish` (the non-Chrome browser) removed with `pacman -Rns` (it also took `qt6-websockets` + `futuresql`); `qt6-webengine` stayed because KDE PIM still needs it (remove Merkuro Mail to free another ~270 MB). `rabbiz-browser` = Google Chrome and remains the only browser; it used to open a KDE-wallet password dialog on start, now `--password-store=basic` is passed and Chrome opens its New Tab page directly (verified). The drawer still lists "Browser" (our entry) and "Google Chrome" (package entry) — hide one later if it bothers |
+| Launcher-IPC crash 2026-11-16 ~15:03 | **not the base apps** — `ipc call launcher launch rabbiz-clock` produced a Quickshell **segfault** (crash `064lx4lot`, signal 11) whose qslog ends in dmabuf format probing, and the device was then **cleanly rebooted** by another task's GPU/CMA testing (systemd "Reached target System Reboot", not a panic). The five apps render fine started through their wrappers with `QT_QUICK_BACKEND=software`. Re-verify the launcher path once the GPU task is settled; do not attribute this to the apps without evidence |
+| Base apps in-house (owner decision 2026-11-16) | **all six render + interaction spot checks pass; KDE originals removed** — `apps/{calculator,clock,notes,photos,music,terminal}` share `RabbizKit` ([BASE-APPS.md](BASE-APPS.md)); each launched on the device under the device lock and screenshotted in the shell tone (no QML errors in their logs). Wrappers + `A21s <App>` desktop entries deployed. Verified : photos viewer+swipe, music playback, terminal command via PTY, notes autosave JSON, clock alarm persisted; `pacman -Rns` removed kalk/kclock/marknote/elisa/qmlkonsole, then koko + maui-pix (the entries the home photo icon resolved to). Tapping the home Gallery icon now launches the in-house Photos (process verified). The seed lists in `Desktop/IconLayout.js` now prefer `rabbiz-photos`/`rabbiz-terminal` (the `rabbiz-gallery.desktop`/`org.kde.qmlkonsole.desktop` shims only cover the fallbacks). Still unverified: alarm actually ringing, note Thai typing/list round-trip, calculator tap-through. See BASE-APPS.md §5 |
 | Status bar battery (owner request 2026-11-16) | **UI ready, no sensor** — bar shows the percentage + charging icon as soon as UPower reports a present battery; today `/sys/class/power_supply` is empty and UPower only has a fake DisplayDevice (`0%`, `battery-missing`), so it shows "AC". Real percentage needs the s2mu106 fuel-gauge/charger driver (not in the kernel tree, no DTS node) |
-| Theme: light/dark + glass (owner request 2026-11-16) | **done for the shell + Settings** — `Theme.light` palette, `glass/glassHigh/glassBorder` tokens, `onWallpaper` text tokens; app roots must bind `Theme.light` from `ShellPrefs.lightTheme` (Theme may not import Services). Shell GPU blur is integrated: dock/drawer sample a live sibling scene; shade takes one fresh frozen output capture before showing itself. `a21s-shell` selects the pinned GPU path with software fallback; apps retain software. [Device verification](../devices/samsung/a21s/docs/a21s-qt-gpu-scanout.md#shell-integration) |
+| Theme: light/dark + glass (owner request 2026-11-16) | **done for the shell + Settings** — `Theme.light` palette, `glass/glassHigh/glassBorder` tokens, `onWallpaper` text tokens; app roots must bind `Theme.light` from `ShellPrefs.lightTheme` (Theme may not import Services). Shell GPU blur is integrated: dock/drawer sample a live sibling scene; shade takes one fresh frozen output capture before showing itself. `rabbiz-shell` selects the pinned GPU path with software fallback; apps retain software. [Device verification](../devices/samsung/a21s/docs/a21s-qt-gpu-scanout.md#shell-integration) |
 | M7.5 form factor seam (`handset` only, D3) | not started |
 | M7.6 close morph via snapshot | **done, verified** (S1 answered: `ScreencopyView` works via the SHM fallback even without GL) |
 | M7.7 mouse/keyboard/gamepad nav; Steam as an app | **Big Picture verified** (logged in, touch taps work, game launch reaches Proton/FEX); game renders black — ADR-8. Input (mouse/keyboard/gamepad) not started |
@@ -47,9 +47,9 @@ AGENTS.md hard rules still apply).
 - Host checks: `./scripts/check.sh` (seam checker + its fixtures + LaunchFlow node tests). Run before every commit.
 - Push shell + restart it + screenshot: `./scripts/shell_reload.sh` -> `/tmp/a21s-shot.png`. Full overlay deploy:
   `./scripts/deploy_shell.sh` (prunes replaced apps; chowns `~/.local`).
-- Drive the UI without touching the phone: `quickshell -p /usr/share/a21s-shell/shell.qml ipc call launcher launch <id|name>`,
+- Drive the UI without touching the phone: `quickshell -p /usr/share/rabbiz-shell/shell.qml ipc call launcher launch <id|name>`,
   `... launcher state`, `... launcher toplevels` (run as `gamer` with `XDG_RUNTIME_DIR=/run/user/1001`,
-  `WAYLAND_DISPLAY=<newest wayland-N socket>`, `QML_IMPORT_PATH=/usr/share/a21s-shell`).
+  `WAYLAND_DISPLAY=<newest wayland-N socket>`, `QML_IMPORT_PATH=/usr/share/rabbiz-shell`).
 - Wake/unlock the fake lock screen: `runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 a21s-power-key wake` then `fp-unlock`.
   The screen locks after ~2 min idle; do that before every `grim` screenshot (`timeout 10 grim ...`).
 - **Traps found the hard way:** `pkill -f` patterns match your own ssh command line (use `[s]team` style);
@@ -57,7 +57,7 @@ AGENTS.md hard rules still apply).
   not always `wayland-0` after a session restart; never run `steamos-session` from SSH while labwc owns the seat;
   the shell process must run with `QT_QPA_PLATFORMTHEME=` + `QT_QUICK_CONTROLS_STYLE=Basic` but apps must NOT
   inherit that (the `Launcher` starts apps with the contract env via `Quickshell.execDetached`).
-  `SDL_VIDEODRIVER=wayland` is exported session-wide by `a21s-phone-session`, and Steam's CEF dies on it — see ADR-8.
+  `SDL_VIDEODRIVER=wayland` is exported session-wide by `rabbiz-labwc-session`, and Steam's CEF dies on it — see ADR-8.
   There is no `fp-unlock` binary: it is `a21s-power-key fp-unlock`, and the screen re-locks after ~2 min, so unlock
   before every grim.
   **The phone needs Wi-Fi for anything online** (Steam login, package installs): `usb0` has a default route
@@ -65,7 +65,7 @@ AGENTS.md hard rules still apply).
   `curl https://client-update.akamai.steamstatic.com/`; if Wi-Fi is disconnected, fix the route metric
   (`nmcli connection modify <ssid> ipv4.route-metric 50`) or the network looks "connected" but times out.
   **Privileges:** the shell runs as `gamer` and labwc has no polkit agent, so without
-  `/etc/polkit-1/rules.d/51-a21s-shell.rules` every `nmcli` action fails with "Insufficient privileges" (radio
+  `/etc/polkit-1/rules.d/51-rabbiz-shell.rules` every `nmcli` action fails with "Insufficient privileges" (radio
   toggles only worked because NM's default allows `allow_active`). After adding/editing a rule run
   `systemctl restart polkit`; `nmcli connection load` stays root-only no matter what.
   **Never pre-fill a pty for a password prompt**: the tty echoes it before `nmcli` disables echo (this leaked a PSK
@@ -78,7 +78,7 @@ AGENTS.md hard rules still apply).
   **USB link drops under load**: `en18` lost `172.16.42.2` and `ssh root@172.16.42.1` hung twice in one session
   (device stayed up, no reboot). The phone also listens on Wi-Fi: `ssh root@<wifi-ip>` kept working, `shell_reload.sh
   root@<wifi-ip>` too — use it when USB is flaky.
-  **ShellPrefs only reloads on the atomic save**: writing `~/.config/a21s-shell/prefs.json` in place (truncate) is
+  **ShellPrefs only reloads on the atomic save**: writing `~/.config/rabbiz-shell/prefs.json` in place (truncate) is
   not picked up by the shell; `printf > tmp && mv` is (that is what `ShellPrefs.save()` does). To test a pref live,
   change it through the Settings UI, not with a text edit.
   **Gestures:** a slow swipe-up (300 ms) opens Recents ("swipe up and hold"); a fast one (~120 ms, start y>=1590)
@@ -120,7 +120,7 @@ AGENTS.md hard rules still apply).
    and stops while asleep; the rotation tile is honestly labelled "Rotate"; the governor defaults to `schedutil`;
    the Wi-Fi PSK goes over stdin to `rabbiz-wifi-connect` (nmcli pty prompt, echo off) instead of argv.
    **The blocker behind all of it:** labwc has no polkit agent, so `gamer` got "Insufficient privileges" for every NM
-   action. New `rootfs-overlay/etc/polkit-1/rules.d/51-a21s-shell.rules` allows *only* `gamer` and *only*
+   action. New `rootfs-overlay/etc/polkit-1/rules.d/51-rabbiz-shell.rules` allows *only* `gamer` and *only*
    `org.freedesktop.NetworkManager.*` — recorded in `docs/ARCHITECTURE.md` ADR-9. Verified: `nmcli radio wifi off/on`
    as gamer, joining an unsaved network through `rabbiz-wifi-connect` (connection up, `<wifi-ip>`, HTTP 301),
    `nmcli connection add` as gamer. Also fixed on the way: activate on `wlan0`, never `p2p0` (NM otherwise fails with
@@ -183,7 +183,7 @@ Handset only. Edge zones are 24 px (the labwc bottom margin already reserves it)
 - Edge swipe from left/right -> back (existing `AppGestureLayer`); must not fire inside Kirigami apps' own
   drawer/page gestures: only trigger when the swipe starts in the outer 24 px and moves > 80 px horizontally.
 - Pull down from the top edge -> shade (exists). Long-press on icon -> quick actions (new).
-- Implementation home: `A21s.Windowing` (state in a pure `Gesture.js` with node tests like `LaunchFlow.js`, QML
+- Implementation home: `Rabbiz.Windowing` (state in a pure `Gesture.js` with node tests like `LaunchFlow.js`, QML
   `GestureLayer.qml` rendering only). Keep the existing NavBar pill as the visible affordance.
 
 ## 5. Rules that were changed or confirmed this session
@@ -211,7 +211,7 @@ The owner asked for three things after the gesture work. Facts gathered from the
 ### 7.1 M7.10 Home editing: long-press, drag & drop, align
 
 What the owner wants: icons and apps can be dragged onto the home screen; press-and-hold starts drag; icons align.
-Today **(verified in code)**: `Desktop/DesktopView.qml` renders `~/Desktop` from `DesktopLayout` (seed from `IconLayout.js`; user order + label/glyph overrides persisted in `~/.config/a21s-shell/desktop.json`)
+Today **(verified in code)**: `Desktop/DesktopView.qml` renders `~/Desktop` from `DesktopLayout` (seed from `IconLayout.js`; user order + label/glyph overrides persisted in `~/.config/rabbiz-shell/desktop.json`)
 (4); nothing is persisted and there is no edit mode.
 
 Design:
@@ -220,7 +220,7 @@ Design:
   functions `place`, `moveTo` (collision -> push/reflow neighbours to the next free cell), `snap(x,y)`,
   `compact()` (the "align" action, fills gaps), `swap`, `groupIntoFolder`, `remove`, `serialize/parse`.
 - **Persistence:** extend `ShellPrefs.qml` JSON (`homeLayout`) — it already saves atomically
-  (`mkdir && printf > tmp && mv`); keep layout separate from prefs if it grows (`~/.config/a21s-shell/home.json`).
+  (`mkdir && printf > tmp && mv`); keep layout separate from prefs if it grows (`~/.config/rabbiz-shell/home.json`).
   Unknown/uninstalled ids are dropped on load; first run seeds from the current default list.
 - **Interaction (Android-like):** long-press 400 ms on an icon -> lift (scale 1.08 + shadow, haptic via `feedbackd` if
   available) and enter edit mode (other icons wiggle or show a grid); drag follows the finger; target cell is

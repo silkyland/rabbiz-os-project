@@ -11,27 +11,27 @@ layer-shell + XWayland) + **Quickshell 0.3.2** (shell surfaces) + standalone
 
 ```
 systemd
- └─ a21s-phone-session.service        (User=gamer, PAMName=login,
+ └─ rabbiz-session.service        (User=gamer, PAMName=login,
     │                                 Conflicts=steamos-session.service,
     │                                 after seatd/dbus/NM/bluetooth)
-    └─ /usr/local/bin/a21s-phone-session     (env setup, exec labwc)
+    └─ /usr/local/bin/rabbiz-labwc-session     (env setup, exec labwc)
          ├─ labwc  ── ~/.config/labwc/rc.xml
          │    • windowRule "*" → Maximize + serverDecoration=no
          │      → every app toplevel is fullscreen, Android single-tasking
          │    • touch: mapToOutput DSI-1 (720x1600 portrait), no naturalScroll
          │    • ~/.config/labwc/environment → session vars incl.
-         │      QML_IMPORT_PATH=/usr/share/a21s-shell
+         │      QML_IMPORT_PATH=/usr/share/rabbiz-shell
          │    • ~/.config/labwc/autostart:
          │       ├─ dbus-update-activation-environment → user services
-         │       ├─ quickshell -p /usr/share/a21s-shell/shell.qml   (shell)
+         │       ├─ quickshell -p /usr/share/rabbiz-shell/shell.qml   (shell)
          │       └─ squeekboard (OSK, only if installed)
-         ├─ apps: /usr/local/bin/a21s-<app>
+         ├─ apps: /usr/local/bin/rabbiz-<app>
          │    └─ export QML_IMPORT_PATH + exec quickshell -p .../apps/<app>/<App>.qml
          └─ a21s-steam → gamescope -W 720 -H 1600 -f --steam -- steam ...
               (a normal maximized labwc window, not a separate session)
 ```
 
-- `/usr/share/a21s-shell/` ← `shell/` (QML modules `A21s.Theme`, `A21s.Services`, `apps/`)
+- `/usr/share/rabbiz-shell/` ← `shell/` (QML modules `Rabbiz.Theme`, `Rabbiz.Services`, `apps/`)
 - `.desktop` files in `/usr/share/applications/` feed Quickshell's `DesktopEntries` → home-screen grid
 - Seat/device access: `seatd` (`LIBSEAT_BACKEND=seatd`), `gamer` must be in `seat` group — the unit also sets `SupplementaryGroups=seat input video render audio` as a safety net
 - `XDG_RUNTIME_DIR` is provided by `pam_systemd` via `PAMName=login`; the unit also sets it explicitly as a fallback
@@ -55,7 +55,7 @@ pacman -Sy --needed labwc quickshell qt6-declarative qt6-svg qt6-wayland \
 | `noto-fonts` | OK | UI text |
 | `ttf-nerd-fonts-symbols` | **UNVERIFIED on ALARM** | shell icon glyphs; fallback: drop any Nerd Font into `/usr/share/fonts/TTF/` |
 | `quickshell` | OK — `extra/quickshell 0.3.2-1` aarch64 | verified on archlinuxarm.org |
-| `upower` | OK | battery backend for `A21s.Services` |
+| `upower` | OK | battery backend for `Rabbiz.Services` |
 | `brightnessctl` | OK | brightness keybinds/shade slider |
 | `steam` | **not a package** | native ARM64 client already in `/home/gamer/.local/share/Steam` (see `docs/a21s-game-results.md`); `a21s-steam` assumes `steam` is on `PATH` |
 
@@ -70,10 +70,10 @@ usermod -aG seat,input,video,render gamer
 
 # switch to phone session (steamos-session stays installed):
 systemctl disable steamos-session.service
-systemctl enable --now a21s-phone-session.service
+systemctl enable --now rabbiz-session.service
 
 # switch back to SteamOS session any time:
-systemctl disable a21s-phone-session.service
+systemctl disable rabbiz-session.service
 systemctl enable --now steamos-session.service
 ```
 
@@ -83,9 +83,9 @@ seat at a time — `enable --now`-ing one stops the other.
 ## Debugging
 
 ```sh
-journalctl -u a21s-phone-session.service -b -f   # session/compositor log
+journalctl -u rabbiz-session.service -b -f   # session/compositor log
 loginctl                                          # gamer session + seat
-swaymsg / labwc --version; ls /usr/share/a21s-shell
+swaymsg / labwc --version; ls /usr/share/rabbiz-shell
 ```
 
 ## Known caveats / open items
@@ -95,7 +95,7 @@ swaymsg / labwc --version; ls /usr/share/a21s-shell
   `-W 720 -H 1600` to match the panel's native mode; if gamepadui renders
   badly, rotate the labwc output or flip gamescope to `-W 1600 -H 720`.
 - **Modem/telephony**: no modem driver yet (M6) — Dialer/SMS run against
-  `A21s.Services.Telephony` demo mode. `gnome-calls` + `chatty` +
+  `Rabbiz.Services.Telephony` demo mode. `gnome-calls` + `chatty` +
   `gnome-contacts` + `callaudiod` + `feedbackd` are installed and ready
   (all ModemManager-based, EDS contacts shared).
 - **labwc config keys** (`<touch naturalScroll>`, `skipWindowSwitcher`,
@@ -171,8 +171,8 @@ conversation, not an ad. Promotions render dimmed and always last.
 
 ### Verification
 
-Deployed and exercised on the A21s on 2026-11-16 (`/usr/share/a21s-shell`,
-`a21s-shell` restarted, clean `quickshell` log). Checked with injected touches
+Deployed and exercised on the A21s on 2026-11-16 (`/usr/share/rabbiz-shell`,
+`rabbiz-shell` restarted, clean `quickshell` log). Checked with injected touches
 (`a21s-touch`) and screenshots (`grim`): category grouping and per-app collapse,
 tap-to-expand, the × and the clear-all button, page swiping in both directions
 starting on tiles/cards, dot taps, tile toggles, and vertical slider drags
@@ -181,7 +181,7 @@ starting on tiles/cards, dot taps, tile toggles, and vertical slider drags
 
 Two defects only the device could show, both fixed:
 
-- `Shade.qml` lost its `A21s.Widgets` import while the header pills were removed,
+- `Shade.qml` lost its `Rabbiz.Widgets` import while the header pills were removed,
   but still uses `BackdropBlur` — the whole shade failed to load until the import
   came back.
 - **`ShellPrefs.onAccentColor` has always been black.** QML parses
@@ -244,7 +244,7 @@ the shade and Settings read as one product.
 - **Third-party apps keep their own name and icon.** Only in-house `a21s-*`
   apps use the RabbizOS artwork; Chrome is listed as **Google Chrome** with
   Chrome's logo, and KDE/GNOME apps keep their package icons. Wrapper entries
-  (`a21s-browser`, `a21s-files`, `a21s-calendar`, `a21s-contacts`) are now
+  (`rabbiz-browser`, `rabbiz-files`, `rabbiz-calendar`, `rabbiz-contacts`) are now
   fallbacks, so their real counterparts are preferred by `AppCatalog.js`.
   `AppIcon` resolves theme names **and** absolute/URI icon paths, so Chrome's
   `/opt/google/chrome/product_logo_256.png` renders as-is.
@@ -299,7 +299,7 @@ live services (`Network`, `UPower`, `Media`), not mocks.
 
 ## App layer (added 2026-11-15)
 
-- **File managers**: `a21s-files` prefers `index` (index-fm, Maui — true
+- **File managers**: `rabbiz-files` prefers `index` (index-fm, Maui — true
   touch-first UI) then falls back to **Dolphin phone UI**
   (`PLASMA_PLATFORM=phone:handset`, `QT_QPA_PLATFORMTHEME=kde`,
   `QT_SCALE_FACTOR=1.5`; first-run wipe done once in the wrapper).
@@ -326,7 +326,7 @@ live services (`Network`, `UPower`, `Media`), not mocks.
   `merkuro-mail`, needs Akonadi) replaces calindori as the pinned
   calendar; calindori stays installed as fallback.
 - **Chrome**: official Google Chrome ARM64 (`google-chrome-stable` .deb
-  → `/opt/google/chrome`, wrapper `/usr/local/bin/a21s-browser`) —
+  → `/opt/google/chrome`, wrapper `/usr/local/bin/rabbiz-browser`) —
   needs `--disable-gpu` (exynos dmabuf), `--force-device-scale-factor=1.5`;
   no Widevine on aarch64 Linux.
 - **Connectivity panel** (`ConnectivityPanel.qml`, layer `Overlay`):

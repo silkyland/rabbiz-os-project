@@ -19,7 +19,7 @@ var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // File names are the note ids; keep them to digits so a corrupt file can never point
-// outside ~/.local/share/a21s-notes.
+// outside ~/.local/share/rabbiz-notes.
 function isValidId(id) {
     return typeof id === "string" && /^[0-9]{1,16}$/.test(id);
 }

@@ -1,7 +1,7 @@
 # shade-preview — render the pull-down shade without the phone
 
-`preview.py` loads the **real** `A21s.Panels.QuickSettings` and
-`A21s.Panels.NotificationCenter` QML in QtQuick's software backend and saves
+`preview.py` loads the **real** `Rabbiz.Panels.QuickSettings` and
+`Rabbiz.Panels.NotificationCenter` QML in QtQuick's software backend and saves
 720×1600 PNGs, so layout, theme and grouping changes can be checked on a host
 instead of by deploying to the A21s. It also prints `content height` next to
 `page height`: content taller than the page means the sheet will scroll on the
@@ -36,5 +36,5 @@ truth for shell behaviour.
   compositor integration — those still need the phone.
 
 `qmllint` from the same PySide6 install is the cheaper first check:
-`qmllint -I shell shell/A21s/Panels/*.qml` (expect only `unresolved-type`
+`qmllint -I shell shell/Rabbiz/Panels/*.qml` (expect only `unresolved-type`
 noise for the missing `Quickshell` imports).

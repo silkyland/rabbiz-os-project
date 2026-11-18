@@ -1,15 +1,15 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets as Components
-import A21s.Windowing as Windowing
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets as Components
+import Rabbiz.Windowing as Windowing
 
-// a21s-sms — Google-Messages-style SMS app for the A21s shell.
-// Launched by the `a21s-sms` wrapper under `quickshell -p` (labwc
+// rabbiz-sms — Google-Messages-style SMS app for the A21s shell.
+// Launched by the `rabbiz-sms` wrapper under `quickshell -p` (labwc
 // maximizes the window, Android-style). All telephony goes through the
-// shared A21s.Services Telephony singleton (demo mode until the cpif
+// shared Rabbiz.Services Telephony singleton (demo mode until the cpif
 // modem lands — M6).
 ApplicationWindow {
     id: root

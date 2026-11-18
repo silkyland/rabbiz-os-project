@@ -1,4 +1,4 @@
-# labwc autostart for the a21s-shell phone session.
+# labwc autostart for the rabbiz-shell phone session.
 # Each line runs via /bin/sh -c after the Wayland display is up
 # (WAYLAND_DISPLAY is already set for these children).
 # Deployed to ~gamer/.config/labwc/autostart by scripts/deploy_shell.sh.
@@ -10,7 +10,7 @@ dbus-update-activation-environment --systemd WAYLAND_DISPLAY DISPLAY XDG_CURRENT
 
 # The shell itself: status bar, home screen, shade, nav bar (layer-shell).
 # The shell draws its own UI: keep it off the KDE platform theme / desktop QQC2 style.
-a21s-shell &
+rabbiz-shell &
 
 # On-screen keyboard (optional — skip silently if not installed).
 # Idempotent OSK defaults first: auto-show on text focus (im-v2 under

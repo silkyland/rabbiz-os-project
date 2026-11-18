@@ -35,9 +35,9 @@ modules.order
 .tmp_versions/
 
 
-# A21s Mirror: SwiftPM build products, cached device packages, bundled .app
-tools/a21s-mirror/.build/
-tools/a21s-mirror/.cache/
+# Rabbiz Mirror: SwiftPM build products, cached device packages, bundled .app
+tools/rabbiz-mirror/.build/
+tools/rabbiz-mirror/.cache/
 dist/
 
 # Python bytecode

@@ -5,18 +5,18 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 HOST="${1:-root@172.16.42.1}"; OUT="${2:-/tmp/a21s-shot.png}"
-COPYFILE_DISABLE=1 tar -C shell --exclude tests -cf - . | ssh "$HOST" "tar -C /usr/share/a21s-shell --no-same-owner -xf - 2>/dev/null; chown -R root:root /usr/share/a21s-shell"
+COPYFILE_DISABLE=1 tar -C shell --exclude tests -cf - . | ssh "$HOST" "tar -C /usr/share/rabbiz-shell --no-same-owner -xf - 2>/dev/null; chown -R root:root /usr/share/rabbiz-shell"
 ssh "$HOST" 'bash -s' <<'REMOTE'
 set -e
 GU=$(id -u gamer)
 LW=$(pgrep -x labwc | head -1)
 WD=$(ls -t /run/user/$GU/wayland-[0-9]* 2>/dev/null | grep -v "\.lock$" | head -1 | xargs -r basename)  # newest socket = the live labwc
 ENVF="XDG_RUNTIME_DIR=/run/user/$GU WAYLAND_DISPLAY=${WD:-wayland-0} $(tr '\0' '\n' < /proc/$LW/environ | grep -E '^(XDG_|WAYLAND_DISPLAY|DBUS_|QT_|QML|LIBSEAT|MOZ_|SDL_|LANG)' | tr '\n' ' ')"
-pkill -f 'quickshell -p /usr/share/a21s-shell/shell.qml' || true
+pkill -f 'quickshell -p /usr/share/rabbiz-shell/shell.qml' || true
 sleep 1
-runuser -u gamer -- env $ENVF setsid a21s-shell >/tmp/shell.log 2>&1 </dev/null &
+runuser -u gamer -- env $ENVF setsid rabbiz-shell >/tmp/shell.log 2>&1 </dev/null &
 sleep 6
-pgrep -af 'quickshell -p /usr/share/a21s-shell/shell.qml' | head -1 || echo "SHELL NOT RUNNING"
+pgrep -af 'quickshell -p /usr/share/rabbiz-shell/shell.qml' | head -1 || echo "SHELL NOT RUNNING"
 echo "--- errors/warnings:"; grep -iE "error|warn|fail|not (a )?type|unavailable|undefined" /tmp/shell.log | sort | uniq -c | sort -rn | head -15 || true
 timeout 10 runuser -u gamer -- env $ENVF grim /tmp/a21s-shot.png
 REMOTE

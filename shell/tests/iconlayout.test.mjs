@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const src = readFileSync(new URL("../A21s/Desktop/IconLayout.js", import.meta.url), "utf8")
+const src = readFileSync(new URL("../Rabbiz/Desktop/IconLayout.js", import.meta.url), "utf8")
     .replace(/^\.pragma library\s*$/m, "");
 // Run in this realm (not vm): the model is plain data, and same-realm arrays keep
 // deepEqual exact instead of failing on cross-realm prototypes.
@@ -24,8 +24,8 @@ for (const seed of L.DESKTOP_SEED.concat(L.DOCK_SEED)) {
         claimed.add(id);
     }
 }
-assert.equal(L.seedFor(L.DESKTOP_SEED, "org.kde.index").id, "a21s-files", "alias finds its seed");
-assert.equal(L.seedFor(L.DESKTOP_SEED, "a21s-files").id, "a21s-files", "placeholder id finds its seed");
+assert.equal(L.seedFor(L.DESKTOP_SEED, "org.kde.index").id, "rabbiz-files", "alias finds its seed");
+assert.equal(L.seedFor(L.DESKTOP_SEED, "rabbiz-files").id, "rabbiz-files", "placeholder id finds its seed");
 assert.equal(L.seedFor(L.DESKTOP_SEED, "nope"), null);
 
 // ---- parse: garbage in, sane state out --------------------------------------
@@ -129,33 +129,33 @@ assert.equal(L.serialize(L.parse(text)), text, "stable serialization (no watcher
 
 // ---- prettyId ----------------------------------------------------------------
 assert.equal(L.prettyId("org.kde.some-app.desktop"), "Some app");
-assert.equal(L.prettyId("a21s-sms"), "A21s sms");
+assert.equal(L.prettyId("rabbiz-sms"), "Rabbiz sms");
 assert.equal(L.prettyId(""), "");
 assert.equal(L.prettyId("steam"), "Steam");
 assert.equal(L.prettyId("org.kde.kweather"), "Kweather");
 
 
 // ---- alias identity: one app, one tile ---------------------------------------
-// The seed ships placeholder ids (a21s-gallery) while the installed entry may be a
-// different id from the same role (a21s-photos); both must count as the same app.
-assert.equal(L.sameApp("a21s-gallery", "a21s-photos"), true, "same seed role");
-assert.equal(L.sameApp("a21s-photos", "a21s-photos"), true, "exact");
-assert.equal(L.sameApp("a21s-clock", "a21s-calculator"), false, "different roles");
-assert.equal(L.sameApp("", "a21s-clock"), false, "empty id is nobody");
+// The seed ships placeholder ids (rabbiz-gallery) while the installed entry may be a
+// different id from the same role (rabbiz-photos); both must count as the same app.
+assert.equal(L.sameApp("rabbiz-gallery", "rabbiz-photos"), true, "same seed role");
+assert.equal(L.sameApp("rabbiz-photos", "rabbiz-photos"), true, "exact");
+assert.equal(L.sameApp("rabbiz-clock", "rabbiz-calculator"), false, "different roles");
+assert.equal(L.sameApp("", "rabbiz-clock"), false, "empty id is nobody");
 assert.equal(L.sameApp("unknown-a", "unknown-b"), false, "unknown ids only match exactly");
-let aliased = L.createState(["a21s-gallery"], [], {});
-assert.deepEqual(L.add(aliased, "desktop", "a21s-photos").desktop, ["a21s-gallery"], "alias not added twice");
-assert.deepEqual(L.add(aliased, "desktop", "a21s-photos", 0).desktop, ["a21s-gallery"]);
-assert.deepEqual(L.remove(aliased, "desktop", "a21s-photos").desktop, [], "alias removes the tile");
-assert.deepEqual(L.transfer(aliased, "desktop", "a21s-photos", "dock").desktop, []);
-assert.deepEqual(L.transfer(aliased, "desktop", "a21s-photos", "dock").dock, ["a21s-gallery"],
+let aliased = L.createState(["rabbiz-gallery"], [], {});
+assert.deepEqual(L.add(aliased, "desktop", "rabbiz-photos").desktop, ["rabbiz-gallery"], "alias not added twice");
+assert.deepEqual(L.add(aliased, "desktop", "rabbiz-photos", 0).desktop, ["rabbiz-gallery"]);
+assert.deepEqual(L.remove(aliased, "desktop", "rabbiz-photos").desktop, [], "alias removes the tile");
+assert.deepEqual(L.transfer(aliased, "desktop", "rabbiz-photos", "dock").desktop, []);
+assert.deepEqual(L.transfer(aliased, "desktop", "rabbiz-photos", "dock").dock, ["rabbiz-gallery"],
     "transfer keeps the stored id");
-const aliasTarget = L.createState(["a21s-gallery"], ["a21s-photos"], {});
-assert.deepEqual(L.transfer(aliasTarget, "desktop", "a21s-gallery", "dock").dock, ["a21s-photos"],
+const aliasTarget = L.createState(["rabbiz-gallery"], ["rabbiz-photos"], {});
+assert.deepEqual(L.transfer(aliasTarget, "desktop", "rabbiz-gallery", "dock").dock, ["rabbiz-photos"],
     "target already holds the same app: source copy dropped");
-assert.deepEqual(L.transfer(aliasTarget, "desktop", "a21s-gallery", "dock").desktop, []);
-assert.equal(L.has(aliasTarget, "dock", "a21s-gallery"), true);
-assert.equal(L.indexOfApp(aliasTarget, "dock", "a21s-gallery"), 0);
-assert.equal(L.containsId(["a", "b"], "a21s-clock"), false);
+assert.deepEqual(L.transfer(aliasTarget, "desktop", "rabbiz-gallery", "dock").desktop, []);
+assert.equal(L.has(aliasTarget, "dock", "rabbiz-gallery"), true);
+assert.equal(L.indexOfApp(aliasTarget, "dock", "rabbiz-gallery"), 0);
+assert.equal(L.containsId(["a", "b"], "rabbiz-clock"), false);
 
 console.log("iconlayout: ok");

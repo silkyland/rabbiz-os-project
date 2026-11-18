@@ -3,10 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
-import A21s.Theme
-import A21s.Services
+import Rabbiz.Theme
+import Rabbiz.Services
 import "Calc.js" as Calc
-import A21sKit
+import RabbizKit
 
 // Calculator — in-house replacement for kalk (docs/BASE-APPS.md).
 // Tone reference for the other base apps: shared kit, Theme tokens only, no literals for
@@ -74,7 +74,7 @@ ApplicationWindow {
     }
 
     readonly property string historyPath: (Quickshell.env("HOME") || "/home/gamer")
-        + "/.local/share/a21s-calculator/history.json"
+        + "/.local/share/rabbiz-calculator/history.json"
 
     Process { id: saveProc }
     FileView {

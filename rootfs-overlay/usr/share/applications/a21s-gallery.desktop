@@ -1,9 +1,0 @@
-[Desktop Entry]
-Icon=a21s-gallery
-Type=Application
-Name=Photos
-GenericName=Photo viewer
-Comment=Compatibility id used by the home grid fallback (docs/BASE-APPS.md)
-Exec=a21s-photos
-NoDisplay=true
-Terminal=false

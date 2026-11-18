@@ -1,0 +1,4 @@
+#!/bin/sh
+# rabbiz-clock — in-house Clock (docs/BASE-APPS.md). Deployed by scripts/deploy_shell.sh.
+export QML_IMPORT_PATH=/usr/share/rabbiz-shell:/usr/share/rabbiz-apps
+exec a21s-qt-render quickshell -p /usr/share/rabbiz-apps/clock/Clock.qml "$@"

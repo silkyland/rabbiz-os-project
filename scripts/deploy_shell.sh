@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# deploy_shell.sh — push a21s-shell + rootfs-overlay to the Galaxy A21s.
+# deploy_shell.sh — push rabbiz-shell + rootfs-overlay to the Galaxy A21s.
 #
 # Usage:
 #   ./scripts/deploy_shell.sh [user@host]     # default root@172.16.42.1
 #   ./scripts/deploy_shell.sh --packages      # only print the pacman line
 #
 # Layout (see shell/README.md):
-#   shell/          -> /usr/share/a21s-shell/
+#   shell/          -> /usr/share/rabbiz-shell/
 #   rootfs-overlay/ -> /   (merged; NEVER deletes; no /lib anywhere in overlay)
 #
 # Uses `tar | ssh` instead of rsync so it works on hosts without rsync and
@@ -25,7 +25,7 @@ PACKAGES=(
   qt6-svg
   qt6-wayland
   dolphin                # KDE file manager (phone UI via PLASMA_PLATFORM=phone)
-  index-fm               # Maui Index — touch-first file manager (a21s-files prefers it)
+  index-fm               # Maui Index — touch-first file manager (rabbiz-files prefers it)
   plasma-integration     # 'kde' Qt platformtheme: kdeglobals colors/fonts/single-click in Dolphin
   breeze                 # Breeze widget style + BreezeDark color scheme for KDE apps
   merkuro                # KDE calendar (replaces calindori — upstream successor, much better UI)
@@ -77,7 +77,7 @@ PACKAGES=(
   mgba-qt                # standalone touch-friendly GBA emulator
   noto-fonts
   ttf-nerd-fonts-symbols # icon glyphs used by the shell
-  upower                 # battery service consumed by A21s.Services
+  upower                 # battery service consumed by Rabbiz.Services
   brightnessctl          # XF86 brightness keybinds / shade slider
 )
 
@@ -99,7 +99,7 @@ fi
 
 TARGET="${1:-root@172.16.42.1}"
 
-echo ">> Deploying a21s-shell to ${TARGET}"
+echo ">> Deploying rabbiz-shell to ${TARGET}"
 echo "   repo: ${REPO_ROOT}"
 
 # --- sanity checks -------------------------------------------------------
@@ -119,25 +119,41 @@ if [[ -e "${REPO_ROOT}/rootfs-overlay/lib" || -e "${REPO_ROOT}/rootfs-overlay/us
 fi
 
 # --- deploy shell QML tree ----------------------------------------------
-echo ">> shell/ -> /usr/share/a21s-shell/"
-ssh "${TARGET}" "mkdir -p /usr/share/a21s-shell"
+echo ">> shell/ -> /usr/share/rabbiz-shell/"
+ssh "${TARGET}" "mkdir -p /usr/share/rabbiz-shell"
 COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/shell" -cf - . \
-  | ssh "${TARGET}" "tar -C /usr/share/a21s-shell -xf -"
+  | ssh "${TARGET}" "tar -C /usr/share/rabbiz-shell -xf -"
 
 # --- prune files that were replaced by real Linux apps (tar never deletes) ---
 echo ">> pruning replaced apps"
 # calculator, clock and notes are in-house base apps again (apps/), so only the really removed
 # wrappers are pruned here.
-ssh "${TARGET}" "rm -rf /usr/share/a21s-shell/apps/{calculator,clock,notes,gallery,files,spotify} \
-  /usr/share/a21s-shell/A21s/Components \
+ssh "${TARGET}" "rm -rf /usr/share/rabbiz-shell/apps/{calculator,clock,notes,gallery,files,spotify} \
+  /usr/share/rabbiz-shell/Rabbiz/Components \
   /usr/local/bin/a21s-{gallery,files,spotify} \
   /usr/share/applications/a21s-{gallery,files,spotify}.desktop"
 
+# --- rename migration: a21s-* -> rabbiz-* (tar never deletes, so drop the
+# superseded names explicitly; hardware-tied a21s-* stays) --------------
+echo ">> dropping superseded a21s-* session/shell/app names"
+ssh "${TARGET}" "
+  rm -f /usr/local/bin/a21s-session /usr/local/bin/a21s-phone-session \
+    /usr/local/bin/a21s-shell /usr/local/bin/a21s-splash \
+    /usr/local/bin/a21s-spotify-ctl \
+    /usr/local/bin/a21s-{browser,calculator,clock,dialer,gallery,music,notes,photos,settings,sms,terminal,files,calendar} \
+    /usr/share/applications/a21s-*.desktop \
+    /etc/systemd/system/a21s-splash.service \
+    /etc/polkit-1/rules.d/50-a21s-session.rules \
+    /etc/polkit-1/rules.d/51-a21s-shell.rules
+  find /usr/share/icons -name 'a21s-*.svg' -delete 2>/dev/null || true
+  rm -rf /usr/share/a21s-shell /usr/share/a21s-apps /usr/share/a21s
+"
+
 # --- deploy the in-house base apps (docs/BASE-APPS.md) --------------------
-echo ">> apps/ -> /usr/share/a21s-apps/"
-ssh "${TARGET}" "mkdir -p /usr/share/a21s-apps"
+echo ">> apps/ -> /usr/share/rabbiz-apps/"
+ssh "${TARGET}" "mkdir -p /usr/share/rabbiz-apps"
 COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/apps" -cf - . \
-  | ssh "${TARGET}" "tar -C /usr/share/a21s-apps --no-same-owner -xf - && chmod -R a+rX /usr/share/a21s-apps"
+  | ssh "${TARGET}" "tar -C /usr/share/rabbiz-apps --no-same-owner -xf - && chmod -R a+rX /usr/share/rabbiz-apps"
 
 # --- deploy rootfs overlay (merge into /) --------------------------------
 echo ">> rootfs-overlay/ -> /"
@@ -148,22 +164,22 @@ COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/rootfs-overlay" -cf - . \
 echo ">> Fixing permissions + daemon-reload"
 ssh "${TARGET}" "
   set -e
-  find /usr/share/a21s-shell /home/gamer/.config/labwc /home/gamer/.config/wireplumber \
+  find /usr/share/rabbiz-shell /home/gamer/.config/labwc /home/gamer/.config/wireplumber \
     /usr/share/applications /usr/local/bin /etc/systemd/system \
     /etc/udev/rules.d /etc/modules-load.d /etc/systemd/logind.conf.d -maxdepth 3 -name '._*' -delete 2>/dev/null || true
-  chown -R root:root /usr/share/a21s-shell
-  chown root:root /etc/systemd/system/a21s-*.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
-  chmod 644 /etc/systemd/system/a21s-*.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
+  chown -R root:root /usr/share/rabbiz-shell
+  chown root:root /etc/systemd/system/a21s-*.service /etc/systemd/system/rabbiz-*.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
+  chmod 644 /etc/systemd/system/a21s-*.service /etc/systemd/system/rabbiz-*.service /etc/systemd/system/abox-audio.service /etc/systemd/system/fex-guestos.service 2>/dev/null || true
   systemctl enable a21s-display-pin.service 2>/dev/null || true
   systemctl enable a21s-drm-keeper.service 2>/dev/null || true
-  chown root:root /etc/polkit-1/rules.d/50-a21s-session.rules 2>/dev/null || true
-  chmod 644 /etc/polkit-1/rules.d/50-a21s-session.rules 2>/dev/null || true
+  chown root:root /etc/polkit-1/rules.d/50-rabbiz-session.rules /etc/polkit-1/rules.d/51-rabbiz-shell.rules 2>/dev/null || true
+  chmod 644 /etc/polkit-1/rules.d/50-rabbiz-session.rules /etc/polkit-1/rules.d/51-rabbiz-shell.rules 2>/dev/null || true
   chown root:root /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/udev/rules.d/99-hide-system-partitions.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
   chmod 644 /etc/udev/rules.d/90-a21s-backlight.rules /etc/udev/rules.d/99-a21s-modem-fp.rules /etc/udev/rules.d/99-hide-system-partitions.rules /etc/systemd/logind.conf.d/10-a21s-powerkey.conf /etc/modules-load.d/a21s-hardware.conf
-  chown root:root /usr/local/bin/a21s-* /usr/local/bin/a21s_holdmenu.py /usr/local/bin/volume-keys.py
-  chmod 755 /usr/local/bin/a21s-* /usr/local/bin/a21s_holdmenu.py /usr/local/bin/volume-keys.py
-  chown root:root /usr/share/applications/a21s-*.desktop
-  chmod 644 /usr/share/applications/a21s-*.desktop
+  chown root:root /usr/local/bin/a21s-* /usr/local/bin/rabbiz-* /usr/local/bin/a21s_holdmenu.py /usr/local/bin/volume-keys.py 2>/dev/null || true
+  chmod 755 /usr/local/bin/a21s-* /usr/local/bin/rabbiz-* /usr/local/bin/a21s_holdmenu.py /usr/local/bin/volume-keys.py 2>/dev/null || true
+  chown root:root /usr/share/applications/rabbiz-*.desktop 2>/dev/null || true
+  chmod 644 /usr/share/applications/rabbiz-*.desktop 2>/dev/null || true
   # tar preserves the macOS uids baked into the archive (501/20), which
   # leaves /, /home and /home/gamer owned by a non-existent uid and breaks
   # runuser/su + systemd path-transition checks. Restore real owners.
@@ -181,9 +197,24 @@ ssh "${TARGET}" "
   chmod 660 /dev/umts_* 2>/dev/null || true
   chown gamer:gamer /run/user/\$(id -u gamer)/a21s-power.cmd 2>/dev/null || true
   systemctl daemon-reload
+  # Unit rename migration: a21s-phone-session.service -> rabbiz-session.service.
+  # Disable under the old name first (clears its wants symlink), then drop the
+  # file; the new unit's [Install] Alias keeps the old name resolving.
+  if systemctl is-enabled a21s-phone-session.service >/dev/null 2>&1; then
+    systemctl disable a21s-phone-session.service
+    rm -f /etc/systemd/system/a21s-phone-session.service
+    systemctl enable rabbiz-session.service
+  else
+    rm -f /etc/systemd/system/a21s-phone-session.service
+  fi
+  # User config rename: ~/.config/a21s-shell -> ~/.config/rabbiz-shell
+  # (session scripts repeat this; doing it here makes the first boot clean).
+  if [ -d /home/gamer/.config/a21s-shell ] && [ ! -e /home/gamer/.config/rabbiz-shell ]; then
+    mv /home/gamer/.config/a21s-shell /home/gamer/.config/rabbiz-shell
+  fi
   systemctl enable a21s-modem-init.service 2>/dev/null || true
   # Boot splash + hardware volume/screenshot keys; no login prompt on the panel (getty@tty1 is a /dev/null symlink in the overlay).
-  systemctl enable a21s-splash.service volume-keys.service 2>/dev/null || true
+  systemctl enable rabbiz-splash.service volume-keys.service 2>/dev/null || true
   sysctl -q --system 2>/dev/null || true
 "
 
@@ -207,9 +238,9 @@ cat <<'EOF'
        usermod -aG seat,input,video,render gamer
 
   3. Start the phone session:
-       systemctl enable --now a21s-phone-session.service
+       systemctl enable --now rabbiz-session.service
 
   4. Logs:
-       journalctl -u a21s-phone-session.service -b -f
+       journalctl -u rabbiz-session.service -b -f
 
 EOF

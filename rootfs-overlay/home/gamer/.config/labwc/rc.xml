@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!--
-  labwc configuration for a21s-shell (Samsung Galaxy A21s phone session).
+  labwc configuration for rabbiz-shell (Samsung Galaxy A21s phone session).
 
   Design: Android-style single-tasking — every app toplevel is maximized
   with no server-side decorations; the shell UI (status bar, home screen,

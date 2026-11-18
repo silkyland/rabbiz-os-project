@@ -1,5 +1,5 @@
 //! The app environment contract — the single authority for `rabbiz-de env
-//! --shell` (§7.20). The `a21s-session` wrapper evaluates these lines; the
+//! --shell` (§7.20). The `rabbiz-session` wrapper evaluates these lines; the
 //! contract is also what `de-apps::launch` applies to spawned apps.
 
 /// `KEY=VALUE` exports (single-quoted values, shell-safe).
@@ -7,7 +7,7 @@ const EXPORTS: &[(&str, &str)] = &[
     ("QT_QUICK_BACKEND", "software"),
     ("QT_QPA_PLATFORM", "wayland"),
     // Apps render software; wrappers may bump their own scale factor.
-    ("A21S_FORCE_SOFTWARE", "1"),
+    ("RABBIZ_FORCE_SOFTWARE", "1"),
     ("QT_SCALE_FACTOR", "1"),
     ("XDG_CURRENT_DESKTOP", "Rabbiz"),
     ("XDG_SESSION_DESKTOP", "rabbiz-de"),

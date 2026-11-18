@@ -7,11 +7,11 @@ output="${2:-/tmp/rabbiz-shell-blur}"
 mkdir -p "$output"
 ./scripts/device_session.sh "$host" <<'REMOTE'
 boot=$(cat /proc/sys/kernel/random/boot_id)
-shell_pid=$(pgrep -f '^quickshell -p /usr/share/a21s-shell/shell.qml$')
+shell_pid=$(pgrep -f '^quickshell -p /usr/share/rabbiz-shell/shell.qml$')
 since=$(date '+%Y-%m-%d %H:%M:%S')
 ipc() {
     runuser -u gamer -- env LANG=C.UTF-8 XDG_RUNTIME_DIR=/run/user/$(id -u gamer) WAYLAND_DISPLAY=wayland-0 \
-        quickshell -p /usr/share/a21s-shell/shell.qml ipc call "$@"
+        quickshell -p /usr/share/rabbiz-shell/shell.qml ipc call "$@"
 }
 cleanup() {
     ipc shade close >/dev/null || true

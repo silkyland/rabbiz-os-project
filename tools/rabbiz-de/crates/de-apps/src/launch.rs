@@ -169,14 +169,14 @@ mod tests {
     #[test]
     fn splits_quotes() {
         assert_eq!(
-            split_shellish("a21s-browser --flag 'two words'"),
-            vec!["a21s-browser", "--flag", "two words"]
+            split_shellish("rabbiz-browser --flag 'two words'"),
+            vec!["rabbiz-browser", "--flag", "two words"]
         );
     }
 
     #[test]
     fn embedded_toml_parses() {
         let t: LaunchTable = toml::from_str(LAUNCH_TOML).unwrap();
-        assert_eq!(t.overrides["google-chrome"].exec, "a21s-browser");
+        assert_eq!(t.overrides["google-chrome"].exec, "rabbiz-browser");
     }
 }

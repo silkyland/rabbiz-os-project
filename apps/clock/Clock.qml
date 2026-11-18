@@ -3,10 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets
-import A21sKit
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets
+import RabbizKit
 import "ClockLogic.js" as ClockLogic
 
 // Clock — in-house replacement for kclock (docs/BASE-APPS.md §3).
@@ -15,7 +15,7 @@ import "ClockLogic.js" as ClockLogic
 //   * one notification path (notify-send through Quickshell.Io.Process, FIFO so two alerts in
 //     the same second both appear),
 //   * one in-app banner, so Alarm and Timer announce themselves the same way.
-// Alarm persistence is ~/.local/share/a21s-clock/alarms.json, written atomically (tmp + mv).
+// Alarm persistence is ~/.local/share/rabbiz-clock/alarms.json, written atomically (tmp + mv).
 ApplicationWindow {
     id: win
     visible: true
@@ -42,7 +42,7 @@ ApplicationWindow {
     readonly property string alarmHint: ClockLogic.nextAlarmLine(win.alarms, win.now)
     readonly property int clockFontSize: Math.round(Theme.fontHeadline * 1.75)
     readonly property string alarmsPath: (Quickshell.env("HOME") || "/home/gamer")
-        + "/.local/share/a21s-clock/alarms.json"
+        + "/.local/share/rabbiz-clock/alarms.json"
 
     // ---- notifications -----------------------------------------------------
 

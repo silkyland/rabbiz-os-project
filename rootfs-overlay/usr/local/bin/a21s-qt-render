@@ -6,9 +6,9 @@
 # CMA guard: every GPU window buffer is carved from the 256 MiB CMA pool and exited GPU apps currently
 # LEAK their swapchain there (~14 MiB per launch, devices/samsung/a21s/docs/FINDINGS-hw-render.md F2). Below the floor we run
 # software instead of exhausting CMA, which segfaults the shell. Remove the guard once F2 is fixed.
-floor_kb=${A21S_CMA_FLOOR_KB:-98304}
+floor_kb=${RABBIZ_CMA_FLOOR_KB:-98304}
 free_kb=$(awk '/^CmaFree:/{print $2}' /proc/meminfo)
-if [ "${A21S_FORCE_SOFTWARE:-0}" != 1 ] && [ "${free_kb:-0}" -ge "$floor_kb" ] && a21s-qt-gpu --check 2>/dev/null; then
+if [ "${RABBIZ_FORCE_SOFTWARE:-0}" != 1 ] && [ "${free_kb:-0}" -ge "$floor_kb" ] && a21s-qt-gpu --check 2>/dev/null; then
     exec a21s-qt-gpu "$@"
 fi
 unset LD_PRELOAD __EGL_VENDOR_LIBRARY_FILENAMES DRI_PRIME QSG_RHI_BACKEND RABBIZ_EXYNOS_RENDER RABBIZ_EXYNOS_PRIMARY

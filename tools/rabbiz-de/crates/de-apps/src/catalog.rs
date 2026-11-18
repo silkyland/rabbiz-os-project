@@ -84,15 +84,20 @@ impl Catalog {
         &self.entries
     }
 
-    /// Entries visible under `prefs` (hidden apps filtered out).
+    /// Entries visible under `prefs` (hidden apps filtered out). A hidden
+    /// flag stored under the pre-rename `a21s-*` id still hides the app.
     pub fn visible<'a>(&'a self, prefs: &'a Prefs) -> impl Iterator<Item = &'a AppEntry> {
-        self.entries.iter().filter(|e| !prefs.is_hidden(&e.id))
+        self.entries.iter().filter(|e| !hidden(prefs, &e.id))
     }
 
-    /// Exact desktop-id lookup.
+    /// Exact desktop-id lookup; falls back to the pre-rename `a21s-*` /
+    /// `rabbiz-*` spelling so persisted prefs keep resolving.
     #[must_use]
     pub fn find(&self, id: &str) -> Option<&AppEntry> {
-        self.entries.iter().find(|e| e.id == id)
+        self.entries
+            .iter()
+            .find(|e| e.id == id)
+            .or_else(|| alt_id(id).and_then(|a| self.entries.iter().find(|e| e.id == a)))
     }
 
     /// Ranked search (drawer + P14 spotlight): name prefix > name word >
@@ -120,7 +125,7 @@ impl Catalog {
         let mut out: Vec<&AppEntry> = Vec::with_capacity(self.entries.len());
         for id in &prefs.home_order {
             if let Some(e) = self.find(id) {
-                if !prefs.is_hidden(id) && !out.contains(&e) {
+                if !hidden(prefs, id) && !out.contains(&e) {
                     out.push(e);
                 }
             }
@@ -140,7 +145,7 @@ impl Catalog {
             .dock
             .iter()
             .filter_map(|id| self.find(id))
-            .filter(|e| !prefs.is_hidden(&e.id))
+            .filter(|e| !hidden(prefs, &e.id))
             .collect()
     }
 }
@@ -150,6 +155,21 @@ impl Catalog {
 pub struct SearchHit<'a> {
     pub entry: &'a AppEntry,
     pub score: u32,
+}
+
+/// The pre-rename spelling of a desktop-id (`a21s-x` ↔ `rabbiz-x`, 2026-11
+/// cut-over). Only first-party prefixes swap — third-party ids are untouched.
+fn alt_id(id: &str) -> Option<String> {
+    if let Some(rest) = id.strip_prefix("a21s-") {
+        Some(format!("rabbiz-{rest}"))
+    } else {
+        id.strip_prefix("rabbiz-").map(|rest| format!("a21s-{rest}"))
+    }
+}
+
+/// Hidden check across both spellings of a first-party id.
+fn hidden(prefs: &Prefs, id: &str) -> bool {
+    prefs.is_hidden(id) || alt_id(id).is_some_and(|a| prefs.is_hidden(&a))
 }
 
 fn score(e: &AppEntry, q: &str) -> Option<u32> {
@@ -263,8 +283,8 @@ mod tests {
         );
         write_desktop(
             &d2,
-            "a21s-calculator",
-            "[Desktop Entry]\nName=Calculator\nName[th]=เครื่องคิดเลข\nExec=a21s-calculator\nKeywords=math;คำนวณ;\n",
+            "rabbiz-calculator",
+            "[Desktop Entry]\nName=Calculator\nName[th]=เครื่องคิดเลข\nExec=rabbiz-calculator\nKeywords=math;คำนวณ;\n",
         );
         // Same id in the lower-precedence dir — d1 must win.
         write_desktop(&d1, "dupe", "[Desktop Entry]\nName=First\nExec=first\n");
@@ -300,10 +320,10 @@ mod tests {
         );
         let p = Prefs::default();
         // Thai name picked up when th locale leads.
-        assert_eq!(c.find("a21s-calculator").unwrap().name, "เครื่องคิดเลข");
+        assert_eq!(c.find("rabbiz-calculator").unwrap().name, "เครื่องคิดเลข");
         // Thai keyword search hits.
         let hits = c.search(&p, "คำนวณ");
-        assert!(hits.iter().any(|h| h.entry.id == "a21s-calculator"));
+        assert!(hits.iter().any(|h| h.entry.id == "rabbiz-calculator"));
         // Prefix outranks substring/keyword.
         let hits = c.search(&p, "fi");
         assert_eq!(hits[0].entry.id, "org.kde.dolphin");
@@ -316,15 +336,30 @@ mod tests {
         let c = Catalog::scan_dirs(&[d1.clone(), base.join("b")], &["en".to_string()]);
         let mut p = Prefs::default();
         p.set_hidden("dupe", true);
-        p.pin_dock("a21s-calculator");
+        p.pin_dock("rabbiz-calculator");
         p.pin_dock("dupe"); // hidden pin is skipped by dock()
         p.pin_dock("nonexistent");
         let visible: Vec<_> = c.visible(&p).map(|e| e.id.as_str()).collect();
         assert!(!visible.contains(&"dupe"));
         let dock: Vec<_> = c.dock(&p).iter().map(|e| e.id.as_str()).collect();
-        assert_eq!(dock, vec!["a21s-calculator"]);
+        assert_eq!(dock, vec!["rabbiz-calculator"]);
         // Search skips hidden too.
         assert!(c.search(&p, "first").is_empty());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn legacy_a21s_ids_resolve() {
+        let (base, d1) = fixture();
+        let c = Catalog::scan_dirs(&[d1.clone(), base.join("b")], &["en".to_string()]);
+        let mut p = Prefs::default();
+        // Prefs persisted under the pre-rename id still apply.
+        p.set_hidden("a21s-calculator", true);
+        p.pin_dock("a21s-calculator");
+        assert!(c.find("a21s-calculator").is_some());
+        assert!(!c.visible(&p).any(|e| e.id == "rabbiz-calculator"));
+        // Dock lookup resolves the legacy id, but is_hidden drops it again.
+        assert!(c.dock(&p).is_empty());
         let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -1,6 +1,6 @@
 import QtQuick
-import A21s.Theme
-import A21s.Services
+import Rabbiz.Theme
+import Rabbiz.Services
 
 // SMS/MMS bubble. Incoming: left, Theme.card. Outgoing: right, ShellPrefs.accentColor.
 Item {

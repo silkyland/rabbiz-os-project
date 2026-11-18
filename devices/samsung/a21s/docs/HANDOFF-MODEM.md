@@ -39,7 +39,7 @@ Files in `socs/exynos850/drivers/cpif/`:
 | `cpif_uapi.h` / `cpif_core.c` | `enum cpif_modem_state` now equals vendor `enum modem_state` (OFFLINE, CRASH_RESET, CRASH_EXIT, BOOTING, ONLINE, NV_REBUILDING, LOADER_DONE, SIM_ATTACH, SIM_DETACH, CRASH_WATCHDOG). The old order was wrong for any vendor userspace. |
 | `cpif.h`, `Kbuild` | mailbox fields, `init_cmpl`, `cpif_mbox_*` prototypes, `cpif_mbox.o`. |
 
-Also touched in the working tree but unrelated to the modem: `devices/samsung/a21s/kernel/a21s_linux_defconfig`, `devices/samsung/a21s/kernel/patches/0005-...` (battery on `&i2c_0`), `shell/A21s/Desktop/HomeScreen.qml` (unlock fly-in), `rootfs-overlay/usr/local/bin/volume-keys.py`, `scripts/audio-up.sh`, `devices/samsung/a21s/docs/repro/`, `scripts/diagnose_audio_charging.sh`. Do not stage them with the modem work.
+Also touched in the working tree but unrelated to the modem: `devices/samsung/a21s/kernel/a21s_linux_defconfig`, `devices/samsung/a21s/kernel/patches/0005-...` (battery on `&i2c_0`), `shell/Rabbiz/Desktop/HomeScreen.qml` (unlock fly-in), `rootfs-overlay/usr/local/bin/volume-keys.py`, `scripts/audio-up.sh`, `devices/samsung/a21s/docs/repro/`, `scripts/diagnose_audio_charging.sh`. Do not stage them with the modem work.
 
 Deployed on the phone: new `a21s-cpif.ko` at `/usr/lib/modules/7.3.0-g14a425b3a7dc-dirty/extra/a21s-cpif.ko` (old one at `/root/a21s-cpif.ko.bak`). A test copy of the loader is `/tmp/a21s-cbd-new`, built on the device (`gcc` there; no aarch64 cross compiler on the host) and gone after reboot. `/usr/local/bin/a21s-cbd` is still the old build.
 

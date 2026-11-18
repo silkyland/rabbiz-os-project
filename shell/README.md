@@ -1,4 +1,4 @@
-# a21s-shell — Android-like launcher DE for Galaxy A21s (SM-A217F)
+# rabbiz-shell — Android-like launcher DE for Galaxy A21s (SM-A217F)
 
 Stack: **labwc** (wlroots compositor, layer-shell + XWayland) + **Quickshell 0.3.2**
 (QML shell surfaces) + **quickshell-hosted apps** (real xdg toplevels). Target:
@@ -7,8 +7,8 @@ Exynos 850 / 2.8GB RAM / Mali-G52 Panfrost (GLES only — `QSG_RHI_BACKEND=openg
 ## Architecture
 
 ```
-a21s-phone-session.service ─ labwc (compositor)
-  ├─ quickshell -p /usr/share/a21s-shell/shell.qml   (the shell, one process)
+rabbiz-session.service ─ labwc (compositor)
+  ├─ quickshell -p /usr/share/rabbiz-shell/shell.qml   (the shell, one process)
   │    ├─ StatusBar   WlrLayer.Top     44px, exclusive zone
   │    ├─ DesktopView  WlrLayer.Background  ~/Desktop: wallpaper+icons+dock+drawer
   │    ├─ Shade       WlrLayer.Top     pull-down notifications+quick settings
@@ -18,19 +18,19 @@ a21s-phone-session.service ─ labwc (compositor)
   └─ steam → `gamescope -- steam -gamepadui` nested in a labwc window
 ```
 
-## Modules (`QML_IMPORT_PATH=/usr/share/a21s-shell`)
+## Modules (`QML_IMPORT_PATH=/usr/share/rabbiz-shell`)
 
-- `A21s.Theme` — singleton, ALL colors/type/spacing/radii/motion tokens.
+- `Rabbiz.Theme` — singleton, ALL colors/type/spacing/radii/motion tokens.
   No hardcoded colors or pixel magic numbers outside Theme.qml.
-- `A21s.Services` — singletons: `ShellState` (UI state), `Network` (nmcli),
+- `Rabbiz.Services` — singletons: `ShellState` (UI state), `Network` (nmcli),
   `Bluetooth` (bluetoothctl), `Brightness` (logind busctl), `Telephony`
   (ModemManager→demo fallback). **Contracts are frozen — extend, don't rename.**
 
 ## `~/Desktop` (home) icon surface
 
-- `A21s.Desktop.DesktopLayout` (singleton) owns which apps are on the desktop grid and in
+- `Rabbiz.Desktop.DesktopLayout` (singleton) owns which apps are on the desktop grid and in
   the dock, their order, and per-icon label/glyph overrides. It persists to
-  `~/.config/a21s-shell/desktop.json`; ordering rules are plain JS in `IconLayout.js`
+  `~/.config/rabbiz-shell/desktop.json`; ordering rules are plain JS in `IconLayout.js`
   (`shell/tests/iconlayout.test.mjs`).
 - `DesktopView.qml` is the `~/Desktop` surface (grid + hero deck + search + dock). Tap an
   icon to launch it, **long-press (or right-click) for its menu** (open / rename & icon /
@@ -60,9 +60,9 @@ a21s-phone-session.service ─ labwc (compositor)
 
 | Repo path | Device path |
 |---|---|
-| `shell/` | `/usr/share/a21s-shell/` |
+| `shell/` | `/usr/share/rabbiz-shell/` |
 | `rootfs-overlay/` | `/` (scp -r overlay/*) |
-| app launchers | `/usr/local/bin/a21s-<app>` → `QML_IMPORT_PATH=… exec quickshell -p …` |
+| app launchers | `/usr/local/bin/rabbiz-<app>` → `QML_IMPORT_PATH=… exec quickshell -p …` |
 
 Deploy: `./scripts/deploy_shell.sh` (scp to root@172.16.42.1).
 

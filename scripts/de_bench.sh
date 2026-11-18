@@ -14,7 +14,7 @@ RENDERER="${4:---renderer=auto}"
 
 "$REPO_ROOT/scripts/device_session.sh" "$HOST" <<REMOTE
 set -e
-unit=a21s-phone-session.service
+unit=rabbiz-session.service
 was_active=\$(systemctl is-active "\$unit" || true)
 [ "\$was_active" = "active" ] && systemctl stop "\$unit"
 trap '[ "\$was_active" = "active" ] && systemctl start "\$unit" || true' EXIT

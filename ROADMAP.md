@@ -15,7 +15,7 @@
 | M4 (R1) | Phase 2 — Xiaomi Pad 7 Pro (`muyu` / `SM8635`) `Zaviya` Port | todo | L | M3 (R1) |
 | M5 | Power, Battery (`s2mu106`), Thermal (`TMU`) & Suspend | todo | M | M3.5 |
 | M6 | Cellular Modem (`cpif` + `pmu-cp`) & Voice Call (`oFono`) | todo | L | M5 |
-| M7 | `a21s-shell` touch-first desktop (`labwc` + `quickshell`; real Linux base apps; morph launch) — plan: [docs/DESKTOP-SHELL.md](docs/DESKTOP-SHELL.md) | wip | L | M3.5 |
+| M7 | `rabbiz-shell` touch-first desktop (`labwc` + `quickshell`; real Linux base apps; morph launch) — plan: [docs/DESKTOP-SHELL.md](docs/DESKTOP-SHELL.md) | wip | L | M3.5 |
 
 ## Milestone details
 
@@ -70,11 +70,11 @@
   - [ ] Port `drivers/soc/samsung/cpif/` + `pmu-cp.c` + reserve `cp_shmem` without colliding with `0xb0000000`.
   - [ ] Integrate `libsamsung-ipc` / `oFono` + ABOX/Bluetooth HFP voice audio routing.
 
-### M7: `a21s-shell` Android-style DE — wip
+### M7: `rabbiz-shell` Android-style DE — wip
 - **Objective:** Replace the Steam-only session with an Android-like launcher: homescreen/app drawer, pull-down notification+quick-settings shade, dialer, SMS, settings — all QML on `labwc`+`quickshell`, Steam stays launchable from the launcher card/dock (`a21s-steam`).
-- **Layout:** `shell/` (QML, modules `A21s.Theme`/`A21s.Services`/`A21s.Components`), `rootfs-overlay/` (systemd unit, labwc config, wrappers, .desktop, udev/logind rules), `scripts/deploy_shell.sh`. Details: `docs/a21s-phone-shell.md`, `shell/README.md`.
+- **Layout:** `shell/` (QML, modules `Rabbiz.Theme`/`Rabbiz.Services`/`Rabbiz.Components`), `rootfs-overlay/` (systemd unit, labwc config, wrappers, .desktop, udev/logind rules), `scripts/deploy_shell.sh`. Details: `docs/a21s-phone-shell.md`, `shell/README.md`.
 - **Verified on host & device:** `labwc` + `quickshell 0.3.2` + `squeekboard` running on Galaxy A21s (`DSI-1` `card0`); `shell.qml` and all 7 built-in apps (`a21s-{settings,dialer,sms,calculator,clock,files,notes}`) load with zero QML errors (`QT_QUICK_BACKEND=software`).
-- **App layer landed (2026-11-15):** `index-fm` (touch-first FM) + Dolphin **phone UI** (`PLASMA_PLATFORM=phone` + first-run wipe) via `a21s-files`; `merkuro` replaces calindori; `gnome-calls`/`chatty`/`gnome-contacts`/`callaudiod`/`feedbackd` installed for M6; Maui suite (`pix`/`vvave`/`buho`/`station`), `plasma-settings`, `swappy`; official **Google Chrome ARM64** in `/opt/google/chrome` (`a21s-browser`, `--disable-gpu`); squeekboard **Thai** + auto-show via gsettings; labwc `<margin>` reserves shell bars; `UDISKS_IGNORE` hides raw partitions; NavBar auto-hide. Details: `docs/a21s-phone-shell.md` "App layer".
+- **App layer landed (2026-11-15):** `index-fm` (touch-first FM) + Dolphin **phone UI** (`PLASMA_PLATFORM=phone` + first-run wipe) via `rabbiz-files`; `merkuro` replaces calindori; `gnome-calls`/`chatty`/`gnome-contacts`/`callaudiod`/`feedbackd` installed for M6; Maui suite (`pix`/`vvave`/`buho`/`station`), `plasma-settings`, `swappy`; official **Google Chrome ARM64** in `/opt/google/chrome` (`rabbiz-browser`, `--disable-gpu`); squeekboard **Thai** + auto-show via gsettings; labwc `<margin>` reserves shell bars; `UDISKS_IGNORE` hides raw partitions; NavBar auto-hide. Details: `docs/a21s-phone-shell.md` "App layer".
 - **Tasks:**
   - [x] Skeleton + design tokens + service contracts (lead)
   - [x] Session/compositor/deploy infra + labwc config (W1)
@@ -84,7 +84,7 @@
   - [x] SMS app (W5)
   - [x] StatusBar + notification daemon/shade list (W6)
   - [x] Shade regrouped One UI 7-style: category sections (Conversations/Devices/Apps/Promotions), per-app group cards, vertical brightness/volume, action grid (2026-11-16, deployed + verified on the A21s, docs/a21s-phone-shell.md § Shade UI)
-  - [x] On-device deployment & bring-up: install 44 packages, enable `a21s-phone-session.service`, verify `labwc` + `quickshell` + all 7 `a21s-*` apps + `brightnessctl` + `wpctl status` on `DSI-1`
+  - [x] On-device deployment & bring-up: install 44 packages, enable `rabbiz-session.service`, verify `labwc` + `quickshell` + all 7 `a21s-*` apps + `brightnessctl` + `wpctl status` on `DSI-1`
   - [ ] **M7 v2 (branch `feat/desktop-shell-rewrite`, plan [docs/DESKTOP-SHELL.md](docs/DESKTOP-SHELL.md))**: M7.0 retrofit modules → M7.1 launch slice → M7.2 desktop contract → M7.3 desktop surface → M7.4 replace base apps → M7.5 form factors → M7.6 close morph → M7.7 mouse/kbd/gamepad → M7.8 Settings v2 → M7.9 gestures (core done) → M7.10 home drag & drop → M7.11 clipboard → M7.12 on-screen keyboard rework (**now the default keyboard, 2026-11-17**: `rabbiz-osk` = layer-shell + `zwp_input_method_v2`, Gboard-style panel, EN/TH, Thai digits with Arabic hints, input-purpose layouts (email/URL/number), long-press alternates, backspace repeat, live theme, `sm.puri.OSK0` compat; predictor/clipboard history/emoji categories remain — plan §12). M7.0/7.1/7.2/7.4 done (verified on device); Steam runs in a nested Weston window (ADR-8). Handoff: [docs/HANDOFF-DESKTOP-SHELL.md](docs/HANDOFF-DESKTOP-SHELL.md).
   - [ ] Real telephony backend when M6 lands (`Telephony.backend` hook / `mm-backend.sh` reference)
 

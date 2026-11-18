@@ -23,7 +23,7 @@ Ground rules:
   screenshots described in the handoff. Say plainly what you verified and what you did not.
 - Run ./scripts/check.sh before every commit; keep dependency direction Theme <- Services <- Widgets <- Windowing
   <- Desktop/Panels (enforced by scripts/check_shell_seams.mjs). New pure logic goes in a plain .js file with a
-  node test, like shell/A21s/Windowing/LaunchFlow.js.
+  node test, like shell/Rabbiz/Windowing/LaunchFlow.js.
 - Rules are hypotheses: if evidence shows a rule or decision is wrong, show the evidence, propose the change and
   record it (ADR in docs/ARCHITECTURE.md). Security/data-integrity rules change only by explicit decision.
 - The owner is not a Linux/BL expert: explain decisions as what the user of the phone experiences, separate facts
@@ -40,9 +40,9 @@ YOUR TASK: <paste one backlog item from docs/HANDOFF-DESKTOP-SHELL.md section 3,
 
 Suggested split for parallel agents (disjoint files):
 - Agent A: backlog 1 (Steam) — `rootfs-overlay/usr/local/bin/a21s-steam`, `steam`, ADR-8 only.
-- Agent B: backlog 2 (review findings) — `shell/A21s/Services/{SystemControl,Network,Bluetooth}.qml`.
-- Agent C: backlog 3 (Settings v2) — `shell/apps/settings/`, `shell/A21s/Services/Appearance.qml`.
-- Agent D: backlog 4 (gesture polish + close morph) — `shell/A21s/Windowing/`, `shell/A21s/Panels/NavBar.qml`.
-- Agent E: HANDOFF §7.1 home editing (drag & drop) — `shell/A21s/Desktop/*`, new `HomeLayout.js`.
-- Agent F: HANDOFF §7.2 clipboard — `shell/A21s/Services/Clipboard.qml`, `Panels/ClipboardSheet.qml`.
+- Agent B: backlog 2 (review findings) — `shell/Rabbiz/Services/{SystemControl,Network,Bluetooth}.qml`.
+- Agent C: backlog 3 (Settings v2) — `shell/apps/settings/`, `shell/Rabbiz/Services/Appearance.qml`.
+- Agent D: backlog 4 (gesture polish + close morph) — `shell/Rabbiz/Windowing/`, `shell/Rabbiz/Panels/NavBar.qml`.
+- Agent E: HANDOFF §7.1 home editing (drag & drop) — `shell/Rabbiz/Desktop/*`, new `HomeLayout.js`.
+- Agent F: HANDOFF §7.2 clipboard — `shell/Rabbiz/Services/Clipboard.qml`, `Panels/ClipboardSheet.qml`.
 - Agent G: HANDOFF §7.3 on-screen keyboard triage + fixes — `rootfs-overlay/.../squeekboard`, `rabbiz-osk-ctl`.

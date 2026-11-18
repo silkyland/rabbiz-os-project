@@ -11,10 +11,10 @@ support to Qt's software adaptation or fix arbitrary imports in exynos-drm.
 ## Shell integration
 
 Deployed and verified on 2026-11-16. labwc autostart, `SystemControl.reloadShell()`
-and the host reload/profiling commands now start `a21s-shell`. That entry point
+and the host reload/profiling commands now start `rabbiz-shell`. That entry point
 checks the pinned Mesa path and available CMA before execing `a21s-qt-gpu quickshell`;
 a failed gate or less than 96 MiB CMA starts the software glass fallback. The
-floor is configurable with `A21S_SHELL_CMA_FLOOR_KB` for explicit diagnostics.
+floor is configurable with `RABBIZ_SHELL_CMA_FLOOR_KB` for explicit diagnostics.
 The session and systemd unit still export software
 as the default for ordinary apps.
 
@@ -39,7 +39,7 @@ as the default for ordinary apps.
   window rendering. The pinned EGL allocator applies to Qt's window buffers.
 - `Appearance.appEnvironment` removes the private Mesa/preload/DRI overrides and
   resets Qt Quick to software on normal desktop-entry, music and Settings launch
-  paths. It also sets `A21S_FORCE_SOFTWARE=1` so the concurrently added
+  paths. It also sets `RABBIZ_FORCE_SOFTWARE=1` so the concurrently added
   `a21s-qt-render` app wrapper cannot opt back into GPU on those launches.
   Terminal entries use installed `gtk-launch` with that same environment.
 
@@ -63,7 +63,7 @@ Kalk launched through the shell was inspected in `/proc/<pid>/environ`:
 `__EGL_VENDOR_LIBRARY_FILENAMES`, `DRI_PRIME`, both `RABBIZ_EXYNOS_*` variables and
 `QS_DISABLE_DMABUF` were absent. After the concurrent `a21s-qt-render` wrapper was
 added, a fresh shell-launched Settings process (PID `1705`) additionally verified
-`A21S_FORCE_SOFTWARE=1`, software rendering, and no private Mesa overrides. Kalk
+`RABBIZ_FORCE_SOFTWARE=1`, software rendering, and no private Mesa overrides. Kalk
 was visibly mapped before the final cross-window shade capture. The shell reported
 GPU rendering and a fresh 720×1600 shade capture. Five host tests cover the original Mesa version gate,
 shell GPU/software startup selection and low-CMA startup fallback;
@@ -79,11 +79,11 @@ startup guard. Low-CMA software recovery was exercised on the device before the
 final cold boot. Cold-boot runtime-state FileView warnings and an existing host-portal registration warning
 are separate from blur; they were not silently treated as a clean log.
 
-![Live drawer backdrop blur on A21s](../../../../docs/a21s-shell-blur-drawer.png)
+![Live drawer backdrop blur on A21s](../../../../docs/rabbiz-shell-blur-drawer.png)
 
-[Home and dock capture](../../../../docs/a21s-shell-blur-home.png) ·
-[Shade capture](../../../../docs/a21s-shell-blur-shade.png) ·
-[Shade over a real Kalk window](../../../../docs/a21s-shell-blur-over-app.png)
+[Home and dock capture](../../../../docs/rabbiz-shell-blur-home.png) ·
+[Shade capture](../../../../docs/rabbiz-shell-blur-shade.png) ·
+[Shade over a real Kalk window](../../../../docs/rabbiz-shell-blur-over-app.png)
 
 Run again on an unlocked desktop:
 

@@ -3,10 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Io
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets
-import A21sKit
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets
+import RabbizKit
 import "MusicLogic.js" as Music
 
 // Music — in-house replacement for elisa (docs/BASE-APPS.md).
@@ -162,7 +162,7 @@ ApplicationWindow {
         stallTimer.restart()
         player.exec(["mpv", "--no-video", "--audio-display=no",
                      "--no-terminal", "--force-window=no",
-                     "--audio-client-name=a21s-music",
+                     "--audio-client-name=rabbiz-music",
                      "--start=" + win.baseSec.toFixed(2), path])
     }
 
@@ -556,9 +556,9 @@ ApplicationWindow {
                     hint: win.emptyHint
                 }
 
-                // Accent pill. Same size/shape as A21sKit.PrimaryButton, inlined because
+                // Accent pill. Same size/shape as RabbizKit.PrimaryButton, inlined because
                 // PrimaryButton.qml currently references MaterialIcon without importing
-                // A21s.Widgets, so it fails to load (kit is lead-owned — reported, not edited).
+                // Rabbiz.Widgets, so it fails to load (kit is lead-owned — reported, not edited).
                 Rectangle {
                     anchors.horizontalCenter: parent.horizontalCenter
                     visible: !win.scanning && (win.tracks.length === 0 || win.scope !== "all")

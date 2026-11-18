@@ -1,14 +1,14 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets as Components
-import A21s.Windowing as Windowing
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets as Components
+import Rabbiz.Windowing as Windowing
 
-// a21s-dialer — One UI / Stitch-styled Phone app for a21s-shell.
+// rabbiz-dialer — One UI / Stitch-styled Phone app for rabbiz-shell.
 //
-// Launched by `a21s-dialer` (quickshell -p Dialer.qml) or plain `qml6`.
+// Launched by `rabbiz-dialer` (quickshell -p Dialer.qml) or plain `qml6`.
 // Args (after `--`):
 //   --simulate-incoming <number>   ring the fake modem after ~1 s
 //   --simulate-incoming=<number>   same, single-arg form

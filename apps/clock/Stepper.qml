@@ -1,8 +1,8 @@
 import QtQuick
 import QtQuick.Layouts
-import A21s.Theme
-import A21s.Services
-import A21s.Widgets
+import Rabbiz.Theme
+import Rabbiz.Services
+import Rabbiz.Widgets
 
 // Vertical stepper: label, big value, 56 px + / - buttons. Alarms and the timer are set
 // without a text field, so the on-screen keyboard never covers the screen.
