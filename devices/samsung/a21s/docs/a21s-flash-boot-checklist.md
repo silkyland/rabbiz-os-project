@@ -11,12 +11,10 @@ recovery. **Owner approval is required for phase D.**
 - [ ] Docker volume `a21s-kbuild` present; tree at `14a425b3a` with
       patches 0005/0006/0009/0010 applied (verified 2026-11-18: dts has
       thermal zones, dsi driver has `underrun_work`).
-- [ ] **`mkbootimg` resolved** — it is NOT in `a21s-kimg` or
-      `rabbizos-kbuild` and not on the host (checked 2026-11-18).
-      Options: `apt-get install -y mkbootimg` inside the Debian kbuild
-      container (needs net), or fetch AOSP `mkbootimg.py` pinned to the
-      same major version the previous flash used, or restore the
-      `a21s-build` image named in the recovery doc.
+- [x] **`mkbootimg` resolved** — `apt-get install -y mkbootimg` inside
+      `rabbizos-kbuild` (container has network; Debian package
+      `1:34.0.5-12` confirmed available 2026-11-18). Install at repack
+      time; `--rm` runs don't persist it.
 - [ ] `avbtool` → `/work/avb/avbtool.py` (present in volume).
 - [ ] Heimdall binary ready BEFORE flashing: brew cask is disabled —
       build from source per
