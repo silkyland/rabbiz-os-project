@@ -364,12 +364,37 @@ impl De {
                 self.follow_home_drag(dy, time_ms);
                 return;
             }
+            GestureEvent::Progress {
+                zone: Zone::Content,
+                dx,
+                dy,
+            } => {
+                self.home_drag_progress(dx, dy);
+                return;
+            }
+            GestureEvent::Started { .. } => {
+                self.home_touch_started();
+                return;
+            }
+            GestureEvent::Released { vx, .. } => {
+                self.home_drag_released(vx);
+                return;
+            }
+            GestureEvent::HoldDrag { pos } => {
+                self.home_icon_dragged(pos);
+                return;
+            }
+            GestureEvent::HoldDrop { pos } => {
+                self.home_icon_dropped(pos);
+                return;
+            }
             GestureEvent::Cancelled => {
+                self.home_drag_cancelled();
                 self.release_home_drag(false);
                 return;
             }
             GestureEvent::Recognized(gesture) => gesture,
-            _ => return,
+            GestureEvent::Progress { .. } => return,
         };
         match g {
             Gesture::Home => self.show_shell(Screen::Home),
@@ -388,20 +413,6 @@ impl De {
                     self.needs_present = true;
                 }
             }
-            Gesture::PageSwitch { dir } => {
-                if matches!(self.foreground, Foreground::Shell) && self.nav.current == Screen::Home
-                {
-                    let pages = de_ui::home::pages_for(
-                        self.catalog.home_order(self.app_prefs.prefs()).len(),
-                    );
-                    let next = (self.home_page as i32 - dir).clamp(0, pages as i32 - 1);
-                    if next as usize != self.home_page {
-                        self.home_page = next as usize;
-                        self.shell_dirty = true;
-                        self.needs_present = true;
-                    }
-                }
-            }
             Gesture::Tap { pos } => {
                 if !self.release_home_drag(false) {
                     self.on_shell_tap(pos);
@@ -410,7 +421,9 @@ impl De {
             // Long-press is the icon-context-menu hook (hide/pin) — no-op
             // until the drawer action sheet lands.
             Gesture::LongPress { pos } => {
-                self.open_home_menu(pos);
+                if !self.home_lift_icon(pos) {
+                    self.open_home_menu(pos);
+                }
             }
         }
     }

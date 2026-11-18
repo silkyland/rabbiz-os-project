@@ -119,20 +119,22 @@ impl Catalog {
     }
 
     /// Home-grid order: `prefs.home_order` first (visible only), then the
-    /// remaining visible entries in catalog order.
+    /// remaining visible entries in catalog order. Apps pinned to the dock
+    /// are not repeated on the grid (membership is exclusive).
     #[must_use]
     pub fn home_order<'a>(&'a self, prefs: &'a Prefs) -> Vec<&'a AppEntry> {
         let mut out: Vec<&AppEntry> = Vec::with_capacity(self.entries.len());
+        let docked: Vec<&str> = self.dock(prefs).iter().map(|e| e.id.as_str()).collect();
         for id in &prefs.home_order {
             if let Some(e) = self.find(id) {
-                if !hidden(prefs, id) && !out.contains(&e) {
+                if !hidden(prefs, id) && !out.contains(&e) && !docked.contains(&e.id.as_str()) {
                     out.push(e);
                 }
             }
         }
         let tail: Vec<&AppEntry> = self
             .visible(prefs)
-            .filter(|e| !out.iter().any(|o| o.id == e.id))
+            .filter(|e| !out.iter().any(|o| o.id == e.id) && !docked.contains(&e.id.as_str()))
             .collect();
         out.extend(tail);
         out
@@ -323,6 +325,19 @@ mod tests {
         // Prefix outranks substring/keyword.
         let hits = c.search(&p, "fi");
         assert_eq!(hits[0].entry.id, "org.kde.dolphin");
+    }
+
+    #[test]
+    fn docked_apps_are_not_repeated_on_the_grid() {
+        let (_fixture, dirs) = fixture();
+        let c = Catalog::scan_dirs(&dirs, &["en".to_string()]);
+        let mut p = Prefs::default();
+        p.pin_dock("rabbiz-calculator");
+        let grid: Vec<_> = c.home_order(&p).iter().map(|e| e.id.as_str()).collect();
+        assert!(!grid.contains(&"rabbiz-calculator"));
+        assert!(grid.contains(&"org.kde.dolphin"));
+        p.unpin_dock("rabbiz-calculator");
+        assert!(c.home_order(&p).iter().any(|e| e.id == "rabbiz-calculator"));
     }
 
     #[test]

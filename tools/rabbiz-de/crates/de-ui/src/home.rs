@@ -155,6 +155,68 @@ pub fn hit_test(size: Size, pos: Point, apps_on_page: usize, dock_len: usize) ->
     None
 }
 
+/// Where a dragged icon would land.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DropTarget {
+    /// Page-local grid cell (`0..PAGE_SIZE`).
+    Grid(usize),
+    /// Dock slot (`0..dock slots`).
+    Dock(usize),
+}
+
+/// Number of dock slots painted for `dock_len` pinned apps.
+#[must_use]
+pub fn dock_slots(dock_len: usize) -> usize {
+    dock_len.clamp(4, 6)
+}
+
+/// Which drop target `pos` points at while an icon is being dragged: the
+/// dock (nearest slot, with a generous catch zone above the shelf) or a
+/// grid cell. Pure, shares geometry with [`render`].
+#[must_use]
+pub fn drop_target(size: Size, pos: Point, dock_len: usize) -> Option<DropTarget> {
+    let shelf = dock_shelf(size);
+    let catch = Rect::new(shelf.x, shelf.y - 40, shelf.w, shelf.h + 40);
+    let slots = dock_slots(dock_len);
+    if catch.contains(pos) {
+        let best = (0..slots)
+            .min_by_key(|&i| {
+                let r = dock_icon(shelf, i, slots);
+                (pos.x - (r.x + r.w / 2)).abs()
+            })
+            .unwrap_or(0);
+        return Some(DropTarget::Dock(best));
+    }
+    let gx = (size.w - CELL_W * 4) / 2;
+    let area = Rect::new(gx, GRID_Y, CELL_W * 4, CELL_H * 4);
+    if area.contains(pos) {
+        let col = ((pos.x - gx) / CELL_W).clamp(0, 3) as usize;
+        let row = ((pos.y - GRID_Y) / CELL_H).clamp(0, 3) as usize;
+        return Some(DropTarget::Grid(row * 4 + col));
+    }
+    None
+}
+
+/// Painted bounds of a drop target (for the highlight under the finger).
+#[must_use]
+pub fn drop_rect(size: Size, target: DropTarget, dock_len: usize) -> Rect {
+    match target {
+        DropTarget::Grid(i) => grid_icon(grid_cell(size, i)),
+        DropTarget::Dock(i) => dock_icon(dock_shelf(size), i, dock_slots(dock_len)),
+    }
+}
+
+/// Only the icon grid of one page, on a transparent canvas: the layer the
+/// pager slides while the rest of the home screen stays put.
+#[must_use]
+pub fn render_grid(size: Size, t: &Theme, apps: &[IconEntry]) -> Pixels {
+    let mut c = Canvas::new(size);
+    for (i, e) in apps.iter().take(PAGE_SIZE).enumerate() {
+        draw_icon(&mut c, t, e, grid_cell(size, i));
+    }
+    c.into_pixels()
+}
+
 /// Render the home screen.
 #[allow(clippy::too_many_lines)] // one pass over home's visual layers
 #[must_use]
@@ -296,6 +358,39 @@ mod tests {
         assert_eq!(page_slice(&apps, 0).len(), 16);
         assert_eq!(page_slice(&apps, 1).len(), 4);
         assert!(page_slice(&apps, 2).is_empty());
+    }
+
+    #[test]
+    fn drop_targets_cover_grid_and_dock() {
+        let size = Size::new(720, 1600);
+        let gx = (720 - CELL_W * 4) / 2;
+        assert_eq!(
+            drop_target(size, Point::new(gx + CELL_W + 5, GRID_Y + CELL_H * 2 + 5), 4),
+            Some(DropTarget::Grid(9))
+        );
+        // Far left of the dock catches slot 0, far right the last slot.
+        let y = DOCK_Y + 60;
+        assert_eq!(drop_target(size, Point::new(40, y), 4), Some(DropTarget::Dock(0)));
+        assert_eq!(drop_target(size, Point::new(690, y), 4), Some(DropTarget::Dock(3)));
+        assert_eq!(drop_target(size, Point::new(690, y), 6), Some(DropTarget::Dock(5)));
+        // Above the dock's catch zone, outside the grid: nothing.
+        assert_eq!(drop_target(size, Point::new(360, 100), 4), None);
+        // The rect of a target is where hit_test finds the same icon.
+        let r = drop_rect(size, DropTarget::Dock(2), 4);
+        assert_eq!(
+            hit_test(size, Point::new(r.x + 4, r.y + 4), 16, 4),
+            Some(HomeHit::Dock(2))
+        );
+    }
+
+    #[test]
+    fn grid_layer_is_transparent_outside_icons() {
+        let size = Size::new(720, 1600);
+        let apps = vec![IconEntry::new("a", "A")];
+        let px = render_grid(size, &tokens::DEFAULT, &apps);
+        assert_eq!(px.size, size);
+        // Top-left corner (status area) is untouched.
+        assert_eq!(&px.data[0..4], &[0, 0, 0, 0]);
     }
 
     #[test]

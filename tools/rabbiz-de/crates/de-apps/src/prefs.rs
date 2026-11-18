@@ -91,4 +91,16 @@ impl AppPrefs {
         self.prefs.home_order = order;
         let _ = self.prefs.save();
     }
+
+    /// Drag-rearrange: drop on the dock at `slot` (see `Prefs::drop_on_dock`); persists.
+    pub fn drop_on_dock(&mut self, desktop_id: &str, slot: usize, swap_to: usize, grid: &[String]) {
+        self.prefs.drop_on_dock(desktop_id, slot, swap_to, grid);
+        let _ = self.prefs.save();
+    }
+
+    /// Drag-rearrange: drop on the grid at `index` (see `Prefs::drop_on_grid`); persists.
+    pub fn drop_on_grid(&mut self, desktop_id: &str, index: usize, grid: &[String]) {
+        self.prefs.drop_on_grid(desktop_id, index, grid);
+        let _ = self.prefs.save();
+    }
 }

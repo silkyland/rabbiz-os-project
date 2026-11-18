@@ -36,8 +36,6 @@ pub enum Gesture {
     Recents,
     /// Top-edge downward drag (progress via [`GestureEvent::Progress`]).
     ShadePull,
-    /// Horizontal swipe in content (home dock/grid paging: dir < 0 = next).
-    PageSwitch { dir: i32 },
     /// Short touch with little movement.
     Tap { pos: Point },
     /// Touch held ≥ `HOLD_MS` without moving past the slop.
@@ -54,6 +52,14 @@ pub enum GestureEvent {
     Progress { zone: Zone, dx: f32, dy: f32 },
     /// Gesture committed (release, or threshold+hold for recents/long-press).
     Recognized(Gesture),
+    /// A content drag (past the slop) ended: displacement and release
+    /// velocity (px/s, from the last ~50 ms of movement, not the average) so
+    /// the UI can project where the content should settle.
+    Released { dx: f32, dy: f32, vx: f32, vy: f32 },
+    /// Finger moved after a long-press (item lifted for rearranging).
+    HoldDrag { pos: Point },
+    /// Finger lifted after a long-press drag.
+    HoldDrop { pos: Point },
     /// Contact ended before qualifying (or a second finger arrived).
     Cancelled,
 }
@@ -112,6 +118,11 @@ struct Track {
     dy: f32,
     /// Already committed mid-gesture (recents/long-press fired early).
     committed: bool,
+    /// The commit was a long-press: later motion is a hold-drag.
+    held: bool,
+    /// Smoothed velocity in px/ms.
+    vx: f32,
+    vy: f32,
     /// Held position at `HOLD_MS` check (recents needs a stall, not a pa`rk`).
     stall_y: f32,
 }
@@ -166,12 +177,25 @@ impl GestureTracker {
                     dx: 0.0,
                     dy: 0.0,
                     committed: false,
+                    held: false,
+                    vx: 0.0,
+                    vy: 0.0,
                     stall_y: 0.0,
                 });
                 Some(GestureEvent::Started { zone, pos: ev.pos })
             }
             TouchPhase::Motion => {
                 let tr = self.track.as_mut()?;
+                if tr.held {
+                    tr.last = ev.pos;
+                    return Some(GestureEvent::HoldDrag { pos: ev.pos });
+                }
+                let dt = ev.time_ms.saturating_sub(tr.last_ms);
+                if dt > 0 {
+                    let a = 0.5;
+                    tr.vx = a * ((ev.pos.x - tr.last.x) as f32 / dt as f32) + (1.0 - a) * tr.vx;
+                    tr.vy = a * ((ev.pos.y - tr.last.y) as f32 / dt as f32) + (1.0 - a) * tr.vy;
+                }
                 tr.dx = (ev.pos.x - tr.start.x) as f32;
                 tr.dy = (ev.pos.y - tr.start.y) as f32;
                 tr.last = ev.pos;
@@ -196,11 +220,13 @@ impl GestureTracker {
                     && ev.time_ms - tr.start_ms >= self.cfg.hold_ms
                 {
                     tr.committed = true;
+                    tr.held = true;
                     return Some(GestureEvent::Recognized(Gesture::LongPress {
                         pos: tr.start,
                     }));
                 }
-                if tr.zone != Zone::Content && !tr.committed {
+                let moved = tr.dx.abs() >= self.cfg.slop || tr.dy.abs() >= self.cfg.slop;
+                if !tr.committed && (tr.zone != Zone::Content || moved) {
                     return Some(GestureEvent::Progress {
                         zone: tr.zone,
                         dx: tr.dx,
@@ -211,6 +237,9 @@ impl GestureTracker {
             }
             TouchPhase::Up | TouchPhase::Cancel => {
                 let tr = self.track.take()?;
+                if tr.held && ev.phase == TouchPhase::Up {
+                    return Some(GestureEvent::HoldDrop { pos: ev.pos });
+                }
                 if ev.phase == TouchPhase::Cancel || tr.committed {
                     return Some(GestureEvent::Cancelled);
                 }
@@ -252,14 +281,16 @@ impl GestureTracker {
                     Zone::Content => {
                         if tr.dx.abs() < self.cfg.slop && tr.dy.abs() < self.cfg.slop {
                             Some(Gesture::Tap { pos: tr.start })
-                        } else if tr.dx.abs() > tr.dy.abs()
-                            && (tr.dx.abs() >= self.cfg.back_dx || vx.abs() >= self.cfg.fling_v)
-                        {
-                            Some(Gesture::PageSwitch {
-                                dir: if tr.dx < 0.0 { -1 } else { 1 },
-                            })
                         } else {
-                            None
+                            // A stale velocity (finger rested before lifting) is no fling.
+                            let fresh = ev.time_ms.saturating_sub(tr.last_ms) < 80;
+                            let k = if fresh { 1000.0 } else { 0.0 };
+                            return Some(GestureEvent::Released {
+                                dx: tr.dx,
+                                dy: tr.dy,
+                                vx: tr.vx * k,
+                                vy: tr.vy * k,
+                            });
                         }
                     }
                 };
@@ -372,14 +403,64 @@ mod tests {
     }
 
     #[test]
-    fn content_swipe_is_page_switch_tap_is_tap() {
+    fn content_drag_follows_then_releases_with_velocity() {
         let mut t = tr();
         t.feed(&ev(TouchPhase::Down, 300, 900, 0));
-        t.feed(&ev(TouchPhase::Motion, 180, 905, 100));
+        // Inside the slop: nothing yet.
+        assert_eq!(t.feed(&ev(TouchPhase::Motion, 296, 901, 20)), None);
         assert_eq!(
-            t.feed(&ev(TouchPhase::Up, 180, 905, 200)),
-            Some(GestureEvent::Recognized(Gesture::PageSwitch { dir: -1 }))
+            t.feed(&ev(TouchPhase::Motion, 240, 905, 60)),
+            Some(GestureEvent::Progress {
+                zone: Zone::Content,
+                dx: -60.0,
+                dy: 5.0
+            })
         );
+        t.feed(&ev(TouchPhase::Motion, 180, 905, 100));
+        match t.feed(&ev(TouchPhase::Up, 180, 905, 110)) {
+            Some(GestureEvent::Released { dx, vx, .. }) => {
+                assert_eq!(dx, -120.0);
+                assert!(vx < -500.0, "fast leftward release, got {vx}");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn resting_before_lift_is_not_a_fling() {
+        let mut t = tr();
+        t.feed(&ev(TouchPhase::Down, 300, 900, 0));
+        t.feed(&ev(TouchPhase::Motion, 200, 900, 50));
+        match t.feed(&ev(TouchPhase::Up, 200, 900, 400)) {
+            Some(GestureEvent::Released { vx, .. }) => assert_eq!(vx, 0.0),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn long_press_then_drag_is_a_hold_drag() {
+        let mut t = tr();
+        t.feed(&ev(TouchPhase::Down, 300, 900, 0));
+        assert!(matches!(
+            t.feed(&ev(TouchPhase::Motion, 301, 900, 450)),
+            Some(GestureEvent::Recognized(Gesture::LongPress { .. }))
+        ));
+        assert_eq!(
+            t.feed(&ev(TouchPhase::Motion, 340, 1000, 500)),
+            Some(GestureEvent::HoldDrag {
+                pos: Point::new(340, 1000)
+            })
+        );
+        assert_eq!(
+            t.feed(&ev(TouchPhase::Up, 340, 1400, 600)),
+            Some(GestureEvent::HoldDrop {
+                pos: Point::new(340, 1400)
+            })
+        );
+    }
+
+    #[test]
+    fn tap_is_tap() {
         let mut t = tr();
         t.feed(&ev(TouchPhase::Down, 300, 900, 0));
         assert_eq!(

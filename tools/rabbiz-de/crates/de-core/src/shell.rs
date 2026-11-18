@@ -49,6 +49,7 @@ impl De {
             }
             _ => self.home_pixels(size, &s, &t, status),
         };
+        let base = self.overlay_icon_drag(base);
         self.overlay_shell_menu(base)
     }
 
@@ -107,6 +108,10 @@ impl De {
             page,
             page_count: de_ui::home::pages_for(ordered.len()),
         };
+        if self.home_ui.paging() {
+            let ids: Vec<String> = ordered.iter().map(|e| e.id.clone()).collect();
+            return self.home_composed(size, s, t, &m, &ids);
+        }
         de_ui::home::render(size, s, t, &m)
     }
 
@@ -118,7 +123,7 @@ impl De {
 
     /// `IconEntry`s for `desktop_ids`, resolving real icons through the
     /// cache (first-party `rabbiz-*`/`a21s-*` get the sand-tile glyph).
-    fn app_icons(&mut self, desktop_ids: &[String]) -> Vec<IconEntry> {
+    pub(crate) fn app_icons(&mut self, desktop_ids: &[String]) -> Vec<IconEntry> {
         desktop_ids.iter().map(|id| self.app_icon(id)).collect()
     }
 

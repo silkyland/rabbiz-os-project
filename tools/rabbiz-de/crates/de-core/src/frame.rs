@@ -137,6 +137,7 @@ impl Run {
             self.de.shell_dirty = true;
         }
         self.de.advance_morph(t0);
+        self.de.advance_home(t0);
         // Shell surface: re-raster on dirty or when the clock minute rolls.
         let minute = minute_of_day();
         if (matches!(self.de.foreground, crate::state::Foreground::Shell)

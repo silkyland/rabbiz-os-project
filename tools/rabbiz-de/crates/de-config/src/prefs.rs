@@ -207,6 +207,41 @@ impl Prefs {
     pub fn unpin_dock(&mut self, desktop_id: &str) {
         self.dock.retain(|d| d != desktop_id);
     }
+
+    /// Drop `desktop_id` on the dock at `slot` (a drag rearrange).
+    ///
+    /// Membership is exclusive: a dock app is not also on the grid. If the
+    /// dock is full and `slot` holds another app, that app is swapped out
+    /// to the grid at `swap_to` (the dragged icon's old place). `grid` is
+    /// the current grid order (ids, dock apps excluded).
+    pub fn drop_on_dock(&mut self, desktop_id: &str, slot: usize, swap_to: usize, grid: &[String]) {
+        const MAX: usize = 6;
+        let was_in_dock = self.dock.iter().any(|d| d == desktop_id);
+        let mut dock: Vec<String> = self.dock.iter().filter(|d| *d != desktop_id).cloned().collect();
+        let mut displaced = None;
+        if dock.len() >= MAX && !was_in_dock {
+            let at = slot.min(dock.len() - 1);
+            displaced = Some(dock.remove(at));
+            dock.insert(at, desktop_id.into());
+        } else {
+            dock.insert(slot.min(dock.len()), desktop_id.into());
+        }
+        self.dock = dock;
+        let mut order: Vec<String> = grid.iter().filter(|g| *g != desktop_id).cloned().collect();
+        if let Some(d) = displaced {
+            order.insert(swap_to.min(order.len()), d);
+        }
+        self.home_order = order;
+    }
+
+    /// Drop `desktop_id` on the grid at global index `index` (a dock app
+    /// leaves the dock). `grid` is the current grid order.
+    pub fn drop_on_grid(&mut self, desktop_id: &str, index: usize, grid: &[String]) {
+        self.unpin_dock(desktop_id);
+        let mut order: Vec<String> = grid.iter().filter(|g| *g != desktop_id).cloned().collect();
+        order.insert(index.min(order.len()), desktop_id.into());
+        self.home_order = order;
+    }
 }
 
 /// Canonical desktop-id for a seed read from the legacy shell's
@@ -227,4 +262,65 @@ fn config_home() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+#[cfg(test)]
+mod drop_tests {
+    use super::*;
+
+    fn ids(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| (*s).to_string()).collect()
+    }
+
+    #[test]
+    fn grid_to_dock_inserts_and_leaves_the_grid() {
+        let mut p = Prefs {
+            dock: ids(&["a", "b"]),
+            ..Prefs::default()
+        };
+        p.drop_on_dock("x", 1, 0, &ids(&["w", "x", "y"]));
+        assert_eq!(p.dock, ids(&["a", "x", "b"]));
+        assert_eq!(p.home_order, ids(&["w", "y"]));
+    }
+
+    #[test]
+    fn full_dock_swaps_with_the_target_slot() {
+        let mut p = Prefs {
+            dock: ids(&["d0", "d1", "d2", "d3", "d4", "d5"]),
+            ..Prefs::default()
+        };
+        p.drop_on_dock("x", 2, 1, &ids(&["w", "x", "y"]));
+        assert_eq!(p.dock, ids(&["d0", "d1", "x", "d3", "d4", "d5"]));
+        // The displaced app takes the dragged icon's old grid place.
+        assert_eq!(p.home_order, ids(&["w", "d2", "y"]));
+    }
+
+    #[test]
+    fn reorder_inside_the_dock() {
+        let mut p = Prefs {
+            dock: ids(&["a", "b", "c"]),
+            ..Prefs::default()
+        };
+        p.drop_on_dock("a", 2, 0, &ids(&["w"]));
+        assert_eq!(p.dock, ids(&["b", "c", "a"]));
+        assert_eq!(p.home_order, ids(&["w"]));
+    }
+
+    #[test]
+    fn dock_to_grid_unpins_and_places() {
+        let mut p = Prefs {
+            dock: ids(&["a", "b"]),
+            ..Prefs::default()
+        };
+        p.drop_on_grid("a", 1, &ids(&["w", "y"]));
+        assert_eq!(p.dock, ids(&["b"]));
+        assert_eq!(p.home_order, ids(&["w", "a", "y"]));
+    }
+
+    #[test]
+    fn grid_reorder_and_out_of_range_index() {
+        let mut p = Prefs::default();
+        p.drop_on_grid("w", 99, &ids(&["w", "x", "y"]));
+        assert_eq!(p.home_order, ids(&["x", "y", "w"]));
+    }
 }
