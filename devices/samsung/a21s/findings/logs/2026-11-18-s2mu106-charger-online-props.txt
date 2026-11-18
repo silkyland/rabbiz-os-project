@@ -1,0 +1,42 @@
+s2mu106-charger error-propagating power_supply build — module swap on A21s
+==========================================================================
+Date: 2026-11-18. Device: SM-A217F, kernel 7.3.0-g14a425b3a7dc-dirty.
+Host build: docker run -v a21s-kbuild:/work -v <repo>/socs/exynos850/drivers/s2mu106:/tmp/s2mu106 \
+  rabbizos-kbuild:usb-investigation make -C /work/out ARCH=arm64 LLVM=1 M=/tmp/s2mu106 modules
+  -> s2mu106-charger.ko sha256 5ac8a1643487b6d9f7987f2c8cd8cfb62ee574a7827de752fb98ece8a7149f15
+Previously deployed .ko sha256 ce595d09ebf89098546efbb86a89655b7be99ec95ac101d27d01adfdbec588cf
+
+Session over Wi-Fi (192.168.50.6) inside scripts/device_session.sh:
+  echo 0x3d > /sys/bus/i2c/devices/i2c-0/delete_device
+  rmmod s2mu106_charger
+  # /sys/class/power_supply/ no longer lists s2mu106-charger (expected)
+  cp /tmp/s2mu106-charger-new.ko /usr/lib/modules/7.3.0-g14a425b3a7dc-dirty/extra/s2mu106-charger.ko
+  insmod extra/s2mu106-charger.ko
+  echo s2mu106-charger 0x3d > /sys/bus/i2c/devices/i2c-0/new_device
+
+power_supply reads on the NEW module (0.5 s + 1.5 s after probe):
+  type=USB
+  online=1                      (USB VBUS from the Mac present)
+  status=Charging
+  health=Good
+  present=1
+  constant_charge_current_max=1400000   (uA — matches CHARGE_MA_VAL 1400)
+  input_current_limit=1500000           (uA — matches INPUT_MA_VAL 1500)
+  online read again = 1
+
+dmesg (device):
+  [    7.248491] s2mu106-charger 0-003d: s2mu106 charger enabled (chg=1)   # boot probe, OLD module
+  [  440.070770] i2c i2c-0: delete_device: Deleting device s2mu106-charger at 0x3d
+  [  440.328108] s2mu106-charger 0-003d: s2mu106 charger enabled (chg=1)   # re-probe, NEW module
+  [  440.328194] i2c i2c-0: new_device: Instantiated device s2mu106-charger at 0x3d
+
+Installed .ko sha256 after deploy:
+  5ac8a1643487b6d9f7987f2c8cd8cfb62ee574a7827de752fb98ece8a7149f15  extra/s2mu106-charger.ko
+
+NOT VERIFIED: a real VBUS plug/unplug transition of `online`. The charge
+path is the same USB-C port that carries usb0 to the Mac and there is no
+remote physical access; toggling the gadget does not drop VBUS. The
+error-propagation path (power_supply returning -EIO on i2c read failure)
+is not exercised either — needs a forced fault or a bench rig.
+Charge continues through the swap because the charge switch is set in
+hardware; the 100 s watchdog tolerates the <1 s unload window.

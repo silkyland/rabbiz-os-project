@@ -75,7 +75,7 @@ struct s2mu106_charger {
 	struct i2c_client *client;
 	struct power_supply *psy;
 	struct delayed_work wdog;
-	bool charging;
+	bool last_online;
 };
 
 static int s2mu106_update(struct i2c_client *c, u8 reg, u8 val, u8 mask)
@@ -101,12 +101,12 @@ static int s2mu106_set_charge_ma(struct i2c_client *c, int ma)
 			      CTRL7_FAST_MASK);
 }
 
-static bool s2mu106_vbus_good(struct i2c_client *c)
+static int s2mu106_read_online(struct i2c_client *c)
 {
 	int v = i2c_smbus_read_byte_data(c, S2MU106_CHG_STATUS0);
 
 	if (v < 0)
-		return false;
+		return v;
 	v &= CHGIN_STATUS_MASK;
 	return v == 0x03 || v == 0x05;
 }
@@ -137,7 +137,7 @@ static void s2mu106_wdog(struct work_struct *work)
 	struct s2mu106_charger *chg =
 		container_of(work, struct s2mu106_charger, wdog.work);
 	struct i2c_client *c = chg->client;
-	bool charging = s2mu106_vbus_good(c);
+	int online = s2mu106_read_online(c);
 	int mode;
 
 	s2mu106_update(c, S2MU106_CHG_CTRL12, WDT_CLR, WDT_CLR);
@@ -148,8 +148,8 @@ static void s2mu106_wdog(struct work_struct *work)
 		s2mu106_update(c, S2MU106_CHG_CTRL0,
 			REG_MODE_CHG, REG_MODE_MASK);
 
-	if (charging != chg->charging) {
-		chg->charging = charging;
+	if (online >= 0 && online != chg->last_online) {
+		chg->last_online = online;
 		power_supply_changed(chg->psy);
 	}
 	schedule_delayed_work(&chg->wdog, msecs_to_jiffies(WD_KICK_MS));
@@ -164,33 +164,49 @@ static int s2mu106_psy_get(struct power_supply *psy,
 
 	switch (psp) {
 	case POWER_SUPPLY_PROP_ONLINE:
-		val->intval = chg->charging;
+		v = s2mu106_read_online(c);
+		if (v < 0)
+			return v;
+		val->intval = v;
 		break;
 	case POWER_SUPPLY_PROP_STATUS:
-		if (!chg->charging) {
+		v = s2mu106_read_online(c);
+		if (v < 0)
+			return v;
+		if (!v) {
 			val->intval = POWER_SUPPLY_STATUS_DISCHARGING;
 			break;
 		}
 		v = i2c_smbus_read_byte_data(c, S2MU106_CHG_STATUS1);
-		val->intval = (v >= 0 && (v & DONE_STATUS_MASK)) ?
+		if (v < 0)
+			return v;
+		val->intval = (v & DONE_STATUS_MASK) ?
 			POWER_SUPPLY_STATUS_FULL : POWER_SUPPLY_STATUS_CHARGING;
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		v = i2c_smbus_read_byte_data(c, S2MU106_CHG_STATUS1);
-		val->intval = (v >= 0 && (v & 0xf0) == 0x40) ?
+		if (v < 0)
+			return v;
+		val->intval = ((v & 0xf0) == 0x40) ?
 			POWER_SUPPLY_HEALTH_OVERVOLTAGE : POWER_SUPPLY_HEALTH_GOOD;
 		break;
 	case POWER_SUPPLY_PROP_PRESENT:
 		v = i2c_smbus_read_byte_data(c, S2MU106_CHG_STATUS3);
-		val->intval = v >= 0 && (v & 0x01);
+		if (v < 0)
+			return v;
+		val->intval = !!(v & 0x01);
 		break;
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
 		v = i2c_smbus_read_byte_data(c, S2MU106_CHG_CTRL7);
-		val->intval = v < 0 ? v : ((v & 0x3f) + 1) * 50 * 1000;
+		if (v < 0)
+			return v;
+		val->intval = ((v & CTRL7_FAST_MASK) + 1) * 50 * 1000;
 		break;
 	case POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT:
 		v = i2c_smbus_read_byte_data(c, S2MU106_CHG_CTRL1);
-		val->intval = v < 0 ? v : ((v & 0x7f) * 25 + 50) * 1000;
+		if (v < 0)
+			return v;
+		val->intval = ((v & CTRL1_INLIM_MASK) * 25 + 50) * 1000;
 		break;
 	default:
 		return -EINVAL;
@@ -244,6 +260,7 @@ static int s2mu106_probe(struct i2c_client *client)
 {
 	struct s2mu106_charger *chg;
 	struct power_supply_config cfg = {};
+	int online;
 
 	chg = devm_kzalloc(&client->dev, sizeof(*chg), GFP_KERNEL);
 	if (!chg)
@@ -252,7 +269,8 @@ static int s2mu106_probe(struct i2c_client *client)
 	i2c_set_clientdata(client, chg);
 
 	s2mu106_program(chg);
-	chg->charging = s2mu106_vbus_good(client);
+	online = s2mu106_read_online(client);
+	chg->last_online = online > 0;
 
 	cfg.drv_data = chg;
 	chg->psy = devm_power_supply_register(&client->dev,
@@ -265,7 +283,7 @@ static int s2mu106_probe(struct i2c_client *client)
 	schedule_delayed_work(&chg->wdog, msecs_to_jiffies(WD_KICK_MS));
 
 	dev_info(&client->dev, "s2mu106 charger enabled (chg=%d)\n",
-		chg->charging);
+		chg->last_online);
 	return 0;
 }
 
