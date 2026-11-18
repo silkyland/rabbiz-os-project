@@ -461,6 +461,42 @@ fn write_ready_file() {
     }
 }
 
+/// Touch `$XDG_RUNTIME_DIR/rabbiz-de.shot` → dump the shell frame (plus the
+/// gesture bar, the same elements the texture path submits) as
+/// `rabbiz-de-shot.ppm`. App surfaces are per-client shm and cannot be
+/// composited here — under `Foreground::App` this still dumps the shell.
+fn dump_frame_if_triggered(de: &crate::state::De) {
+    let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") else {
+        return;
+    };
+    let trigger = format!("{dir}/rabbiz-de.shot");
+    if std::fs::metadata(&trigger).is_err() {
+        return;
+    }
+    let _ = std::fs::remove_file(&trigger);
+    let Some(shell) = &de.shell_px else {
+        return;
+    };
+    let mut c = de_paint::canvas::Canvas::new(shell.size);
+    c.blit(shell, de_api::Point::ZERO);
+    let bar = de_ui::shell_stub::gesture_bar(shell.size);
+    c.blit(&bar, de_api::Point::new(0, shell.size.h - bar.size.h));
+    let px = c.to_pixels();
+    let path = format!("{dir}/rabbiz-de-shot.ppm");
+    if let Ok(mut f) = File::create(&path) {
+        let _ = write!(f, "P6\n{} {}\n255\n", px.size.w, px.size.h);
+        // Pixels are premultiplied RGBA — flatten over opaque black.
+        let mut rgb = Vec::with_capacity((px.size.w * px.size.h * 3) as usize);
+        for p in px.data.chunks_exact(4) {
+            let a = u16::from(p[3]) + 1;
+            rgb.push((u16::from(p[0]) * a / 256) as u8);
+            rgb.push((u16::from(p[1]) * a / 256) as u8);
+            rgb.push((u16::from(p[2]) * a / 256) as u8);
+        }
+        let _ = f.write_all(&rgb);
+    }
+}
+
 fn minute_of_day() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -544,6 +580,17 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
             TimeoutAction::ToDuration(Duration::from_secs(30))
         })
         .map_err(|e| format!("timer source: {e}"))?;
+
+    // Frame dump trigger: touch `$XDG_RUNTIME_DIR/rabbiz-de.shot` → the next
+    // tick writes the composited shell frame to `rabbiz-de-shot.ppm`. The DE
+    // does not implement screencopy yet; this is the device debug path.
+    let shot_timer = Timer::immediate();
+    handle
+        .insert_source(shot_timer, |_, _, run: &mut Run| {
+            dump_frame_if_triggered(&run.de);
+            TimeoutAction::ToDuration(Duration::from_millis(500))
+        })
+        .map_err(|e| format!("shot timer source: {e}"))?;
 
     // DRM vblank source.
     let notifier = run
