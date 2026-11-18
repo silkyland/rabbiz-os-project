@@ -103,7 +103,7 @@ impl WindowMorph {
         )
     }
 
-    /// The render can return EmptyFrame near an endpoint. Wake even without a flip.
+    /// The render can return `EmptyFrame` near an endpoint. Wake even without a flip.
     pub fn next_frame_at(&self, interval: Duration) -> Option<Instant> {
         if self.phase == Phase::Dragging
             || (self.animator.settled() && self.phase == Phase::Opening && self.ready_at.is_none())

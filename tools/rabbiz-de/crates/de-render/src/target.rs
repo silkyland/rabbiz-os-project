@@ -36,7 +36,7 @@ impl std::error::Error for RenderError {}
 
 /// The active renderer for a run (chosen by `--renderer`/`auto`).
 pub enum DeRenderer {
-    Gl(GlesRenderer),
+    Gl(Box<GlesRenderer>),
     Soft(PixmanRenderer),
 }
 
@@ -83,3 +83,4 @@ where
 {
     TextureRenderElement::from_texture_buffer(location, buffer, None, None, None, Kind::Unspecified)
 }
+

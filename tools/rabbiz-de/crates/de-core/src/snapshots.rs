@@ -1,5 +1,5 @@
 //! Recents snapshot cache (M3-T4): the last presented pixels of each
-//! fullscreen app, keyed by toplevel app_id, so the recents rail can draw
+//! fullscreen app, keyed by toplevel `app_id`, so the recents rail can draw
 //! real thumbnails instead of placeholders.
 //!
 //! Pure data — no smithay types cross this seam. The compositor calls
@@ -127,6 +127,7 @@ pub fn window_app_id(toplevel: &ToplevelSurface) -> String {
 /// toolkits for shell-launched apps (`RABBIZ_FORCE_SOFTWARE=1`), so the
 /// common path *is* shm; GPU clients keep the icon fallback in the rail.
 #[allow(unsafe_code)] // smithay hands us a raw pool pointer, scoped to the closure.
+#[must_use]
 pub fn capture_window(window: &Window) -> Option<Pixels> {
     let surface = window.wl_surface()?.into_owned();
     let buffer = with_states(&surface, |states| {

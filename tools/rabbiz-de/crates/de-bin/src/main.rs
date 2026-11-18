@@ -1,4 +1,4 @@
-//! `rabbiz-de` — RabbizOS compositor entry point (M0: run / probe / env).
+//! `rabbiz-de` — `RabbizOS` compositor entry point (M0: run / probe / env).
 
 use de_config::flags::{parse, Command};
 use de_core::{event_loop, init, Run};
@@ -79,7 +79,7 @@ fn main() {
                         cli.flags.duration.map(std::time::Duration::from_secs),
                     ) {
                         Ok(run) => match event_loop(run, display, cli.flags.stats) {
-                            Ok(code) => code as i32,
+                            Ok(code) => i32::from(code),
                             Err(e) => {
                                 eprintln!("run: {e}");
                                 EXIT_CRASH_FALLBACK

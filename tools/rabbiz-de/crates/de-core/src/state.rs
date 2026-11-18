@@ -63,6 +63,7 @@ impl smithay::reexports::wayland_server::backend::ClientData for DeClientState {
 }
 
 /// Everything `de-core` needs to run the session.
+#[allow(clippy::struct_excessive_bools)] // compositor-wide state; the bools are independent flags
 pub struct De {
     /// Kept alive for the session's lifetime.
     #[allow(dead_code)]
@@ -124,7 +125,7 @@ pub struct De {
     pub gesture_bar: Option<Box<dyn std::any::Any>>,
     /// Last minute rendered into the shell frame (re-raster on change).
     pub shell_minute: u64,
-    /// Last touch position in logical coords (TouchUp carries none).
+    /// Last touch position in logical coords (`TouchUp` carries none).
     pub last_touch_pos: smithay::utils::Point<f64, smithay::utils::Logical>,
 
     /// M1-T4 counters (observed from `render_frame` results).
@@ -260,6 +261,7 @@ pub fn rss_kb() -> u64 {
 /// Initialize session, card, output, compositor, renderer, brand texture
 /// and the whole Wayland protocol state. `display` must be `Display::<De>`.
 /// Fails before the first page flip ⇒ exit 75 territory.
+#[allow(clippy::too_many_lines)] // sequential bring-up; splitting hides ordering
 pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let profile = de_config::device_profile::DeviceProfile::load().unwrap_or_else(|error| {
         eprintln!("device profile: {error}; using handset timing");
@@ -287,7 +289,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     if want_gl && de_backend::drm::init_egl(&mut setup).is_ok() {
         let display_egl: EGLDisplay = setup.egl_display.clone().expect("egl init");
         match de_render::gl::create(&display_egl) {
-            Ok(r) => renderer = Some(DeRenderer::Gl(r)),
+            Ok(r) => renderer = Some(DeRenderer::Gl(Box::new(r))),
             Err(e) => gl_error = Some(e.to_string()),
         }
     } else if want_gl {
@@ -525,6 +527,7 @@ impl De {
     }
 
     /// Window whose (toplevel) surface is `surface`.
+    #[must_use]
     pub fn window_for_surface(
         &self,
         surface: &smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
@@ -532,7 +535,7 @@ impl De {
         use smithay::wayland::seat::WaylandFocus;
         self.space
             .elements()
-            .find(|w| w.wl_surface().map(|s| &*s == surface).unwrap_or(false))
+            .find(|w| w.wl_surface().is_some_and(|s| &*s == surface))
             .cloned()
     }
 

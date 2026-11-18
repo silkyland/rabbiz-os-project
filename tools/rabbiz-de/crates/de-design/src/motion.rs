@@ -398,22 +398,22 @@ pub fn emphasized_eval(t: f32) -> f32 {
 #[must_use]
 pub fn bezier_eval(b: Bezier, t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
-    if b.x1 == 0.0 || b.x2 == 1.0 {
+    if b.x1.abs() < f32::EPSILON || (b.x2 - 1.0).abs() < f32::EPSILON {
         // At a flat x endpoint Newton's starting derivative can vanish even
         // for an interior t. Bracketing covers both standard edge curves.
-        if t == 0.0 || t == 1.0 || t.is_nan() {
+        if t <= 0.0 || t >= 1.0 || t.is_nan() {
             return t;
         }
-        let (mut low, mut high) = (0.0, 1.0);
+        let (mut low, mut high) = (0.0f32, 1.0f32);
         for _ in 0..24 {
-            let mid = (low + high) * 0.5;
+            let mid = low.midpoint(high);
             if cubic(b.x1, b.x2, mid) < t {
                 low = mid;
             } else {
                 high = mid;
             }
         }
-        return cubic(b.y1, b.y2, (low + high) * 0.5);
+        return cubic(b.y1, b.y2, low.midpoint(high));
     }
     // Solve x(u) = t for u, then return y(u).
     let mut u = t;
@@ -628,8 +628,8 @@ mod tests {
         let decelerate = [[[0.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]]];
         let accelerate = [[[0.0, 0.0], [0.3, 0.0], [1.0, 1.0], [1.0, 1.0]]];
         let emphasized = [
-            [[0.0, 0.0], [0.05, 0.0], [0.133333, 0.06], [0.166666, 0.4]],
-            [[0.166666, 0.4], [0.208333, 0.82], [0.25, 1.0], [1.0, 1.0]],
+            [[0.0, 0.0], [0.05, 0.0], [0.133_333, 0.06], [0.166_666, 0.4]],
+            [[0.166_666, 0.4], [0.208_333, 0.82], [0.25, 1.0], [1.0, 1.0]],
         ];
 
         for (name, evaluate, path) in [
@@ -664,7 +664,7 @@ mod tests {
             }
         }
 
-        assert_eq!(emphasized_eval(0.166666), 0.4);
+        assert_eq!(emphasized_eval(0.166_666), 0.4);
     }
 
     // Evaluate the unscaled reference with de Casteljau subdivision in f64.
@@ -679,16 +679,16 @@ mod tests {
             }
             points[0]
         };
-        let (mut low, mut high) = (0.0, 1.0);
+        let (mut low, mut high) = (0.0f64, 1.0f64);
         for _ in 0..50 {
-            let mid = (low + high) * 0.5;
+            let mid = low.midpoint(high);
             if coordinate(0, mid) < t {
                 low = mid;
             } else {
                 high = mid;
             }
         }
-        coordinate(1, (low + high) * 0.5)
+        coordinate(1, low.midpoint(high))
     }
 
     #[test]

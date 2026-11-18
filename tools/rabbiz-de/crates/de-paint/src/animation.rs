@@ -200,8 +200,16 @@ impl SpringValue {
         );
         // Critical damping can still overshoot with inherited velocity.
         let (value, velocity) = if clock.no_bounce || self.kind == MotionKind::Effects {
-            let bounded = value.clamp(self.value.min(self.target), self.value.max(self.target));
-            (bounded, if bounded == value { velocity } else { 0.0 })
+            let range = self.value.min(self.target)..=self.value.max(self.target);
+            let bounded = value.clamp(*range.start(), *range.end());
+            (
+                bounded,
+                if range.contains(&value) {
+                    velocity
+                } else {
+                    0.0
+                },
+            )
         } else {
             (value, velocity)
         };

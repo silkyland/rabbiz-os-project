@@ -180,7 +180,7 @@ impl Run {
             now: t0,
         };
         let queued = match renderer {
-            DeRenderer::Gl(r) => render_with(&mut parts, r)?,
+            DeRenderer::Gl(r) => render_with(&mut parts, &mut **r)?,
             DeRenderer::Soft(r) => render_with(&mut parts, r)?,
         };
         // `copy_with_damage` completes on the frame that carried damage.
@@ -263,14 +263,7 @@ where
         let output = de_api::Rect::new(0, 0, de.output.width as i32, de.output.height as i32);
         push_morph_elements(&mut elements, renderer, morph, output, de.now);
     }
-    if !show_app {
-        if let Some(tex) = texture_buffer::<R>(de.shell_tex.as_ref()) {
-            elements.push(DeElement::from(tex_el::<R>(
-                tex,
-                Point::<f64, Physical>::from((0.0, 0.0)),
-            )));
-        }
-    } else {
+    if show_app {
         for window in de.space.elements().rev() {
             let loc = de
                 .space
@@ -285,9 +278,14 @@ where
                 1.0,
             ));
         }
+    } else if let Some(tex) = texture_buffer::<R>(de.shell_tex.as_ref()) {
+        elements.push(DeElement::from(tex_el::<R>(
+            tex,
+            Point::<f64, Physical>::from((0.0, 0.0)),
+        )));
     }
     // Gesture bar on top of everything.
-    let bar_y = de.output.height as f64 - de_ui::chrome::NAV_H as f64;
+    let bar_y = f64::from(de.output.height) - f64::from(de_ui::chrome::NAV_H);
     if let Some(tex) = texture_buffer::<R>(de.gesture_bar.as_ref()) {
         let bar = DeElement::from(tex_el::<R>(tex, Point::<f64, Physical>::from((0.0, bar_y))));
         if transitioning {
@@ -493,7 +491,7 @@ impl Run {
                 frames: self.window_frames,
                 cpu_ms: summarize(&self.cpu_samples),
                 gpu_ms: None,
-                damage_px: (self.de.output.width * self.de.output.height) as u64
+                damage_px: u64::from(self.de.output.width * self.de.output.height)
                     * self.window_frames,
                 layers: 1,
                 textures_mb: 0.0,
@@ -604,8 +602,7 @@ fn write_ready_file() {
         let pid = std::process::id();
         let ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+            .map_or(0, |d| d.as_millis() as u64);
         let _ = std::fs::write(format!("{dir}/rabbiz-de.ready"), format!("{pid} {ms}"));
     }
 }
@@ -627,9 +624,10 @@ fn dump_frame_if_triggered(de: &crate::state::De) {
         .space
         .elements()
         .map(|w| {
-            w.wl_surface()
-                .map(|s| format!("{:?} alive={}", s.id(), s.is_alive()))
-                .unwrap_or_else(|| "no-surface".into())
+            w.wl_surface().map_or_else(
+                || "no-surface".into(),
+                |s| format!("{:?} alive={}", s.id(), s.is_alive()),
+            )
         })
         .collect();
     eprintln!(
@@ -645,7 +643,7 @@ fn dump_frame_if_triggered(de: &crate::state::De) {
         let _ = write!(f, "P6\n{} {}\n255\n", px.size.w, px.size.h);
         // Pixels are premultiplied RGBA — flatten over opaque black.
         let mut rgb = Vec::with_capacity((px.size.w * px.size.h * 3) as usize);
-        for p in px.data.chunks_exact(4) {
+        for p in px.data.as_chunks::<4>().0 {
             let a = u16::from(p[3]) + 1;
             rgb.push((u16::from(p[0]) * a / 256) as u8);
             rgb.push((u16::from(p[1]) * a / 256) as u8);
@@ -658,12 +656,13 @@ fn dump_frame_if_triggered(de: &crate::state::De) {
 fn minute_of_day() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() / 60)
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs() / 60)
 }
 
 /// Run the session event loop until `run.duration` elapses (session mode:
 /// no duration → run until killed).
+#[allow(unsafe_code)] // wayland-server's dispatch_clients is an unsafe FFI call
+#[allow(clippy::too_many_lines)] // source registration order is the documentation
 pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Result<u8, String> {
     let mut event_loop: EventLoop<Run> =
         EventLoop::try_new().map_err(|e| format!("event loop: {e}"))?;
@@ -675,7 +674,7 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     let socket_name = socket.socket_name().to_string_lossy().into_owned();
     run.de.socket_name = Some(socket_name.clone());
     handle
-        .insert_source(socket, |stream, _, run: &mut Run| {
+        .insert_source(socket, |stream, (), run: &mut Run| {
             if let Err(err) = run
                 .de
                 .display_handle
@@ -715,13 +714,13 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         .take()
         .ok_or("seat notifier consumed")?;
     handle
-        .insert_source(seat, |_, _, _: &mut Run| {})
+        .insert_source(seat, |_, (), _: &mut Run| {})
         .map_err(|e| format!("seat source: {e}"))?;
 
     // libinput.
     let libinput = de_backend::libinput::init(&run.de.session, &run.de.seat_name);
     handle
-        .insert_source(libinput, |event, _, run: &mut Run| {
+        .insert_source(libinput, |event, (), run: &mut Run| {
             run.de.process_input_event(event);
             run.pump();
         })
@@ -730,7 +729,7 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     // Clock tick — re-raster the shell frame each minute.
     let timer = Timer::immediate();
     handle
-        .insert_source(timer, |_, _, run: &mut Run| {
+        .insert_source(timer, |_, (), run: &mut Run| {
             if run.de.shell_minute != minute_of_day() {
                 run.de.needs_present = true;
                 run.pump();
@@ -745,7 +744,7 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     // dmabuf/EGL content is not captured there either).
     let shot_timer = Timer::immediate();
     handle
-        .insert_source(shot_timer, |_, _, run: &mut Run| {
+        .insert_source(shot_timer, |_, (), run: &mut Run| {
             dump_frame_if_triggered(&run.de);
             run.de.check_osk();
             TimeoutAction::ToDuration(Duration::from_millis(500))

@@ -24,7 +24,7 @@ pub fn upload(renderer: &mut DeRenderer, px: &Pixels) -> Result<DeTexture, Rende
     match renderer {
         DeRenderer::Gl(r) => {
             let buf = TextureBuffer::from_memory(
-                r,
+                &mut **r,
                 &px.data,
                 DrmFourcc::Abgr8888,
                 size,
@@ -69,3 +69,4 @@ pub fn upload_rgba(
         },
     )
 }
+

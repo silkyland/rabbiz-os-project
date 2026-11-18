@@ -67,8 +67,7 @@ impl XdgShellHandler for De {
             .elements()
             .find(|w| {
                 w.toplevel()
-                    .map(|t| t.wl_surface() == surface.wl_surface())
-                    .unwrap_or(false)
+                    .is_some_and(|t| t.wl_surface() == surface.wl_surface())
             })
             .cloned();
         eprintln!(

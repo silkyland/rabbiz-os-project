@@ -7,6 +7,7 @@ use smithay::reexports::input::Libinput;
 /// Create the libinput context bound to `seat` and wrap it in the calloop
 /// event source. Device nodes are opened through the session, so no extra
 /// privileges are needed.
+#[must_use]
 pub fn init(session: &LibSeatSession, seat: &str) -> LibinputInputBackend {
     let mut ctx =
         Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(session.clone().into());

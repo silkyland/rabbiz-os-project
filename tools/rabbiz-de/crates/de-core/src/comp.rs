@@ -1,4 +1,4 @@
-//! wl_compositor + wl_shm handler impls (M1-T3).
+//! `wl_compositor` + `wl_shm` handler impls (M1-T3).
 
 use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
@@ -116,7 +116,7 @@ fn ensure_initial_configure(
 
     if let Some(window) = space
         .elements()
-        .find(|w| w.wl_surface().map(|s| &*s == surface).unwrap_or(false))
+        .find(|w| w.wl_surface().is_some_and(|s| &*s == surface))
         .cloned()
     {
         if let Some(toplevel) = window.toplevel() {
@@ -136,11 +136,9 @@ fn ensure_initial_configure(
         return;
     }
 
-    if let Some(popup) = popups.find_popup(surface) {
-        if let PopupKind::Xdg(ref popup) = popup {
-            if !popup.is_initial_configure_sent() {
-                let _ = popup.send_configure();
-            }
+    if let Some(PopupKind::Xdg(popup)) = popups.find_popup(surface) {
+        if !popup.is_initial_configure_sent() {
+            let _ = popup.send_configure();
         }
     }
 

@@ -8,6 +8,7 @@ pub const ABOVE_WINDOWS: [Layer; 2] = [Layer::Overlay, Layer::Top];
 pub const BELOW_WINDOWS: [Layer; 2] = [Layer::Bottom, Layer::Background];
 
 /// The map's geometry includes the surface tree's bounding-box offset.
+#[must_use]
 pub fn origin(map: &LayerMap, surface: &LayerSurface) -> Option<Point<i32, Logical>> {
     map.layer_geometry(surface)
         .map(|geometry| geometry.loc - surface.bbox().loc)

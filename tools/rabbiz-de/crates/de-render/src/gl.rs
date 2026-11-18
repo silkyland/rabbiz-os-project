@@ -16,6 +16,7 @@ impl std::fmt::Display for GlError {
 impl std::error::Error for GlError {}
 
 /// Create a `GlesRenderer` on `display` (default config + priority).
+#[allow(unsafe_code)] // smithay `GlesRenderer::new` is an unsafe FFI ctor
 pub fn create(display: &EGLDisplay) -> Result<GlesRenderer, GlError> {
     let ctx = EGLContext::new_with_priority(
         display,

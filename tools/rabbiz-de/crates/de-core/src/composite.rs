@@ -28,9 +28,7 @@ const CLEAR: [u8; 4] = [22, 16, 26, 255];
 /// produced its first frame.
 #[must_use]
 pub fn composite_output(de: &De) -> Option<Pixels> {
-    if de.shell_px.is_none() {
-        return None;
-    }
+    de.shell_px.as_ref()?;
     let mut canvas = Canvas::filled(
         Size::new(de.output.width as i32, de.output.height as i32),
         CLEAR,
@@ -51,7 +49,7 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     if matches!(de.foreground, Foreground::App) && de.morph.is_none() {
         for window in de.space.elements().rev() {
             let loc = de.space.element_location(window).unwrap_or_default();
-            let Some(surface) = window.wl_surface().map(|s| s.into_owned()) else {
+            let Some(surface) = window.wl_surface().map(std::borrow::Cow::into_owned) else {
                 continue;
             };
             blit_surface(&mut canvas, &surface, ApiPoint::new(loc.x, loc.y));

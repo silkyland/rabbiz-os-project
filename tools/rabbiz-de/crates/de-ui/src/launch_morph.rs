@@ -110,7 +110,7 @@ impl MorphAnimator {
     /// the current progress and hand the last frame's velocity to the spring.
     pub fn retarget(&mut self, open: bool) {
         let target = if open { 1.0 } else { 0.0 };
-        if target == self.spring.target {
+        if (target - self.spring.target).abs() < f32::EPSILON {
             return;
         }
         self.timed_from = self.settled().then_some(self.spring.value);
@@ -137,7 +137,7 @@ impl MorphAnimator {
         self.elapsed_ms += dt_s * 1000.0;
         if let Some(from) = self.timed_from {
             let timing = self.timing.for_form_factor(clock.form_factor());
-            let motion = if self.spring.target == 1.0 {
+            let motion = if self.spring.target > 0.5 {
                 timing.enter()
             } else {
                 timing.exit()

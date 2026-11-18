@@ -25,7 +25,7 @@ impl De {
         let size = Size::new(self.output.width as i32, self.output.height as i32);
         let s = self.strings.clone();
         let t = tokens::DEFAULT;
-        let status = self.status_info();
+        let status = Self::status_info();
         match self.nav.current {
             Screen::Recents => {
                 let m = self.recents_model();
@@ -122,11 +122,10 @@ impl De {
     }
 
     pub(crate) fn app_icon(&mut self, id: &str) -> IconEntry {
-        let (label, icon_name) = self
-            .catalog
-            .find(id)
-            .map(|entry| (entry.name.clone(), entry.icon.clone()))
-            .unwrap_or_else(|| (id.to_owned(), String::new()));
+        let (label, icon_name) = self.catalog.find(id).map_or_else(
+            || (id.to_owned(), String::new()),
+            |entry| (entry.name.clone(), entry.icon.clone()),
+        );
         let icon = self
             .icon_cache
             .entry(id.to_owned())
@@ -160,8 +159,7 @@ impl De {
         let title = self
             .catalog
             .find(id)
-            .map(|e| e.name.clone())
-            .unwrap_or_else(|| id.to_string());
+            .map_or_else(|| id.to_string(), |e| e.name.clone());
         let icon = self
             .app_icons(std::slice::from_ref(&id.to_string()))
             .pop()
@@ -190,7 +188,7 @@ impl De {
 
     /// Status bar data from the live sysfs/procfs pollers (Wi-Fi/BT arrive
     /// with the M4 D-Bus services — `Unknown`/`false` paints no icon).
-    fn status_info(&self) -> StatusInfo {
+    fn status_info() -> StatusInfo {
         let b = de_system::upower::poll_battery();
         let p = de_system::privacy::poll_privacy();
         StatusInfo {
@@ -206,17 +204,18 @@ impl De {
 }
 
 /// "HH:MM" local time (same `date` contract as the M1 stub).
+#[must_use]
 pub fn clock_hhmm() -> String {
     std::process::Command::new("date")
         .arg("+%H:%M")
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "--:--".to_string())
+        .map_or_else(|| "--:--".to_string(), |s| s.trim().to_string())
 }
 
 /// "Mon, 9 Jun" — locale comes from the session environment.
+#[must_use]
 pub fn clock_date() -> String {
     std::process::Command::new("date")
         .arg("+%a, %-d %b")

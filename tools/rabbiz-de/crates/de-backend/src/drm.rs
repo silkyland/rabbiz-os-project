@@ -46,13 +46,14 @@ pub struct DrmSetup {
     pub egl_display: Option<EGLDisplay>,
     /// GL render node (may differ from the display node).
     pub render_node: Option<smithay::backend::drm::DrmNode>,
-    /// GL_RENDERER string when EGL is up.
+    /// `GL_RENDERER` string when EGL is up.
     pub gl_renderer: Option<String>,
     pub egl_version: Option<String>,
 }
 
 /// Find the DRM card path: prefer the exynos by-path symlink, else the first
 /// `cardN` that exists.
+#[must_use]
 pub fn find_card() -> Option<PathBuf> {
     let by_path = PathBuf::from(EXYNOS_CARD_BY_PATH);
     if by_path.exists() {
@@ -96,6 +97,7 @@ pub fn init_from_fd(fd: OwnedFd, _path: &Path) -> Result<DrmSetup, SessionError>
 ///
 /// On success fills `egl_display`, `render_node`, `gl_renderer`,
 /// `egl_version`. Failure leaves them `None` and returns `Err`.
+#[allow(unsafe_code)] // EGLDisplay::new is an unsafe FFI ctor
 pub fn init_egl(setup: &mut DrmSetup) -> Result<(), SessionError> {
     // SAFETY: display is created from a live GBM device owned by this setup.
     let display = unsafe {
@@ -152,14 +154,14 @@ pub fn select_output(device: &mut DrmDevice) -> Result<Option<OutputSelection>, 
         let name = format!("{}-{}", conn.interface().as_str(), conn.interface_id());
         let (w, h) = mode.size();
         // vrefresh() returns integer Hz; derive more precisely from clock.
-        let refresh = mode.vrefresh() as f64;
+        let refresh = f64::from(mode.vrefresh());
         return Ok(Some(OutputSelection {
             connector_name: name,
             connector: *conn_handle,
             crtc,
             mode,
-            width: w as u32,
-            height: h as u32,
+            width: u32::from(w),
+            height: u32::from(h),
             refresh_hz: refresh,
         }));
     }
@@ -167,6 +169,7 @@ pub fn select_output(device: &mut DrmDevice) -> Result<Option<OutputSelection>, 
 }
 
 /// Build the GBM allocator + framebuffer exporter used by `DrmCompositor`.
+#[must_use]
 pub fn allocators(
     setup: &DrmSetup,
 ) -> (
