@@ -9,6 +9,7 @@
  */
 
 #include <linux/arm-smccc.h>
+#include <linux/clk.h>
 #include <linux/completion.h>
 #include <linux/delay.h>
 #include <linux/firmware.h>
@@ -24,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/workqueue.h>
+#include <dt-bindings/clock/exynos850.h>
 
 /* Exynos 850 (S5E3830) CHUB hardware addresses from vendor exynos3830.dts */
 #define CHUB_MAILBOX_PHYS	0x11a00000
@@ -108,6 +110,11 @@
 #define SENSOR_TYPE_GYRO	4
 #define SENSOR_TYPE_LIGHT	5
 #define SENSOR_TYPE_PROX	8
+
+static bool use_ccf_chubclk;
+module_param(use_ccf_chubclk, bool, 0444);
+MODULE_PARM_DESC(use_ccf_chubclk,
+		 "Write the CCF-reported CHUB bus rate to the firmware boot arguments");
 
 struct chub_bootargs {
 	char magic[16];
@@ -630,6 +637,43 @@ static struct iio_dev *chub_reg_iio(struct a21s_chub_dev *c, const char *name,
 	return indio;
 }
 
+static int __init chub_configure_boot_clock(struct a21s_chub_dev *c)
+{
+	struct of_phandle_args spec = {
+		.args_count = 1,
+		.args = { CLK_DOUT_CLKCMU_CHUB_BUS },
+	};
+	struct clk *clk;
+	unsigned long rate = 0;
+	u32 original = readl(&c->bootargs->chubclk);
+	int ret = -ENODEV;
+
+	/* The experimental platform device has no clock consumer node. */
+	spec.np = of_find_compatible_node(NULL, NULL, "samsung,exynos850-cmu-apm");
+	if (spec.np) {
+		clk = of_clk_get_from_provider(&spec);
+		of_node_put(spec.np);
+		if (IS_ERR(clk)) {
+			ret = PTR_ERR(clk);
+		} else {
+			rate = clk_get_rate(clk);
+			clk_put(clk);
+			ret = !rate || rate > U32_MAX ? -ERANGE : 0;
+		}
+	}
+
+	pr_info("a21s-chub: boot clock mode=%c ccf_hz=%lu bootargs_original_hz=%u lookup_rc=%d\n",
+		use_ccf_chubclk ? 'B' : 'A', rate, original, ret);
+	if (use_ccf_chubclk) {
+		if (ret)
+			return ret;
+		writel((u32)rate, &c->bootargs->chubclk);
+	}
+	pr_info("a21s-chub: bootargs_effective_hz=%u\n",
+		readl(&c->bootargs->chubclk));
+	return 0;
+}
+
 static int __init a21s_chub_init(void)
 {
 	struct a21s_chub_dev *c;
@@ -724,6 +768,9 @@ static int __init a21s_chub_init(void)
 	memcpy_toio(c->sram + c->bootargs->code_start, os_fw->data, os_fw->size);
 	c->bootargs->bootmode = BOOTMODE_COLD;
 	c->bootargs->runtimelog = 2;
+	ret = chub_configure_boot_clock(c);
+	if (ret)
+		goto err_irq;
 
 	c->ipc_map = (struct ipc_map_area *)(c->sram + c->bootargs->ipc_start);
 	memcpy(c->ipc_map->magic, CHUB_IPC_MAGIC, sizeof(CHUB_IPC_MAGIC));
