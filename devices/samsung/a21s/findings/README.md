@@ -14,6 +14,8 @@ Findings for samsung/a21s. Format: docs/FINDINGS.md
 | [als-zero-chub-scan](2026-11-18-als-zero-chub-scan.md) | reproduced | CHUB scan omits accel/gyro/ALS; reads now `-ENODATA` |
 | [kexec-container-kernel-black](2026-11-18-kexec-container-kernel-black.md) | reproduced | container-built kernel black-screens on kexec |
 | [soc-drivers-a21s-assumptions](2026-11-18-soc-drivers-a21s-assumptions.md) | reproduced | ledger of board data inside shared exynos850 drivers |
+| [suspend-blocked-abox](2026-11-18-suspend-blocked-abox.md) | reproduced | `echo mem` aborts: abox runtime suspend -EAGAIN, usage_count 1 |
+| [abox-calliope-root-causes](2026-11-18-abox-calliope-root-causes.md) | verified | the eleven ABOX/Calliope bring-up root causes + methods |
 | [dsi-underrun-link-recovery](2026-11-18-dsi-underrun-link-recovery.md) | hypothesis | DSI link-restart patch 0010 (built, not boot-tested) |
 
 ### DE / compositor

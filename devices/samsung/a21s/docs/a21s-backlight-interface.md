@@ -44,10 +44,13 @@ no daemon needed. `a21s-power-key` handles screen-off/on; the DE
 brightness slider writes the same file. Nothing else should own this
 path.
 
+## Measured (kernel #12, 2026-11-18)
+
+- Write latency **6–11 ms** across a 40/128/255/161 sweep — one DCS
+  command round-trip per write; `actual_brightness` tracks immediately.
+
 ## Unverified
 
 - Flicker under sustained slider changes — needs eyes on the panel;
   each write is one DCS command so rapid writes queue on
   `mipi_dsi_host_transfer`'s mutex.
-- Write latency (~one DSI command round-trip, expected single-digit ms)
-  — measured sweep pending a free device-lock window.
