@@ -18,16 +18,48 @@ use de_api::{Pixels, Size};
 const DEFAULT_SIZE: Size = Size { w: 720, h: 1600 };
 
 /// Render a named scene to premultiplied pixels.
-fn render_scene(name: &str, size: Size) -> Option<Pixels> {
+fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixels> {
+    let t = &de_design::tokens::DEFAULT;
     match name {
         "brand" => Some(de_ui::boot::brand_frame(size, 0.5)),
+        "lock" => Some(de_ui::lock::render(size, s, t, "09:41", "Mon, Jun 9")),
+        "home" => {
+            let apps: Vec<(String, String)> = (0..12)
+                .map(|i| (format!("app{i}"), format!("App {i}")))
+                .collect();
+            Some(de_ui::home::render(size, s, t, "09:41", "86%", &apps))
+        }
+        "drawer" => {
+            let apps: Vec<String> = (0..18).map(|i| format!("App {i}")).collect();
+            Some(de_ui::drawer::render(size, s, t, "09:41", &apps))
+        }
+        "recents" => {
+            let apps = vec!["Calculator".to_string(), "Files".to_string(), "Browser".to_string()];
+            Some(de_ui::recents::render(size, s, t, "09:41", &apps))
+        }
+        "shade" => Some(de_ui::shade::render(size, s, t, "09:41")),
+        "status" => Some(de_ui::status::render(size, s, t, "09:41", "86%")),
+        "qs" => Some(de_ui::qs::render(
+            size, s, t, "09:41", "qs.wifi",
+            &["Rabbiz-5G", "Home-WiFi", "CoffeeShop"],
+        )),
+        "osd" => Some(de_ui::osd::render(size, s, t, 0.65, "Volume", "\u{e050}")),
+        "power" => Some(de_ui::power::render(size, s, t)),
+        "search" => Some(de_ui::search::render(size, s, t, "", &["Calculator", "Calendar", "Camera"])),
+        "screenshot" => Some(de_ui::screenshot::render(size, s, t)),
+        "error" => Some(de_ui::error::render(size, s, t, "com.example.app")),
+        "first_run" => Some(de_ui::first_run::render(size, s, t)),
+        "settings" => Some(de_ui::settings::render_index(size, s, t, "09:41")),
         _ => None,
     }
 }
 
 /// All scene names for `--scene all` (golden file stems, 1:1).
 fn all_scenes() -> &'static [&'static str] {
-    &["brand"]
+    &[
+        "brand", "lock", "home", "drawer", "recents", "status", "shade", "qs", "osd",
+        "power", "search", "screenshot", "error", "first_run", "settings",
+    ]
 }
 
 struct Args {
@@ -36,6 +68,7 @@ struct Args {
     out_dir: Option<PathBuf>,
     golden_dir: Option<PathBuf>,
     size: Size,
+    locale: String,
     window: bool,
     render_ms: bool,
     bless: bool,
@@ -49,6 +82,7 @@ fn parse_args() -> Result<Args, String> {
         out_dir: None,
         golden_dir: None,
         size: DEFAULT_SIZE,
+        locale: "en".to_string(),
         window: false,
         render_ms: false,
         bless: false,
@@ -73,6 +107,7 @@ fn parse_args() -> Result<Args, String> {
                     h.parse().map_err(|_| "--size height")?,
                 );
             }
+            "--locale" => a.locale = it.next().ok_or("--locale needs a value")?,
             "--window" => a.window = true,
             "--render-ms" => a.render_ms = true,
             "--bless" => a.bless = true,
@@ -93,7 +128,7 @@ fn parse_args() -> Result<Args, String> {
 fn scenes_for(name: &str) -> Result<Vec<String>, String> {
     if name == "all" {
         Ok(all_scenes().iter().map(|s| (*s).to_string()).collect())
-    } else if render_scene(name, Size::new(1, 1)).is_some() {
+    } else if all_scenes().contains(&name) {
         Ok(vec![name.to_string()])
     } else {
         Err(format!(
@@ -123,7 +158,8 @@ fn main() -> ExitCode {
     let mut failed = false;
     for scene in &scenes {
         let t = Instant::now();
-        let Some(px) = render_scene(scene, args.size) else {
+        let strings = de_ui::i18n::Strings::load(de_ui::i18n::Locale::from_code(&args.locale));
+        let Some(px) = render_scene(scene, args.size, &strings) else {
             eprintln!("de-sim: scene '{scene}' returned nothing");
             failed = true;
             continue;
@@ -140,7 +176,7 @@ fn main() -> ExitCode {
                 .golden_dir
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("tests/golden"));
-            let path = dir.join(format!("{scene}.png"));
+            let path = dir.join(format!("{scene}-{}x{}-{}.png", args.size.w, args.size.h, args.locale));
             match golden::compare(&px, &path) {
                 Ok(c) => {
                     println!("{scene}: {c}");
@@ -161,7 +197,7 @@ fn main() -> ExitCode {
                 .golden_dir
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("tests/golden"));
-            let path = dir.join(format!("{scene}.png"));
+            let path = dir.join(format!("{scene}-{}x{}-{}.png", args.size.w, args.size.h, args.locale));
             match golden::write_png(&px, &path) {
                 Ok(()) => eprintln!("blessed {}", path.display()),
                 Err(e) => {
@@ -173,7 +209,7 @@ fn main() -> ExitCode {
         }
 
         if let Some(dir) = &args.out_dir {
-            let path = dir.join(format!("{scene}.png"));
+            let path = dir.join(format!("{scene}-{}x{}-{}.png", args.size.w, args.size.h, args.locale));
             if let Err(e) = golden::write_png(&px, &path) {
                 eprintln!("de-sim: {e}");
                 failed = true;
@@ -187,7 +223,8 @@ fn main() -> ExitCode {
     }
 
     if args.window {
-        if let Some(px) = render_scene(&scenes[0], args.size) {
+        let strings = de_ui::i18n::Strings::load(de_ui::i18n::Locale::from_code(&args.locale));
+        if let Some(px) = render_scene(&scenes[0], args.size, &strings) {
             run_window(&px);
         }
     }

@@ -4,9 +4,12 @@
 //! decode/encode, [`text::label`] cosmic-text rasterization with the bundled
 //! Noto/Material fonts. The layer/damage/animation cache arrives in M2-T4.
 
+pub mod animation;
 pub mod canvas;
+pub mod damage;
 pub mod fonts;
 pub mod image;
+pub mod layer;
 pub mod svg;
 pub mod text;
 

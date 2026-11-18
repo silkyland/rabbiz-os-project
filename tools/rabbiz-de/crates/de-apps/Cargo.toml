@@ -11,6 +11,8 @@ workspace = true
 [dependencies]
 de-api.workspace = true
 de-config.workspace = true
+de-design.workspace = true
+de-paint.workspace = true
 de-system.workspace = true
 freedesktop-desktop-entry.workspace = true
 serde.workspace = true

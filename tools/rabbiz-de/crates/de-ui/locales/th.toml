@@ -1,0 +1,80 @@
+# Thai strings (M2-T7) — Noto Sans Thai is bundled in de-paint.
+
+[common]
+search = "ค้นหา"
+cancel = "ยกเลิก"
+done = "เสร็จสิ้น"
+back = "กลับ"
+next = "ถัดไป"
+skip = "ข้าม"
+
+[lock]
+unlock_hint = "ปัดขึ้นเพื่อปลดล็อก"
+charging = "กำลังชาร์จ"
+fully_charged = "ชาร์จเต็มแล้ว"
+
+[home]
+search_hint = "ค้นหาแอปและอื่น ๆ"
+
+[drawer]
+title = "แอปทั้งหมด"
+
+[recents]
+title = "แอปล่าสุด"
+empty = "ไม่มีแอปล่าสุด"
+
+[shade]
+notifications = "การแจ้งเตือน"
+no_notifications = "ไม่มีการแจ้งเตือนใหม่"
+controls = "แผงควบคุม"
+
+[qs]
+wifi = "Wi-Fi"
+bluetooth = "บลูทูธ"
+dnd = "ห้ามรบกวน"
+airplane = "โหมดเครื่องบิน"
+rotate = "หมุนอัตโนมัติ"
+battery_saver = "ประหยัดแบตเตอรี่"
+
+[power]
+title = "พลังงาน"
+power_off = "ปิดเครื่อง"
+restart = "รีสตาร์ท"
+lock = "ล็อก"
+safe_mode = "เซฟโหมด"
+screenshot = "ภาพหน้าจอ"
+
+[osd]
+volume = "ระดับเสียง"
+brightness = "ความสว่าง"
+
+[search]
+hint = "ค้นหา"
+
+[error]
+app_not_responding = "แอปไม่ตอบสนอง"
+wait = "รอ"
+close_app = "ปิดแอป"
+
+[first_run]
+title = "ยินดีต้อนรับ"
+language = "ภาษา"
+finish = "เริ่มใช้งาน"
+
+[settings]
+title = "การตั้งค่า"
+network = "เครือข่าย"
+bluetooth = "บลูทูธ"
+display = "การแสดงผล"
+sound = "เสียง"
+notifications = "การแจ้งเตือน"
+gestures = "ท่าทางและการนำทาง"
+keyboard = "แป้นพิมพ์และภาษา"
+apps = "แอป"
+battery = "แบตเตอรี่"
+storage = "พื้นที่จัดเก็บ"
+about = "เกี่ยวกับ"
+session = "เซสชัน"
+
+[status]
+charging = "กำลังชาร์จ"

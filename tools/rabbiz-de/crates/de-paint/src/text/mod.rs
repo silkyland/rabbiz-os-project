@@ -1,21 +1,37 @@
-//! Minimal text rasterization via cosmic-text (M0-T5).
+//! Text pipeline (M2-T2): [`shape`] (cosmic-text shaping + bundled-font
+//! fallback), [`layout`] (wrap/line-clamp/ellipsis rules) and [`cache`]
+//! (LRU raster cache — no per-frame text shaping per §7.17a).
 //!
-//! M0 needs `label()` only; the full pipeline (layout cache, ellipsis rules,
-//! Thai fallback policy) is M2-T2's job and lives in `layout`/`shape`/`cache`.
+//! The M0 `label`/`draw_label`/`measure` surface stays as thin wrappers.
 
-use cosmic_text::{
-    Attrs, Buffer, Color as CosmicColor, Family, FontSystem, Metrics, Shaping, SwashCache, Weight,
-    Wrap,
-};
 use de_api::{Point, Size};
 use std::sync::{Mutex, OnceLock};
-use tiny_skia::Pixmap;
+use tiny_skia::{Pixmap, PixmapPaint, Transform};
 
-use crate::fonts::{font_system, FAMILY_NOTO};
+use cosmic_text::SwashCache;
 
-fn swash_cache() -> &'static Mutex<SwashCache> {
+use crate::fonts::{font_system, FAMILY_ICONS, FAMILY_NOTO};
+
+pub mod cache;
+pub mod layout;
+pub mod shape;
+
+pub use layout::{ellipsize, layout_clamped, measure_text};
+
+pub(crate) fn swash_cache() -> &'static Mutex<SwashCache> {
     static C: OnceLock<Mutex<SwashCache>> = OnceLock::new();
     C.get_or_init(|| Mutex::new(SwashCache::new()))
+}
+
+/// Wrap mode for layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TextWrap {
+    /// Single line, no wrapping.
+    None,
+    /// Wrap at word boundaries (labels, cards).
+    Word,
+    /// Wrap anywhere (Thai has no spaces — long Thai strings need this).
+    Glyph,
 }
 
 /// Text style for a single-weight label.
@@ -31,6 +47,9 @@ pub struct LabelStyle {
     pub color: [u8; 4],
     /// Font family (defaults to Noto Sans; icon glyphs use `FAMILY_ICONS`).
     pub family: &'static str,
+    /// Tabular numerals (clocks, timers, percentages). Informational on
+    /// cosmic-text 0.12 — bundled Noto digits are already tabular-width.
+    pub tnum: bool,
 }
 
 impl Default for LabelStyle {
@@ -41,6 +60,34 @@ impl Default for LabelStyle {
             weight: 400,
             color: [255, 255, 255, 255],
             family: FAMILY_NOTO,
+            tnum: false,
+        }
+    }
+}
+
+impl LabelStyle {
+    /// From a `de-design` type-scale style plus a color.
+    #[must_use]
+    pub fn from_type(ts: de_design::type_scale::TypeStyle, color: [u8; 4]) -> Self {
+        Self {
+            size: ts.size,
+            line_height: ts.line_height,
+            weight: ts.weight,
+            color,
+            tnum: ts.tnum,
+            ..Self::default()
+        }
+    }
+
+    /// Material Icons Round style (icon glyphs by codepoint).
+    #[must_use]
+    pub fn icon(size: f32, color: [u8; 4]) -> Self {
+        Self {
+            size,
+            line_height: size,
+            family: FAMILY_ICONS,
+            color,
+            ..Self::default()
         }
     }
 }
@@ -55,54 +102,33 @@ pub fn label(text: &str, style: LabelStyle, max_width: Option<i32>) -> Option<Pi
         return None;
     }
     let mut fs = font_system().lock().ok()?;
-    let mut cache = swash_cache().lock().ok()?;
-
-    let metrics = Metrics::new(style.size, style.line_height);
-    let mut buf = Buffer::new(&mut fs, metrics);
-    let w = max_width.map_or(f32::MAX, |w| w.max(1) as f32);
-    buf.set_size(&mut fs, Some(w), None);
-    buf.set_wrap(&mut fs, Wrap::Glyph);
-    let attrs = Attrs::new()
-        .family(Family::Name(style.family))
-        .weight(Weight(style.weight));
-    buf.set_text(&mut fs, text, attrs, Shaping::Advanced);
-    buf.shape_until_scroll(&mut fs, false);
-
-    // Measure extents.
-    let (mut width, mut height) = (0f32, 0i32);
-    for run in buf.layout_runs() {
-        width = width.max(run.line_w);
-        height = height.max((run.line_y + run.line_height) as i32);
-    }
-    let (width, height) = (width.ceil() as i32 + 1, height.max(1));
-    if width <= 0 || height <= 0 {
-        return None;
-    }
-    let mut px = Pixmap::new(width as u32, height as u32)?;
-    let color = CosmicColor::rgba(
-        style.color[0],
-        style.color[1],
-        style.color[2],
-        style.color[3],
+    let shaped = shape::Shaped::shape(
+        &mut fs,
+        text,
+        &style,
+        max_width.map(|w| w.max(1) as f32),
+        TextWrap::Glyph,
     );
-    let (pw, data_w) = (px.width() as i32, px.height() as i32);
-    buf.draw(&mut fs, &mut cache, color, |x, y, _w, _h, c| {
-        if x < 0 || y < 0 || x >= pw || y >= data_w {
-            return;
-        }
-        let i = ((y * pw + x) * 4) as usize;
-        let d = px.data_mut();
-        let sa = c.a() as u32;
-        let inv = 255 - sa;
-        // `c` is straight (non-premultiplied) rgba; premultiply on blend.
-        d[i] = ((c.r() as u32 * sa + 127) / 255 + (d[i] as u32 * inv + 127) / 255).min(255) as u8;
-        d[i + 1] =
-            ((c.g() as u32 * sa + 127) / 255 + (d[i + 1] as u32 * inv + 127) / 255).min(255) as u8;
-        d[i + 2] =
-            ((c.b() as u32 * sa + 127) / 255 + (d[i + 2] as u32 * inv + 127) / 255).min(255) as u8;
-        d[i + 3] = (sa + (d[i + 3] as u32 * inv + 127) / 255).min(255) as u8;
-    });
-    Some(px)
+    shaped.rasterize(&mut fs, style.color)
+}
+
+/// Rasterize a Material icon codepoint (e.g. `""` from `icons::GLYPH`).
+#[must_use]
+pub fn icon(codepoint: &str, size: f32, color: [u8; 4]) -> Option<Pixmap> {
+    label(codepoint, LabelStyle::icon(size, color), None)
+}
+
+/// Clamped label (M2-T2 contract): wrap to `max_width`, clamp to
+/// `max_lines`, ellipsize the last line when it doesn't fit.
+#[must_use]
+pub fn label_clamped(
+    text: &str,
+    style: LabelStyle,
+    max_width: i32,
+    max_lines: usize,
+) -> Option<Pixmap> {
+    let mut fs = font_system().lock().ok()?;
+    layout::layout_clamped(&mut fs, text, &style, max_width as f32, max_lines)
 }
 
 /// Convenience: rasterize a label and blit it onto `canvas` at `origin`.
@@ -119,8 +145,8 @@ pub fn draw_label(
         0,
         0,
         px.as_ref(),
-        &tiny_skia::PixmapPaint::default(),
-        tiny_skia::Transform::from_translate(origin.x as f32, origin.y as f32),
+        &PixmapPaint::default(),
+        Transform::from_translate(origin.x as f32, origin.y as f32),
         None,
     );
     Some(size)
@@ -128,21 +154,8 @@ pub fn draw_label(
 
 /// Measure a label without drawing it.
 #[must_use]
-pub fn measure(font_system: &mut FontSystem, text: &str, style: LabelStyle) -> Size {
-    let metrics = Metrics::new(style.size, style.line_height);
-    let mut buf = Buffer::new(font_system, metrics);
-    buf.set_size(font_system, None, None);
-    let attrs = Attrs::new()
-        .family(Family::Name(style.family))
-        .weight(Weight(style.weight));
-    buf.set_text(font_system, text, attrs, Shaping::Advanced);
-    buf.shape_until_scroll(font_system, false);
-    let (mut w, mut h) = (0f32, 0i32);
-    for run in buf.layout_runs() {
-        w = w.max(run.line_w);
-        h = h.max((run.line_y + run.line_height) as i32);
-    }
-    Size::new(w.ceil() as i32 + 1, h.max(1))
+pub fn measure(font_system: &mut cosmic_text::FontSystem, text: &str, style: LabelStyle) -> Size {
+    layout::measure_text(font_system, text, &style)
 }
 
 #[cfg(test)]
@@ -171,5 +184,13 @@ mod tests {
         c.clear([0, 0, 0, 255]);
         let s = draw_label(&mut c, "Hi", Point::new(4, 4), LabelStyle::default(), None);
         assert!(s.is_some());
+    }
+
+    #[test]
+    fn icon_glyph_renders() {
+        // Material "wifi" codepoint.
+        let px = icon("\u{e63e}", 24.0, [255, 255, 255, 255]);
+        assert!(px.is_some());
+        assert!(px.unwrap().width() >= 20);
     }
 }
