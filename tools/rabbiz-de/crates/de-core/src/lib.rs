@@ -10,13 +10,14 @@ mod layer_shell;
 pub mod misc;
 mod morph;
 mod osk;
+mod privileged;
 pub mod screencopy;
-pub mod virtual_pointer;
 pub mod seat;
 pub mod selection;
 pub mod shell;
 pub mod snapshots;
 pub mod state;
+pub mod virtual_pointer;
 pub mod xdg;
 
 pub use frame::{event_loop, Run};

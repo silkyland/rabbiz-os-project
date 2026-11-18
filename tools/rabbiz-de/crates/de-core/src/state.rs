@@ -51,6 +51,8 @@ const CMA_FLOOR_KB: u64 = 96 * 1024;
 pub struct DeClientState {
     pub compositor_state: CompositorClientState,
     pub(crate) session_input_method: bool,
+    /// Filled once when the socket is accepted (see `privileged.rs`).
+    pub(crate) identity: std::sync::OnceLock<crate::privileged::ClientIdentity>,
 }
 impl smithay::reexports::wayland_server::backend::ClientData for DeClientState {
     fn initialized(&self, _client_id: smithay::reexports::wayland_server::backend::ClientId) {}
@@ -351,20 +353,29 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let compositor_state = CompositorState::new::<De>(&dh);
     let shm_state = ShmState::new::<De>(&dh, de_protocols::shm_formats());
     let xdg_shell_state = XdgShellState::new::<De>(&dh);
-    let layer_shell_state = WlrLayerShellState::new::<De>(&dh);
+    crate::privileged::init_policy();
+    let layer_shell_state = WlrLayerShellState::new_with_filter::<De, _>(&dh, |c| {
+        crate::privileged::allowed(c, de_config::Privileged::LayerShell)
+    });
     TextInputManagerState::new::<De>(&dh);
     InputMethodManagerState::new::<De, _>(&dh, crate::osk::is_session_input_method);
-    // Any client may create a virtual keyboard (wlroots policy — needed by
-    // a21s-wayvnc for Rabbiz Mirror input, and by the session OSK).
-    VirtualKeyboardManagerState::new::<De, _>(&dh, |_| true);
+    // Privileged globals are default-deny (docs/DE-PRIVILEGED-PROTOCOLS.md): the shipped tools
+    // (wayvnc, grim, wl-clipboard, the session keyboard) are on the built-in list.
+    VirtualKeyboardManagerState::new::<De, _>(&dh, |c| {
+        crate::privileged::allowed(c, de_config::Privileged::VirtualKeyboard)
+    });
     let xdg_decoration_state = XdgDecorationState::new::<De>(&dh);
     let xdg_activation_state = XdgActivationState::new::<De>(&dh);
     let data_device_state = DataDeviceState::new::<De>(&dh);
     let primary_selection_state = PrimarySelectionState::new::<De>(&dh);
     let data_control_state =
-        DataControlState::new::<De, _>(&dh, Some(&primary_selection_state), |_| true);
+        DataControlState::new::<De, _>(&dh, Some(&primary_selection_state), |c| {
+            crate::privileged::allowed(c, de_config::Privileged::DataControl)
+        });
     let ext_data_control_state =
-        ExtDataControlState::new::<De, _>(&dh, Some(&primary_selection_state), |_| true);
+        ExtDataControlState::new::<De, _>(&dh, Some(&primary_selection_state), |c| {
+            crate::privileged::allowed(c, de_config::Privileged::DataControl)
+        });
     let viewporter_state = ViewporterState::new::<De>(&dh);
     let output_manager_state = OutputManagerState::new_with_xdg_output::<De>(&dh);
     crate::screencopy::init(&dh);

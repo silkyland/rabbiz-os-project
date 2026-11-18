@@ -66,6 +66,23 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     Some(canvas.into_pixels())
 }
 
+/// Whether an external capture client (screenshot tool, mirror, recorder) must get a blank frame: the lock
+/// screen is a security boundary, so nothing is captured while it is showing.
+#[must_use]
+pub fn capture_is_blank(screen: de_ui::nav::Screen) -> bool {
+    screen == de_ui::nav::Screen::Lock
+}
+
+/// What an external capture client may see: the composited output, or a blank frame on the lock screen.
+#[must_use]
+pub fn capture_output(de: &De) -> Option<Pixels> {
+    let full = composite_output(de)?;
+    if capture_is_blank(de.nav.current) {
+        return Some(Canvas::filled(full.size, CLEAR).into_pixels());
+    }
+    Some(full)
+}
+
 /// Crop `px` to `rect` (clamped to the image).
 #[must_use]
 pub fn crop(px: &Pixels, rect: de_api::Rect) -> Option<Pixels> {
@@ -183,4 +200,26 @@ fn read_shm(ptr: *const u8, len: usize, data: shm::BufferData) -> Option<Pixels>
         size: Size::new(w, h),
         data: out,
     })
+}
+
+#[cfg(test)]
+mod capture_policy_tests {
+    use super::capture_is_blank;
+    use de_ui::nav::Screen;
+
+    #[test]
+    fn only_the_lock_screen_blanks_captures() {
+        assert!(capture_is_blank(Screen::Lock));
+        for s in [
+            Screen::Home,
+            Screen::Drawer,
+            Screen::Recents,
+            Screen::Shade,
+            Screen::Power,
+            Screen::Search,
+            Screen::Error,
+        ] {
+            assert!(!capture_is_blank(s), "{s:?}");
+        }
+    }
 }

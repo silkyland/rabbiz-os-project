@@ -1,0 +1,90 @@
+//! Default-deny policy for the privileged Wayland globals (`docs/DE-PRIVILEGED-PROTOCOLS.md`, option B).
+//!
+//! A client is identified once, when its socket is accepted: peer credentials from the kernel and the
+//! resolved `/proc/<pid>/exe`. Each filtered global then asks [`allowed`]. A refused client simply does
+//! not see the global, and the refusal is logged once per client and protocol. The session keyboard,
+//! which the compositor spawns over a private socket, is always trusted.
+
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+
+use de_config::privileged::POLICY_FILE;
+use de_config::{Policy, Privileged};
+use smithay::reexports::wayland_server::{Client, DisplayHandle};
+
+use crate::state::DeClientState;
+
+/// Who a connected client is, as far as the kernel can tell us.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClientIdentity {
+    /// Process id of the peer when it connected.
+    pub pid: i32,
+    /// Resolved executable, `None` if `/proc` could not be read (the process may already be gone).
+    pub exe: Option<PathBuf>,
+}
+
+static POLICY: OnceLock<Policy> = OnceLock::new();
+static LOGGED: OnceLock<Mutex<HashSet<(i32, Privileged)>>> = OnceLock::new();
+
+/// Load the policy once at startup. `RABBIZ_DE_PRIVILEGED_POLICY` overrides the file path (tests, bring-up).
+pub(crate) fn init_policy() {
+    let path = std::env::var_os("RABBIZ_DE_PRIVILEGED_POLICY")
+        .map_or_else(|| PathBuf::from(POLICY_FILE), PathBuf::from);
+    let (policy, warning) = Policy::load(&path);
+    if let Some(w) = warning {
+        eprintln!("rabbiz-de: privileged-client policy: {w}; using the built-in list");
+    }
+    let _ = POLICY.set(policy);
+}
+
+fn policy() -> &'static Policy {
+    POLICY.get_or_init(Policy::builtin)
+}
+
+/// Resolve the executable of `pid`, if readable.
+fn exe_of(pid: i32) -> Option<PathBuf> {
+    std::fs::read_link(Path::new("/proc").join(pid.to_string()).join("exe")).ok()
+}
+
+/// Record who `client` is. Call right after the socket is accepted, before any request is dispatched.
+pub(crate) fn identify(dh: &DisplayHandle, client: &Client, state: &DeClientState) {
+    let identity = match client.get_credentials(dh) {
+        Ok(cred) => ClientIdentity {
+            pid: cred.pid,
+            exe: exe_of(cred.pid),
+        },
+        Err(_) => ClientIdentity { pid: -1, exe: None },
+    };
+    let _ = state.identity.set(identity);
+}
+
+/// May `client` use the privileged global `g`?
+pub(crate) fn allowed(client: &Client, g: Privileged) -> bool {
+    let Some(state) = client.get_data::<DeClientState>() else {
+        return false;
+    };
+    if state.session_input_method {
+        return true;
+    }
+    let identity = state.identity.get();
+    let ok = policy().allows(g, identity.and_then(|i| i.exe.as_deref()));
+    if !ok {
+        log_denied(g, identity);
+    }
+    ok
+}
+
+fn log_denied(g: Privileged, identity: Option<&ClientIdentity>) {
+    let pid = identity.map_or(-1, |i| i.pid);
+    let first = LOGGED
+        .get_or_init(|| Mutex::new(HashSet::new()))
+        .lock()
+        .is_ok_and(|mut set| set.insert((pid, g)));
+    if first {
+        let exe = identity
+            .and_then(|i| i.exe.as_deref())
+            .map_or_else(|| "<unknown>".to_string(), |p| p.display().to_string());
+        eprintln!("rabbiz-de: denied {g} exe={exe} pid={pid}");
+    }
+}

@@ -3,7 +3,7 @@
 //!
 //! v1 is shm-only: the frame's `buffer` event offers `Argb8888` and
 //! `Xrgb8888`; no `linux_dmabuf` event is sent. `copy` composites
-//! immediately through [`composite_output`]; `copy_with_damage` queues on
+//! immediately through [`capture_output`]; `copy_with_damage` queues on
 //! `De::screencopy_pending` and completes after the next non-empty
 //! `render_frame`, matching the protocol's "waits until there is damage"
 //! contract.
@@ -20,7 +20,7 @@ use smithay::reexports::wayland_server::{
 use smithay::utils::{Logical, Rectangle};
 use smithay::wayland::shm;
 
-use crate::composite::{composite_output, crop};
+use crate::composite::{capture_output, crop};
 use crate::state::De;
 
 /// Highest protocol version we implement (v3 = `buffer_done` +
@@ -55,6 +55,10 @@ impl GlobalDispatch<ZwlrScreencopyManagerV1, ()> for De {
         init: &mut DataInit<'_, Self>,
     ) {
         init.init(resource, ());
+    }
+
+    fn can_view(client: Client, _data: &()) -> bool {
+        crate::privileged::allowed(&client, de_config::Privileged::Screencopy)
     }
 }
 
@@ -175,7 +179,7 @@ impl De {
         buffer: &WlBuffer,
         rect: Rectangle<i32, Logical>,
     ) -> bool {
-        let Some(full) = composite_output(self) else {
+        let Some(full) = capture_output(self) else {
             return false;
         };
         if !write_capture(&full, buffer, rect) {
@@ -194,7 +198,7 @@ impl De {
         if self.screencopy_pending.is_empty() {
             return;
         }
-        let Some(full) = composite_output(self) else {
+        let Some(full) = capture_output(self) else {
             return;
         };
         let (hi, lo, nsec) = ready_timestamp(self);

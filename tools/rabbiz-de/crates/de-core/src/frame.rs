@@ -675,12 +675,10 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     run.de.socket_name = Some(socket_name.clone());
     handle
         .insert_source(socket, |stream, (), run: &mut Run| {
-            if let Err(err) = run
-                .de
-                .display_handle
-                .insert_client(stream, Arc::new(DeClientState::default()))
-            {
-                eprintln!("insert_client: {err}");
+            let state = Arc::new(DeClientState::default());
+            match run.de.display_handle.insert_client(stream, state.clone()) {
+                Ok(client) => crate::privileged::identify(&run.de.display_handle, &client, &state),
+                Err(err) => eprintln!("insert_client: {err}"),
             }
         })
         .map_err(|e| format!("socket source: {e}"))?;

@@ -88,6 +88,10 @@ impl GlobalDispatch<ZwlrVirtualPointerManagerV1, ()> for De {
     ) {
         init.init(resource, ());
     }
+
+    fn can_view(client: Client, _data: &()) -> bool {
+        crate::privileged::allowed(&client, de_config::Privileged::VirtualPointer)
+    }
 }
 
 impl Dispatch<ZwlrVirtualPointerManagerV1, ()> for De {
