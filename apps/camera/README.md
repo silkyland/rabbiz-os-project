@@ -40,3 +40,6 @@ For automated testing, use `--capture output.png` to save the full
 
 The built-in A21s camera requires the separate sensor and CSI-2
 bring-up before it can supply frames.
+
+This app has been tested on a host (macOS) only. It has not been run on the A21s, and until the kernel lane
+produces frames from the HI1336 sensor the only sources there are a V4L2 USB camera, a video file or the test pattern.

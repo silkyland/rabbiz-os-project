@@ -1,0 +1,22 @@
+A21s wayvnc exposure check, 2026-11-18 (session user rabbiz, rabbiz-de session, kernel 7.3.0-g14a425b3a7dc-dirty)
+Read-only: no keys or pointer events were sent.
+
+$ ssh root@172.16.42.1 'ps -o pid,user,args -C wayvnc'
+    PID USER     COMMAND
+   1311 rabbiz   /usr/bin/wayvnc -o DSI-1 -f 30 172.16.42.1 127.0.0.1
+
+$ ssh root@172.16.42.1 'ss -ltnp | grep 5900'
+LISTEN 0 16   127.0.0.1:5900   0.0.0.0:*  users:(("wayvnc",pid=1311,fd=11))
+LISTEN 0 16 172.16.42.1:5900   0.0.0.0:*  users:(("wayvnc",pid=1311,fd=10))
+
+(The Wi-Fi interface address does not appear: wayvnc is bound to usb0 and loopback only.)
+
+$ ssh root@172.16.42.1 'ls /home/rabbiz/.config/wayvnc'
+ls: cannot access '/home/rabbiz/.config/wayvnc': No such file or directory     (no config file: no password, no TLS)
+
+$ nft list ruleset        (run on the device)
+(empty)
+
+RFB handshake from the Mac to 172.16.42.1:5900, version echoed, nothing else sent:
+server version: b'RFB 003.008\n'
+security types offered: [1]            (1 = None)

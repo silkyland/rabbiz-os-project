@@ -1,5 +1,5 @@
 ---
-status: verified
+status: reproduced
 lane: de
 device: samsung/a21s
 kernel: 7.3.0-g14a425b3a7dc-dirty
@@ -39,8 +39,11 @@ Virtual pointer events dispatch through the same `wl_pointer` paths as physical 
 absolute motion (protocol extents mapped to output coordinates), button, axis/source/discrete —
 batched per `frame` like a real pointer. They do **not** enter the touch gesture tracker, so
 shell-internal UI (lock/home/recents/shade zones, which are touch-first) does not react to them;
-Wayland client surfaces do. A second `a21s-mirror` caveat: the helper script still shells out as
-`gamer`; on-device it only needed `systemctl --user` under `rabbiz`, which works.
+Wayland client surfaces do. The earlier note that the mirror helper still shelled out as `gamer` is out of date: `scripts/mirror_setup.sh` runs `systemctl --user` as `rabbiz` (checked 2026-11-18, no `gamer` left in the repo outside AGENTS.md).
+
+## What a second reproducer must run
+
+This finding stays `reproduced` (one author) until someone else repeats it. On a rabbiz-de session: `systemctl --user -M rabbiz@ is-active a21s-wayvnc` must print `active`; from the Mac, open Rabbiz Mirror (or any VNC client) on `172.16.42.1:5900`; click the Camera shutter tile with the mouse and confirm a capture file appears. Note that wayvnc accepts the connection without authentication, see [the exposure finding](2026-11-18-de-wayvnc-unauthenticated-localhost.md).
 
 ## Original hypothesis (superseded by the resolution above)
 
