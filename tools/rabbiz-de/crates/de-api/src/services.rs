@@ -56,6 +56,20 @@ pub struct BatteryState {
     pub full: bool,
 }
 
+/// Privacy indicators (M3-T1): a sensor is "in use" right now.
+///
+/// `de-system::privacy` polls the kernel/PipeWire state on its worker
+/// thread; the UI only paints these booleans.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrivacyState {
+    /// Camera stream open (`/dev/video*` held by a client).
+    pub camera: bool,
+    /// Microphone capture running.
+    pub mic: bool,
+    /// Location provider active.
+    pub location: bool,
+}
+
 /// A single pending notification for the toast/center.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Notification {
@@ -89,6 +103,8 @@ pub struct ServicesSnapshot {
     /// MPRIS now-playing label, if any (`"artist — title"`).
     pub media: Option<String>,
     pub media_playing: bool,
+    /// Camera/mic/location in-use flags (status-bar privacy dots).
+    pub privacy: PrivacyState,
 }
 
 /// Mutations the UI can request; executed on the `de-system` worker thread.

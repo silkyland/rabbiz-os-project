@@ -4,9 +4,12 @@
 pub mod comp;
 pub mod frame;
 pub mod input;
+pub mod launch;
 pub mod misc;
 pub mod seat;
 pub mod selection;
+pub mod shell;
+pub mod snapshots;
 pub mod state;
 pub mod xdg;
 

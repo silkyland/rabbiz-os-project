@@ -119,32 +119,43 @@ PanelWindow {
         height: win.visibleHeight
         clip: true
 
-        // Shade drag / tap handling. Lies *beneath* the panel content, so
-        // tiles, sliders and the notification list get their own input
-        // first; only presses on gaps/handle areas land here — which is
-        // exactly the Android "drag anywhere on the shade" behavior.
+        // Shade drag handling. Lies *beneath* the panel content, so tiles,
+        // sliders and the notification list get their own input first; only
+        // presses on gaps/handle areas land here — which is exactly the
+        // Android "drag anywhere on the shade" behavior. Taps are inert: the
+        // collapsed top strip is a pull handle only (owner request 2026-11-17),
+        // so a stray tap at the top of the screen cannot pop the shade open.
         MouseArea {
             id: dragArea
             anchors.fill: parent
             preventStealing: true
 
+            property real pressX: 0
             property real pressY: 0
             property real pressProgress: 0
+            property bool dragging: false
 
             onPressed: function(mouse) {
                 snap.stop()
+                pressX = mouse.x
                 pressY = mouse.y
                 pressProgress = ShellState.shadeProgress
-                if (ShellState.shadeProgress < 0.05) {
-                    ShellState.shadeMode = mouse.x < win.width / 2 ? "notifications" : "settings"
-                    win.pageShift = ShellState.shadeMode === "settings" ? 1.0 : 0.0
-                }
+                dragging = false
             }
             onPositionChanged: function(mouse) {
                 if (!pressed || win.pageDragging)
                     return
                 // Vertical only: sideways page drags are owned by the DragHandler
                 // below, which can steal the grab from tiles and sliders.
+                if (!dragging) {
+                    if (Math.abs(mouse.y - pressY) < Theme.spaceS)
+                        return
+                    dragging = true
+                    if (ShellState.shadeProgress < 0.05) {
+                        ShellState.shadeMode = pressX < win.width / 2 ? "notifications" : "settings"
+                        win.pageShift = ShellState.shadeMode === "settings" ? 1.0 : 0.0
+                    }
+                }
                 const range = Math.max(1, win.fullH - Theme.shadeHandleZone)
                 ShellState.shadeProgress = Math.max(0, Math.min(1,
                     pressProgress + (mouse.y - pressY) / range))
@@ -152,16 +163,10 @@ PanelWindow {
             onReleased: function(mouse) {
                 if (win.pageDragging)
                     return
-                const dy = mouse.y - pressY
-                const tap = Math.abs(dy) < Theme.spaceS
-                if (tap) {
-                    if (!ShellState.shadeOpen)
-                        win.snapTo(1)   // tap on collapsed strip -> open
-                    else if (mouse.y > content.height - win.tailH)
-                        win.snapTo(0)   // tap on bottom grab zone -> close
-                } else {
+                if (dragging)
                     win.snapTo(ShellState.shadeProgress > 0.3 ? 1 : 0)
-                }
+                else if (ShellState.shadeOpen && mouse.y > content.height - win.tailH)
+                    win.snapTo(0)   // tap on bottom grab zone -> close
             }
         }
 

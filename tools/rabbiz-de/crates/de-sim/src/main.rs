@@ -17,6 +17,15 @@ use de_api::{Pixels, Size};
 
 const DEFAULT_SIZE: Size = Size { w: 720, h: 1600 };
 
+/// Clock + wifi + BT + battery — the "normal" status bar for golden scenes.
+fn sim_status() -> de_ui::chrome::StatusInfo {
+    de_ui::chrome::StatusInfo {
+        wifi: Some(true),
+        bluetooth: true,
+        ..de_ui::chrome::StatusInfo::new("09:41", "86")
+    }
+}
+
 /// Render a named scene to premultiplied pixels.
 fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixels> {
     let t = &de_design::tokens::DEFAULT;
@@ -24,28 +33,114 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
         "brand" => Some(de_ui::boot::brand_frame(size, 0.5)),
         "lock" => Some(de_ui::lock::render(size, s, t, "09:41", "Mon, Jun 9")),
         "home" => {
-            let apps: Vec<(String, String)> = (0..12)
-                .map(|i| (format!("app{i}"), format!("App {i}")))
+            let apps: Vec<de_ui::chrome::IconEntry> = (0..12)
+                .map(|i| de_ui::chrome::IconEntry::new(&format!("app{i}"), "App"))
+                .enumerate()
+                .map(|(i, mut e)| {
+                    e.label = format!("App {i}");
+                    e
+                })
                 .collect();
-            Some(de_ui::home::render(size, s, t, "09:41", "86%", &apps))
+            let dock: Vec<de_ui::chrome::IconEntry> = ["a21s-calculator", "a21s-files", "a21s-browser", "a21s-settings"]
+                .iter()
+                .map(|id| de_ui::chrome::IconEntry::new(id, &id[5..]))
+                .collect();
+            let m = de_ui::home::HomeModel {
+                status: sim_status(),
+                clock: "09:41",
+                date: "Mon, 9 Jun",
+                charging: "",
+                wallpaper: Some(&de_paint::wallpaper::wallpaper(None, "ember", size)),
+                apps: &apps,
+                dock: &dock,
+                page: 0,
+                page_count: 2,
+            };
+            Some(de_ui::home::render(size, s, t, &m))
         }
         "drawer" => {
-            let apps: Vec<String> = (0..18).map(|i| format!("App {i}")).collect();
-            Some(de_ui::drawer::render(size, s, t, "09:41", &apps))
+            let apps: Vec<de_ui::chrome::IconEntry> = (0..18)
+                .map(|_| de_ui::chrome::IconEntry::new("app", "App"))
+                .enumerate()
+                .map(|(i, mut e)| {
+                    e.id = format!("app{i}");
+                    e.label = format!("App {i}");
+                    e
+                })
+                .collect();
+            Some(de_ui::drawer::render(
+                size, s, t,
+                &sim_status(),
+                &apps, 0,
+            ))
         }
         "recents" => {
-            let apps = vec!["Calculator".to_string(), "Files".to_string(), "Browser".to_string()];
-            Some(de_ui::recents::render(size, s, t, "09:41", &apps))
+            let m = de_ui::recents::RecentsModel::new(vec![
+                de_ui::recents::RecentEntry::new("a21s-calculator", "Calculator"),
+                de_ui::recents::RecentEntry::new("a21s-files", "Files"),
+                de_ui::recents::RecentEntry::new("a21s-browser", "Browser"),
+            ]);
+            Some(de_ui::recents::render(
+                size, s, t,
+                &sim_status(),
+                &m,
+            ))
         }
         "shade" => Some(de_ui::shade::render(size, s, t, "09:41")),
-        "status" => Some(de_ui::status::render(size, s, t, "09:41", "86%")),
+        "status" => {
+            let info = de_ui::chrome::StatusInfo {
+                clock: "09:41".into(),
+                battery_pct: Some(86),
+                charging: true,
+                battery_full: false,
+                wifi: Some(true),
+                bluetooth: true,
+                dnd: false,
+                airplane: false,
+                privacy_cam: true,
+                privacy_mic: false,
+            };
+            Some(de_ui::status::render(size, s, t, &info))
+        }
         "qs" => Some(de_ui::qs::render(
             size, s, t, "09:41", "qs.wifi",
             &["Rabbiz-5G", "Home-WiFi", "CoffeeShop"],
         )),
         "osd" => Some(de_ui::osd::render(size, s, t, 0.65, "Volume", "\u{e050}")),
         "power" => Some(de_ui::power::render(size, s, t)),
-        "search" => Some(de_ui::search::render(size, s, t, "", &["Calculator", "Calendar", "Camera"])),
+        "search" => {
+            let rows = vec![
+                de_ui::search::SearchRow {
+                    kind: de_ui::search::SearchKind::App,
+                    id: "a21s-calculator".into(),
+                    title: "Calculator".into(),
+                    subtitle: "Utilities".into(),
+                    icon: None,
+                },
+                de_ui::search::SearchRow {
+                    kind: de_ui::search::SearchKind::App,
+                    id: "a21s-calendar".into(),
+                    title: "Calendar".into(),
+                    subtitle: "Productivity".into(),
+                    icon: None,
+                },
+                de_ui::search::SearchRow {
+                    kind: de_ui::search::SearchKind::Action,
+                    id: "a21s-camera".into(),
+                    title: "Take a photo".into(),
+                    subtitle: "Camera".into(),
+                    icon: None,
+                },
+                de_ui::search::SearchRow {
+                    kind: de_ui::search::SearchKind::Setting,
+                    id: "settings.display".into(),
+                    title: "Display brightness".into(),
+                    subtitle: "Settings".into(),
+                    icon: None,
+                },
+            ];
+            Some(de_ui::search::render(size, s, t, "ca", &rows))
+        }
         "screenshot" => Some(de_ui::screenshot::render(size, s, t)),
         "error" => Some(de_ui::error::render(size, s, t, "com.example.app")),
         "first_run" => Some(de_ui::first_run::render(size, s, t)),

@@ -12,6 +12,7 @@ pub mod image;
 pub mod layer;
 pub mod svg;
 pub mod text;
+pub mod wallpaper;
 
 pub use canvas::Canvas;
 pub use image::{decode_png, encode_png, ImageError};

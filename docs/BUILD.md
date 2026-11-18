@@ -89,3 +89,82 @@ ssh root@192.168.1.142 "kexec -l /tmp/Image --dtb=/tmp/exynos850-a217f.dtb --reu
 1. Copy `build/linux/arch/arm64/boot/Image`, `exynos850-a217f.dtb`, and your `ramdisk` into `src/uniLoader/blob/`.
 2. Build `uniLoader` with `a21s_defconfig` (**uncompressed** `src/uniLoader/uniLoader`).
 3. Pack `build/images/boot-avb.img` via `mkbootimg` with `--dtb <stock-boot.img-dtb> --dtb_offset 0x00000000` and flash to `/dev/mmcblk0p18` (`dd`).
+
+## 6. `a21s-osk` (Rust on-screen keyboard)
+
+Host-only work (logic, layouts, PNG previews) needs no device and no cross toolchain:
+
+```bash
+cd tools/a21s-osk
+cargo test
+cargo run -p osk-render --bin osk-preview      # → build/osk/*.png
+```
+
+**Device build — no cross toolchain required.** Docker Desktop on Apple Silicon runs
+`linux/arm64` containers, so an official Rust image already *is* an aarch64 toolchain
+(verified 2026-11-17: `uname -m` = `aarch64`, `rustc --version` = 1.99.1):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w/tools/a21s-osk rust:1.99-bookworm \
+  /usr/local/cargo/bin/cargo build --release -p osk-render --bin osk-preview
+```
+
+Use `bash -c` (not `bash -lc`) or the absolute `/usr/local/cargo/bin/cargo` path — a login
+shell resets `PATH` and `cargo` disappears. Output lands in
+`tools/a21s-osk/target/release/` (root-owned: `docker run --rm -v "$PWD":/w busybox chown -R
+"$(id -u):$(id -g)" /w/tools/a21s-osk/target`). The binary is glibc-linked (Debian 2.36) and
+runs on Arch Linux ARM as-is.
+
+Build the keyboard itself (adds `libxkbcommon-dev`; the crate also needs the protocol `client`
+feature):
+
+```bash
+docker run --rm -v "$PWD":/w -w /w/tools/a21s-osk rust:1.99-bookworm bash -c '
+  apt-get update -qq && apt-get install -y -qq libxkbcommon-dev pkg-config
+  /usr/local/cargo/bin/cargo build --release -p osk-wayland'
+```
+
+Deploy and run a *preview* (writes PNGs, never touches the seat — squeekboard keeps running):
+
+```bash
+scp tools/a21s-osk/target/release/osk-preview root@172.16.42.1:/usr/local/bin/a21s-osk-preview
+ssh root@172.16.42.1 "flock --close --timeout 300 /run/lock/a21s-device-test.lock \
+  bash -c '/usr/local/bin/a21s-osk-preview /tmp/osk-png'"
+scp root@172.16.42.1:/tmp/osk-png/en-us-base-dark.png build/osk-device/
+```
+
+Screenshot the live session (the shell runs as `gamer`, uid 1001):
+
+```bash
+ssh root@172.16.42.1 "runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 \
+  WAYLAND_DISPLAY=wayland-0 grim -o DSI-1 /tmp/shot.png"
+```
+
+Rules that still apply: hold the device lock for anything that draws or measures, never run
+two input methods on the seat (squeekboard is the live one until K7), and never compile on the
+device (2.6 GB RAM).
+
+Switch the live keyboard (root on the device):
+
+```bash
+a21s-osk-switch start     # stops squeekboard, runs /usr/local/bin/a21s-osk as gamer
+a21s-osk-switch status
+a21s-osk-switch stop      # restores squeekboard (the session default)
+```
+
+Only one input method may own the seat; `start` waits for squeekboard to disappear before it
+launches ours. To exercise it without the phone in hand, run the GTK4 client and inject taps:
+
+```bash
+runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-0 \
+  DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus GSK_RENDERER=cairo \
+  python3 /tmp/osk_test_client.py &          # tools/a21s-osk/tests/osk_test_client.py
+python3 /root/touch_swipe.py 72 1455        # tap the 'a' key (this file lives in scripts/)
+```
+
+`GSK_RENDERER=cairo` matters: with the default renderer the GTK4 client dies with a Wayland
+protocol error on this device.
+
+If the panel is asleep, `a21s-power-key wake` turns it on; a touch swipe up then unlocks it
+(the shell's lock screen is a swipe gesture, not logind's lock).
+

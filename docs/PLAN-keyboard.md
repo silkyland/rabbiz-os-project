@@ -1,7 +1,10 @@
 # Plan: `a21s-osk` — a Gboard-like on-screen keyboard written from scratch in Rust
 
-> Written 2026-11-16 (roadmap item M7.12). Status: **PLAN ONLY — no code written.** Meant to be executed by several
-> implementation agents in parallel; §9 splits the work into non-overlapping tracks, §10 is the brief each agent gets.
+> Written 2026-11-16 (roadmap item M7.12). Status (2026-11-17): **K1 host half implemented** — `tools/a21s-osk`
+> (`osk-core` + `osk-render` + EN/TH layouts) builds and passes 29 host tests; the Wayland client, D-Bus service and
+> device build have **not** started, and squeekboard is still the live keyboard. §12 records what changed. Meant to be
+> executed by several implementation agents in parallel; §9 splits the work into non-overlapping tracks, §10 is the
+> brief each agent gets.
 > Evidence tags: **[V]** verified this session (command/file named), **[K]** from general knowledge, *not* checked here
 > (a spike in §8 settles it), **[D]** decision made in this plan (changeable by ADR — rules here are hypotheses, not law).
 
@@ -250,3 +253,154 @@ K0 spikes are independent of each other. K1 is done by **one** agent (it fixes t
 | **S5** data/licences | **research only** | `wordcut-engine` (Rust Thai segmenter): current 1.1.x lists Apache-2.0, an old 0.3.1 was LGPL-3.0, and it ships a separate `LICENSE-PyThaiNLP` for bundled data → check the exact version. `nlpo3` + `words_th.txt` (~62k words) is described as CC0 only by secondary sources → confirm in the PyThaiNLP repo. `wordfreq`: code Apache, data CC BY-SA 4.0 with separately-licensed sources (Google Books, OpenSubtitles) and **Thai coverage not confirmed**. Wikipedia text is CC BY-SA. CLDR/Unicode licence for emoji annotations **not confirmed**. NECTEC corpora noted earlier are non-commercial | Nothing is cleared for redistribution yet. CC BY-SA data would make shipped model files share-alike — decide with Q4/Q7 before K6. Thai segmenter: prefer own newmm-style code over a dependency until the licence is confirmed |
 | **S2** render on device | **blocked** | Spike crate written: `tools/a21s-osk/spikes/s2-render/` (layer-shell + tiny-skia + cosmic-text, `--png` mode for S3/S4, touch→commit latency and RSS logging). First device build failed for missing `pkg-config` (fixed by installing `pkgconf`). During the second build **the device stopped answering SSH and ping** (cause unknown: likely RAM exhaustion from compiling cosmic-text on 2.6 GB with the shell + Steam running, or a crash/reboot — not diagnosed) | **Do not compile on the device.** Cross-compile on the Mac (needs `aarch64-unknown-linux-gnu` target + a linker such as zig/`cargo-zigbuild` or an aarch64 sysroot; none installed on the host) or limit the build (`-j1`, `CARGO_BUILD_JOBS=1`, `opt-level=1`) after confirming free RAM. Record the chosen build route in `docs/BUILD.md` |
 | **S4** Thai shaping | **blocked on S2** | `--png` mode of the spike renders the Kedmanee sample row, stacked-mark words and emoji; not run | — |
+
+### 2026-11-17 — K1 host slice (`tools/a21s-osk`, no device)
+
+| Item | Result |
+|---|---|
+| **Core (Track A)** | `osk-core`: layout TOML → layers/keys, per-row normalised geometry with insets, hit testing, shift/caps FSM (single tap = one-shot, double tap ≤ 300 ms = lock), grapheme-cluster backspace (`unicode-segmentation`), space-swipe cursor moves, double-space period, auto-capitalise, language cycle, gesture recogniser (tap on release, slide-off cancel, 400 ms long-press, 50 ms repeat, horizontal swipe, independent multi-touch). |
+| **Render (Track B)** | `osk-render`: tiny-skia rounded keys + cosmic-text labels → pixmap/PNG; per-layer surface height (the emoji panel is one row shorter). 24 PNGs written by `cargo run -p osk-render --bin osk-preview` to `build/osk/` (2x, dark/light/shift). |
+| **Layouts** | `data/layouts/en-us.toml` (5 layers, alternates) and `th-kedmanee.toml` (6 rows, Thai numerals, tone-mark alternates) — Kedmanee rows copied from the deployed squeekboard YAML so the owner's muscle memory carries over. |
+| **Tests** | 29 host tests green (`cargo test --manifest-path tools/a21s-osk/Cargo.toml`); `scripts/check.sh` runs them when `cargo` exists. Reviewed PNGs: EN base/numbers/emoji, TH base, shifted EN. |
+
+Effects on the plan:
+
+- **S3 — partial (host only).** Apple Color Emoji renders **in colour** through cosmic-text/swash on the Mac (sbix path), so the scene model is right. The device question is unchanged: Arch ships CBDT/CBLC `noto-fonts-emoji`, whose swash path is unproven → keep the pre-rasterised-atlas fallback in §5.5.
+- **S4 — partial (host only).** Kedmanee key labels shape correctly, including stacked marks on key caps (dotted-circle base appears, as Gboard). Noto Sans Thai on the device is still unproven, and the renderer must not assume `Family::SansSerif` resolves to a Thai font on Arch — pick the family explicitly at K3.
+- **S2 — still blocked.** No aarch64 Linux target or linker on the Mac. Pick one before K1 device work and write it into `docs/BUILD.md`: (a) `rustup target add aarch64-unknown-linux-gnu` + `zig`/`cargo-zigbuild`, or (b) an ARM64 Arch sysroot. Do **not** compile the spike on the device (first attempt cost the device its SSH).
+- **K1 acceptance splits** into host half (done: layout maths, commands, PNGs) and Wayland half (`osk-wayland` + `osk-testclient`, still to write).
+- **Renderer rule [V].** Text must go through cosmic-text's own `Buffer::draw`; hand-placing `swash` glyph images double-printed glyphs in every label (the first three attempts did) because baseline/placement conventions were being re-derived. Do not reintroduce manual glyph placement.
+- **Surface height decision [D].** One fixed surface height per language: the base layer's row count fixes it, and a layer with fewer rows (numbers, symbols, emoji) gets proportionally taller keys instead of a shorter keyboard. This is what Gboard does and it keeps the layer-shell exclusive zone from resizing on every `?123` tap. Do not reintroduce per-layer heights without checking the app re-flow cost on device.
+
+### 2026-11-17 — first run on the device (S2/S3/S4 device evidence)
+
+Built in a `rust:1.99-bookworm` container (Docker Desktop runs it as **native aarch64**, so no
+cross toolchain was needed — route recorded in `docs/BUILD.md` §6), then installed over SSH:
+
+| What | Result |
+|---|---|
+| `a21s-osk-preview` (our renderer) at `/usr/local/bin/` | 24 PNGs in **1.56 s** on the device; EN and TH reviewed from the phone's own fonts |
+| Thai shaping on device | **works** — Noto Sans Thai, Kedmanee labels + stacked marks, no tofu, no manual atlas |
+| **S3 emoji on device** | **works in colour** — Arch's CBDT/CBLC `noto-fonts-emoji` renders through cosmic-text/swash, so the §5.5 "pre-rasterised atlas" fallback is **not needed** (keep it only as a contingency) |
+| **S2 spike on the real screen** | `osk-spike` (layer-shell + shm + touch) drew a 720×640 bottom surface over the running shell: setup 63 ms, **first draw 109–139 ms**, RSS **32–36 MB**, touch capability bound. Screenshot: `build/osk-device/spike-on-device.png` |
+| Install state | both binaries are installed but **inert**: the preview only writes PNGs, the spike is a demo that grabs no text input. squeekboard is still the live keyboard and no session unit was touched |
+
+Consequences:
+
+- **Build route settled.** For any Rust that must run on the phone: build in the arm64 Rust
+  container, copy the binary, run it under the device lock. No `cargo-zigbuild`, no sysroot.
+- **S2 gate passes** for layer-shell + shm + cosmic-text at 720 px: latency and RSS are inside
+  the §6 bars (first frame ≤ 300 ms; RSS ≤ 30 MB is *not* met by the spike at 32–36 MB, but the
+  spike carries six rows and no model — measure again in K1 with the real scene).
+- **The remaining work is the text path**, not rendering: `zwp_input_method_v2` (commit/delete,
+  surrounding text) and the virtual-keyboard fallback. That is `osk-wayland`, still unwritten.
+
+### 2026-11-17 (later) — K1 device half: the keyboard types on the phone
+
+`crates/osk-wayland` + binary `a21s-osk` (SCTK 0.19 for layer-shell/seat/shm, raw
+`zwp_input_method_v2` from `wayland-protocols-misc`). It draws the real `osk-core` layouts through
+`osk-render`, turns `wl_touch` into the gesture detector, and delivers text with
+`commit_string` / `delete_surrounding_text` + `commit(done_count)`.
+
+Verified on the A21s with a GTK4 test client (`tools/a21s-osk/tests/osk_test_client.py`), touch
+injected through `scripts/touch_swipe.py`:
+
+| Case | Result |
+|---|---|
+| focus an entry → keyboard appears | surface maps at 720×330, exclusive zone reserves it, entry stays visible |
+| tap `a`, `b` | client log `changed: 'A'`, `changed: 'b'` (auto-capitalise armed on the empty field) |
+| switch to Thai (TH key), type, backspace | `changed: 'ห'` then `changed: ''` — one Thai grapheme deleted cleanly |
+| Thai number row | shows `1 2 3 …`; tap → `1`; shift then tap → `๑` |
+
+**Bug found and fixed:** `zwp_input_method_v2` text lengths are **UTF-8 bytes**, not characters.
+`Command::Backspace` now carries `bytes` (a Thai consonant+mark cluster is 9 bytes), otherwise
+backspace cut a Thai character in half. Host tests updated (30 total).
+
+Install/switch (root, device): `a21s-osk-switch start|stop|status` →
+`rootfs-overlay/usr/local/bin/a21s-osk-switch`. It kills the other IM first and
+waits, because the seat allows exactly one. **Squeekboard is still the session default**; the
+autostart was not touched, so a reboot always returns to the known-good keyboard.
+
+Known gaps before flipping the default (K7):
+
+- backspace **hold-to-repeat** — the gesture detector emits `Repeat`, but the Wayland loop has no timer yet;
+- long-press **alternates popup** not wired to the UI (the data is in the layouts);
+- Thai has no shifted layer yet (the squeekboard YAML had `ฤ ฆ ฏ โ ฌ ็ ๋ ษ ศ ซ ฅ` on shift);
+- emoji panel is a static 30-key page (no category scroll/search/recents);
+- no `sm.puri.OSK0` D-Bus compat, so the Quick Settings keyboard/language tiles still target squeekboard;
+- no theme file from `Appearance` (fixed dark theme today);
+- no `zwp_virtual_keyboard` fallback → Chrome/XWayland text fields need `--enable-wayland-ime` or the fallback (K3).
+
+Screenshots: `build/osk-device/step7-kb-test.png` (keyboard over the client),
+`step8-typed.png` (`A`+`b` committed), `step10-thai-digit.png` (`๑`), `step9-thai.png` (Thai layout).
+
+### 2026-11-17 (final) — owner's Gboard reference: panel, Thai digits, input purpose
+
+Owner sent Gboard screenshots (Thai + English) and said "follow this design". Changes:
+
+| Area | Now |
+|---|---|
+| Thai layout | exactly the owner's latest Gboard reference: **no separate digit row** — the top row is the Kedmanee letter row (`ๅ / _ ภ …`) with the Arabic `1…0` as the small corner hint; shift commits that digit. Thai digits ๑…๐ live on the `๑๒๓` page (first row) |
+| Panel (strip) | Gboard layout: `[clipboard]` · three suggestion slots with dividers · `[mic]`; the word being typed is drawn in the first slot. Clipboard pastes the current selection via `wl-paste` (history is K5); mic is a deliberate stub (no audio input on mainline) |
+| Bottom row | `?123 , 😀 🌐 space . ⏎` — globe key replaces the TH/EN text key; space keeps the language name (`English` / `ไทย`). All function keys (shift, backspace, return, globe, emoji, clipboard, mic) are drawn with **bundled Material Icons** (Google, Apache-2.0) instead of emoji/text glyphs |
+| Input purpose | `zwp_text_input_v3` content_type is followed: email → `@ .com` row, URL → `/ .com :`, digits/number/phone → number pad. Email/URL force the Latin layout even in Thai, and auto-capitalise is off outside prose |
+| Thai rare letters | ฤ ฆ ฏ ฎ ษ ศ ซ live on long-press (squeekboard had them on a separate "upper" view); `๑๒๓` opens the Thai-digit number page |
+| Backspace hold | repeats every 50 ms and stops at the start of the text |
+| Theme | `~/.config/a21s-osk/theme.toml` (`mode`, `accent`) applied live via `org.rabbiz.OSK1.ReloadTheme` |
+| Shell compat | owns `sm.puri.OSK0` (SetVisible + Visible) so `a21s-osk-ctl toggle` and the Quick Settings tiles work; `NextLanguage` on `/org/rabbiz/OSK1` drives the language tile |
+| Default | **`a21s-osk` is the session keyboard** (`~gamer/.config/labwc/autostart` prefers it, squeekboard is the fallback); `a21s-osk-switch` still flips back |
+
+Verified on the device (screenshots in `build/osk-device/`): Thai panel with Thai digits +
+Arabic hints, English panel, email field with the `@`/`.com` layout, long-press alternates,
+backspace repeat, live theme swap, hide/show via D-Bus, language switch via D-Bus.
+
+Still open (documented, not blocking daily use): suggestions are a compose word rather than a
+predictor (K6), clipboard is paste-only (K5), emoji is a static page (K4), mic/voice, and the
+`zwp_virtual_keyboard` fallback for Chrome/XWayland fields.
+
+### 2026-11-17 (K6/K5 slice) — predictor + clipboard history
+
+- **K6 (predictor, T1-lite)**: `osk-core::predict` — hand-written EN/TH seed words (no third-party
+  corpus, so nothing to license), plus **user learning**: unigrams + bigrams counted from what the
+  user types, persisted to `$XDG_STATE_HOME/a21s-osk/predictor.tsv` (atomic write, 2 s debounce).
+  The strip shows 3 suggestions (completion of the current word, then next-word from bigram, then
+  frequency); tapping one deletes the partial word and commits `word + space`. Tests cover
+  completion, bigram prediction, tap-to-apply and persistence.
+- **K5 (clipboard history)**: a `wl-paste --watch` child (wl-clipboard uses data-control, so it
+  works without keyboard focus) feeds a memory-only list of the last 20 selections; the clipboard
+  button opens a sheet listing the 5 newest, tap inserts and closes. Nothing is written to disk.
+- **K4 (emoji categories/search/recents)**: still the static single page — the remaining piece of
+  the owner's list.
+
+### 2026-11-17 (K4 slice) — emoji categories, search and recents
+
+- **Data pipeline**: `tools/a21s-osk/dict-build/build_emoji.py` downloads nothing at build time
+  but reads the cached `data/raw/{emoji-test.txt,cldr-en.xml,cldr-th.xml}` and generates
+  `data/emoji.tsv` (char, group, English name, Thai name — 253 emoji across the 9 Unicode groups;
+  Unicode + CLDR licences) plus `data/layouts/emoji.toml` (one layer per group, a search layer,
+  a results layer and a recents layer).
+- **Panel**: the emoji key now opens `emoji` as a *panel layout* (`KeyAction::Panel`), with
+  `◀ / ▶` group paging, `abc` back to the app layout, a Material `search` key and the recents
+  layer shown first once the user has picked an emoji (persisted in
+  `$XDG_STATE_HOME/a21s-osk/emoji-recent.txt`, 24 entries).
+- **Search**: `search` opens a compact letter layer; typing filters `EmojiIndex` by English **and
+  Thai** CLDR names, `search` again shows the results grid, tapping a result commits it and
+  records the recent. Backspace edits the query instead of the app text.
+- **URL/email fields**: the globe key is back in the `email`/`url`/`num` bottom rows (owner report:
+  Chrome's omnibox could not switch language).
+- Tests: panel open, group paging, search-by-English-name, result commit + recents, plus Thai-name
+  search on the index directly.
+
+### 2026-11-17 (input fixes) — purpose re-sends, globe key, Enter
+
+- **Chrome re-sends `content_type` on every keystroke**, and `set_purpose()` used to force the
+  Latin layout each time, so typing the first Thai character in the omnibox bounced back to
+  English. `set_purpose()` is now idempotent (acts only when the purpose changes).
+- The `email`/`url`/`num` bottom rows carried the literal `🌐` **emoji token**, which the parser
+  treats as a text key: the globe was blue and tapping it typed an emoji instead of switching
+  language. They now use the `language` key (Material icon).
+- **Enter did nothing**: `commit_string("\n")` is ignored by single-line fields (Chrome omnibox,
+  search boxes). The client now owns a `zwp_virtual_keyboard_v1` with a minimal xkb keymap and
+  sends a real Return key press/release (evdev code 28) — verified by a Chrome search that
+  actually navigated. Arrow keys will use the same path (K2).
+

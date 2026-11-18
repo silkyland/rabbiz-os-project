@@ -11,7 +11,7 @@ use crate::i18n::Strings;
 /// Full shade: scrim + sheet with QS grid at top and notification rows below.
 pub fn render(size: Size, s: &Strings, t: &Theme, clock: &str) -> de_api::Pixels {
     let mut c = Canvas::filled(size, t.bg);
-    chrome::status_bar(&mut c, s, t, clock, "");
+    chrome::status_bar(&mut c, t, &chrome::StatusInfo::new(clock, ""));
     c.fill_rect(Rect::new(0, 0, size.w, size.h), t.scrim);
     let sheet = Rect::new(chrome::MARGIN / 2, chrome::STATUS_H + 8, size.w - chrome::MARGIN, (size.h * 3 / 5).min(900));
     c.fill_rounded_rect(sheet, tokens::RADIUS_SHEET, t.surface1);

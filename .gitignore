@@ -8,6 +8,13 @@
 # rabbiz-de worktrees and Rust build artifacts
 .worktrees/
 tools/rabbiz-de/**/target/
+tools/rabbiz-de/build/
+
+# a21s-osk (M7.12): Rust build products (workspace + spike crates)
+tools/a21s-osk/**/target/
+tools/a21s-osk/spikes/*/Cargo.lock
+# downloaded Unicode/CLDR sources for the emoji dataset (regenerated, not shipped)
+tools/a21s-osk/data/raw/
 
 # deep-plan working memory
 docs/.deep-plan/
@@ -35,4 +42,3 @@ dist/
 # Python bytecode
 __pycache__/
 *.py[cod]
-tools/rabbiz-de/build/

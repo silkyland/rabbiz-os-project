@@ -9,7 +9,7 @@ use crate::i18n::Strings;
 
 pub fn render(size: Size, s: &Strings, t: &Theme, clock: &str, title_key: &str, rows: &[&str]) -> de_api::Pixels {
     let mut c = Canvas::filled(size, t.bg);
-    chrome::status_bar(&mut c, s, t, clock, "");
+    chrome::status_bar(&mut c, t, &chrome::StatusInfo::new(clock, ""));
     c.fill_rect(Rect::new(0, 0, size.w, size.h), t.scrim);
     let h = 120 + rows.len() as i32 * 88;
     let sheet = Rect::new(chrome::MARGIN, chrome::STATUS_H + 24, chrome::content_w(size), h.min(size.h - 300));

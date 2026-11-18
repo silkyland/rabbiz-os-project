@@ -11,7 +11,7 @@ use crate::i18n::Strings;
 /// Render lock screen. `clock` = "HH:MM", `date` = localized date line.
 pub fn render(size: Size, s: &Strings, t: &Theme, clock: &str, date: &str) -> de_api::Pixels {
     let mut c = Canvas::filled(size, t.bg);
-    chrome::status_bar(&mut c, s, t, clock, "");
+    chrome::status_bar(&mut c, t, &chrome::StatusInfo::new(clock, ""));
     // Clock block below cutout.
     chrome::draw_centered(&mut c, clock, &style::display(t.text), 140);
     chrome::draw_centered(&mut c, date, &style::body(t.text2), 260);
