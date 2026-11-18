@@ -1,0 +1,95 @@
+A21s launch-morph trace, 2026-11-18 at 12:09 Asia/Bangkok
+Kernel: 7.3.0-g14a425b3a7dc-dirty
+Device profile: handset
+Test binary SHA-256: 617532e13a80d01b5082d0eae458632d44c5361177751a765fa87ab4f770750f
+Journal excerpt: motion queues, handoffs, and DRM timeout/restoration diagnostics only.
+[CRTC:50:crtc-0] vblank wait timed out
+morph-frame phase=Opening cpu_ms=8.955 queue_gap_ms=0.000
+morph-frame phase=Opening cpu_ms=2.036 queue_gap_ms=25.071
+morph-frame phase=Opening cpu_ms=2.052 queue_gap_ms=25.074
+morph-frame phase=Opening cpu_ms=1.192 queue_gap_ms=25.096
+morph-frame phase=Opening cpu_ms=1.192 queue_gap_ms=25.086
+morph-frame phase=Opening cpu_ms=1.279 queue_gap_ms=25.094
+morph-frame phase=Opening cpu_ms=1.205 queue_gap_ms=25.092
+morph-frame phase=Opening cpu_ms=1.334 queue_gap_ms=25.070
+morph-frame phase=Opening cpu_ms=1.134 queue_gap_ms=25.086
+morph-frame phase=Opening cpu_ms=1.203 queue_gap_ms=25.077
+morph-frame phase=Opening cpu_ms=1.112 queue_gap_ms=25.076
+morph-frame phase=Opening cpu_ms=1.316 queue_gap_ms=25.072
+morph-frame phase=Opening cpu_ms=1.156 queue_gap_ms=25.081
+morph-frame phase=Opening cpu_ms=2.083 queue_gap_ms=33.889
+morph-frame phase=Opening cpu_ms=1.918 queue_gap_ms=25.062
+morph-frame phase=Opening cpu_ms=1.570 queue_gap_ms=25.089
+morph-frame phase=Opening cpu_ms=1.294 queue_gap_ms=25.085
+morph-frame phase=Opening cpu_ms=1.641 queue_gap_ms=25.100
+morph-frame phase=Opening cpu_ms=1.902 queue_gap_ms=25.216
+morph-frame phase=Opening cpu_ms=1.440 queue_gap_ms=25.101
+morph-frame phase=Opening cpu_ms=1.197 queue_gap_ms=25.066
+morph-frame phase=Opening cpu_ms=1.259 queue_gap_ms=25.074
+morph-frame phase=Opening cpu_ms=2.294 queue_gap_ms=1752.443
+morph-frame phase=Opening cpu_ms=2.578 queue_gap_ms=242.298
+morph-frame phase=Opening cpu_ms=1.711 queue_gap_ms=25.101
+morph-frame phase=Opening cpu_ms=1.320 queue_gap_ms=25.104
+morph-frame phase=Opening cpu_ms=1.591 queue_gap_ms=25.098
+morph-frame phase=Opening cpu_ms=1.340 queue_gap_ms=25.091
+morph-handoff phase=Opening
+morph-frame phase=Dragging cpu_ms=1.427 queue_gap_ms=0.000
+morph-frame phase=Dragging cpu_ms=1.357 queue_gap_ms=16.889
+morph-frame phase=Dragging cpu_ms=1.414 queue_gap_ms=16.846
+morph-frame phase=Dragging cpu_ms=1.326 queue_gap_ms=16.863
+morph-frame phase=Dragging cpu_ms=1.326 queue_gap_ms=16.869
+morph-frame phase=Dragging cpu_ms=1.347 queue_gap_ms=16.866
+morph-frame phase=Dragging cpu_ms=1.393 queue_gap_ms=16.854
+morph-frame phase=Dragging cpu_ms=1.389 queue_gap_ms=16.859
+morph-frame phase=Dragging cpu_ms=1.371 queue_gap_ms=16.925
+morph-frame phase=Dragging cpu_ms=1.352 queue_gap_ms=16.813
+morph-frame phase=Dragging cpu_ms=1.346 queue_gap_ms=16.869
+morph-frame phase=Dragging cpu_ms=1.431 queue_gap_ms=16.846
+morph-frame phase=Dragging cpu_ms=1.363 queue_gap_ms=16.886
+morph-frame phase=Dragging cpu_ms=1.381 queue_gap_ms=16.855
+morph-frame phase=Dragging cpu_ms=1.641 queue_gap_ms=16.970
+morph-frame phase=Returning cpu_ms=1.553 queue_gap_ms=0.000
+morph-frame phase=Returning cpu_ms=1.242 queue_gap_ms=25.065
+morph-frame phase=Returning cpu_ms=1.150 queue_gap_ms=25.078
+morph-frame phase=Returning cpu_ms=1.142 queue_gap_ms=25.078
+morph-frame phase=Returning cpu_ms=1.325 queue_gap_ms=25.090
+morph-frame phase=Returning cpu_ms=1.142 queue_gap_ms=25.081
+morph-frame phase=Returning cpu_ms=1.184 queue_gap_ms=25.077
+morph-frame phase=Returning cpu_ms=1.138 queue_gap_ms=25.077
+morph-frame phase=Returning cpu_ms=1.564 queue_gap_ms=25.149
+morph-frame phase=Returning cpu_ms=1.221 queue_gap_ms=25.089
+morph-frame phase=Returning cpu_ms=1.129 queue_gap_ms=25.081
+morph-frame phase=Returning cpu_ms=1.153 queue_gap_ms=25.076
+morph-frame phase=Returning cpu_ms=1.238 queue_gap_ms=25.054
+morph-frame phase=Returning cpu_ms=1.798 queue_gap_ms=44.450
+morph-frame phase=Returning cpu_ms=1.580 queue_gap_ms=25.102
+morph-frame phase=Returning cpu_ms=1.518 queue_gap_ms=25.145
+morph-frame phase=Returning cpu_ms=1.092 queue_gap_ms=25.147
+morph-frame phase=Returning cpu_ms=1.091 queue_gap_ms=25.103
+morph-frame phase=Returning cpu_ms=1.138 queue_gap_ms=25.108
+morph-frame phase=Returning cpu_ms=0.967 queue_gap_ms=25.101
+morph-frame phase=Returning cpu_ms=1.065 queue_gap_ms=25.085
+morph-handoff phase=Returning
+morph-frame phase=Closing cpu_ms=91.225 queue_gap_ms=0.000
+morph-frame phase=Closing cpu_ms=1.609 queue_gap_ms=91.308
+morph-frame phase=Closing cpu_ms=1.388 queue_gap_ms=25.069
+morph-frame phase=Closing cpu_ms=1.180 queue_gap_ms=25.053
+morph-frame phase=Closing cpu_ms=1.105 queue_gap_ms=25.043
+morph-frame phase=Closing cpu_ms=1.086 queue_gap_ms=25.030
+morph-frame phase=Closing cpu_ms=1.563 queue_gap_ms=25.115
+morph-handoff phase=Closing
+morph-frame phase=Opening cpu_ms=4.112 queue_gap_ms=0.000
+morph-frame phase=Opening cpu_ms=1.431 queue_gap_ms=25.052
+morph-frame phase=Opening cpu_ms=1.464 queue_gap_ms=25.056
+morph-frame phase=Opening cpu_ms=0.896 queue_gap_ms=25.052
+morph-frame phase=Opening cpu_ms=0.961 queue_gap_ms=25.076
+morph-frame phase=Opening cpu_ms=0.887 queue_gap_ms=25.055
+morph-frame phase=Opening cpu_ms=0.922 queue_gap_ms=25.030
+morph-frame phase=Opening cpu_ms=0.870 queue_gap_ms=25.054
+morph-frame phase=Opening cpu_ms=1.066 queue_gap_ms=25.055
+exynos-drm exynos-drm: [drm] *ERROR* flip_done timed out
+exynos-drm exynos-drm: [drm] *ERROR* flip_done timed out
+[CRTC:50:crtc-0] vblank wait timed out
+run: queue: DrmError(Access(AccessError { errmsg: "Page flip commit failed", dev: Some("/dev/dri/card0"), source: Os { code: 16, kind: ResourceBusy, message: "Device or resource busy" } }))
+rabbiz-session: rabbiz-de init failure (75) — falling back to labwc
+original binary restored; session active

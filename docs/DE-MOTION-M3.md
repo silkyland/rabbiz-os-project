@@ -193,6 +193,8 @@ level. Without (c) nothing here may be called "verified on device".
 Normal spring decay now reaches its stated 1 % position band for a start at rest. The preset
 durations and bounce values are unchanged. The simulator captures launch and close strips at
 0, 25, 50, 75 and 100 % elapsed time using the live pose calculation and a synthetic app buffer.
+The A21s queue timing and deferred display checks are recorded in the
+[device finding](../devices/samsung/a21s/findings/2026-11-18-de-launch-morph-frame-timing.md).
 
 ## 4. Explicitly not adopted
 
