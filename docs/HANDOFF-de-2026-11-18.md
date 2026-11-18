@@ -107,3 +107,23 @@ above has not been started.
 Deploy this round: arm64 release built in `rabbiz-de-build:handoff`,
 installed `/usr/local/bin/rabbiz-de`, reboot required (session restart
 doesn't pick it up).
+
+## Update 21:55 — frosted sheet baked in, pull path is cheap (`6d002be`)
+
+- The separate veil element is gone. Smithay consumed the element list
+  front-to-back but the second full-screen texture never landed on top of
+  the scene on device (all four elements "rendered" per the trace, yet the
+  veil never composited visibly). `panels::backdrop_with_veil` now bakes
+  blurred scene + `t.scrim` into the panel texture itself, so the shade is
+  a single frosted surface end to end — verified on device for both
+  notification and quick sheets.
+- Pull latency rework (`panel_ui.rs`): pull-begin no longer does
+  `composite_output` + `blurred_backdrop` + a full raster inside the input
+  handler (~200-300 ms of dead input). Both panel kinds are pre-rendered
+  per-kind at boot, the scene capture is deferred to `panel_prepare`, and
+  both the CPU blur and the panel raster run on worker threads
+  (`blur_rx`/`render_rx` channels, `content_gen` guards stale landings).
+  Measured on A21s: first panel frame ~3 ms after gesture start, drag
+  frames ~3-8 ms apart, zero heavy frames mid-pull.
+- `push_panel` tracks `tex_kind` so switching panel kinds re-uploads the
+  right texture; `pixels`/`stale` are per-kind arrays.
