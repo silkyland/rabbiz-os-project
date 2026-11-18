@@ -733,6 +733,7 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     handle
         .insert_source(shot_timer, |_, _, run: &mut Run| {
             dump_frame_if_triggered(&run.de);
+            run.de.check_osk();
             TimeoutAction::ToDuration(Duration::from_millis(500))
         })
         .map_err(|e| format!("shot timer source: {e}"))?;
@@ -755,13 +756,16 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     let deadline = run.duration.map(|d| Instant::now() + d);
     // Kick off the first frame.
     run.present()?;
-    let _osk = match crate::osk::spawn(&mut run.de.display_handle, &socket_name) {
-        Ok(child) => Some(child),
-        Err(error) => {
-            eprintln!("rabbiz-de: could not start rabbiz-osk: {error}");
-            None
+    match crate::osk::spawn(&mut run.de.display_handle, &socket_name) {
+        Ok(child) => {
+            run.de.osk_spawned_at = Some(Instant::now());
+            run.de.osk = Some(child);
         }
-    };
+        Err(error) => {
+            eprintln!("rabbiz-de: could not start the session OSK: {error}");
+            run.de.osk_respawn_at = Some(Instant::now() + Duration::from_secs(30));
+        }
+    }
 
     loop {
         let wait = [deadline, run.motion_wake_at()]

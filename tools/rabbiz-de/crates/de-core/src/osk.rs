@@ -5,6 +5,7 @@ use std::os::fd::OwnedFd;
 use std::os::unix::net::UnixStream;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
@@ -51,10 +52,57 @@ pub(crate) fn spawn(display: &mut DisplayHandle, socket_name: &str) -> io::Resul
 
 pub(crate) struct OskProcess(Child);
 
+impl OskProcess {
+    /// `true` once the child has exited (or its status can no longer be read).
+    /// Reaps the zombie via `try_wait`.
+    pub(crate) fn exited(&mut self) -> bool {
+        !matches!(self.0.try_wait(), Ok(None))
+    }
+}
+
 impl Drop for OskProcess {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
+    }
+}
+
+impl De {
+    /// Re-spawn the session keyboard when it exits (or was never started).
+    /// The binary is re-resolved through PATH on every spawn, so replacing
+    /// `rabbiz-osk` on disk takes effect without a session restart. Called
+    /// from the periodic tick.
+    pub(crate) fn check_osk(&mut self) {
+        let now = Instant::now();
+        if self.osk.as_mut().map_or(true, OskProcess::exited) {
+            self.osk = None;
+            if self.osk_respawn_at.is_none() {
+                // A child that died fast (missing binary, crash loop) backs
+                // off; a long-lived one respawns promptly.
+                let backoff = match self.osk_spawned_at {
+                    Some(t) if t.elapsed() < Duration::from_secs(5) => Duration::from_secs(10),
+                    _ => Duration::from_secs(1),
+                };
+                self.osk_respawn_at = Some(now + backoff);
+            }
+        }
+        if self.osk.is_some() || self.osk_respawn_at.is_none_or(|t| now < t) {
+            return;
+        }
+        self.osk_respawn_at = None;
+        let Some(socket) = self.socket_name.clone() else {
+            return;
+        };
+        match spawn(&mut self.display_handle, &socket) {
+            Ok(child) => {
+                self.osk_spawned_at = Some(now);
+                self.osk = Some(child);
+            }
+            Err(error) => {
+                eprintln!("rabbiz-de: could not start the session OSK: {error}");
+                self.osk_respawn_at = Some(now + Duration::from_secs(30));
+            }
+        }
     }
 }
 

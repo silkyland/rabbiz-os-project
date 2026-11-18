@@ -165,6 +165,14 @@ pub struct De {
     pub wallpaper: Option<(String, de_api::Pixels)>,
     /// Icon bitmap cache by desktop-id (PNG decode + scale is not free).
     pub icon_cache: std::collections::HashMap<String, de_api::Pixels>,
+
+    // --- session OSK lifecycle ---
+    /// The spawned session keyboard (private-socket input method).
+    pub(crate) osk: Option<crate::osk::OskProcess>,
+    /// Earliest instant a respawn is allowed (backoff after fast deaths).
+    pub(crate) osk_respawn_at: Option<Instant>,
+    /// When the current child was spawned (drives the backoff).
+    pub(crate) osk_spawned_at: Option<Instant>,
 }
 
 /// What the screen is showing (M3).
@@ -489,6 +497,9 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         shell_px: None,
         wallpaper: None,
         icon_cache: std::collections::HashMap::new(),
+        osk: None,
+        osk_respawn_at: None,
+        osk_spawned_at: None,
     })
 }
 
