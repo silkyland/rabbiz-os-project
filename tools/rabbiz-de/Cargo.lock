@@ -454,6 +454,7 @@ dependencies = [
  "freedesktop-desktop-entry",
  "serde",
  "serde_json",
+ "tempfile",
  "toml",
 ]
 
@@ -493,6 +494,7 @@ dependencies = [
  "de-api",
  "serde",
  "serde_json",
+ "tempfile",
  "toml",
 ]
 
@@ -572,6 +574,7 @@ dependencies = [
  "de-config",
  "serde",
  "serde_json",
+ "tempfile",
  "zbus",
 ]
 

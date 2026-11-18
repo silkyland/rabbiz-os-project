@@ -266,10 +266,9 @@ mod tests {
         std::fs::write(dir.join(format!("{id}.desktop")), body).unwrap();
     }
 
-    fn fixture() -> (PathBuf, PathBuf) {
-        let base = std::env::temp_dir().join(format!("de-catalog-{}", std::process::id()));
-        let (d1, d2) = (base.join("a"), base.join("b"));
-        let _ = std::fs::remove_dir_all(&base);
+    fn fixture() -> (tempfile::TempDir, [PathBuf; 2]) {
+        let base = tempfile::tempdir().unwrap();
+        let (d1, d2) = (base.path().join("a"), base.path().join("b"));
         std::fs::create_dir_all(&d1).unwrap();
         std::fs::create_dir_all(&d2).unwrap();
         write_desktop(
@@ -290,14 +289,13 @@ mod tests {
         // Same id in the lower-precedence dir — d1 must win.
         write_desktop(&d1, "dupe", "[Desktop Entry]\nName=First\nExec=first\n");
         write_desktop(&d2, "dupe", "[Desktop Entry]\nName=Second\nExec=second\n");
-        (base, d1)
+        (base, [d1, d2])
     }
 
     #[test]
     fn scans_dedupes_and_filters() {
-        let (base, d1) = fixture();
-        let c = Catalog::scan_dirs(&[d1.clone(), base.join("b")], &["en".to_string()]);
-        let _ = std::fs::remove_dir_all(&base);
+        let (_fixture, dirs) = fixture();
+        let c = Catalog::scan_dirs(&dirs, &["en".to_string()]);
         assert!(c.find("org.kde.dolphin").is_some());
         assert!(c.find("hidden-one").is_none());
         assert_eq!(c.find("dupe").unwrap().name, "First");
@@ -314,11 +312,8 @@ mod tests {
 
     #[test]
     fn localized_name_and_keyword_search() {
-        let (base, d1) = fixture();
-        let c = Catalog::scan_dirs(
-            &[d1.clone(), base.join("b")],
-            &["th".to_string(), "en".to_string()],
-        );
+        let (_fixture, dirs) = fixture();
+        let c = Catalog::scan_dirs(&dirs, &["th".to_string(), "en".to_string()]);
         let p = Prefs::default();
         // Thai name picked up when th locale leads.
         assert_eq!(c.find("rabbiz-calculator").unwrap().name, "เครื่องคิดเลข");
@@ -328,13 +323,12 @@ mod tests {
         // Prefix outranks substring/keyword.
         let hits = c.search(&p, "fi");
         assert_eq!(hits[0].entry.id, "org.kde.dolphin");
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
     fn hidden_and_dock_respect_prefs() {
-        let (base, d1) = fixture();
-        let c = Catalog::scan_dirs(&[d1.clone(), base.join("b")], &["en".to_string()]);
+        let (_fixture, dirs) = fixture();
+        let c = Catalog::scan_dirs(&dirs, &["en".to_string()]);
         let mut p = Prefs::default();
         p.set_hidden("dupe", true);
         p.pin_dock("rabbiz-calculator");
@@ -346,13 +340,12 @@ mod tests {
         assert_eq!(dock, vec!["rabbiz-calculator"]);
         // Search skips hidden too.
         assert!(c.search(&p, "first").is_empty());
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
     fn legacy_a21s_ids_resolve() {
-        let (base, d1) = fixture();
-        let c = Catalog::scan_dirs(&[d1.clone(), base.join("b")], &["en".to_string()]);
+        let (_fixture, dirs) = fixture();
+        let c = Catalog::scan_dirs(&dirs, &["en".to_string()]);
         let mut p = Prefs::default();
         // Prefs persisted under the pre-rename id still apply.
         p.set_hidden("a21s-calculator", true);
@@ -361,6 +354,5 @@ mod tests {
         assert!(!c.visible(&p).any(|e| e.id == "rabbiz-calculator"));
         // Dock lookup resolves the legacy id, but is_hidden drops it again.
         assert_eq!(c.dock(&p), Vec::<&AppEntry>::new());
-        let _ = std::fs::remove_dir_all(&base);
     }
 }

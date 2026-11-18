@@ -1,16 +1,7 @@
 //! M3-T7: prefs file behaviour — legacy seeding, atomic save, backup, no
 //! legacy writes.
 
-use std::path::PathBuf;
-
 use de_config::prefs::Prefs;
-
-fn tmpdir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("rabbiz-de-prefs-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d
-}
 
 #[test]
 fn defaults_match_decision_14() {
@@ -23,8 +14,8 @@ fn defaults_match_decision_14() {
 
 #[test]
 fn seeds_from_legacy_once_and_never_writes_it() {
-    let dir = tmpdir("legacy");
-    let legacy = dir.join("rabbiz-shell").join("prefs.json");
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("rabbiz-shell").join("prefs.json");
     std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
     std::fs::write(
         &legacy,
@@ -32,7 +23,7 @@ fn seeds_from_legacy_once_and_never_writes_it() {
     )
     .unwrap();
 
-    let own = dir.join("rabbiz-de").join("prefs.json");
+    let own = dir.path().join("rabbiz-de").join("prefs.json");
     let p = Prefs::load_from(&own, &legacy);
     assert_eq!(p.wallpaper_id, "dusk");
     assert_eq!(p.accent, "crimson");
@@ -49,8 +40,8 @@ fn seeds_from_legacy_once_and_never_writes_it() {
 
 #[test]
 fn seeds_dock_and_home_order_from_sibling_desktop_json() {
-    let dir = tmpdir("desktop-seed");
-    let shell = dir.join("rabbiz-shell");
+    let dir = tempfile::tempdir().unwrap();
+    let shell = dir.path().join("rabbiz-shell");
     std::fs::create_dir_all(&shell).unwrap();
     std::fs::write(shell.join("prefs.json"), r"{}").unwrap();
     std::fs::write(
@@ -62,7 +53,7 @@ fn seeds_dock_and_home_order_from_sibling_desktop_json() {
     .unwrap();
 
     let p = Prefs::load_from(
-        &dir.join("rabbiz-de").join("prefs.json"),
+        &dir.path().join("rabbiz-de").join("prefs.json"),
         &shell.join("prefs.json"),
     );
     // Legacy ids canonicalize; the retired google-chrome wrapper id maps to
@@ -84,17 +75,17 @@ fn seeds_dock_and_home_order_from_sibling_desktop_json() {
 
 #[test]
 fn unknown_wallpaper_id_passes_through_loader_falls_back() {
-    let dir = tmpdir("unknown-wp");
-    let legacy = dir.join("prefs.json");
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("prefs.json");
     std::fs::write(&legacy, r#"{"wallpaperId":"nebula"}"#).unwrap();
-    let p = Prefs::load_from(&dir.join("own.json"), &legacy);
+    let p = Prefs::load_from(&dir.path().join("own.json"), &legacy);
     assert_eq!(p.wallpaper_id, "nebula"); // loader (de-paint) falls back to ember
 }
 
 #[test]
 fn save_is_atomic_and_backs_up() {
-    let dir = tmpdir("atomic");
-    let own = dir.join("prefs.json");
+    let dir = tempfile::tempdir().unwrap();
+    let own = dir.path().join("prefs.json");
 
     let mut p = Prefs::default();
     p.pin_dock("rabbiz-files");

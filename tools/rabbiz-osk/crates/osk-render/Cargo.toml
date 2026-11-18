@@ -12,4 +12,5 @@ tiny-skia = "0.11"
 cosmic-text = "0.12"
 
 [dev-dependencies]
+tempfile = "3"
 tiny-skia = "0.11"

@@ -56,14 +56,13 @@ mod tests {
 
     #[test]
     fn parses_capacity_and_status() {
-        let dir = std::env::temp_dir().join(format!("de-sysfs-{}", std::process::id()));
-        let bat = dir.join("s2mu106-battery");
+        let dir = tempfile::tempdir().unwrap();
+        let bat = dir.path().join("s2mu106-battery");
         std::fs::create_dir_all(&bat).unwrap();
         std::fs::write(bat.join("type"), "Battery").unwrap();
         std::fs::write(bat.join("capacity"), "86").unwrap();
         std::fs::write(bat.join("status"), "Charging").unwrap();
-        let s = poll_battery_in(&dir);
-        let _ = std::fs::remove_dir_all(&dir);
+        let s = poll_battery_in(dir.path());
         assert_eq!(s.percent, Some(86));
         assert!(s.charging);
         assert!(!s.full);

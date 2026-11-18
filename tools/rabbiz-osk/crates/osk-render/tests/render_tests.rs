@@ -78,8 +78,8 @@ fn every_layer_of_both_languages_renders_without_panicking() {
 fn snapshots_can_be_written_to_png() {
     let mut r = Renderer::new();
     let layout = en();
-    let dir = std::env::temp_dir().join("osk-render-test");
-    let path = dir.join("en-us-base.png");
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("en-us-base.png");
     osk_render::render_to_png(
         &mut r,
         &layout,
@@ -96,5 +96,4 @@ fn snapshots_can_be_written_to_png() {
         "valid PNG signature"
     );
     assert!(bytes.len() > 10_000, "not a blank image");
-    let _ = std::fs::remove_dir_all(dir);
 }

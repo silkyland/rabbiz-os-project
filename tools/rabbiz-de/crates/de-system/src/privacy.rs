@@ -92,12 +92,11 @@ mod tests {
 
     #[test]
     fn detects_running_capture() {
-        let procfs = std::env::temp_dir().join(format!("de-privacy-{}", std::process::id()));
-        let sub = procfs.join("asound/card0/pcm0c/sub0");
+        let procfs = tempfile::tempdir().unwrap();
+        let sub = procfs.path().join("asound/card0/pcm0c/sub0");
         std::fs::create_dir_all(&sub).unwrap();
         std::fs::write(sub.join("status"), "RUNNING\n").unwrap();
-        let s = poll_privacy_in(&procfs);
-        let _ = std::fs::remove_dir_all(&procfs);
+        let s = poll_privacy_in(procfs.path());
         assert!(s.mic);
         assert!(!s.camera);
     }
