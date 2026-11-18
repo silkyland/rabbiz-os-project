@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
-# Out-of-tree Kbuild for the Exynos850 TMU skeleton.
+# Out-of-tree Kbuild for the Exynos850 TMU temperature monitor.
 #
 #   make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 \
-#        M=$PWD/drivers/tmu modules
+#        M=$PWD/socs/exynos850/drivers/tmu modules
 
 obj-m += exynos850-tmu.o

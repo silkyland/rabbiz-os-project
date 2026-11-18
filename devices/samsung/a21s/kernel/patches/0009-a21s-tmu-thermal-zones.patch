@@ -1,0 +1,166 @@
+Subject: [PATCH] arm64: dts: exynos: describe A21s TMU thermal zones
+
+Poll the three vendor-mapped sensors. Bind passive CPU trips to the
+cluster cooling devices and use software critical trips on all three
+zones. Leave the firmware-programmed hardware thresholds intact.
+
+--- a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
++++ b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
+@@ -6,6 +6,8 @@
+  */
+ 
+ /dts-v1/;
++
++#include <dt-bindings/thermal/thermal.h>
+ #include "exynos850.dtsi"
+ #include <dt-bindings/gpio/gpio.h>
+ #include <dt-bindings/input/input.h>
+@@ -1296,20 +1298,15 @@
+ 	};
+ };
+ 
+-/* ---- thermal -------------------------------------------------------
+- * One TMU block, three sensor groups (vendor LITTLE0/LITTLE1/G3D,
+- * ids 0/1/2 = CPUCL0/CPUCL1/GPU). Out-of-tree skeleton driver in
+- * drivers/tmu only dumps registers for now - thermal-zones below are
+- * commented out until get_temp + trim formula land.
+- */
++/* The firmware starts the TMU. Linux polls calibrated sensors 1–3. */
+ &soc {
+-	tpu: tmu@10070000 {
++	tmu: tmu@10070000 {
+ 		compatible = "samsung,exynos850-tmu";
+ 		reg = <0x10070000 0x800>;
+ 		interrupts = <GIC_SPI 226 IRQ_TYPE_LEVEL_HIGH>;
+ 		clocks = <&cmu_peri CLK_GOUT_BUSIF_TMU_PCLK>;
+ 		clock-names = "tmu_apbif";
+-		#thermal-sensor-cells = <0>;
++		#thermal-sensor-cells = <1>;
+ 		status = "okay";
+ 	};
+ 
+@@ -1388,53 +1385,77 @@
+ 	};
+ };
+ 
+-/*
+- * TODO: uncomment once drivers/tmu implements get_temp.
+- * Suggested trips from vendor data (alert ~80C, crit ~115C):
+-thermal-zones {
+-	cpu0-thermal {
+-		polling-delay-passive = <0>;
+-		polling-delay = <1000>;
+-		thermal-sensors = <&tmu 0>;
+-		trips {
+-			cpu_alert: cpu-alert {
+-				temperature = <80000>;
+-				hysteresis = <3000>;
+-				type = "passive";
+-			};
+-			cpu_crit: cpu-crit {
+-				temperature = <115000>;
+-				hysteresis = <0>;
+-				type = "critical";
+-			};
+-		};
+-		cooling-maps {
+-			map0 {
+-				trip = <&cpu_alert>;
+-				cooling-device = <&cpu0 THERMAL_NO_LIMIT
+-							THERMAL_NO_LIMIT>;
+-			};
+-		};
+-	};
+-	gpu-thermal {
+-		polling-delay-passive = <0>;
+-		polling-delay = <1000>;
+-		thermal-sensors = <&tmu 2>;
+-		trips {
+-			gpu_alert: gpu-alert {
+-				temperature = <80000>;
+-				hysteresis = <3000>;
+-				type = "passive";
+-			};
+-			gpu_crit: gpu-crit {
+-				temperature = <115000>;
+-				hysteresis = <0>;
+-				type = "critical";
+-			};
+-		};
+-	};
+-};
+-*/
++/ {
++	thermal-zones {
++		little0-thermal {
++			polling-delay-passive = <250>;
++			polling-delay = <1000>;
++			thermal-sensors = <&tmu 1>;
++
++			trips {
++				little0_alert: alert {
++					temperature = <80000>;
++					hysteresis = <3000>;
++					type = "passive";
++				};
++
++				critical {
++					temperature = <95000>;
++					hysteresis = <0>;
++					type = "critical";
++				};
++			};
++
++			cooling-maps {
++				map0 {
++					trip = <&little0_alert>;
++					cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
++				};
++			};
++		};
++
++		little1-thermal {
++			polling-delay-passive = <250>;
++			polling-delay = <1000>;
++			thermal-sensors = <&tmu 2>;
++
++			trips {
++				little1_alert: alert {
++					temperature = <80000>;
++					hysteresis = <3000>;
++					type = "passive";
++				};
++
++				critical {
++					temperature = <95000>;
++					hysteresis = <0>;
++					type = "critical";
++				};
++			};
++
++			cooling-maps {
++				map0 {
++					trip = <&little1_alert>;
++					cooling-device = <&cpu4 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
++				};
++			};
++		};
++
++		gpu-thermal {
++			polling-delay-passive = <0>;
++			polling-delay = <1000>;
++			thermal-sensors = <&tmu 3>;
++
++			trips {
++				critical {
++					temperature = <95000>;
++					hysteresis = <0>;
++					type = "critical";
++				};
++			};
++		};
++	};
++};
+ 
+ /* ---- cpuidle hooks -------------------------------------------------
+  * Vendor/PSCI cpuidle needs the exynos850-pmu patch series + PSCI

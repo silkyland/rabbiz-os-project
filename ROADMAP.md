@@ -59,9 +59,12 @@
 - **Objective:** Reduce idle power, expose battery/charging to Steam (`upower`), enable thermal throttling and sleep/wake.
 - **Detail:** See [devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md).
 - **Tasks:**
-  - [ ] Switch `CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y` to `schedutil` and verify `cpuidle`.
+  - [x] Switch both CPU frequency policies to `schedutil` (observed on A21s on 2026-11-18).
+  - [ ] Verify `cpuidle` residency.
   - [ ] Port `s2mu106` MFD, Fuel Gauge, and Charger (`power_supply` class) + install `upower`.
-  - [ ] Enable Exynos TMU thermal zones (`/sys/class/thermal/`), backlight control, and Suspend-to-RAM.
+  - [x] Read Exynos TMU temperatures with per-sensor eFuse trim and cross-check with ACPM on the A21s. [Calibration finding](devices/samsung/a21s/findings/2026-11-18-tmu-efuse-temperature.md).
+  - [ ] Boot-test the new A21s DTB and verify CPU passive cooling. Temporary critical zones were enabled for the [90-second Panfrost run](devices/samsung/a21s/findings/2026-11-18-panfrost-thermal-run.md).
+  - [ ] Verify backlight control and Suspend-to-RAM.
 
 ### M6: Cellular Modem (`cpif`) & Voice Call — todo
 - **Objective:** Enable Exynos 850 Baseband (`CP`) for SIM, 4G Data, SMS, and Voice Calls.
