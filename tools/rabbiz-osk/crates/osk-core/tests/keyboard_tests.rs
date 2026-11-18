@@ -342,7 +342,7 @@ fn predictor_learns_bigrams_and_persists() {
     let suggested = predictor.suggestions("hello ");
     assert!(suggested.iter().any(|w| w == "world"), "{suggested:?}");
 
-    let path = std::env::temp_dir().join("a21s-osk-predictor-test.tsv");
+    let path = std::env::temp_dir().join("rabbiz-osk-predictor-test.tsv");
     predictor.save(&path).unwrap();
     let loaded = Predictor::load(&path);
     assert!(loaded

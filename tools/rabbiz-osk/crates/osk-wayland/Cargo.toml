@@ -1,13 +1,13 @@
 [package]
 name = "osk-wayland"
-description = "Wayland client for the a21s-osk keyboard: layer-shell surface, zwp_input_method_v2 text delivery"
+description = "Wayland client for the rabbiz-osk keyboard: layer-shell surface, zwp_input_method_v2 text delivery"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
 [[bin]]
-name = "a21s-osk"
+name = "rabbiz-osk"
 path = "src/main.rs"
 
 [dependencies]

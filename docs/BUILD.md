@@ -90,12 +90,12 @@ ssh root@<wifi-ip> "kexec -l /tmp/Image --dtb=/tmp/exynos850-a217f.dtb --reuse-c
 2. Build `uniLoader` with `a21s_defconfig` (**uncompressed** `src/uniLoader/uniLoader`).
 3. Pack `build/images/boot-avb.img` via `mkbootimg` with `--dtb <stock-boot.img-dtb> --dtb_offset 0x00000000` and flash to `/dev/mmcblk0p18` (`dd`).
 
-## 6. `a21s-osk` (Rust on-screen keyboard)
+## 6. `rabbiz-osk` (Rust on-screen keyboard)
 
 Host-only work (logic, layouts, PNG previews) needs no device and no cross toolchain:
 
 ```bash
-cd tools/a21s-osk
+cd tools/rabbiz-osk
 cargo test
 cargo run -p osk-render --bin osk-preview      # → build/osk/*.png
 ```
@@ -105,21 +105,21 @@ cargo run -p osk-render --bin osk-preview      # → build/osk/*.png
 (verified 2026-11-17: `uname -m` = `aarch64`, `rustc --version` = 1.99.1):
 
 ```bash
-docker run --rm -v "$PWD":/w -w /w/tools/a21s-osk rust:1.99-bookworm \
+docker run --rm -v "$PWD":/w -w /w/tools/rabbiz-osk rust:1.99-bookworm \
   /usr/local/cargo/bin/cargo build --release -p osk-render --bin osk-preview
 ```
 
 Use `bash -c` (not `bash -lc`) or the absolute `/usr/local/cargo/bin/cargo` path — a login
 shell resets `PATH` and `cargo` disappears. Output lands in
-`tools/a21s-osk/target/release/` (root-owned: `docker run --rm -v "$PWD":/w busybox chown -R
-"$(id -u):$(id -g)" /w/tools/a21s-osk/target`). The binary is glibc-linked (Debian 2.36) and
+`tools/rabbiz-osk/target/release/` (root-owned: `docker run --rm -v "$PWD":/w busybox chown -R
+"$(id -u):$(id -g)" /w/tools/rabbiz-osk/target`). The binary is glibc-linked (Debian 2.36) and
 runs on Arch Linux ARM as-is.
 
 Build the keyboard itself (adds `libxkbcommon-dev`; the crate also needs the protocol `client`
 feature):
 
 ```bash
-docker run --rm -v "$PWD":/w -w /w/tools/a21s-osk rust:1.99-bookworm bash -c '
+docker run --rm -v "$PWD":/w -w /w/tools/rabbiz-osk rust:1.99-bookworm bash -c '
   apt-get update -qq && apt-get install -y -qq libxkbcommon-dev pkg-config
   /usr/local/cargo/bin/cargo build --release -p osk-wayland'
 ```
@@ -127,9 +127,9 @@ docker run --rm -v "$PWD":/w -w /w/tools/a21s-osk rust:1.99-bookworm bash -c '
 Deploy and run a *preview* (writes PNGs, never touches the seat — squeekboard keeps running):
 
 ```bash
-scp tools/a21s-osk/target/release/osk-preview root@172.16.42.1:/usr/local/bin/a21s-osk-preview
+scp tools/rabbiz-osk/target/release/osk-preview root@172.16.42.1:/usr/local/bin/rabbiz-osk-preview
 ssh root@172.16.42.1 "flock --close --timeout 300 /run/lock/a21s-device-test.lock \
-  bash -c '/usr/local/bin/a21s-osk-preview /tmp/osk-png'"
+  bash -c '/usr/local/bin/rabbiz-osk-preview /tmp/osk-png'"
 scp root@172.16.42.1:/tmp/osk-png/en-us-base-dark.png build/osk-device/
 ```
 
@@ -147,9 +147,9 @@ device (2.6 GB RAM).
 Switch the live keyboard (root on the device):
 
 ```bash
-a21s-osk-switch start     # stops squeekboard, runs /usr/local/bin/a21s-osk as gamer
-a21s-osk-switch status
-a21s-osk-switch stop      # restores squeekboard (the session default)
+rabbiz-osk-switch start     # stops squeekboard, runs /usr/local/bin/rabbiz-osk as gamer
+rabbiz-osk-switch status
+rabbiz-osk-switch stop      # restores squeekboard (the session default)
 ```
 
 Only one input method may own the seat; `start` waits for squeekboard to disappear before it
@@ -158,7 +158,7 @@ launches ours. To exercise it without the phone in hand, run the GTK4 client and
 ```bash
 runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-0 \
   DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus GSK_RENDERER=cairo \
-  python3 /tmp/osk_test_client.py &          # tools/a21s-osk/tests/osk_test_client.py
+  python3 /tmp/osk_test_client.py &          # tools/rabbiz-osk/tests/osk_test_client.py
 python3 /root/touch_swipe.py 72 1455        # tap the 'a' key (this file lives in scripts/)
 ```
 

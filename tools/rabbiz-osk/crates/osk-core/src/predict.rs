@@ -2,7 +2,7 @@
 //!
 //! There is no shipped corpus: the seed list is a small hand-written set of very common
 //! English and Thai words, and everything else is learned from what the user actually types
-//! (counts + bigrams), persisted under `$XDG_STATE_HOME/a21s-osk/predictor.tsv`. That keeps
+//! (counts + bigrams), persisted under `$XDG_STATE_HOME/rabbiz-osk/predictor.tsv`. That keeps
 //! the data licence-free and the keyboard private by construction.
 
 use std::collections::HashMap;
@@ -217,5 +217,5 @@ pub fn state_path() -> PathBuf {
         .map(PathBuf::from)
         .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".local/state")))
         .unwrap_or_else(|_| PathBuf::from("/tmp"));
-    base.join("a21s-osk/predictor.tsv")
+    base.join("rabbiz-osk/predictor.tsv")
 }

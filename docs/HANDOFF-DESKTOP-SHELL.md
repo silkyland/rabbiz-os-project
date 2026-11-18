@@ -29,7 +29,7 @@
 | M7.8 Settings v2 (thin shell-owned panels; `plasma-settings` lacks Wi-Fi/BT/sound/battery) | **app ships and is wired** (pre-existing, not a rewrite): verified Wi-Fi list + join dialog, accent live update, volume slider, new light/dark switch; BT pair untested |
 | M7.10 **home editing** (long-press, drag & drop, snap/align, persisted layout) | **not started** — spec §7.1 |
 | M7.11 **clipboard system** | **not started** — spec §7.2 |
-| M7.12 **on-screen keyboard rework** (owner: many bugs, poor UX) | **host half started 2026-11-17** — `tools/a21s-osk`: `osk-core` (layouts, geometry, shift FSM, gestures, Thai grapheme backspace) + `osk-render` PNG previews + EN/TH layouts, 29 host tests; no Wayland client yet, squeekboard still live (plan §12) |
+| M7.12 **on-screen keyboard rework** (owner: many bugs, poor UX) | **host half started 2026-11-17** — `tools/rabbiz-osk`: `osk-core` (layouts, geometry, shift FSM, gestures, Thai grapheme backspace) + `osk-render` PNG previews + EN/TH layouts, 29 host tests; no Wayland client yet, squeekboard still live (plan §12) |
 | M7.9 **gesture system** (Android-style) | **core done, verified with injected touch** (§4): bottom swipe-up=home, swipe-up+hold=recents, swipe along bar=prev/next app, side-edge swipe=back; all work over fullscreen windows (surfaces moved to the Overlay layer). Missing: back-arrow chip + live card following the finger, reverse morph from a window snapshot, Steam resume matching |
 
 Owner decisions (2026-11-16): home = touch-first desktop; replace home-grown apps with real Linux apps (Settings,
@@ -265,7 +265,7 @@ Design:
 Owner: the current keyboard has many bugs and bad UX. **I have not reproduced the bugs yet** — the first step is a
 triage, not a rewrite (use the `reproduce-my-bug` skill).
 Facts **(verified):** `squeekboard 1.43.1` runs; custom layouts are `~/.local/share/squeekboard/keyboards/{us,th}.yaml`
-(84 + 113 lines); control via `a21s-osk-ctl` (`toggle` over `sm.puri.OSK0`, `lang-next` reorders gsettings
+(84 + 113 lines); control via `rabbiz-osk-ctl` (`toggle` over `sm.puri.OSK0`, `lang-next` reorders gsettings
 input-sources); `QT_IM_MODULE`/`GTK_IM_MODULE` must stay unset (AGENTS.md); `fcitx5 5.1.23` and `fcitx5-libthai` are in
 the ALARM repo (not installed); labwc supports `zwp_input_method_v2`, `zwp_text_input_v3`, `zwp_virtual_keyboard`;
 Quickshell has no binding for any of them, so a custom keyboard cannot be written purely in the shell's QML.
@@ -292,4 +292,4 @@ Plan:
 Suggested order: Steam resume matching + gesture polish (finish M7.9) -> 7.3 triage (cheap, unblocks UX judgement) ->
 7.2 clipboard (small, independent) -> 7.1 home editing (largest) -> OSK rewrite only if triage demands it.
 Disjoint files for parallel agents: 7.1 `Desktop/*` + `HomeLayout.js`; 7.2 `Services/Clipboard.qml`,
-`Panels/ClipboardSheet.qml`, `rootfs-overlay` autostart; 7.3 `rootfs-overlay/.../squeekboard`, `a21s-osk-ctl`.
+`Panels/ClipboardSheet.qml`, `rootfs-overlay` autostart; 7.3 `rootfs-overlay/.../squeekboard`, `rabbiz-osk-ctl`.

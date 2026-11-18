@@ -45,4 +45,4 @@ Suggested split for parallel agents (disjoint files):
 - Agent D: backlog 4 (gesture polish + close morph) — `shell/A21s/Windowing/`, `shell/A21s/Panels/NavBar.qml`.
 - Agent E: HANDOFF §7.1 home editing (drag & drop) — `shell/A21s/Desktop/*`, new `HomeLayout.js`.
 - Agent F: HANDOFF §7.2 clipboard — `shell/A21s/Services/Clipboard.qml`, `Panels/ClipboardSheet.qml`.
-- Agent G: HANDOFF §7.3 on-screen keyboard triage + fixes — `rootfs-overlay/.../squeekboard`, `a21s-osk-ctl`.
+- Agent G: HANDOFF §7.3 on-screen keyboard triage + fixes — `rootfs-overlay/.../squeekboard`, `rabbiz-osk-ctl`.

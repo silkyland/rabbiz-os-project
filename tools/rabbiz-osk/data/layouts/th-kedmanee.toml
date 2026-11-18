@@ -1,4 +1,4 @@
-# Thai Kedmanee — RabbitOS on-screen keyboard layout (a21s-osk).
+# Thai Kedmanee — RabbitOS on-screen keyboard layout (rabbiz-osk).
 #
 # Rows follow the existing squeekboard override (rootfs-overlay/.../keyboards/th.yaml) so the
 # keyboard the owner already types on maps 1:1 onto the new one. Thai has no spaces, so the

@@ -170,11 +170,11 @@ QtObject {
     // --- On-screen keyboard (squeekboard via sm.puri.OSK0 / gsettings) ---
 
     function toggleOsk() {
-        _runCmd(["a21s-osk-ctl", "toggle"])
+        _runCmd(["rabbiz-osk-ctl", "toggle"])
     }
 
     function nextOskLanguage() {
-        _runCmd(["a21s-osk-ctl", "lang-next"])
+        _runCmd(["rabbiz-osk-ctl", "lang-next"])
     }
 
     function setGovernor(name) {

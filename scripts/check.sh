@@ -28,9 +28,9 @@ if [[ -f tools/rabbiz-de/Cargo.toml ]]; then
   ./scripts/de_test_host.sh                           # cargo test --workspace + golden check
 fi
 
-# a21s-osk (M7.12): pure-Rust keyboard core + host renderer (skipped when cargo is absent)
+# rabbiz-osk (M7.12): pure-Rust keyboard core + host renderer (skipped when cargo is absent)
 # osk-wayland is Linux-only (libxkbcommon), so the host check skips it; it is built in the arm64
 # container and tested on the device (docs/BUILD.md §6).
 if command -v cargo >/dev/null 2>&1; then
-  cargo test --quiet --manifest-path tools/a21s-osk/Cargo.toml --workspace --exclude osk-wayland
+  cargo test --quiet --manifest-path tools/rabbiz-osk/Cargo.toml --workspace --exclude osk-wayland
 fi

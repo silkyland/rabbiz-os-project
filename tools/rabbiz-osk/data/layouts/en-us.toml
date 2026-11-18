@@ -1,4 +1,4 @@
-# English (US) — RabbitOS on-screen keyboard layout (a21s-osk).
+# English (US) — RabbitOS on-screen keyboard layout (rabbiz-osk).
 #
 # The plan reference is docs/PLAN-keyboard.md §5. Key geometry is normalised per row, so
 # `width` only shapes ratios; `insets` shifts a whole row inward by letter-key units.
