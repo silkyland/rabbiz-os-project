@@ -70,8 +70,8 @@ impl Dispatch<ZwlrScreencopyManagerV1, ()> for De {
     ) {
         let full =
             Rectangle::from_size((state.output.width as i32, state.output.height as i32).into());
-        let (frame, rect) = match request {
-            zwlr_screencopy_manager_v1::Request::CaptureOutput { frame, .. } => (frame, full),
+        let (frame, region) = match request {
+            zwlr_screencopy_manager_v1::Request::CaptureOutput { frame, .. } => (frame, None),
             zwlr_screencopy_manager_v1::Request::CaptureOutputRegion {
                 frame,
                 x,
@@ -81,15 +81,13 @@ impl Dispatch<ZwlrScreencopyManagerV1, ()> for De {
                 ..
             } => (
                 frame,
-                full.intersection(Rectangle::new((x, y).into(), (width, height).into()))
-                    .unwrap_or_default(),
+                Some(Rectangle::new((x, y).into(), (width, height).into())),
             ),
-            zwlr_screencopy_manager_v1::Request::Destroy => return,
             _ => return,
         };
-        if rect.is_empty() {
+        let Some(rect) = capture_rect(full, region) else {
             return;
-        }
+        };
         let version = resource.version();
         let frame = init.init(
             frame,
@@ -102,7 +100,7 @@ impl Dispatch<ZwlrScreencopyManagerV1, ()> for De {
         // per-format — grim sends `copy` per `buffer` event, and a second
         // copy must fail with `already_used`.
         frame.buffer(
-            wl_shm::Format::Argb8888.into(),
+            wl_shm::Format::Argb8888,
             rect.size.w as u32,
             rect.size.h as u32,
             rect.size.w as u32 * 4,
@@ -123,15 +121,16 @@ impl Dispatch<ZwlrScreencopyFrameV1, FrameData> for De {
         _dh: &DisplayHandle,
         _init: &mut DataInit<'_, Self>,
     ) {
-        let with_damage =
-            matches!(request, zwlr_screencopy_frame_v1::Request::CopyWithDamage { .. });
-        let buffer = match request {
-            zwlr_screencopy_frame_v1::Request::Copy { buffer }
-            | zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer } => buffer,
-            zwlr_screencopy_frame_v1::Request::Destroy => return,
-            _ => return,
+        let with_damage = matches!(
+            request,
+            zwlr_screencopy_frame_v1::Request::CopyWithDamage { .. }
+        );
+        let (zwlr_screencopy_frame_v1::Request::Copy { buffer }
+        | zwlr_screencopy_frame_v1::Request::CopyWithDamage { buffer }) = request
+        else {
+            return;
         };
-        if data.used.swap(true, std::sync::atomic::Ordering::Relaxed) {
+        if !claim_copy(&data.used) {
             frame.post_error(
                 zwlr_screencopy_frame_v1::Error::AlreadyUsed as u32,
                 "frame already used to copy a buffer",
@@ -219,7 +218,24 @@ impl De {
     }
 }
 
-/// `ready` timestamp from the monotonic clock (tv_sec_hi, tv_sec_lo, tv_nsec).
+/// Resolve a capture request into the rect to offer the client: the full
+/// output, or the requested region clipped to it. `None` means the frame
+/// gets no buffer offer (empty clip — nothing valid to copy).
+fn capture_rect(
+    full: Rectangle<i32, Logical>,
+    region: Option<Rectangle<i32, Logical>>,
+) -> Option<Rectangle<i32, Logical>> {
+    let rect = region.map_or(full, |r| full.intersection(r).unwrap_or_default());
+    (!rect.is_empty()).then_some(rect)
+}
+
+/// A frame may be copied once: first claim wins, later `copy` /
+/// `copy_with_damage` requests fail `already_used`.
+fn claim_copy(used: &std::sync::atomic::AtomicBool) -> bool {
+    !used.swap(true, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// `ready` timestamp from the monotonic clock (`tv_sec_hi`, `tv_sec_lo`, `tv_nsec`).
 fn ready_timestamp(de: &De) -> (u32, u32, u32) {
     let d = std::time::Duration::from(de.clock.now());
     let sec = d.as_secs();
@@ -299,4 +315,49 @@ fn write_capture(full: &de_api::Pixels, buffer: &WlBuffer, rect: Rectangle<i32, 
         true
     })
     .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn out() -> Rectangle<i32, Logical> {
+        Rectangle::from_size((720, 1600).into())
+    }
+    fn r(x: i32, y: i32, w: i32, h: i32) -> Rectangle<i32, Logical> {
+        Rectangle::new((x, y).into(), (w, h).into())
+    }
+
+    #[test]
+    fn full_output_capture_offers_the_panel() {
+        assert_eq!(capture_rect(out(), None), Some(out()));
+    }
+
+    #[test]
+    fn region_capture_is_clipped_to_the_output() {
+        // Inside → as requested.
+        assert_eq!(
+            capture_rect(out(), Some(r(0, 0, 100, 200))),
+            Some(r(0, 0, 100, 200))
+        );
+        // Partially outside → clipped to the intersection.
+        assert_eq!(
+            capture_rect(out(), Some(r(700, 1590, 100, 200))),
+            Some(r(700, 1590, 20, 10))
+        );
+        // Completely outside or empty → no offer.
+        assert_eq!(capture_rect(out(), Some(r(720, 0, 10, 10))), None);
+        assert_eq!(capture_rect(out(), Some(r(0, 0, 0, 10))), None);
+        assert_eq!(capture_rect(out(), Some(r(-50, -50, 10, 10))), None);
+    }
+
+    /// Protocol rule: `buffer` is offered once, and only one `copy` may run
+    /// on a frame — a second request is `already_used` (grim relies on this).
+    #[test]
+    fn frame_accepts_exactly_one_copy() {
+        let used = std::sync::atomic::AtomicBool::new(false);
+        assert!(claim_copy(&used));
+        assert!(!claim_copy(&used));
+        assert!(!claim_copy(&used));
+    }
 }

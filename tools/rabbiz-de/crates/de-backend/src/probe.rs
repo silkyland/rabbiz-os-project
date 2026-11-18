@@ -73,6 +73,7 @@ struct ProbeReport {
 }
 
 /// Run the probe; returns `(report_json, any_renderer_ok)`.
+#[allow(clippy::too_many_lines)] // one sequential bring-up, step order is the documentation
 pub fn run(require_gl: bool) -> Result<(serde_json::Value, bool), SessionError> {
     let mut errors: Vec<String> = Vec::new();
 
@@ -96,7 +97,7 @@ pub fn run(require_gl: bool) -> Result<(serde_json::Value, bool), SessionError> 
     let mut gles: Option<GlesRenderer> = None;
     match drm::init_egl(&mut setup) {
         Ok(()) => {
-            gl.egl_version = setup.egl_version.clone();
+            gl.egl_version.clone_from(&setup.egl_version);
             if let Some(display) = setup.egl_display.clone() {
                 match de_render::gl::create(&display) {
                     Ok(mut r) => {
@@ -226,23 +227,22 @@ fn select_or_report(
     setup: &mut DrmSetup,
     errors: &mut Vec<String>,
 ) -> Result<OutputSelection, SessionError> {
-    match drm::select_output(&mut setup.device)? {
-        Some(o) => Ok(o),
-        None => {
-            errors.push("no connected connector".to_string());
-            Err(SessionError::Session("no connected connector".into()))
-        }
+    if let Some(o) = drm::select_output(&mut setup.device)? {
+        return Ok(o);
     }
+    errors.push("no connected connector".to_string());
+    Err(SessionError::Session("no connected connector".into()))
 }
 
 /// `glGetString(GL_RENDERER)` through the smithay context — e.g. "Mali-G52".
+#[allow(unsafe_code)] // raw GL string pointer read inside the EGL context
 fn gl_renderer_name(r: &mut GlesRenderer) -> String {
     r.with_context(|gl| unsafe {
         let ptr = gl.GetString(smithay::backend::renderer::gles::ffi::RENDERER);
         if ptr.is_null() {
             "GLES".to_string()
         } else {
-            std::ffi::CStr::from_ptr(ptr as *const std::ffi::c_char)
+            std::ffi::CStr::from_ptr(ptr.cast::<std::ffi::c_char>())
                 .to_string_lossy()
                 .into_owned()
         }
@@ -288,6 +288,7 @@ fn build_drm_report(
 
 /// Commit `frames` texture/clear frames and return the mean vblank interval
 /// in milliseconds. Blocks the calling thread; ~1.7 s at 60 Hz.
+#[allow(clippy::too_many_lines)] // vblank pacing is one sequential loop
 fn pace_frames(
     setup: &mut DrmSetup,
     output: &OutputSelection,
@@ -442,7 +443,7 @@ fn make_tex_gl(
     SessionError,
 > {
     use smithay::backend::renderer::element::texture::TextureBuffer;
-    let data = vec![0xD0u8, 0x8A, 0x5A, 0xFF].repeat(64 * 64); // premultiplied ABGR? see texture.rs
+    let data = [0xD0u8, 0x8A, 0x5A, 0xFF].repeat(64 * 64); // premultiplied ABGR? see texture.rs
     TextureBuffer::from_memory(
         r,
         &data,
@@ -465,7 +466,7 @@ fn make_tex_soft(
     SessionError,
 > {
     use smithay::backend::renderer::element::texture::TextureBuffer;
-    let data = vec![0xD0u8, 0x8A, 0x5A, 0xFF].repeat(64 * 64);
+    let data = [0xD0u8, 0x8A, 0x5A, 0xFF].repeat(64 * 64);
     TextureBuffer::from_memory(
         r,
         &data,
@@ -481,4 +482,81 @@ fn make_tex_soft(
 
 fn round3(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn round3_keeps_three_decimals() {
+        assert_eq!(round3(16.66666), 16.667);
+        assert_eq!(round3(16.6), 16.6);
+        assert_eq!(round3(0.0004), 0.0);
+        // .round() is half away from zero.
+        assert_eq!(round3(-1.2345), -1.235);
+    }
+
+    #[test]
+    fn fourcc_name_covers_known_and_fallback_formats() {
+        assert_eq!(fourcc_name(DrmFourcc::Argb8888), "ARGB8888");
+        assert_eq!(fourcc_name(DrmFourcc::Xrgb8888), "XRGB8888");
+        assert_eq!(fourcc_name(DrmFourcc::Abgr8888), "ABGR8888");
+        assert_eq!(fourcc_name(DrmFourcc::Xbgr8888), "XBGR8888");
+        assert_eq!(fourcc_name(DrmFourcc::Rgb565), "RGB565");
+        // Unknown codes fall back to the raw fourcc characters.
+        assert_eq!(fourcc_name(DrmFourcc::Yuyv), "YUYV");
+    }
+
+    /// M0-T3: `probe --json` is a machine-readable contract — pin the keys
+    /// tooling can rely on.
+    #[test]
+    fn probe_report_json_shape_is_stable() {
+        let report = ProbeReport {
+            frame_interval_ms: 16.667,
+            drm: DrmReport {
+                connector: "DSI-1".into(),
+                mode: "720x1600".into(),
+                refresh_hz: 60.0,
+                atomic: true,
+                planes: vec![PlaneReport {
+                    name: "plane0".into(),
+                    type_: "primary".into(),
+                    formats: vec!["ARGB8888".into()],
+                }],
+                formats: vec!["ARGB8888".into(), "XRGB8888".into()],
+            },
+            gl: RendererReport {
+                ok: false,
+                renderer: None,
+                egl_version: None,
+                formats: None,
+                error: Some("egl: none".into()),
+                frames: None,
+            },
+            soft: RendererReport {
+                ok: true,
+                renderer: Some("pixman".into()),
+                egl_version: None,
+                formats: Some(vec!["ARGB8888".into()]),
+                error: None,
+                frames: Some(PROBE_FRAMES),
+            },
+            errors: vec![],
+        };
+        let v = serde_json::to_value(&report).unwrap();
+        assert_eq!(v["drm"]["connector"], json!("DSI-1"));
+        assert_eq!(v["drm"]["atomic"], json!(true));
+        assert_eq!(v["drm"]["planes"][0]["type"], json!("primary"));
+        assert_eq!(v["gl"]["ok"], json!(false));
+        // skip_serializing_if: absent fields must not appear at all.
+        assert!(v["gl"].get("renderer").is_none());
+        assert!(v["gl"].get("frames").is_none());
+        assert_eq!(v["gl"]["error"], json!("egl: none"));
+        assert_eq!(v["soft"]["frames"], json!(PROBE_FRAMES));
+        assert!(v["soft"].get("error").is_none());
+        assert!(v.get("errors").is_some());
+        assert!(v.get("frame_interval_ms").is_some());
+    }
 }

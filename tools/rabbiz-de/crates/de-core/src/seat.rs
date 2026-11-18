@@ -42,7 +42,11 @@ smithay::delegate_seat!(De);
 impl De {
     pub(crate) fn focus_surface(&mut self, target: Option<WlSurface>, serial: Serial) {
         if let Some(keyboard) = self.seat.get_keyboard() {
-            keyboard.set_focus(self, self.exclusive_layer_focus.clone().or(target), serial);
+            keyboard.set_focus(
+                self,
+                effective_focus(self.exclusive_layer_focus.clone(), target),
+                serial,
+            );
         }
     }
 
@@ -54,7 +58,7 @@ impl De {
                 .elements()
                 .rev()
                 .filter_map(|window| window.toplevel())
-                .map(|surface| surface.wl_surface())
+                .map(smithay::wayland::shell::xdg::ToplevelSurface::wl_surface)
                 .find(|surface| crate::comp::has_buffer(surface))
                 .cloned(),
         };
@@ -67,5 +71,25 @@ impl De {
             self.exclusive_layer_focus = layer;
             self.focus_foreground();
         }
+    }
+}
+
+/// Keyboard focus precedence: an exclusive-interactivity layer surface
+/// (the OSK grabs none today, but lock/screenshot overlays may) wins over
+/// any window or client target.
+fn effective_focus<T>(exclusive: Option<T>, target: Option<T>) -> Option<T> {
+    exclusive.or(target)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exclusive_layer_wins_over_client_focus() {
+        assert_eq!(effective_focus(Some(1), Some(2)), Some(1));
+        assert_eq!(effective_focus(None, Some(2)), Some(2));
+        assert_eq!(effective_focus::<i32>(Some(1), None), Some(1));
+        assert_eq!(effective_focus::<i32>(None, None), None);
     }
 }

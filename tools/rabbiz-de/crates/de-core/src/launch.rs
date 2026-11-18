@@ -41,17 +41,23 @@ impl LaunchTracker {
     /// screen instead of a stuck morph.
     pub fn begin(&mut self, desktop_id: &str) -> Result<i32, String> {
         let pid = de_apps::launch::launch(desktop_id)?;
+        self.record(desktop_id, pid);
+        Ok(pid)
+    }
+
+    /// Record a spawned pid awaiting its first toplevel (kept separate from
+    /// the spawn so the state machine is testable without running apps).
+    fn record(&mut self, desktop_id: &str, pid: i32) {
         self.pending = Some(Pending {
             desktop_id: desktop_id.to_string(),
             pid,
             started: Instant::now(),
         });
-        Ok(pid)
     }
 
     /// Called after the first buffer commit. A pending launch resolves on
     /// the first toplevel with content after spawn. App-id correlation is fuzzy (the
-    /// Chrome wrapper's app_id is `google-chrome` while the launched id is
+    /// Chrome wrapper's `app_id` is `google-chrome` while the launched id is
     /// `rabbiz-browser`), so an exact match isn't required. Returns the
     /// resolved desktop-id.
     pub fn on_toplevel_mapped(&mut self, app_id: Option<&str>) -> Option<String> {
@@ -100,5 +106,70 @@ impl LaunchTracker {
 impl Default for LaunchTracker {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl LaunchTracker {
+        fn with_timeout(timeout: Duration) -> Self {
+            Self {
+                pending: None,
+                timeout,
+            }
+        }
+    }
+
+    #[test]
+    fn pending_launch_resolves_on_first_toplevel() {
+        let mut t = LaunchTracker::new();
+        assert!(t.pending().is_none());
+        t.record("rabbiz-files", 42);
+        assert_eq!(t.pending(), Some("rabbiz-files"));
+        assert!(t.deadline().is_some());
+        // Fuzzy app-id: a different app_id still resolves (logged only).
+        assert_eq!(
+            t.on_toplevel_mapped(Some("org.kde.dolphin")),
+            Some("rabbiz-files".into())
+        );
+        assert!(t.pending().is_none());
+        assert_eq!(t.on_toplevel_mapped(Some("x")), None);
+    }
+
+    #[test]
+    fn a_second_launch_replaces_the_pending_one() {
+        let mut t = LaunchTracker::new();
+        t.record("a", 1);
+        t.record("b", 2);
+        assert_eq!(t.pending(), Some("b"));
+        assert_eq!(t.on_toplevel_mapped(None), Some("b".into()));
+    }
+
+    #[test]
+    fn timeout_reports_and_clears_the_pending_launch() {
+        let mut t = LaunchTracker::with_timeout(Duration::ZERO);
+        t.record("stuck-app", 7);
+        assert_eq!(t.check_timeout(), Some("stuck-app".into()));
+        assert!(t.pending().is_none());
+        assert_eq!(t.check_timeout(), None);
+    }
+
+    #[test]
+    fn unexpired_launch_does_not_timeout() {
+        let mut t = LaunchTracker::with_timeout(Duration::from_secs(3600));
+        t.record("ok-app", 7);
+        assert_eq!(t.check_timeout(), None);
+        assert_eq!(t.pending(), Some("ok-app"));
+    }
+
+    #[test]
+    fn cancel_forgets_the_pending_launch() {
+        let mut t = LaunchTracker::new();
+        t.record("a", 1);
+        t.cancel();
+        assert!(t.pending().is_none());
+        assert_eq!(t.on_toplevel_mapped(Some("a")), None);
     }
 }

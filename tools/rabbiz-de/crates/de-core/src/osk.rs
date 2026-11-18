@@ -74,16 +74,12 @@ impl De {
     /// from the periodic tick.
     pub(crate) fn check_osk(&mut self) {
         let now = Instant::now();
-        if self.osk.as_mut().map_or(true, OskProcess::exited) {
+        if self.osk.as_mut().is_none_or(OskProcess::exited) {
             self.osk = None;
             if self.osk_respawn_at.is_none() {
                 // A child that died fast (missing binary, crash loop) backs
                 // off; a long-lived one respawns promptly.
-                let backoff = match self.osk_spawned_at {
-                    Some(t) if t.elapsed() < Duration::from_secs(5) => Duration::from_secs(10),
-                    _ => Duration::from_secs(1),
-                };
-                self.osk_respawn_at = Some(now + backoff);
+                self.osk_respawn_at = Some(now + respawn_delay(self.osk_spawned_at));
             }
         }
         if self.osk.is_some() || self.osk_respawn_at.is_none_or(|t| now < t) {
@@ -100,9 +96,47 @@ impl De {
             }
             Err(error) => {
                 eprintln!("rabbiz-de: could not start the session OSK: {error}");
-                self.osk_respawn_at = Some(now + Duration::from_secs(30));
+                self.osk_respawn_at = Some(now + RESPAWN_FAIL_DELAY);
             }
         }
+    }
+}
+
+/// A child that died fast (missing binary, crash loop) backs off; a
+/// long-lived one respawns promptly.
+const QUICK_DEATH: Duration = Duration::from_secs(5);
+const RESPAWN_FAST: Duration = Duration::from_secs(1);
+const RESPAWN_SLOW: Duration = Duration::from_secs(10);
+/// Spawn itself failed (e.g. PATH resolution) — retry far less often.
+const RESPAWN_FAIL_DELAY: Duration = Duration::from_secs(30);
+
+/// Delay before re-spawning an exited session keyboard. `spawned_at` is
+/// when the dead child was started (`None` = it was never started).
+fn respawn_delay(spawned_at: Option<Instant>) -> Duration {
+    match spawned_at {
+        Some(t) if t.elapsed() < QUICK_DEATH => RESPAWN_SLOW,
+        _ => RESPAWN_FAST,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn respawn_backoff_is_1s_10s_or_30s() {
+        // Never started / long-lived child → prompt 1 s respawn.
+        assert_eq!(respawn_delay(None), Duration::from_secs(1));
+        assert_eq!(
+            respawn_delay(Some(
+                Instant::now().checked_sub(Duration::from_secs(60)).unwrap()
+            )),
+            Duration::from_secs(1)
+        );
+        // Child died inside 5 s (crash loop / missing binary) → 10 s.
+        assert_eq!(respawn_delay(Some(Instant::now())), Duration::from_secs(10));
+        // Spawn failure → 30 s.
+        assert_eq!(RESPAWN_FAIL_DELAY, Duration::from_secs(30));
     }
 }
 

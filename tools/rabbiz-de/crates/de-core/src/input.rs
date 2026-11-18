@@ -49,10 +49,10 @@ impl De {
             eprintln!("input: {}", variant_name::<B>(&event));
         }
         match event {
-            InputEvent::Keyboard { event } => self.on_keyboard_key::<B>(event),
-            InputEvent::TouchDown { event } => self.on_touch_down::<B>(event),
-            InputEvent::TouchMotion { event } => self.on_touch_motion::<B>(event),
-            InputEvent::TouchUp { event } => self.on_touch_up::<B>(event),
+            InputEvent::Keyboard { event } => self.on_keyboard_key::<B>(&event),
+            InputEvent::TouchDown { event } => self.on_touch_down::<B>(&event),
+            InputEvent::TouchMotion { event } => self.on_touch_motion::<B>(&event),
+            InputEvent::TouchUp { event } => self.on_touch_up::<B>(&event),
             InputEvent::TouchCancel { event } => {
                 self.feed_gesture(
                     i32::from(event.slot()),
@@ -66,7 +66,7 @@ impl De {
             }
             InputEvent::PointerMotion { event } => {
                 let pos = self.pointer.current_location() + event.delta();
-                self.pointer_motion::<B>(event.time_msec(), pos, event.delta())
+                self.pointer_motion(event.time_msec(), pos, event.delta());
             }
             InputEvent::PointerMotionAbsolute { event } => {
                 let pos = event.position_transformed(Size::from((
@@ -74,7 +74,7 @@ impl De {
                     self.output.height as i32,
                 )));
                 let delta = pos - self.pointer.current_location();
-                self.pointer_motion::<B>(event.time_msec(), pos, delta)
+                self.pointer_motion(event.time_msec(), pos, delta);
             }
             InputEvent::PointerButton { event } => {
                 let serial = SCOUNTER.next_serial();
@@ -133,12 +133,7 @@ impl De {
         }
     }
 
-    fn pointer_motion<B: InputBackend>(
-        &mut self,
-        time: u32,
-        pos: Point<f64, Logical>,
-        delta: Point<f64, Logical>,
-    ) {
+    fn pointer_motion(&mut self, time: u32, pos: Point<f64, Logical>, delta: Point<f64, Logical>) {
         let serial = SCOUNTER.next_serial();
         let under = self.surface_under(pos).map(SurfaceHit::into_focus);
         let ptr = self.pointer.clone();
@@ -157,12 +152,12 @@ impl De {
             &RelativeMotionEvent {
                 delta,
                 delta_unaccel: delta,
-                utime: time as u64 * 1000,
+                utime: u64::from(time) * 1000,
             },
         );
     }
 
-    fn on_keyboard_key<B: InputBackend>(&mut self, evt: B::KeyboardKeyEvent) {
+    fn on_keyboard_key<B: InputBackend>(&mut self, evt: &B::KeyboardKeyEvent) {
         let serial = SCOUNTER.next_serial();
         let keycode = evt.key_code();
         let state = evt.state();
@@ -191,7 +186,7 @@ impl De {
         );
     }
 
-    fn on_touch_down<B: InputBackend>(&mut self, evt: B::TouchDownEvent) {
+    fn on_touch_down<B: InputBackend>(&mut self, evt: &B::TouchDownEvent) {
         let pos = evt.position_transformed(Size::from((
             self.output.width as i32,
             self.output.height as i32,
@@ -213,8 +208,11 @@ impl De {
                 evt.time_msec(),
             );
         }
-        self.touch_claimed = !layer_contact
-            && (zone != Zone::Content || self.foreground == crate::state::Foreground::Shell);
+        self.touch_claimed = claim_touch(
+            zone,
+            self.foreground == crate::state::Foreground::Shell,
+            layer_contact,
+        );
         if self.touch_claimed {
             return;
         }
@@ -228,8 +226,7 @@ impl De {
                 let alive = self
                     .display_handle
                     .get_client(s.id())
-                    .map(|_| "alive")
-                    .unwrap_or("DEAD");
+                    .map_or("DEAD", |_| "alive");
                 format!("{:?}@{l:?} client={alive}", s.id())
             });
             eprintln!(
@@ -251,7 +248,7 @@ impl De {
         );
     }
 
-    fn on_touch_motion<B: InputBackend>(&mut self, evt: B::TouchMotionEvent) {
+    fn on_touch_motion<B: InputBackend>(&mut self, evt: &B::TouchMotionEvent) {
         let pos = evt.position_transformed(Size::from((
             self.output.width as i32,
             self.output.height as i32,
@@ -279,7 +276,7 @@ impl De {
         );
     }
 
-    fn on_touch_up<B: InputBackend>(&mut self, evt: B::TouchUpEvent) {
+    fn on_touch_up<B: InputBackend>(&mut self, evt: &B::TouchUpEvent) {
         let pos = self.last_touch_pos;
         self.feed_gesture(
             i32::from(evt.slot()),
@@ -471,14 +468,13 @@ impl De {
                     self.try_launch(&rows[i].id, de_ui::search::icon_rect(size, &rows, i));
                 }
             }
-            Screen::Recents => {
+            Screen::Recents
                 // Tap anywhere → back to the last app.
-                if self.space.elements().next().is_some() {
+                if self.space.elements().next().is_some() => {
                     self.foreground = Foreground::App;
                     self.focus_foreground();
                     self.needs_present = true;
                 }
-            }
             _ => {}
         }
     }
@@ -492,8 +488,7 @@ impl De {
                 title: self
                     .catalog
                     .find(id)
-                    .map(|e| e.name.clone())
-                    .unwrap_or_else(|| id.clone()),
+                    .map_or_else(|| id.clone(), |e| e.name.clone()),
                 subtitle: String::new(),
                 icon: None,
             })
@@ -543,7 +538,7 @@ impl De {
         };
         let app_id = top
             .toplevel()
-            .map(|t| crate::snapshots::window_app_id(&t))
+            .map(crate::snapshots::window_app_id)
             .unwrap_or_default();
         if app_id.is_empty() {
             return;
@@ -557,10 +552,11 @@ impl De {
     }
 
     /// App ids of all mapped windows (topmost last).
+    #[must_use]
     pub fn window_app_ids(&self) -> Vec<String> {
         self.space
             .elements()
-            .filter_map(|w| w.toplevel().map(|t| crate::snapshots::window_app_id(&t)))
+            .filter_map(|w| w.toplevel().map(crate::snapshots::window_app_id))
             .filter(|id| !id.is_empty())
             .collect()
     }
@@ -592,6 +588,16 @@ impl De {
     }
 }
 
+/// Should a new contact be claimed by the shell instead of the client?
+///
+/// A contact is claimed when it lands outside the client content area —
+/// any system zone counts — or anywhere while a shell screen is in the
+/// foreground, *unless* it landed on an interactive top/overlay layer
+/// (the OSK owns its region even when the shell is up).
+fn claim_touch(zone: Zone, shell_foreground: bool, layer_contact: bool) -> bool {
+    !layer_contact && (zone != Zone::Content || shell_foreground)
+}
+
 /// smithay logical point → `de-api` point (physical px, i32).
 fn api_point(p: Point<f64, Logical>) -> de_api::Point {
     de_api::Point::new(p.x as i32, p.y as i32)
@@ -618,5 +624,38 @@ fn variant_name<B: InputBackend>(e: &InputEvent<B>) -> &'static str {
         InputEvent::TabletToolButton { .. } => "tablet_button",
         InputEvent::SwitchToggle { .. } => "switch",
         _ => "other",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The claim decision decides who sees a contact. Layer surfaces with
+    /// their own interactive region (OSK, overlays) always win; otherwise
+    /// system zones are shell-only, and the content zone is shell-only only
+    /// while a shell screen is foreground.
+    #[test]
+    fn claim_touch_decision_table() {
+        for zone in [
+            Zone::NavBar,
+            Zone::TopEdge,
+            Zone::EdgeLeft,
+            Zone::EdgeRight,
+            Zone::Content,
+        ] {
+            assert!(!claim_touch(zone, false, true), "layer owns {zone:?}");
+            assert!(
+                !claim_touch(zone, true, true),
+                "layer owns {zone:?} (shell fg)"
+            );
+        }
+        for zone in [Zone::NavBar, Zone::TopEdge, Zone::EdgeLeft, Zone::EdgeRight] {
+            assert!(claim_touch(zone, false, false), "{zone:?} is shell-only");
+            assert!(claim_touch(zone, true, false), "{zone:?} is shell-only");
+        }
+        // Content zone: reaches the client only while an app is foreground.
+        assert!(!claim_touch(Zone::Content, false, false));
+        assert!(claim_touch(Zone::Content, true, false));
     }
 }

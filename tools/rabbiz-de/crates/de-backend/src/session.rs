@@ -53,8 +53,16 @@ pub fn activate() -> Result<(LibSeatSession, LibSeatSessionNotifier), SessionErr
 
 /// Foreground VT number from `/sys/class/tty/tty0/active` (`"tty1"` → 1).
 fn foreground_vt() -> Option<i32> {
-    let s = std::fs::read_to_string("/sys/class/tty/tty0/active").ok()?;
-    s.trim().strip_prefix("tty")?.parse().ok()
+    parse_active_vt(&std::fs::read_to_string("/sys/class/tty/tty0/active").ok()?)
+}
+
+/// Parse the sysfs `ttyN` value into a VT number.
+fn parse_active_vt(s: &str) -> Option<i32> {
+    s.trim()
+        .strip_prefix("tty")?
+        .parse::<i32>()
+        .ok()
+        .filter(|vt| *vt > 0)
 }
 
 /// Open a device node through the active session (e.g. `/dev/dri/card0`,
@@ -69,4 +77,22 @@ pub fn open_device(session: &mut LibSeatSession, path: &Path) -> Result<OwnedFd,
             path: path.display().to_string(),
             source: format!("{source}"),
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_tty_names_and_rejects_garbage() {
+        assert_eq!(parse_active_vt("tty1\n"), Some(1));
+        assert_eq!(parse_active_vt("tty7"), Some(7));
+        assert_eq!(parse_active_vt("  tty12  "), Some(12));
+        assert_eq!(parse_active_vt("tty0"), None);
+        assert_eq!(parse_active_vt("tty"), None);
+        assert_eq!(parse_active_vt("vt3"), None);
+        assert_eq!(parse_active_vt(""), None);
+        assert_eq!(parse_active_vt("tty-1"), None);
+        assert_eq!(parse_active_vt("tty1x"), None);
+    }
 }
