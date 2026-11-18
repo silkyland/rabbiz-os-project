@@ -32,7 +32,7 @@ bring-up"):
    [the EBUSY finding](2026-11-18-de-first-flip-ebusy.md).
    Fix shipped: `ExecStopPost=-/usr/bin/pkill -x rabbiz-de` and
    `pkill -x labwc` in
-   [rabbiz-session.service](../../../rootfs-overlay/etc/systemd/system/rabbiz-session.service).
+   [rabbiz-session.service](../../../../rootfs-overlay/etc/systemd/system/rabbiz-session.service).
 2. **seatd grants DRM master only while the seat is active.** wlroots does
    the VT switch itself; smithay leaves it to the caller. `de-backend` now
    requests the foreground VT (`/sys/class/tty/tty0/active`) when the
