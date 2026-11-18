@@ -71,3 +71,13 @@ done
 exit 1
 REMOTE
 ```
+
+## Update — honest no-data reads (2026-11-18, commit 3283e41)
+
+`read_raw` now returns `-ENODATA` for channels that have not received a
+real SSP sample, instead of reporting a fake `0`. The IIO nodes stay
+registered, so they start answering the moment CHUB actually reports the
+sensor. Consumers (the DE auto-brightness path) must treat a failed read
+as "no sensor data", not as 0 lux. Status unchanged: the missing scan
+bits are still unexplained; this change only removes the misleading
+zero.
