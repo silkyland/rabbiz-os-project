@@ -35,6 +35,7 @@ use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState;
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
+use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
 use smithay::wayland::text_input::TextInputManagerState;
@@ -108,6 +109,7 @@ pub struct De {
     pub ext_data_control_state: ExtDataControlState,
     pub seat_state: SeatState<De>,
     pub viewporter_state: ViewporterState,
+    pub fractional_scale_state: FractionalScaleManagerState,
     pub output_manager_state: OutputManagerState,
     pub dmabuf_state: DmabufState,
     pub dmabuf_global: Option<DmabufGlobal>,
@@ -394,6 +396,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
             crate::privileged::allowed(c, de_config::Privileged::DataControl)
         });
     let viewporter_state = ViewporterState::new::<De>(&dh);
+    let fractional_scale_state = FractionalScaleManagerState::new::<De>(&dh);
     let output_manager_state = OutputManagerState::new_with_xdg_output::<De>(&dh);
     crate::screencopy::init(&dh);
     crate::virtual_pointer::init(&dh);
@@ -493,6 +496,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         ext_data_control_state,
         seat_state,
         viewporter_state,
+        fractional_scale_state,
         output_manager_state,
         dmabuf_state,
         dmabuf_global,
