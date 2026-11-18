@@ -7,7 +7,7 @@
 //! a translucent tint. It looks like frosted glass, costs one blit per
 //! element, and has no shadow: matte, as the owner asked.
 
-use de_api::{Pixels, Point, Rect, Size};
+use de_api::{Pixels, Rect, Size};
 
 use crate::Canvas;
 
@@ -65,39 +65,73 @@ pub fn blurred_backdrop(src: &Pixels) -> Pixels {
         data = box_blur_pass(&data, sw, sh, RADIUS, false);
     }
     let blurred = Pixels::new(Size::new(sw, sh), data);
-    let mut full = Canvas::new(src.size);
-    full.blit_scaled(&blurred, Rect::new(0, 0, src.size.w, src.size.h), 1.0);
-    full.into_pixels()
+    upsample(&blurred, src.size)
+
 }
 
-/// Paint a frosted rounded rectangle onto `c`: the blurred `backdrop` seen
-/// through `rect` (same coordinates as the canvas), a flat `tint` over it, no
-/// shadow. `tint` is straight RGBA (alpha sets how milky the glass is).
-#[allow(clippy::chunks_exact_to_as_chunks)] // runtime-sized RGBA pixels
-pub fn frost(c: &mut Canvas, backdrop: &Pixels, rect: Rect, radius: f32, tint: [u8; 4]) {
-    let Some(clip) = rect.intersect(Rect::from_origin_size(Point::ZERO, c.size())) else {
-        return;
+/// Fixed-point bilinear upsampling of an already blurred image. Avoid a
+/// general affine raster pipeline for this full-screen, axis-aligned copy.
+fn upsample(src: &Pixels, size: Size) -> Pixels {
+    let axis = |to: i32, from: i32| -> Vec<(usize, usize, u32)> {
+        (0..to).map(|i| {
+            let p = ((i as f32 + 0.5) * from as f32 / to as f32 - 0.5)
+                .clamp(0.0, (from - 1) as f32);
+            let low = p.floor() as usize;
+            (low, (low + 1).min(from as usize - 1), ((p - low as f32) * 256.0) as u32)
+        }).collect()
     };
-    // Backdrop cut-out, clipped by a rounded-rect mask.
-    let mut piece = Canvas::new(rect.size());
-    piece.blit_region(
-        backdrop,
-        Rect::new(rect.x, rect.y, rect.w, rect.h),
-        Point::ZERO,
-    );
-    let mut mask = Canvas::new(rect.size());
-    mask.fill_rounded_rect(Rect::new(0, 0, rect.w, rect.h), radius, [255, 255, 255, 255]);
-    let mask = mask.into_pixels();
-    let mut px = piece.into_pixels();
-    for (p, m) in px.data.chunks_exact_mut(4).zip(mask.data.chunks_exact(4)) {
-        let a = u32::from(m[3]);
-        for v in p.iter_mut() {
-            *v = ((u32::from(*v) * a + 127) / 255) as u8;
+    let xs = axis(size.w, src.size.w);
+    let ys = axis(size.h, src.size.h);
+    let mut out = Pixels::empty(size);
+    let stride = src.size.w as usize * 4;
+    for (y, &(y0, y1, fy)) in ys.iter().enumerate() {
+        for (x, &(x0, x1, fx)) in xs.iter().enumerate() {
+            let dest = (y * size.w as usize + x) * 4;
+            for c in 0..4 {
+                let a = u32::from(src.data[y0*stride+x0*4+c]) * (256-fx)
+                    + u32::from(src.data[y0*stride+x1*4+c]) * fx;
+                let b = u32::from(src.data[y1*stride+x0*4+c]) * (256-fx)
+                    + u32::from(src.data[y1*stride+x1*4+c]) * fx;
+                out.data[dest+c] = ((a*(256-fy)+b*fy+32768)>>16) as u8;
+            }
         }
     }
-    c.blit(&px, Point::new(rect.x, rect.y));
-    c.fill_rounded_rect(rect, radius, tint);
-    let _ = clip;
+    out
+}
+
+/// Sample the cached blurred scene through a rounded surface in one pass.
+/// No per-control crop, mask image, or intermediate full-size allocation.
+/// The incoming pixels and destination both use premultiplied RGBA8.
+pub fn frost(c: &mut Canvas, backdrop: &Pixels, rect: Rect, radius: f32, tint: [u8; 4]) {
+    let bounds = Rect::new(0, 0, c.size().w.min(backdrop.size.w), c.size().h.min(backdrop.size.h));
+    let Some(clip) = rect.intersect(bounds) else { return; };
+    let radius = radius.max(0.0).min(rect.w as f32 / 2.0).min(rect.h as f32 / 2.0);
+    let width = c.size().w as usize;
+    let target = c.pixmap_mut().data_mut();
+    let ta = u32::from(tint[3]);
+    for y in clip.y..clip.y+clip.h {
+        for x in clip.x..clip.x+clip.w {
+            let dx = (radius - (x-rect.x) as f32 - 0.5)
+                .max(radius - (rect.x+rect.w-x) as f32 + 0.5).max(0.0);
+            let dy = (radius - (y-rect.y) as f32 - 0.5)
+                .max(radius - (rect.y+rect.h-y) as f32 + 0.5).max(0.0);
+            let mask = if dx > 0.0 && dy > 0.0 {
+                ((radius + 0.5 - (dx*dx+dy*dy).sqrt()).clamp(0.0, 1.0)*255.0).round() as u32
+            } else { 255 };
+            if mask == 0 { continue; }
+            let src = ((y*backdrop.size.w+x)*4) as usize;
+            let dest = (y as usize*width+x as usize)*4;
+            let a = (ta + (u32::from(backdrop.data[src+3])*(255-ta)+127)/255)*mask/255;
+            for channel in 0..4 {
+                let value = if channel == 3 { a } else {
+                    let sample = (u32::from(tint[channel])*ta
+                        + u32::from(backdrop.data[src+channel])*(255-ta)+127)/255;
+                    (sample*mask+127)/255
+                };
+                target[dest+channel] = (value + (u32::from(target[dest+channel])*(255-a)+127)/255).min(255) as u8;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -106,6 +140,23 @@ mod tests {
 
     fn solid(size: Size, rgba: [u8; 4]) -> Pixels {
         Canvas::filled(size, rgba).into_pixels()
+    }
+
+    #[test]
+    fn frost_preserves_premultiplied_alpha_and_clips_negative_bounds() {
+        let backdrop = Pixels::new(Size::new(16, 16), [128, 0, 0, 128].repeat(16*16));
+        let mut c = Canvas::new(Size::new(16, 16));
+        frost(&mut c, &backdrop, Rect::new(-4, -4, 12, 12), 0.0, [0, 0, 0, 0]);
+        let px = c.into_pixels();
+        assert_eq!(&px.data[0..4], &[128, 0, 0, 128]);
+        assert_eq!(&px.data[(15*16+15)*4..(15*16+15)*4+4], &[0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn upsampling_preserves_flat_translucent_pixels() {
+        let src = Pixels::new(Size::new(3, 5), [128, 64, 0, 128].repeat(15));
+        let out = upsample(&src, Size::new(19, 23));
+        for p in out.data.chunks_exact(4) { assert_eq!(p, &[128, 64, 0, 128]); }
     }
 
     #[test]

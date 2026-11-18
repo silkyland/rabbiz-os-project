@@ -32,7 +32,32 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
     let t = &de_design::tokens::DEFAULT;
     match name {
         "brand" => Some(de_ui::boot::brand_frame(size, 0.5)),
-        "lock" => Some(de_ui::lock::render(size, s, t, "09:41", "Mon, Jun 9")),
+        "lock" => {
+            let wp = de_paint::wallpaper::wallpaper(None, "sand", size);
+            let blurred = de_paint::glass::blurred_backdrop(&wp);
+            let status = sim_status();
+            let items = vec![de_ui::panels::Notification {
+                id: 1,
+                app: "Chats".into(),
+                title: "Alex".into(),
+                body: "See you at 6".into(),
+                when: "now".into(),
+                icon: None,
+            }];
+            let m = de_ui::lock::LockModel {
+                status: &status,
+                clock: "09:41",
+                date: "Mon, Jun 9",
+                charging: s.get("lock.charging"),
+                notifications: &items,
+                hidden_notifications: 0,
+                fingerprint: true,
+                flashlight: Some(false),
+                quick: Some(de_ui::lock::QuickAction::Camera),
+                backdrop: &blurred,
+            };
+            Some(de_ui::lock::render(size, s, t, &m))
+        }
         "home" => {
             let apps: Vec<de_ui::chrome::IconEntry> = (0..12)
                 .map(|i| de_ui::chrome::IconEntry::new(&format!("app{i}"), "App"))
@@ -88,6 +113,7 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
         "panel-notifications" | "panel-quick" => {
             let wp = de_paint::wallpaper::wallpaper(None, "sand", size);
             let blurred = de_paint::glass::blurred_backdrop(&wp);
+            let controls = {
             if name == "panel-quick" {
                 let tile = |id: &'static str, label: &str, glyph: &'static str, on: bool, detail: &str| {
                     de_ui::panels::QuickTile {
@@ -116,8 +142,9 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
                     ],
                     brightness: 0.62,
                     volume: 0.35,
+                    brightness_available: true, volume_available: true, feedback: None,
                 };
-                Some(de_ui::panels::render_quick(size, s, t, &blurred, "16:11", "Mon, 16 Nov", &m))
+                de_ui::panels::render_quick(size, s, t, &blurred, "16:11", "Mon, 16 Nov", &m)
             } else {
                 let n = |id, app: &str, title: &str, body: &str, when: &str| de_ui::panels::Notification {
                     id,
@@ -132,16 +159,43 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
                     n(2, "Mail", "Nokpirab Express", "Thank you for playing with us. Your parcel ISX315632 is on its way.", "57 min"),
                     n(3, "Files", "Download finished", "rabbiz-de-release.tar.zst", "13:21"),
                 ];
-                Some(de_ui::panels::render_notifications(size, s, t, &blurred, "16:11", "Mon, 16 Nov", &items))
+                de_ui::panels::render_notifications(size, s, t, &blurred, "16:11", "Mon, 16 Nov", &items)
             }
+            };
+            // Compose like the device does: the frosted sheet beneath the
+            // floating controls, fully open here.
+            let mut c = de_paint::Canvas::new(size);
+            c.blit(&de_ui::panels::render_veil(&blurred, t.scrim), de_api::Point::new(0, 0));
+            c.blit(&controls, de_api::Point::new(0, 0));
+            Some(c.into_pixels())
         }
         "status" => {
+            // Full house, modelled on a real dual-SIM Android status bar:
+            // AIS (SIM 1, VoLTE) + TRUE-H (SIM 2, 4G+), vibrate ringer,
+            // alarm set, wifi, BT, camera dot, battery 48.
             let info = de_ui::chrome::StatusInfo {
                 clock: "09:41".into(),
-                battery_pct: Some(86),
-                charging: true,
+                battery_pct: Some(48),
+                charging: false,
                 battery_full: false,
                 wifi: Some(true),
+                wifi_strength: Some(72),
+                cellular: vec![
+                    de_api::services::CellularSlot {
+                        carrier: "AIS".into(),
+                        data_type: None,
+                        volte: true,
+                        strength: Some(4),
+                    },
+                    de_api::services::CellularSlot {
+                        carrier: "TRUE-H".into(),
+                        data_type: Some("4G+".into()),
+                        volte: false,
+                        strength: Some(3),
+                    },
+                ],
+                ringer: de_api::services::RingerMode::Vibrate,
+                alarm: true,
                 bluetooth: true,
                 dnd: false,
                 airplane: false,
@@ -159,7 +213,12 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             &["Rabbiz-5G", "Home-WiFi", "CoffeeShop"],
         )),
         "osd" => Some(de_ui::osd::render(size, s, t, 0.65, "Volume", "\u{e050}")),
-        "power" => Some(de_ui::power::render(size, s, t)),
+        "power" => Some(de_ui::power::render(
+            size,
+            s,
+            t,
+            &de_ui::power::PowerModel { armed: None },
+        )),
         "search" => {
             let rows = vec![
                 de_ui::search::SearchRow {
@@ -193,7 +252,15 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             ];
             Some(de_ui::search::render(size, s, t, "ca", &rows))
         }
-        "screenshot" => Some(de_ui::screenshot::render(size, s, t)),
+        "screenshot" => {
+            let wp = de_paint::wallpaper::wallpaper(None, "sand", size);
+            let toast = de_ui::screenshot::toast(t, Some(&wp), "a21s-screenshot.png", s);
+            let r = de_ui::screenshot::toast_rect(size);
+            let mut c = de_paint::Canvas::new(size);
+            c.blit(&wp, de_api::Point::new(0, 0));
+            c.blit(&toast, de_api::Point::new(r.x, r.y));
+            Some(c.into_pixels())
+        }
         "error" => Some(de_ui::error::render(size, s, t, "com.example.app")),
         "first_run" => Some(de_ui::first_run::render(size, s, t)),
         "settings" => Some(de_ui::settings::render_index(size, s, t, "09:41")),

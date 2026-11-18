@@ -46,7 +46,8 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     let bar = de_ui::nav_bar::gesture_bar(canvas.size());
     canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
 
-    if matches!(de.foreground, Foreground::App) && de.morph.is_none() {
+    if matches!(de.foreground, Foreground::App) && de.morph.is_none()
+        && de.space.elements().next().is_some() {
         for window in de.space.elements().rev() {
             let loc = de.space.element_location(window).unwrap_or_default();
             let Some(surface) = window.wl_surface().map(std::borrow::Cow::into_owned) else {
@@ -85,6 +86,9 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
             de_api::Rect::new(0, y, px.size.w, px.size.h),
             (f * 1.6).min(1.0),
         );
+    }
+    if let Some((px, at)) = de.navigation.back.as_ref() {
+        canvas.blit(px, *at);
     }
     Some(canvas.into_pixels())
 }

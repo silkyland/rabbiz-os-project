@@ -41,14 +41,10 @@ if [ "$(id -u)" -eq 0 ]; then
   chmod 664 "$CMD_FILE" 2>/dev/null || true
 fi
 
-# Failsafe hardware wake/sleep only if no shell owns power policy; when
-# quickshell is active, SystemControl.qml owns brightness save/restore.
-# Under rabbiz-de the raw backlight is still the only power control (the DE
-# lock screen arrives in M4) — `lock` is a no-op there so it must not touch
-# the backlight either.
-if pgrep -x rabbiz-de >/dev/null 2>&1; then
-  [ "$ACTION" = "lock" ] && exit 0
-elif pgrep -x quickshell >/dev/null 2>&1; then
+# Failsafe hardware wake/sleep only when no shell owns power policy: under
+# rabbiz-de the compositor drives backlight + bl_power itself for every
+# action (M4), and under quickshell SystemControl.qml owned save/restore.
+if pgrep -x rabbiz-de >/dev/null 2>&1 || pgrep -x quickshell >/dev/null 2>&1; then
   exit 0
 fi
 for bl in /sys/class/backlight/*; do

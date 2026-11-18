@@ -38,7 +38,7 @@ enum DragFrom {
 pub(crate) struct IconDrag {
     pub(crate) px: Pixels,
     dock_len: usize,
-    id: String,
+    pub(crate) id: String,
     from: DragFrom,
     pub(crate) pos: Point,
     pub(crate) target: Option<DropTarget>,
@@ -293,9 +293,13 @@ impl De {
         let g = self.home_geometry();
         if let Some(d) = self.home_ui.drag.as_mut() {
             d.pos = pos;
-            d.target = home::drop_target(g.size, pos, g.dock.len());
-            // Only the lifted icon moves: the compositor repositions its
-            // texture, the home frame underneath is not re-rastered.
+            let target = home::drop_target(g.size, pos, g.dock.len());
+            if target != d.target {
+                d.target = target;
+                // The gap pocket moved: re-raster the home frame once per
+                // slot transition (never per finger pixel).
+                self.shell_dirty = true;
+            }
             self.needs_present = true;
         }
     }

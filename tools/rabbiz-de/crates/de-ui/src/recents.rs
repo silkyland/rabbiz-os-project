@@ -20,6 +20,12 @@ const CARD_W: i32 = 480;
 const CARD_H: i32 = 1040;
 const CARD_GAP: i32 = 32;
 
+/// Centred card bounds, also used as the navigation morph endpoint.
+#[must_use]
+pub fn card_rect(size: Size) -> Rect {
+    Rect::new((size.w - CARD_W) / 2, (size.h - CARD_H) / 2, CARD_W, CARD_H)
+}
+
 /// One recents card.
 #[derive(Debug, Clone)]
 pub struct RecentEntry {
@@ -112,7 +118,20 @@ impl RecentsModel {
 /// Render the recents screen.
 #[must_use]
 pub fn render(size: Size, s: &Strings, t: &Theme, status: &StatusInfo, m: &RecentsModel) -> Pixels {
+    render_with_backdrop(size, s, t, status, m, None)
+}
+
+/// Runtime Recents uses the same frozen Home backdrop as the navigation drag.
+#[must_use]
+pub fn render_with_backdrop(size: Size, s: &Strings, t: &Theme, status: &StatusInfo,
+    m: &RecentsModel, backdrop: Option<&Pixels>) -> Pixels {
     let mut c = Canvas::filled(size, t.bg);
+    if let Some(px) = backdrop {
+        c.blit(px, de_api::Point::ZERO);
+        let mut veil = t.bg;
+        veil[3] = 170;
+        c.fill_rect(Rect::new(0, 0, size.w, size.h), veil);
+    }
     chrome::status_bar(&mut c, t, status);
 
     if m.entries.is_empty() {

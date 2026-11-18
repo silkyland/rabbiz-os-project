@@ -108,7 +108,7 @@ fn grid_cell(size: Size, index: usize) -> Rect {
     Rect::new(x, y, CELL_W, CELL_H)
 }
 
-fn dock_shelf(size: Size) -> Rect {
+pub fn dock_shelf(size: Size) -> Rect {
     Rect::new(16, size.h - 220, size.w - 32, 150)
 }
 
@@ -125,10 +125,12 @@ fn grid_icon(cell: Rect) -> Rect {
     Rect::new(cell.x + (CELL_W - ICON) / 2, cell.y + 6, ICON, ICON)
 }
 
-fn dock_icon(dock: Rect, index: usize, slots: usize) -> Rect {
-    let pad = 30;
-    let x = dock.x + pad + index as i32 * ((dock.w - pad * 2 - DOCK_ICON) / (slots - 1) as i32);
-    Rect::new(x, dock.y + (dock.h - DOCK_ICON) / 2, DOCK_ICON, DOCK_ICON)
+pub fn dock_icon(dock: Rect, index: usize, slots: usize) -> Rect {
+    let slots = slots.clamp(1, 6) as i32;
+    let cell = dock.w as f32 / slots as f32;
+    let cx = dock.x as f32 + cell * (index.min(slots as usize - 1) as f32 + 0.5);
+    Rect::new(cx.round() as i32 - DOCK_ICON / 2,
+        dock.y + (dock.h - DOCK_ICON) / 2, DOCK_ICON, DOCK_ICON)
 }
 
 /// Exact painted icon bounds for a launch from a grid cell or dock slot.
@@ -136,7 +138,7 @@ fn dock_icon(dock: Rect, index: usize, slots: usize) -> Rect {
 pub fn icon_rect(size: Size, hit: HomeHit, dock_len: usize) -> Option<Rect> {
     match hit {
         HomeHit::Grid(i) => Some(grid_icon(grid_cell(size, i))),
-        HomeHit::Dock(i) => Some(dock_icon(dock_shelf(size), i, dock_len.clamp(4, 6))),
+        HomeHit::Dock(i) => Some(dock_icon(dock_shelf(size), i, dock_len.clamp(1, 6))),
         HomeHit::Search | HomeHit::Drawer => None,
     }
 }
@@ -166,6 +168,11 @@ pub fn hit_test(size: Size, pos: Point, apps_on_page: usize, dock_len: usize) ->
     None
 }
 
+/// Sentinel `IconEntry.id` the compositor inserts into `HomeModel` lists
+/// while an icon is being dragged: the cell renders as an empty drop
+/// pocket instead of a tile.
+pub const GAP_ID: &str = "\u{1}drop-gap";
+
 /// Where a dragged icon would land.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DropTarget {
@@ -178,7 +185,7 @@ pub enum DropTarget {
 /// Number of dock slots painted for `dock_len` pinned apps.
 #[must_use]
 pub fn dock_slots(dock_len: usize) -> usize {
-    dock_len.clamp(5, 6)
+    dock_len.min(6)
 }
 
 /// Which drop target `pos` points at while an icon is being dragged: the
@@ -188,7 +195,7 @@ pub fn dock_slots(dock_len: usize) -> usize {
 pub fn drop_target(size: Size, pos: Point, dock_len: usize) -> Option<DropTarget> {
     let shelf = dock_shelf(size);
     let catch = Rect::new(shelf.x, shelf.y - 40, shelf.w, shelf.h + 40);
-    let slots = dock_slots(dock_len);
+    let slots = (dock_len + 1).clamp(1, 6);
     if catch.contains(pos) {
         let best = (0..slots)
             .min_by_key(|&i| {
@@ -213,7 +220,7 @@ pub fn drop_target(size: Size, pos: Point, dock_len: usize) -> Option<DropTarget
 pub fn drop_rect(size: Size, target: DropTarget, dock_len: usize) -> Rect {
     match target {
         DropTarget::Grid(i) => grid_icon(grid_cell(size, i)),
-        DropTarget::Dock(i) => dock_icon(dock_shelf(size), i, dock_slots(dock_len)),
+        DropTarget::Dock(i) => dock_icon(dock_shelf(size), i, (dock_len + 1).clamp(1, 6)),
     }
 }
 
@@ -247,7 +254,11 @@ pub fn render_grid(size: Size, t: &Theme, apps: &[IconEntry]) -> Pixels {
     for (i, e) in apps.iter().take(PAGE_SIZE).enumerate() {
         let mut cell = grid_cell(size, i);
         cell.y -= GRID_Y;
-        draw_icon(&mut c, t, e, cell);
+        if e.id == GAP_ID {
+            draw_gap(&mut c, t, grid_icon(cell));
+        } else {
+            draw_icon(&mut c, t, e, cell);
+        }
     }
     c.into_pixels()
 }
@@ -268,6 +279,14 @@ pub const fn grid_band_y() -> i32 {
 #[allow(clippy::too_many_lines)] // one pass over home's visual layers
 #[must_use]
 pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
+    render_with_hidden(size, s, t, m, None, false)
+}
+
+/// Interaction layers own the pressed/lifted tile and dock while moving;
+/// omit those pixels from the cached base once, then animate textures.
+#[must_use]
+pub fn render_with_hidden(size: Size, s: &Strings, t: &Theme, m: &HomeModel,
+    hidden: Option<&str>, hide_dock: bool) -> Pixels {
     let mut c = match m.wallpaper {
         Some(wp) => {
             let mut c = Canvas::new(size);
@@ -327,7 +346,17 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     // 4×4 grid for the current page.
     for (i, e) in m.apps.iter().take(PAGE_SIZE).enumerate() {
         let cell = grid_cell(size, i);
-        draw_icon(&mut c, t, e, cell);
+        if e.id == GAP_ID {
+            draw_gap(&mut c, t, grid_icon(cell));
+        } else if hidden == Some(e.id.as_str()) {
+            let mut entry = e.clone();
+            entry.icon = None;
+            // The label remains in place; the tile is a separate texture.
+            if let Some(px) = text::label_clamped(&entry.label, style::label(t.text), 150, 1) {
+                c.blit(&Pixels::new(Size::new(px.width() as i32, px.height() as i32), px.data().to_vec()),
+                    Point::new(cell.x + (CELL_W - px.width() as i32) / 2, cell.y + ICON + 14));
+            }
+        } else { draw_icon(&mut c, t, e, cell); }
     }
 
     // Small "Search" pill above the dock (opens the drawer).
@@ -356,19 +385,30 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
         );
     }
 
-    // Dock: floating glass shelf, pinned icons (empty slots hinted).
-    let dock = dock_shelf(size);
-    c.fill_rounded_rect(dock, 60.0, t.glass);
-    let slots = dock_slots(m.dock.len());
-    for i in 0..slots {
-        let r = dock_icon(dock, i, slots);
-        if let Some(e) = m.dock.get(i) {
-            chrome::draw_app_icon(&mut c, t, e, r);
+    if !hide_dock {
+        let dock = dock_shelf(size);
+        c.fill_rounded_rect(dock, 60.0, t.glass);
+        let slots = dock_slots(m.dock.len());
+        for (i, e) in m.dock.iter().take(slots).enumerate() {
+            let r = dock_icon(dock, i, slots);
+            if e.id == GAP_ID {
+                draw_gap(&mut c, t, r);
+            } else if hidden != Some(e.id.as_str()) {
+                chrome::draw_app_icon(&mut c, t, e, r);
+            }
         }
-        // Empty slots stay invisible: the dock is a floating glass bar, not a grid of holes.
     }
     chrome::nav_pill(&mut c, t);
     c.into_pixels()
+}
+
+/// The drop pocket under the finger during a rearrange drag: a faint tile
+/// outline where the icon will land.
+fn draw_gap(c: &mut Canvas, t: &Theme, r: Rect) {
+    c.fill_rounded_rect(r, 28.0, t.glass_hi);
+    let b = 3;
+    let inner = Rect::new(r.x + b, r.y + b, r.w - b * 2, r.h - b * 2);
+    c.fill_rounded_rect(inner, 25.0, t.scrim);
 }
 
 fn draw_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, cell: Rect) {
@@ -385,6 +425,21 @@ fn draw_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, cell: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dock_uses_only_occupied_slots_and_centres_every_count() {
+        let shelf = dock_shelf(Size::new(720, 1600));
+        for n in 1..=6 {
+            assert_eq!(dock_slots(n), n);
+            let first = dock_icon(shelf, 0, n);
+            let last = dock_icon(shelf, n-1, n);
+            assert!((first.x - shelf.x - (shelf.x+shelf.w-last.x-last.w)).abs() <= 1);
+            for i in 0..n { assert!(shelf.contains(dock_icon(shelf, i, n).origin())); }
+        }
+        assert_eq!(dock_slots(0), 0);
+        assert_eq!(dock_slots(7), 6);
+        assert_eq!(dock_icon(shelf, 0, 1).x + DOCK_ICON/2, 360);
+    }
 
     #[test]
     fn paging_math() {
@@ -422,7 +477,7 @@ mod tests {
         // The rect of a target is where hit_test finds the same icon.
         let r = drop_rect(size, DropTarget::Dock(2), 4);
         assert_eq!(
-            hit_test(size, Point::new(r.x + 4, r.y + 4), 16, 4),
+            hit_test(size, Point::new(r.x + r.w / 2, r.y + r.h / 2), 16, 5),
             Some(HomeHit::Dock(2))
         );
     }
@@ -473,7 +528,7 @@ mod tests {
             Some(HomeHit::Drawer)
         );
         // First dock slot centre.
-        let d0 = dock_icon(dock_shelf(size), 0, 5);
+        let d0 = dock_icon(dock_shelf(size), 0, 4);
         assert_eq!(
             hit_test(size, Point::new(d0.x + d0.w / 2, d0.y + d0.h / 2), 16, 4),
             Some(HomeHit::Dock(0))

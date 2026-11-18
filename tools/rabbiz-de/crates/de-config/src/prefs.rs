@@ -38,6 +38,12 @@ pub struct Prefs {
     /// Optional explicit home-grid order (desktop-ids). Unlisted apps follow
     /// in catalog order.
     pub home_order: Vec<String>,
+    /// Suppress notification interruptions; history remains available.
+    pub do_not_disturb: bool,
+    /// Seconds of no input before the screen dims and then sleeps; `0` =
+    /// never. Default 600 matches the owner's ~10-minute expectation (P17).
+    #[serde(rename = "deScreenTimeoutSec")]
+    pub screen_timeout_sec: u32,
 }
 
 impl Default for Prefs {
@@ -49,6 +55,8 @@ impl Default for Prefs {
             hidden_apps: BTreeSet::new(),
             dock: Vec::new(),
             home_order: Vec::new(),
+            do_not_disturb: false,
+            screen_timeout_sec: 600,
         }
     }
 }
@@ -117,6 +125,11 @@ impl Prefs {
             if !a.is_empty() {
                 p.accent = a.into();
             }
+        }
+        // The QML shell's "Display & Sleep" setting carries over so the
+        // device keeps the timeout the user already chose.
+        if let Some(secs) = v.get("sleepTimeoutSec").and_then(|x| x.as_u64()) {
+            p.screen_timeout_sec = u32::try_from(secs).unwrap_or(u32::MAX);
         }
         // `lightTheme` is deliberately not seeded: the legacy default was
         // dark, the DE default is Cream Glass light (Decision 9) — carrying

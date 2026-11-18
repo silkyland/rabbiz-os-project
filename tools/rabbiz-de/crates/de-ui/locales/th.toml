@@ -12,6 +12,7 @@ skip = "ข้าม"
 unlock_hint = "ปัดขึ้นเพื่อปลดล็อก"
 charging = "กำลังชาร์จ"
 fully_charged = "ชาร์จเต็มแล้ว"
+fingerprint_hint = "แตะเซ็นเซอร์ด้านหลังเพื่อปลดล็อก"
 
 [home]
 search_pill = "ค้นหา"
@@ -49,6 +50,9 @@ on = "เปิด"
 off = "ปิด"
 unavailable = "ใช้ไม่ได้"
 
+working = "กำลังปรับ…"
+failed = "ปรับค่าไม่สำเร็จ ลองอีกครั้ง"
+
 [panel]
 no_notifications = "ไม่มีการแจ้งเตือน"
 clear_all = "ล้างทั้งหมด"
@@ -61,6 +65,11 @@ restart = "รีสตาร์ท"
 lock = "ล็อก"
 safe_mode = "เซฟโหมด"
 screenshot = "ภาพหน้าจอ"
+hold_hint = "กดค้างเพื่อยืนยัน"
+
+[shot]
+saved = "บันทึกภาพหน้าจอแล้ว"
+open = "แตะเพื่อเปิด"
 
 [osd]
 volume = "ระดับเสียง"

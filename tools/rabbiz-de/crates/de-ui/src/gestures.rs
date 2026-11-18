@@ -54,12 +54,34 @@ pub enum GestureEvent {
     /// velocity (px/s, from the last ~50 ms of movement, not the average) so
     /// the UI can project where the content should settle.
     Released { dx: f32, dy: f32, vx: f32, vy: f32 },
+    /// Bottom-strip drag released; velocity uses the same recent samples as content.
+    NavReleased { dy: f32, vy: f32 },
     /// Finger moved after a long-press (item lifted for rearranging).
     HoldDrag { pos: Point },
     /// Finger lifted after a long-press drag.
     HoldDrop { pos: Point },
     /// Contact ended before qualifying (or a second finger arrived).
     Cancelled,
+}
+
+/// Destination of a bottom navigation drag. Distances scale with the output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NavDestination {
+    Home,
+    Recents,
+    Cancel,
+}
+
+#[must_use]
+pub fn decide_navigation(dy: f32, vy: f32, height: f32) -> NavDestination {
+    let rise = -dy / height.max(1.0);
+    if rise >= 0.75 || (rise >= 0.02 && vy <= -500.0) {
+        NavDestination::Home
+    } else if rise >= 0.20 {
+        NavDestination::Recents
+    } else {
+        NavDestination::Cancel
+    }
 }
 
 /// Geometry + thresholds (physical px / ms).
@@ -77,8 +99,6 @@ pub struct GestureConfig {
     pub slop: f32,
     /// Edge-back horizontal commit distance.
     pub back_dx: f32,
-    /// Swipe-up distance that commits "home" even at slow speed.
-    pub home_dy: f32,
     /// Hold duration for recents and long-press.
     pub hold_ms: u64,
     /// Release speed (px/ms) that commits a swipe regardless of distance.
@@ -97,7 +117,6 @@ impl GestureConfig {
             edge_w: 24,
             slop: 12.0,
             back_dx: 48.0,
-            home_dy: 96.0,
             hold_ms: 400,
             fling_v: 0.5,
         }
@@ -123,6 +142,7 @@ struct Track {
     vy: f32,
     /// Held position at `HOLD_MS` check (recents needs a stall, not a pa`rk`).
     stall_y: f32,
+    stall_ms: u64,
 }
 
 /// Single-finger tracker — the first slot owns the gesture; extra fingers
@@ -179,6 +199,7 @@ impl GestureTracker {
                     vx: 0.0,
                     vy: 0.0,
                     stall_y: 0.0,
+                    stall_ms: ev.time_ms,
                 });
                 Some(GestureEvent::Started { zone, pos: ev.pos })
             }
@@ -198,15 +219,16 @@ impl GestureTracker {
                 tr.dy = (ev.pos.y - tr.start.y) as f32;
                 tr.last = ev.pos;
                 tr.last_ms = ev.time_ms;
-                // Recents: rose past home_dy then stalled ≥ hold_ms.
+                // A hold starts after rising 20% and measures actual time at
+                // rest, rather than time since the initial contact.
                 if tr.zone == Zone::NavBar && !tr.committed {
-                    if tr.dy <= -self.cfg.home_dy && tr.stall_y == 0.0 {
-                        tr.stall_y = tr.dy;
-                    }
-                    if tr.stall_y != 0.0
-                        && ev.time_ms - tr.start_ms >= self.cfg.hold_ms
-                        && (tr.dy - tr.stall_y).abs() < self.cfg.slop
+                    if tr.dy > -(self.cfg.output_h as f32 * 0.20)
+                        || tr.stall_y == 0.0
+                        || (tr.dy - tr.stall_y).abs() >= self.cfg.slop
                     {
+                        tr.stall_y = tr.dy;
+                        tr.stall_ms = ev.time_ms;
+                    } else if ev.time_ms.saturating_sub(tr.stall_ms) >= self.cfg.hold_ms {
                         tr.committed = true;
                         return Some(GestureEvent::Recognized(Gesture::Recents));
                     }
@@ -243,14 +265,17 @@ impl GestureTracker {
                 }
                 let dt = (ev.time_ms - tr.start_ms).max(1) as f32;
                 let vx = tr.dx / dt;
-                let vy = tr.dy / dt;
                 let g = match tr.zone {
                     Zone::NavBar => {
-                        if tr.dy <= -self.cfg.home_dy || vy <= -self.cfg.fling_v {
-                            Some(Gesture::Home)
-                        } else {
-                            Some(Gesture::Tap { pos: tr.start })
+                        if tr.dx.abs() >= self.cfg.slop || tr.dy.abs() >= self.cfg.slop {
+                            let GestureEvent::Released { dy, vy, .. } =
+                                Self::released(&tr, ev.time_ms)
+                            else {
+                                unreachable!()
+                            };
+                            return Some(GestureEvent::NavReleased { dy, vy });
                         }
+                        Some(Gesture::Tap { pos: tr.start })
                     }
                     Zone::EdgeLeft | Zone::EdgeRight => {
                         let inward = if tr.zone == Zone::EdgeLeft {
@@ -298,11 +323,54 @@ impl GestureTracker {
         }
     }
 
+    /// Deadline-driven holds also fire when a stationary touchscreen emits
+    /// no Motion events. The caller uses the same monotonic clock as input.
+    pub fn tick(&mut self, now_ms: u64) -> Option<GestureEvent> {
+        let tr = self.track.as_mut()?;
+        if tr.committed { return None; }
+        if tr.zone == Zone::NavBar && tr.dy <= -(self.cfg.output_h as f32 * 0.20)
+            && now_ms.saturating_sub(tr.stall_ms) >= self.cfg.hold_ms {
+            tr.committed = true;
+            return Some(GestureEvent::Recognized(Gesture::Recents));
+        }
+        if tr.dx.abs() < self.cfg.slop && tr.dy.abs() < self.cfg.slop
+            && now_ms.saturating_sub(tr.start_ms) >= self.cfg.hold_ms {
+            tr.committed = true;
+            tr.held = true;
+            return Some(GestureEvent::Recognized(Gesture::LongPress { pos: tr.start }));
+        }
+        None
+    }
+
     /// Whether a finger is currently down.
     #[must_use]
     pub fn active(&self) -> bool {
         self.track.is_some()
     }
+}
+
+/// Predictive Back feedback: a bounded droplet grows from the touched
+/// edge, follows the finger vertically, and uses the shared Material glyph.
+#[must_use]
+pub fn back_feedback(size: de_api::Size, left: bool, y: i32, inward: f32) -> (de_api::Pixels, Point) {
+    use de_api::{Rect, Size};
+    use de_design::tokens;
+    use de_paint::Canvas;
+    let t = tokens::DEFAULT;
+    let progress = (inward / 96.0).clamp(0.0, 1.0);
+    let w = (44.0 + 40.0 * progress).round() as i32;
+    let h = 112;
+    let mut c = Canvas::new(Size::new(w, h));
+    // A neck attached to the edge and a rounded bulb, never an unbounded
+    // distortion of the application's own content.
+    let fill = if inward >= 48.0 { t.accent } else { t.surface2 };
+    c.fill_rounded_rect(Rect::new(0, 0, w, h), w as f32 / 2.0, fill);
+    let glyph = if left { "\u{e5c4}" } else { "\u{e5c8}" };
+    let color = if inward >= 48.0 { t.text_on_accent } else { t.text };
+    crate::chrome::draw_ink_centered(&mut c, glyph, &de_paint::text::LabelStyle::icon(36.0, color), Rect::new((w-36)/2, (h-36)/2, 36, 36));
+    let at = Point::new(if left { -10 } else { size.w - w + 10 },
+        (y - h/2).clamp(0, (size.h-h).max(0)));
+    (c.into_pixels(), at)
 }
 
 #[cfg(test)]
@@ -335,7 +403,10 @@ mod tests {
         t.feed(&ev(TouchPhase::Motion, 360, 1400, 100));
         assert_eq!(
             t.feed(&ev(TouchPhase::Up, 360, 1400, 200)),
-            Some(GestureEvent::Recognized(Gesture::Home))
+            Some(GestureEvent::NavReleased {
+                dy: -190.0,
+                vy: 0.0
+            })
         );
     }
 
@@ -343,15 +414,66 @@ mod tests {
     fn swipe_up_hold_is_recents() {
         let mut t = tr();
         t.feed(&ev(TouchPhase::Down, 360, 1590, 0));
-        t.feed(&ev(TouchPhase::Motion, 360, 1480, 100)); // rose >96 px
+        t.feed(&ev(TouchPhase::Motion, 360, 1200, 100)); // rose >20%
         assert_eq!(
-            t.feed(&ev(TouchPhase::Motion, 360, 1478, 420)), // stalled ≥400 ms
+            t.feed(&ev(TouchPhase::Motion, 360, 1198, 520)), // stalled ≥400 ms
             Some(GestureEvent::Recognized(Gesture::Recents))
         );
         assert_eq!(
-            t.feed(&ev(TouchPhase::Up, 360, 1478, 440)),
+            t.feed(&ev(TouchPhase::Up, 360, 1198, 540)),
             Some(GestureEvent::Cancelled)
         );
+    }
+
+    #[test]
+    fn navigation_destinations_follow_distance_and_recent_velocity() {
+        use NavDestination::{Cancel, Home, Recents};
+        assert_eq!(decide_navigation(-100.0, -900.0, 1600.0), Home);
+        assert_eq!(decide_navigation(-800.0, 0.0, 1600.0), Recents);
+        assert_eq!(decide_navigation(-1200.0, 0.0, 1600.0), Home);
+        assert_eq!(decide_navigation(-200.0, 0.0, 1600.0), Cancel);
+        assert_eq!(decide_navigation(100.0, 900.0, 1600.0), Cancel);
+        assert_eq!(decide_navigation(-480.0, 0.0, 2400.0), Recents);
+    }
+
+    #[test]
+    fn shallow_hold_and_slow_continuous_rise_do_not_open_recents() {
+        let mut t = tr();
+        t.feed(&ev(TouchPhase::Down, 360, 1590, 0));
+        t.feed(&ev(TouchPhase::Motion, 360, 1480, 100));
+        assert!(matches!(
+            t.feed(&ev(TouchPhase::Motion, 360, 1480, 600)),
+            Some(GestureEvent::Progress { .. })
+        ));
+        t.feed(&ev(TouchPhase::Motion, 360, 1200, 700));
+        assert!(matches!(
+            t.feed(&ev(TouchPhase::Motion, 360, 1100, 1100)),
+            Some(GestureEvent::Progress { .. })
+        ));
+    }
+
+    #[test]
+    fn nav_rest_before_release_discards_old_fling() {
+        let mut t = tr();
+        t.feed(&ev(TouchPhase::Down, 360, 1590, 0));
+        t.feed(&ev(TouchPhase::Motion, 360, 1200, 100));
+        assert_eq!(
+            t.feed(&ev(TouchPhase::Up, 360, 1200, 300)),
+            Some(GestureEvent::NavReleased {
+                dy: -390.0,
+                vy: 0.0
+            })
+        );
+    }
+
+    #[test]
+    fn hold_fires_without_another_motion_event() {
+        let mut t = tr();
+        t.feed(&ev(TouchPhase::Down, 360, 1590, 1000));
+        t.feed(&ev(TouchPhase::Motion, 360, 1200, 1100));
+        assert_eq!(t.tick(1499), None);
+        assert_eq!(t.tick(1500), Some(GestureEvent::Recognized(Gesture::Recents)));
+        assert_eq!(t.tick(1600), None);
     }
 
     #[test]

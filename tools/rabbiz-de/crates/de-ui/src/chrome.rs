@@ -142,6 +142,15 @@ pub struct StatusInfo {
     pub battery_full: bool,
     /// Wi-Fi shown when `Some`; the glyph itself encodes on/off today.
     pub wifi: Option<bool>,
+    /// Wi-Fi RSSI 0..=100 when known → picks the level glyph.
+    pub wifi_strength: Option<u8>,
+    /// Cellular slots in slot order; empty hides the whole mobile cluster
+    /// (the AOSP `SignalClusterView` region).
+    pub cellular: Vec<de_api::services::CellularSlot>,
+    /// Ringer mode — icon painted only when not `Normal`.
+    pub ringer: de_api::services::RingerMode,
+    /// Alarm scheduled → alarm-clock icon.
+    pub alarm: bool,
     pub bluetooth: bool,
     pub dnd: bool,
     pub airplane: bool,
@@ -177,6 +186,13 @@ impl StatusInfo {
                 WifiState::Disabled => Some(false),
                 WifiState::Unknown => None,
             },
+            wifi_strength: match snap.wifi {
+                WifiState::Connected { strength, .. } => strength,
+                _ => None,
+            },
+            cellular: snap.cellular.clone(),
+            ringer: snap.ringer,
+            alarm: snap.alarm_set,
             bluetooth: matches!(
                 snap.bluetooth,
                 BluetoothState::On | BluetoothState::Connected { .. }
@@ -206,7 +222,76 @@ pub fn status_bar_on_wallpaper(c: &mut Canvas, t: &Theme, info: &StatusInfo) {
     status_bar_fg(c, t, info, [0xFF, 0xF8, 0xF0, 0xFF]); // cream
 }
 
+/// Blit `s` so its right edge sits at `x`; returns the new left edge.
+fn draw_right(c: &mut Canvas, s: &str, st: &text::LabelStyle, x: i32, y: i32) -> i32 {
+    if let Some(px) = text::label(s, *st, None) {
+        let w = px.width() as i32;
+        c.blit(
+            &de_api::Pixels::new(de_api::Size::new(w, px.height() as i32), px.data().to_vec()),
+            Point::new(x - w, y),
+        );
+        return x - w;
+    }
+    x
+}
+
+/// Four rising bars (AOSP `SignalStrength` levels 0..=4); `None` = all dim.
+/// Drawn, not a font glyph, so the level actually shows.
+fn signal_bars(c: &mut Canvas, x: i32, level: Option<u8>, fg: [u8; 4], dim: [u8; 4]) {
+    const H: [i32; 4] = [7, 11, 15, 19];
+    const BASE: i32 = 40; // baseline aligned with the 14..40 icon band
+    let lv = level.unwrap_or(0).min(4);
+    for (i, h) in H.iter().enumerate() {
+        let col = if (i as u8) < lv { fg } else { dim };
+        c.fill_rounded_rect(Rect::new(x + i as i32 * 6, BASE - h, 4, *h), 1.5, col);
+    }
+}
+
+/// Small bold label for the `4G+`/`VoLTE` badges and the carrier text.
+fn badge_style(col: [u8; 4]) -> text::LabelStyle {
+    text::LabelStyle {
+        size: 18.0,
+        line_height: 22.0,
+        weight: 600,
+        color: col,
+        ..Default::default()
+    }
+}
+
+/// Mobile cluster per SIM (`SignalClusterView`), walking right→left from
+/// `x`: bars, slot digit (multi-SIM only), `data_type`, `VoLTE` badge.
+/// Returns the next free x. Hidden in airplane mode, like Android.
+fn cellular_cluster(c: &mut Canvas, info: &StatusInfo, x: i32, fg: [u8; 4], dim: [u8; 4]) -> i32 {
+    if info.airplane {
+        return x;
+    }
+    let mut x = x;
+    for (i, slot) in info.cellular.iter().enumerate().rev() {
+        let bars_w = 4 * 4 + 3 * 2; // 4 bars × 4 px + 3 × 2 px gaps
+        signal_bars(c, x - bars_w, slot.strength, fg, dim);
+        x -= bars_w + 6;
+        if info.cellular.len() > 1 {
+            let mini = text::LabelStyle {
+                size: 13.0,
+                line_height: 16.0,
+                weight: 600,
+                color: fg,
+                ..Default::default()
+            };
+            x = draw_right(c, &(i + 1).to_string(), &mini, x, 12) - 4;
+        }
+        if let Some(ty) = &slot.data_type {
+            x = draw_right(c, ty, &badge_style(fg), x, 18) - 5;
+        }
+        if slot.volte {
+            x = draw_right(c, "VoLTE", &badge_style(fg), x, 18) - 10;
+        }
+    }
+    x
+}
+
 fn status_bar_fg(c: &mut Canvas, t: &Theme, info: &StatusInfo, fg: [u8; 4]) {
+    use de_api::services::RingerMode;
     let w = c.size().w;
     let ic = |col: [u8; 4]| text::LabelStyle::icon(22.0, col);
     let fg_dim = [fg[0], fg[1], fg[2], (u16::from(fg[3]) * 3 / 5) as u8];
@@ -228,7 +313,21 @@ fn status_bar_fg(c: &mut Canvas, t: &Theme, info: &StatusInfo, fg: [u8; 4]) {
         c.fill_rounded_rect(Rect::new(dot_x, 22, 10, 10), 999.0, t.success);
         dot_x += 16;
     }
-    // Right edge, right→left: battery, wifi, bt, dnd, airplane.
+    // Carrier label beside the clock when any SIM reports an operator name
+    // (AOSP puts it on the keyguard/expanded shade; the reference phone
+    // shows it top-left). Hidden in airplane mode like the mobile cluster.
+    let carrier = info
+        .cellular
+        .iter()
+        .map(|s| s.carrier.as_str())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("  ");
+    if !info.airplane && !carrier.is_empty() {
+        draw(c, &carrier, &badge_style(fg), dot_x, 18, None);
+    }
+    // Right edge, right→left: battery, per-SIM clusters (slot N rightmost),
+    // wifi, ringer, bt, dnd, airplane, alarm — the AOSP system-icons order.
     let mut x = w - MARGIN;
     if let Some(pct) = info.battery_pct {
         let label = format!("{pct}");
@@ -249,12 +348,22 @@ fn status_bar_fg(c: &mut Canvas, t: &Theme, info: &StatusInfo, fg: [u8; 4]) {
         let r = draw(c, g, &ic(col), x - 26, 14, None);
         x = r.x - 8;
     }
+    // Mobile cluster (SignalClusterView), one per SIM — slot 1 leftmost.
+    x = cellular_cluster(c, info, x, fg, fg_dim);
+    let wifi_g = match info.wifi_strength {
+        Some(0..=25) => "\u{e4ca}", // wifi_1_bar
+        Some(26..=55) => "\u{e4d9}", // wifi_2_bar
+        _ => "\u{e63e}",             // wifi (full / unknown level)
+    };
     for (show, g, col) in [
-        (info.wifi.unwrap_or(false), "\u{e63e}", fg),   // wifi
+        (info.wifi.unwrap_or(false), wifi_g, fg),       // wifi level
         (info.wifi == Some(false), "\u{e648}", fg_dim), // wifi_off
+        (info.ringer == RingerMode::Vibrate, "\u{e62d}", fg), // vibration
+        (info.ringer == RingerMode::Silent, "\u{e7f6}", fg),  // notifications_off
         (info.bluetooth, "\u{e1a7}", fg),               // bluetooth
         (info.dnd, "\u{e644}", fg),                     // do_not_disturb_on
         (info.airplane, "\u{e195}", t.accent),          // airplanemode_active
+        (info.alarm, "\u{e855}", fg),                   // alarm
     ] {
         if !show {
             continue;
@@ -372,10 +481,127 @@ pub fn settings_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use de_api::services::{CellularSlot, RingerMode, ServicesSnapshot, WifiState};
 
     #[test]
     fn content_width() {
         assert_eq!(content_w(Size::new(720, 1600)), 672);
         assert_eq!(content_w(Size::new(1080, 2400)), 1032);
+    }
+
+    /// Render just the 56 px bar over `t.bg`.
+    fn bar_pixels(info: &StatusInfo) -> de_api::Pixels {
+        let t = &de_design::tokens::DEFAULT;
+        let mut c = Canvas::filled(Size::new(720, STATUS_H), t.bg);
+        status_bar(&mut c, t, info);
+        c.into_pixels()
+    }
+
+    /// Pixels that differ from the flat background.
+    fn ink(px: &de_api::Pixels, bg: [u8; 4]) -> usize {
+        px.data
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .filter(|p| **p != bg)
+            .count()
+    }
+
+    fn sim(carrier: &str) -> CellularSlot {
+        CellularSlot {
+            carrier: carrier.into(),
+            data_type: Some("4G+".into()),
+            volte: true,
+            strength: Some(3),
+        }
+    }
+
+    #[test]
+    fn status_bar_empty_paints_nothing() {
+        let t = &de_design::tokens::DEFAULT;
+        assert_eq!(ink(&bar_pixels(&StatusInfo::default()), t.bg), 0);
+    }
+
+    #[test]
+    fn status_bar_new_indicators_paint_ink() {
+        let t = &de_design::tokens::DEFAULT;
+        let quiet = StatusInfo::new("09:41", "48");
+        let quiet_ink = ink(&bar_pixels(&quiet), t.bg);
+        let full = StatusInfo {
+            cellular: vec![sim("AIS"), sim("TRUE-H")],
+            ringer: RingerMode::Vibrate,
+            alarm: true,
+            wifi_strength: Some(20),
+            ..quiet
+        };
+        let full_ink = ink(&bar_pixels(&full), t.bg);
+        // Two SIM clusters + vibrate + alarm + carrier label + level glyph.
+        assert!(
+            full_ink > quiet_ink + 200,
+            "indicators painted little ink: {quiet_ink} -> {full_ink}"
+        );
+    }
+
+    #[test]
+    fn status_bar_each_indicator_toggles() {
+        let t = &de_design::tokens::DEFAULT;
+        let base = StatusInfo::new("09:41", "48");
+        let base_ink = ink(&bar_pixels(&base), t.bg);
+        for info in [
+            StatusInfo {
+                alarm: true,
+                ..base.clone()
+            },
+            StatusInfo {
+                ringer: RingerMode::Silent,
+                ..base.clone()
+            },
+            StatusInfo {
+                cellular: vec![sim("AIS")],
+                ..base.clone()
+            },
+        ] {
+            assert!(
+                ink(&bar_pixels(&info), t.bg) > base_ink,
+                "hidden indicator painted nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn status_bar_airplane_hides_cellular() {
+        let info = StatusInfo {
+            airplane: true,
+            cellular: vec![sim("AIS")],
+            ..StatusInfo::new("09:41", "48")
+        };
+        // Same bar without the SIM must be pixel-identical: airplane mode
+        // suppresses the mobile cluster entirely.
+        let no_sim = StatusInfo {
+            airplane: true,
+            ..StatusInfo::new("09:41", "48")
+        };
+        assert_eq!(bar_pixels(&info).data, bar_pixels(&no_sim).data);
+    }
+
+    #[test]
+    fn from_snapshot_maps_status_indicators() {
+        let snap = ServicesSnapshot {
+            wifi: WifiState::Connected {
+                ssid: "Rabbiz-5G".into(),
+                strength: Some(72),
+            },
+            cellular: vec![sim("AIS")],
+            ringer: RingerMode::Vibrate,
+            alarm_set: true,
+            ..ServicesSnapshot::default()
+        };
+        let info = StatusInfo::from_snapshot(&snap, "09:41");
+        assert_eq!(info.wifi, Some(true));
+        assert_eq!(info.wifi_strength, Some(72));
+        assert_eq!(info.cellular.len(), 1);
+        assert_eq!(info.cellular[0].carrier, "AIS");
+        assert_eq!(info.ringer, RingerMode::Vibrate);
+        assert!(info.alarm);
     }
 }

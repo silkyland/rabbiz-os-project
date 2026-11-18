@@ -58,6 +58,15 @@ impl AppPrefs {
         true
     }
 
+    /// Persist DND before reflecting it in the UI. Failed writes preserve the old state.
+    pub fn set_do_not_disturb(&mut self, on: bool) -> bool {
+        let mut next = self.prefs.clone();
+        next.do_not_disturb = on;
+        if next.save().is_err() { return false; }
+        self.prefs = next;
+        true
+    }
+
     /// Pin to dock (no-op when full); persists.
     pub fn pin(&mut self, desktop_id: &str) {
         self.prefs.pin_dock(desktop_id);

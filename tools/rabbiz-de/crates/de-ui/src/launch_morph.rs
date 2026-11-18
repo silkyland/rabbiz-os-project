@@ -49,6 +49,16 @@ impl MorphPose {
     }
 }
 
+/// Shared navigation trajectory: fullscreen → overview card → home icon.
+/// Piecewise geometry keeps the overview endpoint identical to Recents.
+#[must_use]
+pub fn navigation_card(progress: f32, icon: Rect, output: Rect) -> Rect {
+    let overview = crate::recents::card_rect(output.size());
+    let p = progress.clamp(0.0, 1.0);
+    if p >= 0.5 { lerp_rect(overview, output, (p - 0.5) * 2.0) }
+    else { lerp_rect(icon, overview, p * 2.0) }
+}
+
 /// Rasterize the source tile once so the compositor only moves its texture.
 #[must_use]
 pub fn morph_icon(t: &Theme, entry: &IconEntry, bounds: Rect) -> Pixels {
@@ -116,6 +126,14 @@ impl MorphAnimator {
         self.timed_from = self.settled().then_some(self.spring.value);
         self.elapsed_ms = 0.0;
         self.spring.retarget(target);
+    }
+
+    /// Settle a navigation drag into the overview card while preserving
+    /// the position and velocity sampled under the finger.
+    pub fn settle_recents(&mut self) {
+        self.timed_from = None;
+        self.elapsed_ms = 0.0;
+        self.spring.retarget(0.5);
     }
 
     /// Put the container under the user's finger. A later retarget starts

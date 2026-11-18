@@ -54,3 +54,56 @@ Backends (owner asked "one at a time"): notification server (zbus) → Wi-Fi/Blu
 - Never `cargo fmt` a whole crate (it reformats other lanes' files); `rustfmt` only the new files.
 - Goldens: `scripts/de_golden.sh --bless`, then look at the PNGs; the home golden changed a lot today on purpose.
 - Frame loop facts: a frame with no damage requests no vblank, so any animation needs a wake timer (`home_wake_at`, `panel_wake_at`, morph's `next_frame_at`).
+
+## Continuation: navigation release policy (2026-11-18)
+
+Implemented the first navigation slice in `gestures.rs` and `input.rs`:
+
+- Bottom drags release with recent velocity (px/s); a rested finger drops stale velocity.
+  A fast upward release (at least 2% rise, ≥500 px/s) or ≥75% rise goes Home;
+  a slow 20–75% rise opens Recents; a shorter slow drag cancels.
+- Hold-to-Recents requires ≥20% rise and 400 ms at a stable position, measured
+  from the last movement beyond the slop, rather than from touch-down.
+- An upward content swipe on Home opens Drawer. Back from an app uses the same
+  shell handoff as Home; it no longer sends a close request to the client.
+
+Validation: `./scripts/check.sh` passed on the Linux host, including the DE
+workspace tests and unchanged golden images. Gesture tests: 14 passed.
+**Not tested on device.** No deploy, session restart or reboot was performed.
+
+Remaining navigation work: origin synthesis across launch surfaces/pages,
+blurred Home behind the finger-tracked app card, the water-drop Back effect,
+and real-device gesture tuning/verification. The notification/backend queue
+above has not been started.
+
+## Continuation 2: panel glass, status indicators, device-verified (2026-11-18 late evening)
+
+- **Frosted sheet veil**: the panels were rendering transparent between
+  controls (owner asked for a real frosted shade). `panels::render_veil`
+  bakes blurred backdrop + `t.scrim`; `frame.rs` pushes it as a separate
+  element clipped to the covered rows so the blur always aligns with the
+  scene beneath — the controls texture still slides and keeps alpha-0 gaps.
+- **Perf, A21s** (`build/evidence/panel-glass-2026-11-18/`): baseline 11.9 %
+  of one core while open/close-dragging; glass-v1 blur 112–116 ms/open,
+  first raster 77–115 ms; after the `upsample`/no-temp-canvas rework (v2)
+  blur 88–89 ms, raster p50 18 ms, frame CPU p95 4.98 ms, queue gap p95
+  13.6 ms. Open-startup cost remains the hotspot.
+- **Status bar indicators** (`de-api::services`, `de-ui::chrome`): new
+  `CellularSlot` (carrier/data_type/volte/strength 0–4), `RingerMode`,
+  `alarm_set`; status bar draws carrier label, per-SIM signal-cluster
+  (bars + type + VoLTE + slot superscript), wifi level glyph, ringer,
+  alarm — Android `SignalClusterView` ordering. Live wiring into
+  `status_info()` is deferred (de-system providers: modem absent → hidden).
+- **Backends**: `de-system::notifications` (org.freedesktop.Notifications
+  server), `controls` (NM/rfkill/backlight snapshot+actions), `power`,
+  `fingerprint`; power menu hold-to-confirm + sleep/wake paths in
+  `de-core::{power,input,lock_ui,shot_ui}` — all authored by the other
+  agent session this evening, review at next pull.
+- `check.sh` + golden matrix re-blessed (`status`, `panel-*`, `lock`,
+  `power`, `screenshot` scenes changed on purpose).
+- Thai locale gaps filled (`lock.fingerprint_hint`, `power.hold_hint`,
+  `shot.*`).
+
+Deploy this round: arm64 release built in `rabbiz-de-build:handoff`,
+installed `/usr/local/bin/rabbiz-de`, reboot required (session restart
+doesn't pick it up).

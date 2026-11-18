@@ -12,6 +12,7 @@ skip = "Skip"
 unlock_hint = "Swipe up to unlock"
 charging = "Charging"
 fully_charged = "Fully charged"
+fingerprint_hint = "Touch rear sensor to unlock"
 
 [home]
 search_pill = "Search"
@@ -49,6 +50,9 @@ on = "On"
 off = "Off"
 unavailable = "Not available"
 
+working = "Updating…"
+failed = "Could not apply. Try again."
+
 [panel]
 no_notifications = "No notifications"
 clear_all = "Clear all"
@@ -61,10 +65,15 @@ restart = "Restart"
 lock = "Lock"
 safe_mode = "Safe mode"
 screenshot = "Screenshot"
+hold_hint = "Hold to confirm"
 
 [osd]
 volume = "Volume"
 brightness = "Brightness"
+
+[shot]
+saved = "Screenshot saved"
+open = "Tap to open"
 
 [search]
 hint = "Search"

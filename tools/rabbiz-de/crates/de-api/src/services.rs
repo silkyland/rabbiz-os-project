@@ -70,6 +70,36 @@ pub struct PrivacyState {
     pub location: bool,
 }
 
+/// Ringer mode (volume rocker / quick toggle) → status-bar icon.
+///
+/// AOSP calls this the "ringer mode icon" slot (`RingerModeTracker`); only
+/// non-`Normal` modes paint an icon.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RingerMode {
+    #[default]
+    Normal,
+    Vibrate,
+    Silent,
+}
+
+/// One SIM slot's telephony state — the AOSP `MobileSignalController` /
+/// `SignalClusterView` data.
+///
+/// `de-system` fills this from the modem provider (ModemManager-style);
+/// on devices without a modem the vec stays empty and no mobile cluster is
+/// painted.
+#[derive(Debug, Default, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CellularSlot {
+    /// Operator/carrier name ("AIS", "TRUE-H"); empty = unknown.
+    pub carrier: String,
+    /// Data bearer label ("4G", "4G+", "5G", "H+"); `None` = no data service.
+    pub data_type: Option<String>,
+    /// IMS registered → `VoLTE` badge.
+    pub volte: bool,
+    /// Signal level 0..=4 bars; `None` = unknown → bars painted dim.
+    pub strength: Option<u8>,
+}
+
 /// A single pending notification for the toast/center.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Notification {
@@ -105,6 +135,13 @@ pub struct ServicesSnapshot {
     pub media_playing: bool,
     /// Camera/mic/location in-use flags (status-bar privacy dots).
     pub privacy: PrivacyState,
+    /// Cellular slots in slot order (one per provisioned SIM); empty hides
+    /// the whole mobile-signal cluster. No modem → stays empty.
+    pub cellular: Vec<CellularSlot>,
+    /// Ringer mode → vibrate/silent status icon when not `Normal`.
+    pub ringer: RingerMode,
+    /// An alarm is scheduled (Clock app) → alarm status icon.
+    pub alarm_set: bool,
 }
 
 /// Mutations the UI can request; executed on the `de-system` worker thread.

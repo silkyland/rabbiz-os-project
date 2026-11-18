@@ -29,7 +29,8 @@ impl De {
         let base = match self.nav.current {
             Screen::Recents => {
                 let m = self.recents_model();
-                de_ui::recents::render(size, &s, &t, &status, &m)
+                de_ui::recents::render_with_backdrop(size, &s, &t, &status, &m,
+                    self.navigation.recents_backdrop.as_ref())
             }
             Screen::Drawer => {
                 let ids = self.visible_ids();
@@ -41,8 +42,29 @@ impl De {
                 de_ui::search::render(size, &s, &t, "", &rows)
             }
             Screen::Shade => de_ui::shade::render(size, &s, &t, &status.clock),
-            Screen::Lock => de_ui::lock::render(size, &s, &t, &status.clock, &date),
-            Screen::Power => de_ui::power::render(size, &s, &t),
+            // The interactive lock lives in `lock_ui.rs`; the nav screen
+            // variant exists only as a placeholder between boot and unlock.
+            Screen::Lock => {
+                let wp = self.wallpaper_for(&self.app_prefs.prefs().wallpaper_id.clone(), size);
+                let backdrop = de_paint::glass::blurred_backdrop(&wp);
+                let model = de_ui::lock::LockModel {
+                    status: &status,
+                    clock: &status.clock,
+                    date: &date,
+                    charging: "",
+                    notifications: &[],
+                    hidden_notifications: 0,
+                    fingerprint: false,
+                    flashlight: None,
+                    quick: None,
+                    backdrop: &backdrop,
+                };
+                de_ui::lock::render(size, &s, &t, &model)
+            }
+            Screen::Power => {
+                let m = self.power_menu_model();
+                de_ui::power::render(size, &s, &t, &m)
+            }
             Screen::Error => {
                 let app = self.launch_error.clone().unwrap_or_else(|| "app".into());
                 de_ui::error::render(size, &s, &t, &app)
@@ -81,17 +103,36 @@ impl De {
         let page = self
             .home_page
             .min(de_ui::home::pages_for(ordered.len()) - 1);
-        let page_ids: Vec<String> = ordered
-            .iter()
-            .skip(page * de_ui::home::PAGE_SIZE)
-            .take(de_ui::home::PAGE_SIZE)
-            .map(|e| e.id.clone())
-            .collect();
-        let dock_ids: Vec<String> = self
+        // Rearrange preview: the lifted icon leaves its slot immediately
+        // and a `GAP_ID` pocket opens where it would drop — the same
+        // insert index `drop_on_grid`/`drop_on_dock` applies on release.
+        let drag = self.home_ui.drag.as_ref().map(|d| (d.id.clone(), d.target));
+        let mut ids: Vec<String> = ordered.iter().map(|e| e.id.clone()).collect();
+        let mut dock_ids: Vec<String> = self
             .catalog
             .dock(&prefs)
             .into_iter()
             .map(|e| e.id.clone())
+            .collect();
+        if let Some((drag_id, target)) = &drag {
+            ids.retain(|i| i != drag_id);
+            dock_ids.retain(|i| i != drag_id);
+            match target {
+                Some(de_ui::home::DropTarget::Grid(i)) => {
+                    let at = (page * de_ui::home::PAGE_SIZE + i).min(ids.len());
+                    ids.insert(at, de_ui::home::GAP_ID.into());
+                }
+                Some(de_ui::home::DropTarget::Dock(slot)) => {
+                    let at = (*slot).min(dock_ids.len());
+                    dock_ids.insert(at, de_ui::home::GAP_ID.into());
+                }
+                None => {}
+            }
+        }
+        let page_ids: Vec<String> = ids
+            .into_iter()
+            .skip(page * de_ui::home::PAGE_SIZE)
+            .take(de_ui::home::PAGE_SIZE)
             .collect();
         let apps = self.app_icons(&page_ids);
         let dock = self.app_icons(&dock_ids);
@@ -142,6 +183,14 @@ impl De {
     }
 
     pub(crate) fn app_icon(&mut self, id: &str) -> IconEntry {
+        // Drag-preview pocket — not a real app, never hits the icon cache.
+        if id == de_ui::home::GAP_ID {
+            return IconEntry {
+                id: id.to_owned(),
+                label: String::new(),
+                icon: None,
+            };
+        }
         let (label, icon_name) = self.catalog.find(id).map_or_else(
             || (id.to_owned(), String::new()),
             |entry| (entry.name.clone(), entry.icon.clone()),

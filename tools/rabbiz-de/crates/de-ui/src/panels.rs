@@ -13,14 +13,10 @@ use crate::i18n::Strings;
 
 const SIDE: i32 = 28;
 const CARD_RADIUS: f32 = 44.0;
-/// A plum dim over the blurred backdrop, so milky glass cards stand out from
-/// it on any wallpaper (the light sand one included).
-const PANEL_VEIL: [u8; 4] = [0x20, 0x14, 0x28, 0x72];
-const CARD_TINT: [u8; 4] = [0xFF, 0xF8, 0xF0, 0x8C];
-const CARD_TINT_ON: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xDC];
+const CARD_TINT: [u8; 4] = [0xFF, 0xF8, 0xF0, 0x60];
+const CARD_TINT_ON: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xB0];
 /// Text straight on the dimmed backdrop.
 const ON_DIM: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xFF];
-const ON_DIM_2: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xC8];
 
 // --- notifications ---------------------------------------------------------
 
@@ -78,20 +74,32 @@ pub fn notif_hit(size: Size, pos: Point, count: usize) -> Option<NotifHit> {
         .map(NotifHit::Card)
 }
 
-fn backdrop_with_veil(size: Size, backdrop: &Pixels) -> Canvas {
-    let mut c = Canvas::new(size);
-    c.blit(backdrop, Point::ZERO);
-    c.fill_rect(Rect::new(0, 0, size.w, size.h), PANEL_VEIL);
-    c
+fn backdrop_with_veil(size: Size, _backdrop: &Pixels) -> Canvas {
+    // Transparent between the frosted surfaces. Never paint a fullscreen
+    // wallpaper, blur, or coloured veil over the underlying application.
+    Canvas::new(size)
 }
 
-fn header(c: &mut Canvas, t: &Theme, clock: &str, date: &str) {
+/// The sheet surface itself: the blurred backdrop under a translucent veil.
+/// The compositor draws it as a separate layer revealed from the top in step
+/// with the pull, so the blur always lines up with the scene it covers while
+/// the controls slide down over it.
+#[must_use]
+pub fn render_veil(backdrop: &Pixels, tint: [u8; 4]) -> Pixels {
+    let mut c = Canvas::new(backdrop.size);
+    c.blit(backdrop, Point::new(0, 0));
+    c.fill_rect(Rect::new(0, 0, backdrop.size.w, backdrop.size.h), tint);
+    c.into_pixels()
+}
+
+fn header(c: &mut Canvas, t: &Theme, clock: &str, date: &str, backdrop: &Pixels) {
+    glass::frost(c, backdrop, Rect::new(SIDE, 64, 320, 146), 36.0, CARD_TINT_ON);
     let clock_style = text::LabelStyle {
         size: 76.0,
         line_height: 84.0,
         weight: 600,
         tnum: true,
-        color: ON_DIM,
+        color: t.text,
         ..text::LabelStyle::default()
     };
     chrome::draw(c, clock, &clock_style, SIDE + 4, 96, None);
@@ -99,10 +107,10 @@ fn header(c: &mut Canvas, t: &Theme, clock: &str, date: &str) {
     chrome::draw(
         c,
         date,
-        &style::label(ON_DIM_2),
+        &style::label(t.text2),
         SIDE + 8,
-        184,
-        None,
+        174,
+        Some(304),
     );
 }
 
@@ -118,14 +126,15 @@ pub fn render_notifications(
     items: &[Notification],
 ) -> Pixels {
     let mut c = backdrop_with_veil(size, backdrop);
-    header(&mut c, t, clock, date);
+    header(&mut c, t, clock, date, backdrop);
     if !items.is_empty() {
         let r = clear_all_rect(size);
         glass::frost(&mut c, backdrop, r, 32.0, CARD_TINT);
         chrome::draw_ink_centered(&mut c, "\u{e0b8}", &text::LabelStyle::icon(30.0, t.text), r);
     }
     if items.is_empty() {
-        chrome::draw_centered(&mut c, s.get("panel.no_notifications"), &style::body(ON_DIM_2), size.h / 2 - 20);
+        glass::frost(&mut c, backdrop, Rect::new(SIDE, size.h/2-52, size.w-SIDE*2, 96), 36.0, CARD_TINT_ON);
+        chrome::draw_centered(&mut c, s.get("panel.no_notifications"), &style::body(t.text2), size.h / 2 - 20);
     }
     for (n, r) in items.iter().zip(notif_rects(size, items.len())) {
         glass::frost(&mut c, backdrop, r, CARD_RADIUS, CARD_TINT);
@@ -179,6 +188,9 @@ pub struct QuickModel {
     /// 0.0 – 1.0.
     pub brightness: f32,
     pub volume: f32,
+    pub brightness_available: bool,
+    pub volume_available: bool,
+    pub feedback: Option<String>,
 }
 
 pub const WIDE_TILES: usize = 4;
@@ -279,10 +291,10 @@ pub fn quick_hit(size: Size, pos: Point) -> Option<QuickHit> {
     None
 }
 
-fn slider(c: &mut Canvas, backdrop: &Pixels, t: &Theme, r: Rect, glyph: &str, frac: f32) {
+fn slider(c: &mut Canvas, backdrop: &Pixels, t: &Theme, r: Rect, glyph: &str, frac: f32, available: bool) {
     glass::frost(c, backdrop, r, 48.0, CARD_TINT);
     // Fill: a lighter glass capsule from the left edge to the knob.
-    let fill_w = (r.w as f32 * frac.clamp(0.0, 1.0)) as i32;
+    let fill_w = if available { (r.w as f32 * frac.clamp(0.0, 1.0)) as i32 } else { 0 };
     if fill_w > 0 {
         let fr = Rect::new(r.x, r.y, fill_w.max(r.h / 2), r.h);
         c.fill_rounded_rect(fr, 48.0, CARD_TINT_ON);
@@ -290,7 +302,7 @@ fn slider(c: &mut Canvas, backdrop: &Pixels, t: &Theme, r: Rect, glyph: &str, fr
     chrome::draw_ink_centered(
         c,
         glyph,
-        &text::LabelStyle::icon(34.0, t.accent),
+        &text::LabelStyle::icon(34.0, if available { t.accent } else { t.text3 }),
         Rect::new(r.x + 14, r.y, 68, r.h),
     );
 }
@@ -306,7 +318,7 @@ pub fn render_quick(
     m: &QuickModel,
 ) -> Pixels {
     let mut c = backdrop_with_veil(size, backdrop);
-    header(&mut c, t, clock, date);
+    header(&mut c, t, clock, date, backdrop);
     let l = quick_layout(size);
     for (r, glyph) in [(l.settings, "\u{e8b8}"), (l.power, "\u{e8ac}")] {
         glass::frost(&mut c, backdrop, r, 32.0, CARD_TINT);
@@ -324,14 +336,19 @@ pub fn render_quick(
         let detail = if tile.available { &tile.detail } else { s.get("qs.unavailable") };
         chrome::draw(&mut c, detail, &style::caption(t.text3), r.x + 112, r.y + 64, Some(r.w - 112 - 16));
     }
-    slider(&mut c, backdrop, t, l.sliders[0], "\u{e518}", m.brightness);
-    slider(&mut c, backdrop, t, l.sliders[1], "\u{e050}", m.volume);
+    slider(&mut c, backdrop, t, l.sliders[0], "\u{e518}", m.brightness, m.brightness_available);
+    slider(&mut c, backdrop, t, l.sliders[1], "\u{e050}", m.volume, m.volume_available);
     for (i, r) in l.round.iter().enumerate() {
         let Some(tile) = m.tiles.get(WIDE_TILES + i) else { continue };
         glass::frost(&mut c, backdrop, *r, r.w as f32 / 2.0, if tile.on { CARD_TINT_ON } else { CARD_TINT });
         let glyph_col = if tile.on { t.accent } else if tile.available { t.text } else { t.text3 };
         chrome::draw_ink_centered(&mut c, tile.glyph, &text::LabelStyle::icon(40.0, glyph_col), *r);
-        chrome::draw_centered_x(&mut c, &tile.label, &style::caption(ON_DIM), r.x + r.w / 2, r.y + r.h + 10);
+        let label = Rect::new(r.x + r.w/2 - 76, r.y+r.h+4, 152, 40);
+        glass::frost(&mut c, backdrop, label, 20.0, CARD_TINT_ON);
+        chrome::draw_centered_x(&mut c, &tile.label, &style::caption(t.text), r.x + r.w / 2, r.y + r.h + 10);
+    }
+    if let Some(message) = &m.feedback {
+        chrome::draw_centered(&mut c, message, &style::label(ON_DIM), size.h - 104);
     }
     chrome::nav_pill(&mut c, t);
     c.into_pixels()
@@ -357,11 +374,34 @@ mod tests {
             tiles: (0..12).map(|i| tile("x", "\u{e63e}", i % 2 == 0)).collect(),
             brightness: 0.6,
             volume: 0.3,
+            brightness_available: true, volume_available: true, feedback: None,
         }
     }
 
     fn backdrop() -> Pixels {
         Canvas::filled(SIZE, [200, 150, 120, 255]).into_pixels()
+    }
+
+    #[test]
+    fn panel_is_transparent_between_frosted_controls() {
+        let s = Strings::default();
+        let bg = backdrop();
+        let px = render_quick(SIZE, &s, &tokens::DEFAULT, &bg, "16:11", "Mon", &model());
+        let alpha = |x: i32, y: i32| px.data[((y * SIZE.w + x) * 4 + 3) as usize];
+        assert_eq!(alpha(0, 0), 0);
+        assert_eq!(alpha(360, 1250), 0);
+        assert!(alpha(80, 250) > 0);
+    }
+
+    #[test]
+    fn veil_is_the_backdrop_under_a_tint() {
+        let t = tokens::DEFAULT;
+        let px = render_veil(&backdrop(), t.scrim);
+        let at = |x: i32, y: i32| ((y * SIZE.w + x) * 4) as usize;
+        let p = &px.data[at(360, 1250)..at(360, 1250) + 4];
+        assert_eq!(p[3], 255, "veil covers the whole sheet");
+        // scrim is plum 40%: the backdrop darkens but stays visible.
+        assert!(p[0] < 200 && p[0] > 48, "tinted, not replaced: {p:?}");
     }
 
     #[test]

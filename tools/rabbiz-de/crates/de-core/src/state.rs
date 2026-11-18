@@ -147,6 +147,7 @@ pub struct De {
     pub(crate) home_ui: crate::home_ui::HomeUi,
     /// Notification panel and quick actions (`panel_ui.rs`).
     pub(crate) panels: crate::panel_ui::PanelUi,
+    pub(crate) navigation: crate::navigation::Navigation,
     /// Whether the screen shows a fullscreen app or a shell surface.
     pub foreground: Foreground,
     /// System-gesture recognizer (edge-back / home / recents / shade).
@@ -188,6 +189,14 @@ pub struct De {
 
     /// Queued `copy_with_damage` screencopy requests awaiting a damaged frame.
     pub(crate) screencopy_pending: Vec<crate::screencopy::PendingCapture>,
+
+    // --- M4: power + lock ---
+    /// Power state machine: idle/dim/fade/sleep + cmd/fp watchers (`power.rs`).
+    pub(crate) power: crate::power::Power,
+    /// Lock overlay: raster + unlock-drag spring (`lock_ui.rs`).
+    pub(crate) lock: crate::lock_ui::LockUi,
+    /// Screenshot flash + toast (`shot_ui.rs`).
+    pub(crate) shot_fx: crate::shot_ui::ShotFx,
 }
 
 /// What the screen is showing (M3).
@@ -470,6 +479,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         shell_menu: None,
         home_ui: crate::home_ui::HomeUi::new(),
         panels: crate::panel_ui::PanelUi::new(),
+        navigation: crate::navigation::Navigation::new(),
         output_obj,
 
         compositor_state,
@@ -534,6 +544,9 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         osk_respawn_at: None,
         osk_spawned_at: None,
         screencopy_pending: Vec::new(),
+        power: crate::power::Power::default(),
+        lock: crate::lock_ui::LockUi::default(),
+        shot_fx: crate::shot_ui::ShotFx::default(),
     })
 }
 

@@ -13,6 +13,7 @@
 
 use smithay::reexports::wayland_server::{protocol::wl_surface::WlSurface, Resource};
 use std::process::Command;
+use std::time::Instant;
 
 use de_ui::gestures::{Gesture, GestureEvent, Zone};
 
@@ -48,12 +49,20 @@ impl De {
         if std::env::var_os("DE_INPUT_DEBUG").is_some() {
             eprintln!("input: {}", variant_name::<B>(&event));
         }
+        // Any hardware input is activity — undims and restarts the clock.
+        self.power_note_activity();
         match event {
             InputEvent::Keyboard { event } => self.on_keyboard_key::<B>(&event),
             InputEvent::TouchDown { event } => self.on_touch_down::<B>(&event),
             InputEvent::TouchMotion { event } => self.on_touch_motion::<B>(&event),
             InputEvent::TouchUp { event } => self.on_touch_up::<B>(&event),
             InputEvent::TouchCancel { event } => {
+                if self.sleeping() {
+                    self.sleep_touch_cancel();
+                    self.touch_claimed = true;
+                    return;
+                }
+                self.power_menu_release();
                 self.feed_gesture(
                     i32::from(event.slot()),
                     de_api::input::TouchPhase::Cancel,
@@ -199,14 +208,26 @@ impl De {
             state,
             serial,
             time,
-            |_de, _mods: &ModifiersState, keysym| {
+            |de, _mods: &ModifiersState, keysym| {
                 let raw = keysym.raw_syms().first().copied();
                 // Power button: act on release only, detached so the 300 ms
-                // combo guard in a21s-power-key never stalls the loop.
+                // combo guard in a21s-power-key never stalls the loop. The
+                // release also wakes a sleeping panel via `toggle`.
                 if raw == Some(Keysym::XF86_PowerOff) && state == KeyState::Released {
                     let _ = Command::new("setsid")
                         .args(["a21s-power-key", "toggle"])
                         .spawn();
+                    return FilterResult::Intercept(());
+                }
+                if de.sleeping() {
+                    // Any other key wakes the panel; swallow it so the
+                    // unlock press doesn't type into an app.
+                    if state == KeyState::Pressed {
+                        de.power_wake();
+                    }
+                    return FilterResult::Intercept(());
+                }
+                if de.locked() {
                     return FilterResult::Intercept(());
                 }
                 FilterResult::Forward
@@ -220,6 +241,13 @@ impl De {
             self.output.height as i32,
         )));
         self.last_touch_pos = pos;
+        // Sleeping screen: the contact may be a hold-to-peek or the first
+        // half of a wake double-tap — never delivered to clients.
+        if self.sleeping() {
+            self.sleep_touch_down();
+            self.touch_claimed = true;
+            return;
+        }
         // Shell gestures first: a contact starting in a system zone — or any
         // contact while a shell screen is foreground — is claimed by the
         // shell and never reaches the client.
@@ -241,11 +269,22 @@ impl De {
                 evt.time_msec(),
             );
         }
+        // Power-screen contact down: arm a destructive row (800 ms hold).
+        if self.locked() {
+            if self.power.menu_over_lock {
+                self.power_menu_press(api_point(pos));
+            }
+        } else if self.foreground == crate::state::Foreground::Shell
+            && self.nav.current == de_ui::nav::Screen::Power
+        {
+            self.power_menu_press(api_point(pos));
+        }
         self.touch_claimed = claim_touch(
             zone,
             self.foreground == crate::state::Foreground::Shell,
             layer_contact,
-        ) || self.panel_wants_touch();
+        ) || self.panel_wants_touch()
+            || self.locked();
         if self.touch_claimed {
             return;
         }
@@ -287,6 +326,9 @@ impl De {
             self.output.height as i32,
         )));
         self.last_touch_pos = pos;
+        if self.sleeping() {
+            return;
+        }
         self.feed_gesture(
             i32::from(evt.slot()),
             de_api::input::TouchPhase::Motion,
@@ -311,6 +353,13 @@ impl De {
 
     fn on_touch_up<B: InputBackend>(&mut self, evt: &B::TouchUpEvent) {
         let pos = self.last_touch_pos;
+        if self.sleeping() {
+            self.sleep_touch_up();
+            self.touch_claimed = true;
+            self.needs_present = true;
+            return;
+        }
+        self.power_menu_release();
         self.feed_gesture(
             i32::from(evt.slot()),
             de_api::input::TouchPhase::Up,
@@ -352,6 +401,13 @@ impl De {
         }
     }
 
+    pub(crate) fn tick_gestures(&mut self) {
+        let now_ms = std::time::Duration::from(self.clock.now()).as_millis() as u32;
+        if let Some(event) = self.gestures.tick(u64::from(now_ms)) {
+            self.on_gesture_event(event, u64::from(now_ms));
+        }
+    }
+
     fn on_gesture_event(&mut self, ev: GestureEvent, time_ms: u64) {
         use crate::state::Foreground;
         use de_ui::nav::Screen;
@@ -359,6 +415,11 @@ impl De {
             && std::env::var_os("DE_GESTURE_DEBUG").is_some()
         {
             eprintln!("gesture: {ev:?}");
+        }
+        // The lock overlay owns every gesture while it covers the screen.
+        if self.lock.shown() {
+            self.lock_gesture(ev);
+            return;
         }
         let g = match ev {
             GestureEvent::Progress {
@@ -369,7 +430,10 @@ impl De {
                 self.follow_home_drag(dy, time_ms);
                 return;
             }
-            GestureEvent::Progress { zone, dy, .. } if zone != Zone::NavBar => {
+            GestureEvent::Progress { zone, dx, dy } if zone != Zone::NavBar => {
+                if matches!(zone, Zone::EdgeLeft | Zone::EdgeRight) {
+                    self.back_progress(zone, dx, dy);
+                }
                 if self.panel_progress(zone == Zone::TopEdge, dy) {
                     return;
                 }
@@ -380,14 +444,33 @@ impl De {
                 }
                 return;
             }
-            GestureEvent::Started { pos, .. } => {
+            GestureEvent::Started { pos, zone } => {
+                self.clear_back_feedback();
+                self.navigation.zone = zone;
+                self.navigation.start = pos;
                 self.panel_touch_started(pos);
                 self.home_touch_started();
                 return;
             }
-            GestureEvent::Released { vx, vy, .. } => {
+            GestureEvent::NavReleased { dy, vy } => {
+                use de_ui::gestures::{decide_navigation, NavDestination};
+                match decide_navigation(dy, vy, self.output.height as f32) {
+                    NavDestination::Home if self.panels.shown() => self.panel_close(),
+                    NavDestination::Home => self.show_shell(Screen::Home),
+                    NavDestination::Recents => self.show_shell(Screen::Recents),
+                    NavDestination::Cancel => { self.release_home_drag(false); }
+                }
+                return;
+            }
+            GestureEvent::Released { dx, dy, vx, vy } => {
                 if self.panels.pull.dragging() {
                     self.panel_released(vy);
+                } else if self.foreground == Foreground::Shell
+                    && self.nav.current == Screen::Home
+                    && dy < -96.0 && -dy > dx.abs() * 1.4
+                {
+                    self.home_drag_cancelled();
+                    self.show_shell(Screen::Drawer);
                 } else {
                     self.home_drag_released(vx);
                 }
@@ -402,6 +485,7 @@ impl De {
                 return;
             }
             GestureEvent::Cancelled => {
+                self.clear_back_feedback();
                 self.panel_cancelled();
                 self.home_drag_cancelled();
                 self.release_home_drag(false);
@@ -410,15 +494,15 @@ impl De {
             GestureEvent::Recognized(gesture) => gesture,
             GestureEvent::Progress { .. } => return,
         };
+        self.clear_back_feedback();
         match g {
             Gesture::Home | Gesture::EdgeBack { .. } if self.panels.shown() => self.panel_close(),
             Gesture::Home => self.show_shell(Screen::Home),
             Gesture::Recents => self.show_shell(Screen::Recents),
             Gesture::EdgeBack { .. } => {
                 if matches!(self.foreground, Foreground::App) {
-                    // Phone v1: back dismisses the topmost fullscreen app —
-                    // the shell appears when the last window unmaps.
-                    self.close_topmost();
+                    // Back preserves the client and its state, like Home.
+                    self.show_shell(Screen::Home);
                 } else {
                     self.launch.cancel();
                     self.morph = None;
@@ -433,7 +517,13 @@ impl De {
                 }
             }
             Gesture::Tap { pos } => {
-                if !self.release_home_drag(false) {
+                let size = de_api::Size::new(
+                    self.output.width as i32,
+                    self.output.height as i32,
+                );
+                if self.shot_fx.tap(pos, size, Instant::now()) {
+                    self.needs_present = true;
+                } else if !self.release_home_drag(false) {
                     self.on_shell_tap(pos);
                 }
             }
@@ -455,13 +545,16 @@ impl De {
             // recents card before the shell takes over.
             self.capture_topmost();
         }
-        if screen != de_ui::nav::Screen::Home || !self.release_home_drag(true) {
-            self.morph = None;
+        if screen == de_ui::nav::Screen::Recents {
+            self.prepare_recents_backdrop();
         }
+        let to_recents = screen == de_ui::nav::Screen::Recents && self.release_home_to_recents();
+        let to_home = screen == de_ui::nav::Screen::Home && self.release_home_drag(true);
+        if !to_recents && !to_home { self.morph = None; }
         self.launch.cancel();
         self.foreground = Foreground::Shell;
         self.focus_foreground();
-        if self.nav.current != screen {
+        if !to_recents && self.nav.current != screen {
             self.nav.current = screen;
         }
         self.shell_dirty = true;
@@ -469,6 +562,46 @@ impl De {
     }
 
     /// Tap on a shell screen: icon → launch, search pill → search,
+    /// Every gesture while the lock covers the screen: drag-up unlocks,
+    /// taps hit the bottom actions (or the power menu when it floats above
+    /// the lock), back dismisses the menu overlay.
+    fn lock_gesture(&mut self, ev: GestureEvent) {
+        let h = self.output.height as f32;
+        match ev {
+            GestureEvent::Started { pos, .. } => {
+                self.lock.begin_drag();
+                if self.power.menu_over_lock {
+                    self.power_menu_press(pos);
+                }
+            }
+            GestureEvent::Progress { dy, .. } => self.lock.drag(dy, h),
+            GestureEvent::Released { vy, .. } | GestureEvent::NavReleased { vy, .. } => {
+                self.lock.release(vy, h);
+                self.power_menu_release();
+            }
+            GestureEvent::Cancelled => {
+                self.lock.cancel_drag();
+                self.power_menu_release();
+            }
+            GestureEvent::Recognized(Gesture::Tap { pos }) => {
+                self.lock.cancel_drag();
+                if self.power.menu_over_lock {
+                    self.power_menu_tap(pos, true);
+                } else {
+                    self.lock_tap(pos);
+                }
+            }
+            GestureEvent::Recognized(Gesture::EdgeBack { .. })
+                if self.power.menu_over_lock =>
+            {
+                self.lock.cancel_drag();
+                self.power.menu_over_lock = false;
+            }
+            _ => self.lock.cancel_drag(),
+        }
+        self.needs_present = true;
+    }
+
     /// recents card → back to the app.
     fn on_shell_tap(&mut self, pos: de_api::Point) {
         use crate::state::Foreground;
@@ -540,6 +673,7 @@ impl De {
                     self.try_launch(&rows[i].id, de_ui::search::icon_rect(size, &rows, i));
                 }
             }
+            Screen::Power => self.power_menu_tap(pos, false),
             Screen::Recents
                 // Tap anywhere → back to the last app.
                 if self.space.elements().next().is_some() => {
@@ -588,15 +722,6 @@ impl De {
                 self.nav.go(de_ui::nav::Screen::Error);
                 self.shell_dirty = true;
                 self.needs_present = true;
-            }
-        }
-    }
-
-    /// Close the topmost window (edge-back / close-all).
-    fn close_topmost(&mut self) {
-        if let Some(top) = self.space.elements().last().cloned() {
-            if let Some(toplevel) = top.toplevel() {
-                toplevel.send_close();
             }
         }
     }

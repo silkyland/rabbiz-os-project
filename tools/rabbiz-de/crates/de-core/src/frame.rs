@@ -63,6 +63,7 @@ pub struct Run {
     last_second: Instant,
     trace_motion: bool,
     last_morph_frame: Option<(Phase, Instant)>,
+    last_panel_frame: Option<Instant>,
 }
 
 impl Run {
@@ -101,6 +102,7 @@ impl Run {
             last_second: Instant::now(),
             trace_motion: std::env::var_os("RABBIZ_DE_MOTION_TRACE").is_some(),
             last_morph_frame: None,
+            last_panel_frame: None,
         })
     }
 
@@ -139,7 +141,21 @@ impl Run {
         self.de.advance_morph(t0);
         self.de.advance_home(t0);
         self.de.advance_panel(t0);
+        self.de.power.advance(t0);
+        self.de.advance_lock(t0);
+        // Panel off: the whole raster/render path is skipped — timers and
+        // wake sources keep running on the 500 ms poll.
+        if self.de.sleeping() {
+            return Ok(());
+        }
         self.de.panel_prepare();
+        let size = de_api::Size::new(self.de.output.width as i32, self.de.output.height as i32);
+        self.de.lock_prepare(size);
+        self.de.menu_prepare(size);
+        if self.de.shot_fx.poll(t0) {
+            self.de.needs_present = true;
+        }
+        self.de.shot_prepare(t0);
         // Shell surface: re-raster on dirty or when the clock minute rolls.
         let minute = minute_of_day();
         // While the pager moves the home screen is drawn from layers (see
@@ -182,6 +198,10 @@ impl Run {
             morph,
             home_ui,
             panels,
+            navigation,
+            lock,
+            shot_fx,
+            power,
             ..
         } = de;
         let mut parts = FrameParts {
@@ -199,6 +219,10 @@ impl Run {
             morph,
             home: home_ui,
             panel: panels,
+            navigation,
+            lock,
+            shot_fx,
+            power,
             layered,
             now: t0,
         };
@@ -213,6 +237,14 @@ impl Run {
         let cpu = t0.elapsed().as_secs_f64() * 1000.0;
         self.cpu_samples.push(cpu);
         self.all_cpu.push(cpu);
+        if self.trace_motion && queued && self.de.panels.pull.animating() {
+            let gap = self.last_panel_frame.replace(t0)
+                .map_or(0.0, |last| t0.duration_since(last).as_secs_f64() * 1000.0);
+            eprintln!("panel-frame cpu_ms={cpu:.3} queue_gap_ms={gap:.3} dragging={}",
+                self.de.panels.pull.dragging());
+        } else if !self.de.panels.pull.animating() {
+            self.last_panel_frame = None;
+        }
         if self.trace_motion && queued {
             if let Some(morph) = self.de.morph.as_ref() {
                 let last = self.last_morph_frame.replace((morph.phase, t0));
@@ -250,6 +282,10 @@ struct FrameParts<'a> {
     morph: &'a mut Option<WindowMorph>,
     home: &'a mut crate::home_ui::HomeUi,
     panel: &'a mut crate::panel_ui::PanelUi,
+    navigation: &'a mut crate::navigation::Navigation,
+    lock: &'a mut crate::lock_ui::LockUi,
+    shot_fx: &'a mut crate::shot_ui::ShotFx,
+    power: &'a mut crate::power::Power,
     /// Draw the home screen from `home` layers instead of `shell_tex`.
     layered: bool,
     now: Instant,
@@ -308,6 +344,20 @@ where
     // The lifted icon rides on top of the home frame as its own texture.
     push_drag_overlay::<R>(&mut elements, renderer, de.home, de.output);
     push_panel::<R>(&mut elements, renderer, de.panel);
+    // Overlays, topmost last: shot feedback → lock → locked menu → fade.
+    push_shot::<R>(&mut elements, renderer, de.shot_fx, de.output, de.now);
+    push_lock::<R>(&mut elements, renderer, de.lock, de.output, de.now);
+    push_menu_over::<R>(&mut elements, renderer, de.power, de.output);
+    push_fade::<R>(&mut elements, de.power, de.output, de.now);
+    if let Some((px, at)) = de.navigation.back.as_ref() {
+        if de.navigation.back_texture.is_none() {
+            de.navigation.back_texture = upload_any(renderer, px);
+        }
+        if let Some(tex) = texture_buffer::<R>(de.navigation.back_texture.as_ref()) {
+            elements.insert(0, DeElement::from(tex_el::<R>(tex,
+                Point::<f64, Physical>::from((f64::from(at.x), f64::from(at.y))))));
+        }
+    }
     // Gesture bar on top of everything.
     let bar_y = f64::from(de.output.height) - f64::from(de_ui::chrome::NAV_H);
     if let Some(tex) = texture_buffer::<R>(de.gesture_bar.as_ref()) {
@@ -475,11 +525,23 @@ fn push_morph_elements<R: Renderer + ImportAll + ImportMem>(
             Kind::Unspecified,
         )));
     }
+    if let Some(px) = morph.backdrop.as_ref() {
+        if morph.backdrop_texture.is_none() {
+            morph.backdrop_texture = upload_any(renderer, px);
+        }
+        if let Some(tex) = texture_buffer::<R>(morph.backdrop_texture.as_ref()) {
+            elements.push(DeElement::from(TextureRenderElement::from_texture_buffer(
+                (0.0, 0.0), tex, Some(morph.backdrop_alpha()), None, None, Kind::Unspecified,
+            )));
+        }
+    }
+
 }
 
 impl Run {
     fn motion_wake_at(&self) -> Option<Instant> {
         let interval = Duration::from_secs_f64(1.5 / self.de.output.refresh_hz.max(1.0));
+        let now = Instant::now();
         [
             self.de.launch.deadline(),
             self.de
@@ -488,6 +550,9 @@ impl Run {
                 .and_then(|morph| morph.next_frame_at(interval)),
             self.de.home_wake_at(interval),
             self.de.panel_wake_at(interval),
+            self.de.lock_wake_at(interval),
+            self.de.power.wake_at(now),
+            self.de.shot_fx.wake_at(now),
         ]
         .into_iter()
         .flatten()
@@ -505,7 +570,9 @@ impl Run {
         self.de.sync_exclusive_layer_focus();
         if self.de.needs_present {
             self.de.needs_present = false;
-            let _ = self.present().map_err(|e| eprintln!("present: {e}"));
+            if !self.de.sleeping() {
+                let _ = self.present().map_err(|e| eprintln!("present: {e}"));
+            }
         }
         // Input handlers and commits queue server->client events on every
         // source (libinput taps, frame callbacks, configures), not just the
@@ -640,6 +707,8 @@ fn push_panel<R>(
     if !panel.pull.shown() {
         panel.tex = None;
         panel.tex_generation = u64::MAX;
+        panel.veil_tex = None;
+        panel.veil_tex_generation = u64::MAX;
         return;
     }
     if panel.tex.is_none() || panel.tex_generation != panel.generation {
@@ -647,11 +716,43 @@ fn push_panel<R>(
         panel.tex = upload_any(renderer, px);
         panel.tex_generation = panel.generation;
     }
+    if panel.veil_tex.is_none() || panel.veil_tex_generation != panel.generation {
+        if let Some(veil) = panel.veil.as_ref() {
+            panel.veil_tex = upload_any(renderer, veil);
+            panel.veil_tex_generation = panel.generation;
+        }
+    }
     let (Some(tex), Some(px)) = (texture_buffer::<R>(panel.tex.as_ref()), panel.pixels.as_ref())
     else {
         return;
     };
     let f = panel.pull.frac().clamp(0.0, 1.0);
+    // The frosted sheet surface beneath the sliding controls: the blurred
+    // scene under the scrim, revealed from the top edge in step with the
+    // pull so every covered row stays aligned with the scene beneath it.
+    if let (Some(veil), Some(vpx)) = (texture_buffer::<R>(panel.veil_tex.as_ref()), panel.veil.as_ref())
+    {
+        let covered = f64::from((f * vpx.size.h as f32).round());
+        if covered > 0.0 {
+            elements.insert(
+                0,
+                DeElement::from(TextureRenderElement::from_texture_buffer(
+                    Point::<f64, Physical>::from((0.0, 0.0)),
+                    veil,
+                    None,
+                    Some(smithay::utils::Rectangle::new(
+                        Point::<f64, smithay::utils::Logical>::from((0.0, 0.0)),
+                        smithay::utils::Size::<f64, smithay::utils::Logical>::from((
+                            f64::from(vpx.size.w),
+                            covered,
+                        )),
+                    )),
+                    None,
+                    Kind::Unspecified,
+                )),
+            );
+        }
+    }
     let y = -(1.0 - f) * px.size.h as f32;
     let alpha = (f * 1.6).min(1.0);
     elements.insert(
@@ -662,6 +763,170 @@ fn push_panel<R>(
             Some(alpha),
             None,
             None,
+            Kind::Unspecified,
+        )),
+    );
+}
+
+/// Lock overlay texture: slides up with the unlock drag and fades out;
+/// fp-fail shakes it horizontally. Inserted at the front (topmost).
+fn push_lock<R>(
+    elements: &mut Vec<DeElement<R>>,
+    renderer: &mut R,
+    lock: &mut crate::lock_ui::LockUi,
+    output: &de_backend::drm::OutputSelection,
+    now: Instant,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    if !lock.shown() {
+        lock.tex = None;
+        lock.tex_generation = u64::MAX;
+        return;
+    }
+    if lock.tex.is_none() || lock.tex_generation != lock.generation {
+        let Some(px) = lock.px.as_ref() else { return };
+        lock.tex = upload_any(renderer, px);
+        lock.tex_generation = lock.generation;
+    }
+    let Some(tex) = texture_buffer::<R>(lock.tex.as_ref()) else {
+        return;
+    };
+    let _ = output;
+    let x = lock.shake_x(now);
+    let y = -f64::from(lock.slide_px());
+    let alpha = 1.0 - lock.progress() * 0.55;
+    elements.insert(
+        0,
+        DeElement::from(TextureRenderElement::from_texture_buffer(
+            Point::<f64, Physical>::from((x, y.round())),
+            tex,
+            Some(alpha),
+            None,
+            None,
+            Kind::Unspecified,
+        )),
+    );
+}
+
+/// Power menu floating above the lock (long-press combo while locked).
+fn push_menu_over<R>(
+    elements: &mut Vec<DeElement<R>>,
+    renderer: &mut R,
+    power: &mut crate::power::Power,
+    _output: &de_backend::drm::OutputSelection,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    if !power.menu_over_lock {
+        power.menu_tex = None;
+        return;
+    }
+    if power.menu_tex.is_none() {
+        let Some(px) = power.menu_px.as_ref() else { return };
+        power.menu_tex = upload_any(renderer, px);
+    }
+    let Some(tex) = texture_buffer::<R>(power.menu_tex.as_ref()) else {
+        return;
+    };
+    elements.insert(
+        0,
+        DeElement::from(TextureRenderElement::from_texture_buffer(
+            Point::<f64, Physical>::from((0.0, 0.0)),
+            tex,
+            Some(1.0),
+            None,
+            None,
+            Kind::Unspecified,
+        )),
+    );
+}
+
+/// Screenshot feedback: toast card bottom-right + the white flash (drawn
+/// after the capture, so the flash never photographs itself).
+fn push_shot<R>(
+    elements: &mut Vec<DeElement<R>>,
+    renderer: &mut R,
+    shot: &mut crate::shot_ui::ShotFx,
+    output: &de_backend::drm::OutputSelection,
+    now: Instant,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    if !shot.toast_active(now) {
+        shot.tex = None;
+        shot.tex_generation = u64::MAX;
+    } else {
+        if shot.tex.is_none() || shot.tex_generation != shot.generation {
+            if let Some(px) = shot.px.as_ref() {
+                shot.tex = upload_any(renderer, px);
+                shot.tex_generation = shot.generation;
+            }
+        }
+        if let Some(tex) = texture_buffer::<R>(shot.tex.as_ref()) {
+            let r = crate::shot_ui::ShotFx::toast_rect(de_api::Size::new(
+                output.width as i32,
+                output.height as i32,
+            ));
+            elements.insert(
+                0,
+                DeElement::from(TextureRenderElement::from_texture_buffer(
+                    Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
+                    tex,
+                    Some(1.0),
+                    None,
+                    None,
+                    Kind::Unspecified,
+                )),
+            );
+        }
+    }
+    if shot.flash_active(now) {
+        let buf = smithay::backend::renderer::element::solid::SolidColorBuffer::new(
+            (output.width as i32, output.height as i32),
+            [1.0, 0.972, 0.941, 1.0],
+        );
+        elements.insert(
+            0,
+            DeElement::from(SolidColorRenderElement::from_buffer(
+                &buf,
+                Point::<i32, Physical>::from((0, 0)),
+                1.0,
+                1.0,
+                Kind::Unspecified,
+            )),
+        );
+    }
+}
+
+/// Black curtain for the sleep/wake fades (topmost of everything).
+fn push_fade<R>(
+    elements: &mut Vec<DeElement<R>>,
+    power: &crate::power::Power,
+    output: &de_backend::drm::OutputSelection,
+    now: Instant,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    let alpha = power.fade_alpha(now);
+    if alpha <= 0.0 {
+        return;
+    }
+    let buf = smithay::backend::renderer::element::solid::SolidColorBuffer::new(
+        (output.width as i32, output.height as i32),
+        [0.0, 0.0, 0.0, 1.0],
+    );
+    elements.insert(
+        0,
+        DeElement::from(SolidColorRenderElement::from_buffer(
+            &buf,
+            Point::<i32, Physical>::from((0, 0)),
+            1.0,
+            alpha,
             Kind::Unspecified,
         )),
     );
@@ -978,6 +1243,13 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         })
         .map_err(|e| format!("libinput source: {e}"))?;
 
+    // Gesture holds must work without manufactured touch motion.
+    handle.insert_source(Timer::immediate(), |_, (), run: &mut Run| {
+        run.de.tick_gestures();
+        if run.de.needs_present { run.pump(); }
+        TimeoutAction::ToDuration(Duration::from_millis(if run.de.gestures.active() { 16 } else { 100 }))
+    }).map_err(|e| format!("gesture timer: {e}"))?;
+
     // Clock tick — re-raster the shell frame each minute.
     let timer = Timer::immediate();
     handle
@@ -999,6 +1271,9 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         .insert_source(shot_timer, |_, (), run: &mut Run| {
             dump_frame_if_triggered(&run.de);
             run.de.check_osk();
+            run.de.poll_panels();
+            run.de.poll_power();
+            if run.de.needs_present { run.pump(); }
             TimeoutAction::ToDuration(Duration::from_millis(500))
         })
         .map_err(|e| format!("shot timer source: {e}"))?;
