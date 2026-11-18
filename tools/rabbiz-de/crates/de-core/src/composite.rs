@@ -70,6 +70,22 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
         &map,
         de_protocols::layer_shell::ABOVE_WINDOWS.iter().rev(),
     );
+    // Overlays the renderer draws as textures: the paging home layers, the
+    // notification/quick panel. Captures must show what is on the display.
+    if de.home_layers_active() {
+        if let Some(px) = de.home_layers_composed() {
+            canvas.blit(&px, ApiPoint::ZERO);
+        }
+    }
+    if let (true, Some(px)) = (de.panels.pull.shown(), de.panels.pixels.as_ref()) {
+        let f = de.panels.pull.frac().clamp(0.0, 1.0);
+        let y = (-(1.0 - f) * px.size.h as f32).round() as i32;
+        canvas.blit_scaled(
+            px,
+            de_api::Rect::new(0, y, px.size.w, px.size.h),
+            (f * 1.6).min(1.0),
+        );
+    }
     Some(canvas.into_pixels())
 }
 

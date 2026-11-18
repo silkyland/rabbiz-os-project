@@ -337,6 +337,24 @@ impl De {
         self.home_dirty();
     }
 
+    /// The layered home as one image (screen captures while paging).
+    pub(crate) fn home_layers_composed(&self) -> Option<Pixels> {
+        let l = self.home_ui.layers.as_ref()?;
+        let size = l.base.size;
+        let pos = self.home_ui.pager.pos();
+        let mut c = de_paint::Canvas::new(size);
+        c.blit(&l.base, Point::ZERO);
+        for (p, px) in &l.pages {
+            let x = ((*p as f32 - pos) * size.w as f32).round() as i32;
+            c.blit(px, Point::new(x, home::grid_band_y()));
+        }
+        let near = pos.round().max(0.0) as usize;
+        if let Some(d) = l.dots.get(&near) {
+            c.blit(d, Point::new(0, home::dots_y(size)));
+        }
+        Some(c.into_pixels())
+    }
+
     /// Whether the compositor should show the layered home this frame.
     pub(crate) fn home_layers_active(&self) -> bool {
         self.home_ui.paging() && self.home_live()
