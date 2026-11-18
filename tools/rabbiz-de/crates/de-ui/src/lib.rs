@@ -10,6 +10,7 @@ pub mod home;
 pub mod i18n;
 pub mod launch_morph;
 pub mod lock;
+pub mod menu;
 pub mod nav;
 pub mod nav_bar;
 pub mod osd;
