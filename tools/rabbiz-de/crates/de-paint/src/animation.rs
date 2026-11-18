@@ -41,6 +41,12 @@ impl AnimationClock {
         self.scheme
     }
 
+    /// Whether reduced motion or safe mode takes priority over normal timing.
+    #[must_use]
+    pub fn motion_restricted(&self) -> bool {
+        self.no_bounce
+    }
+
     fn spring_bounce(&self, preset: SpringPreset, kind: MotionKind) -> f32 {
         if self.no_bounce {
             0.0

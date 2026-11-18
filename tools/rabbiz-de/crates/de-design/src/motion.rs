@@ -106,6 +106,163 @@ pub const DURATION_MAX_MS: u32 = 600;
 /// Fixed-duration ladder in ms (fallback path and general durations).
 pub const DURATIONS_MS: [u32; 5] = [90, 160, 240, 360, 520];
 
+/// Speed by the fraction of the output covered by the moving surface.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum SpeedTier {
+    Fast,
+    #[default]
+    Default,
+    Slow,
+}
+
+impl SpeedTier {
+    #[must_use]
+    pub fn for_covered_fraction(fraction: f32) -> Self {
+        if fraction < 0.10 {
+            Self::Fast
+        } else if fraction >= 0.75 {
+            Self::Slow
+        } else {
+            Self::Default
+        }
+    }
+
+    fn enter_ms(self) -> u32 {
+        let rung = match self {
+            Self::Fast => 1,
+            Self::Default => 3,
+            Self::Slow => 4,
+        };
+        DURATIONS_MS[rung].min(DURATION_MAX_MS)
+    }
+}
+
+/// Exit intent determines the endpoint velocity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitKind {
+    /// The surface comes to rest at the edge so it can be pulled back.
+    Temporary,
+    /// A committed removal accelerates through the edge.
+    Permanent,
+}
+
+/// Shell transitions and their reference tiers. Geometry may override the
+/// reference tier, for example when an app window covers only part of an output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Transition {
+    Boot,
+    Lock,
+    Home,
+    HomePage,
+    Drawer,
+    Recents,
+    RecentPage,
+    RecentCard,
+    ClearRecents,
+    Shade,
+    Notification,
+    QuickSettings,
+    Osd,
+    Power,
+    Search,
+    Screenshot,
+    Error,
+    FirstRun,
+    Settings,
+    AppWindow,
+    AppToHome,
+    Osk,
+    Toggle,
+    ChargingPill,
+}
+
+impl Transition {
+    /// Reference table for shell surfaces and actions. The match is exhaustive
+    /// so adding a transition requires a tier and exit policy.
+    #[must_use]
+    pub const fn timing(self) -> TransitionTiming {
+        use ExitKind::{Permanent, Temporary};
+        use SpeedTier::{Default, Fast, Slow};
+
+        let (tier, exit_kind) = match self {
+            Self::Boot
+            | Self::Lock
+            | Self::Home
+            | Self::HomePage
+            | Self::Recents
+            | Self::AppToHome
+            | Self::Search
+            | Self::FirstRun
+            | Self::Settings => (Slow, Temporary),
+            Self::Drawer
+            | Self::Shade
+            | Self::QuickSettings
+            | Self::Power
+            | Self::Error
+            | Self::RecentPage
+            | Self::Osk => (Default, Temporary),
+            Self::Osd | Self::Screenshot | Self::Toggle | Self::ChargingPill => (Fast, Temporary),
+            Self::Notification => (Fast, Permanent),
+            Self::RecentCard => (Default, Permanent),
+            Self::AppWindow | Self::ClearRecents => (Slow, Permanent),
+        };
+        TransitionTiming { tier, exit_kind }
+    }
+
+    /// Resolve the tier from the visible area of the animated surface divided
+    /// by the output area. Static backdrops are outside the covered area.
+    #[must_use]
+    pub fn timing_for_covered_fraction(self, fraction: f32) -> TransitionTiming {
+        TransitionTiming {
+            tier: SpeedTier::for_covered_fraction(fraction),
+            ..self.timing()
+        }
+    }
+}
+
+/// Normal transition timing. Reduced motion and the degrade ladder select
+/// their own existing fallback timings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TransitionTiming {
+    pub tier: SpeedTier,
+    pub exit_kind: ExitKind,
+}
+
+impl TransitionTiming {
+    #[must_use]
+    pub fn enter(self) -> TimedMotion {
+        TimedMotion {
+            duration_ms: self.tier.enter_ms(),
+            curve: BEZIER_ENTER,
+        }
+    }
+
+    #[must_use]
+    pub fn exit(self) -> TimedMotion {
+        TimedMotion {
+            duration_ms: self.tier.enter_ms() * 45 / 100,
+            curve: match self.exit_kind {
+                ExitKind::Temporary => BEZIER_ENTER,
+                ExitKind::Permanent => BEZIER_EXIT,
+            },
+        }
+    }
+}
+
+/// A bounded, fixed-duration motion segment.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TimedMotion {
+    pub duration_ms: u32,
+    pub curve: Bezier,
+}
+
+impl TimedMotion {
+    #[must_use]
+    pub fn progress_at(self, elapsed_ms: f32) -> f32 {
+        bezier_eval(self.curve, elapsed_ms / self.duration_ms as f32)
+    }
+}
+
 /// Cubic-bezier easing curve for the fallback ladder.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bezier {
@@ -209,6 +366,63 @@ pub const REDUCED_MOTION_MS: u32 = 120;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn covered_area_selects_ladder_tiers_and_shorter_exits() {
+        for (area, tier, enter, exit) in [
+            (0.0, SpeedTier::Fast, 160, 72),
+            (0.099, SpeedTier::Fast, 160, 72),
+            (0.10, SpeedTier::Default, 360, 162),
+            (0.749, SpeedTier::Default, 360, 162),
+            (0.75, SpeedTier::Slow, 520, 234),
+            (1.0, SpeedTier::Slow, 520, 234),
+        ] {
+            let timing = Transition::AppWindow.timing_for_covered_fraction(area);
+            assert_eq!(timing.tier, tier);
+            assert_eq!(timing.enter().duration_ms, enter);
+            assert_eq!(timing.exit().duration_ms, exit);
+            assert!(timing.enter().duration_ms <= DURATION_MAX_MS);
+        }
+    }
+
+    #[test]
+    fn every_non_screen_transition_has_a_reference_tier() {
+        use SpeedTier::{Default, Fast, Slow};
+
+        for (transition, tier) in [
+            (Transition::HomePage, Slow),
+            (Transition::RecentPage, Default),
+            (Transition::RecentCard, Default),
+            (Transition::ClearRecents, Slow),
+            (Transition::Notification, Fast),
+            (Transition::AppWindow, Slow),
+            (Transition::AppToHome, Slow),
+            (Transition::Osk, Default),
+            (Transition::Toggle, Fast),
+            (Transition::ChargingPill, Fast),
+        ] {
+            assert_eq!(transition.timing().tier, tier, "{transition:?}");
+        }
+    }
+
+    #[test]
+    fn exit_curves_match_edge_behavior() {
+        for transition in [
+            Transition::AppWindow,
+            Transition::Notification,
+            Transition::RecentCard,
+            Transition::ClearRecents,
+        ] {
+            assert_eq!(transition.timing().exit().curve, BEZIER_EXIT);
+        }
+        for transition in [Transition::Shade, Transition::Drawer] {
+            let curve = transition.timing().exit().curve;
+            assert_eq!(bezier_eval(curve, 1.0), 1.0);
+            // dy/dx at the edge is (1 - y2) / (1 - x2).
+            assert_eq!(curve.y2, 1.0);
+            assert!(curve.x2 < 1.0);
+        }
+    }
 
     #[test]
     fn standard_reproduces_every_preset() {

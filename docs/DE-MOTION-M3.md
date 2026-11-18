@@ -1,6 +1,6 @@
 # DE motion: what Material 3 teaches us (study + proposals)
 
-Status: **research and proposals**. P1 and the P2 spring policy are implemented. Lane: `de`.
+Status: **research and proposals**. P1 through P4 have host-side policy. Lane: `de`.
 Written 2026-11-18.
 Like every rule here this is a hypothesis: the numbers below are starting points to be tuned by
 feel on the A21s, and any change to `de-design` must check the goldens and record the decision in
@@ -133,10 +133,21 @@ fraction, instead of per-screen presets. Proposed starting mapping onto DE's exi
 *Done when:* a table in `de-design` maps each surface to a tier and a test checks every shipped transition
 is covered.
 
+The reference table lives in `de-design::motion::Transition::timing`. An exhaustive `Screen`
+mapping requires each navigable surface to have a row. When the moving area's geometry is known,
+Fast covers less than 10 % of the output, Default covers 10 % to under 75 %, and Slow starts at
+75 %. The OSD uses Fast because the moving pill covers about 3.5 % of the reference output.
+
 **P4. Exits shorter than enters, and two exit curves.** Give each transition an exit duration of roughly
 45 % of its enter (M3: 200 vs 400-500 ms). Dismissed notification, closed app, cleared recent: accelerate
 curve (permanent). Shade or drawer that can be pulled back: ends at rest at the edge (temporary).
 *Done when:* close-app morph is measurably shorter than launch, and a swipe-dismiss uses `BEZIER_EXIT`.
+
+The resulting enter/exit pairs are 160/72 ms, 360/162 ms and 520/234 ms. The host morph driver uses
+the selected pair for committed transitions and hands a mid-flight reversal to the spring.
+Temporary exits currently reuse `BEZIER_ENTER`, which reaches the edge at zero velocity. Permanent
+app closes, recents removals and notification dismissals select `BEZIER_EXIT`. The compositor still
+switches screens directly, so the morph and swipe-dismiss playback need live wiring.
 
 **P5. Complete the easing set.** Add `standard decelerate` (0,0,0,1) and `standard accelerate` (.3,0,1,1),
 plus a two-segment approximation of **emphasized** for the "begins and ends on screen" case (container
