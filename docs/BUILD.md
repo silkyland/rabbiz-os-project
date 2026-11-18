@@ -99,13 +99,34 @@ make -C src/linux O=../../build/linux ARCH=arm64 INSTALL_MOD_PATH=/tmp/a21s-mods
 ```
 
 ### B. Test New Kernel with `kexec` (Before Flashing `boot.img`)
-`CONFIG_KEXEC=y` is enabled on the device:
+`CONFIG_KEXEC=y` is enabled on the device. **The initramfs is mandatory**:
+`/` mounts from `/dev/loop0p2`, which the pmos ramdisk inside the boot
+image sets up. Without `--initrd` the new kernel panics on root mount and
+the bootloader falls back to the flashed kernel (observed 2026-11-18);
+with a wrong/old ramdisk it can also reach a black-screen state that only
+a long-press power cycle leaves.
 
 ```bash
 scp build/linux/arch/arm64/boot/Image root@<wifi-ip>:/tmp/Image
 scp build/linux/arch/arm64/boot/dts/exynos/exynos850-a217f.dtb root@<wifi-ip>:/tmp/exynos850-a217f.dtb
-ssh root@<wifi-ip> "kexec -l /tmp/Image --dtb=/tmp/exynos850-a217f.dtb --reuse-cmdline && systemctl kexec"
+
+# Extract the matching ramdisk from the installed boot image (read-only):
+ssh root@<wifi-ip> 'dd if=/dev/mmcblk0p18 of=/tmp/ramdisk.raw bs=2048 \
+  skip=$(( (2048 + 32235520) / 2048 )) count=872 && \
+  python3 -c "open(\"/tmp/ramdisk\",\"wb\").write(open(\"/tmp/ramdisk.raw\",\"rb\").read()[:1785250])"'
+# skip/count above assume ANDROID! header: page=2048, kernel_size=32235520,
+# ramdisk_size=1785250 — re-read the header if the boot image changes.
+
+ssh root@<wifi-ip> "kexec -l /tmp/Image --initrd=/tmp/ramdisk \
+  --dtb=/tmp/exynos850-a217f.dtb --reuse-cmdline && systemctl kexec"
 ```
+
+Caveat observed 2026-11-18: a kernel Image built in the
+`rabbizos-kbuild` container (clang 19) kexec'd with the correct ramdisk
+still came up black — no display, no usb0, no Wi-Fi — while the flashed
+kernel `#12` was built on host `dit` with clang 23.1.5. Cross-environment
+kexec is therefore not yet proven on this device; if the phone stays
+dark, long-press power to recover (nothing is persisted).
 
 ### C. Pack & Flash `boot-avb.img` (`uniLoader`)
 1. Copy `build/linux/arch/arm64/boot/Image`, `exynos850-a217f.dtb`, and your `ramdisk` into `src/uniLoader/blob/`.
