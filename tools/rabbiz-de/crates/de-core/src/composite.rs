@@ -1,0 +1,188 @@
+//! CPU composite of the on-screen frame — shared by the debug frame dump
+//! and the wlr-screencopy shm path.
+//!
+//! Only `wl_shm` buffers are readable here: dmabuf/EGL client content is
+//! skipped (it needs a renderer readback, which does not exist yet). The
+//! blit order mirrors the element list `render_with` submits — elements are
+//! front-to-back, so drawing runs in reverse: below-layers, gesture bar
+//! (behind app/shell, same as the submitted order), shell-or-app, then
+//! above-layers on top.
+
+use de_api::{Pixels, Point as ApiPoint, Size};
+use de_paint::canvas::Canvas;
+use smithay::backend::renderer::utils::with_renderer_surface_state;
+use smithay::desktop::{layer_map_for_output, LayerMap, LayerSurface};
+use smithay::reexports::wayland_server::protocol::{
+    wl_buffer::WlBuffer, wl_shm, wl_surface::WlSurface,
+};
+use smithay::wayland::compositor::with_states;
+use smithay::wayland::seat::WaylandFocus;
+use smithay::wayland::shm;
+
+use crate::state::{De, Foreground};
+
+/// Output clear colour, kept in sync with `frame::render_with`.
+const CLEAR: [u8; 4] = [22, 16, 26, 255];
+
+/// Compose the full output (physical pixels), or `None` before the shell
+/// produced its first frame.
+#[must_use]
+pub fn composite_output(de: &De) -> Option<Pixels> {
+    if de.shell_px.is_none() {
+        return None;
+    }
+    let mut canvas = Canvas::filled(
+        Size::new(de.output.width as i32, de.output.height as i32),
+        CLEAR,
+    );
+    let map = layer_map_for_output(&de.output_obj);
+    blit_layers(
+        &mut canvas,
+        &map,
+        de_protocols::layer_shell::BELOW_WINDOWS.iter().rev(),
+    );
+
+    // Same slot as the submitted element list: the bar sits behind app and
+    // shell content (in front only while a morph runs, which the dump does
+    // not reproduce).
+    let bar = de_ui::shell_stub::gesture_bar(canvas.size());
+    canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
+
+    if matches!(de.foreground, Foreground::App) && de.morph.is_none() {
+        for window in de.space.elements().rev() {
+            let loc = de.space.element_location(window).unwrap_or_default();
+            let Some(surface) = window.wl_surface().map(|s| s.into_owned()) else {
+                continue;
+            };
+            blit_surface(&mut canvas, &surface, ApiPoint::new(loc.x, loc.y));
+        }
+    } else if let Some(shell) = de.shell_px.as_ref() {
+        canvas.blit(shell, ApiPoint::ZERO);
+    }
+
+    blit_layers(
+        &mut canvas,
+        &map,
+        de_protocols::layer_shell::ABOVE_WINDOWS.iter().rev(),
+    );
+    Some(canvas.into_pixels())
+}
+
+/// Crop `px` to `rect` (clamped to the image).
+#[must_use]
+pub fn crop(px: &Pixels, rect: de_api::Rect) -> Option<Pixels> {
+    let bounds = de_api::Rect::from_origin_size(ApiPoint::ZERO, px.size);
+    let r = rect.intersect(bounds)?;
+    if r.is_empty() {
+        return None;
+    }
+    let mut out = vec![0u8; (r.w * r.h * 4) as usize];
+    for y in 0..r.h {
+        let s = ((r.y + y) * px.size.w + r.x) as usize * 4;
+        let d = (y * r.w) as usize * 4;
+        out[d..d + r.w as usize * 4].copy_from_slice(&px.data[s..s + r.w as usize * 4]);
+    }
+    Some(Pixels {
+        size: Size::new(r.w, r.h),
+        data: out,
+    })
+}
+
+/// Blit every mapped layer surface on `levels` bottom-to-top. `levels` must
+/// already be in draw order (lowest level first); within a level
+/// `layers_on` returns bottom-to-top.
+fn blit_layers<'a>(
+    canvas: &mut Canvas,
+    map: &LayerMap,
+    levels: impl Iterator<Item = &'a smithay::wayland::shell::wlr_layer::Layer>,
+) {
+    for level in levels {
+        for layer in map.layers_on(*level) {
+            blit_layer(canvas, map, layer);
+        }
+    }
+}
+
+fn blit_layer(canvas: &mut Canvas, map: &LayerMap, layer: &LayerSurface) {
+    let Some(loc) = de_protocols::layer_shell::origin(map, layer) else {
+        return;
+    };
+    blit_surface(canvas, layer.wl_surface(), ApiPoint::new(loc.x, loc.y));
+}
+
+/// Blit a surface's committed shm buffer at `loc`, honouring `buffer_scale`.
+fn blit_surface(canvas: &mut Canvas, surface: &WlSurface, loc: ApiPoint) {
+    let Some((px, scale)) = surface_pixels(surface) else {
+        return;
+    };
+    if scale <= 1 {
+        canvas.blit(&px, loc);
+    } else {
+        let dst = de_api::Rect::new(loc.x, loc.y, px.size.w / scale, px.size.h / scale);
+        canvas.blit_scaled(&px, dst, 1.0);
+    }
+}
+
+/// Committed shm buffer of `surface` as premultiplied RGBA8 plus its
+/// `buffer_scale`. `None` for unmapped, bufferless or dmabuf/EGL surfaces.
+fn surface_pixels(surface: &WlSurface) -> Option<(Pixels, i32)> {
+    let buffer = with_renderer_surface_state(surface, |state| state.buffer().cloned())??;
+    let scale = with_states(surface, |states| {
+        states
+            .cached_state
+            .get::<smithay::wayland::compositor::SurfaceAttributes>()
+            .current()
+            .buffer_scale
+    });
+    let px = shm_pixels(&buffer)?;
+    Some((px, scale.max(1)))
+}
+
+/// Read a `wl_shm` buffer into premultiplied RGBA8 (R,G,B,A bytes).
+/// `Argb8888`/`Xrgb8888` are B,G,R,[,A] in memory on little-endian;
+/// `Abgr8888`/`Xbgr8888` are R,G,B,[,A].
+fn shm_pixels(buffer: &WlBuffer) -> Option<Pixels> {
+    shm::with_buffer_contents(buffer, read_shm).ok().flatten()
+}
+
+#[allow(unsafe_code)] // shm pool is only reachable through the raw pointer
+fn read_shm(ptr: *const u8, len: usize, data: shm::BufferData) -> Option<Pixels> {
+    const NO_ALPHA: usize = usize::MAX;
+    let (r, g, b, a) = match data.format {
+        wl_shm::Format::Argb8888 | wl_shm::Format::Xrgb8888 => (2usize, 1usize, 0usize, 3usize),
+        wl_shm::Format::Abgr8888 | wl_shm::Format::Xbgr8888 => (0, 1, 2, 3),
+        _ => return None,
+    };
+    let a = match data.format {
+        wl_shm::Format::Argb8888 | wl_shm::Format::Abgr8888 => a,
+        _ => NO_ALPHA,
+    };
+    let (w, h) = (data.width, data.height);
+    if w <= 0 || h <= 0 || data.offset < 0 || data.stride < w * 4 {
+        return None;
+    }
+    let need = data.offset as usize + (h as usize - 1) * data.stride as usize + w as usize * 4;
+    if need > len {
+        return None;
+    }
+    let mut out = vec![0u8; (w * h * 4) as usize];
+    for y in 0..h {
+        let row = (data.offset + y * data.stride) as usize;
+        for x in 0..w {
+            let s = row + x as usize * 4;
+            let d = (y * w + x) as usize * 4;
+            // SAFETY: bounds checked above against the pool length `len`;
+            // the client may write concurrently, which can only tear pixels.
+            unsafe {
+                *out.get_unchecked_mut(d) = *ptr.add(s + r);
+                *out.get_unchecked_mut(d + 1) = *ptr.add(s + g);
+                *out.get_unchecked_mut(d + 2) = *ptr.add(s + b);
+                *out.get_unchecked_mut(d + 3) = if a == NO_ALPHA { 255 } else { *ptr.add(s + a) };
+            }
+        }
+    }
+    Some(Pixels {
+        size: Size::new(w, h),
+        data: out,
+    })
+}

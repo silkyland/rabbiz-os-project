@@ -173,6 +173,9 @@ pub struct De {
     pub(crate) osk_respawn_at: Option<Instant>,
     /// When the current child was spawned (drives the backoff).
     pub(crate) osk_spawned_at: Option<Instant>,
+
+    /// Queued `copy_with_damage` screencopy requests awaiting a damaged frame.
+    pub(crate) screencopy_pending: Vec<crate::screencopy::PendingCapture>,
 }
 
 /// What the screen is showing (M3).
@@ -361,6 +364,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         ExtDataControlState::new::<De, _>(&dh, Some(&primary_selection_state), |_| true);
     let viewporter_state = ViewporterState::new::<De>(&dh);
     let output_manager_state = OutputManagerState::new_with_xdg_output::<De>(&dh);
+    crate::screencopy::init(&dh);
     let mut dmabuf_state = DmabufState::new();
     let render_node = setup
         .device
@@ -500,6 +504,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         osk: None,
         osk_respawn_at: None,
         osk_spawned_at: None,
+        screencopy_pending: Vec::new(),
     })
 }
 

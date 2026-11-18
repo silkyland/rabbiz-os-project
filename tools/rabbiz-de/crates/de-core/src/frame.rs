@@ -182,6 +182,10 @@ impl Run {
             DeRenderer::Gl(r) => render_with(&mut parts, r)?,
             DeRenderer::Soft(r) => render_with(&mut parts, r)?,
         };
+        // `copy_with_damage` completes on the frame that carried damage.
+        if queued {
+            self.de.screencopy_flush_pending();
+        }
         let cpu = t0.elapsed().as_secs_f64() * 1000.0;
         self.cpu_samples.push(cpu);
         self.all_cpu.push(cpu);
@@ -605,10 +609,10 @@ fn write_ready_file() {
     }
 }
 
-/// Touch `$XDG_RUNTIME_DIR/rabbiz-de.shot` → dump the shell frame (plus the
-/// gesture bar, the same elements the texture path submits) as
-/// `rabbiz-de-shot.ppm`. App surfaces are per-client shm and cannot be
-/// composited here — under `Foreground::App` this still dumps the shell.
+/// Touch `$XDG_RUNTIME_DIR/rabbiz-de.shot` → dump the composited frame
+/// (shell/app + layer surfaces, mirrored from `composite_output`) as
+/// `rabbiz-de-shot.ppm`. dmabuf/EGL client content is not readable on CPU
+/// and shows as the clear colour.
 fn dump_frame_if_triggered(de: &crate::state::De) {
     let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") else {
         return;
@@ -618,14 +622,9 @@ fn dump_frame_if_triggered(de: &crate::state::De) {
         return;
     }
     let _ = std::fs::remove_file(&trigger);
-    let Some(shell) = &de.shell_px else {
+    let Some(px) = crate::composite::composite_output(de) else {
         return;
     };
-    let mut c = de_paint::canvas::Canvas::new(shell.size);
-    c.blit(shell, de_api::Point::ZERO);
-    let bar = de_ui::shell_stub::gesture_bar(shell.size);
-    c.blit(&bar, de_api::Point::new(0, shell.size.h - bar.size.h));
-    let px = c.to_pixels();
     let path = format!("{dir}/rabbiz-de-shot.ppm");
     if let Ok(mut f) = File::create(&path) {
         let _ = write!(f, "P6\n{} {}\n255\n", px.size.w, px.size.h);

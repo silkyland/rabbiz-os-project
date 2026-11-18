@@ -2,6 +2,7 @@
 //! (Linux only).
 
 pub mod comp;
+pub mod composite;
 pub mod frame;
 pub mod input;
 pub mod launch;
@@ -9,6 +10,7 @@ mod layer_shell;
 pub mod misc;
 mod morph;
 mod osk;
+pub mod screencopy;
 pub mod seat;
 pub mod selection;
 pub mod shell;
