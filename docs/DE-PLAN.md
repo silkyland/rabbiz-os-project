@@ -450,10 +450,10 @@ here is accepted by the owner's feel review yet.
 | Quick settings, OSD, screenshot flash, first-run | golden-only | `de-sim` only |
 | Settings | skeleton | index and section stubs |
 | xdg-shell, `wl_shm`, linear dmabuf, clipboard (data device, primary selection, data control) | live | fullscreen handset policy |
-| wlr-layer-shell, text-input-v3, input-method-v2, virtual-keyboard | wip | see the OSK row in the milestone notes; not accepted until `rabbiz-osk` types into a client on the device |
+| wlr-layer-shell, text-input-v3, input-method-v2, virtual-keyboard | live, device-tested | `rabbiz-osk` typed `Hi` into a GTK client on the A21s in 4 of 4 runs ([finding](../devices/samsung/a21s/findings/2026-11-18-de-osk-typing.md)); keyboard not yet seen on screen, English only, one client |
 | XWayland | missing | M5 |
 | D-Bus services (notifications, NetworkManager, Bluetooth, MPRIS, brightness, volume) | missing | `de-system` only polls battery and privacy state |
-| Fingerprint, screencopy (screenshots), hardware-key integration | missing | M4 |
+| Fingerprint, screencopy (screenshots), virtual-pointer, hardware-key integration | missing | M4; `a21s-wayvnc` (Rabbiz Mirror) fails without virtual-pointer ([finding](../devices/samsung/a21s/findings/2026-11-18-de-wayvnc-needs-virtual-pointer.md)) |
 
 ### M0: Walking skeleton and renderer probe (effort: M)
 - **Objective:** one binary that opens the real panel on card0, draws the brand frame, flips pages, reports frame stats, and can do the same on the host simulator — on both renderers.

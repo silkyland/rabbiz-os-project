@@ -1,0 +1,37 @@
+A21s OSK typing under rabbiz-de, 2026-11-18 (13:20-13:35 Asia/Bangkok)
+Kernel: 7.3.0-g14a425b3a7dc-dirty
+Compositor binary: rabbiz-de release, built in rabbiz-de-build:arm64 from main c9b0fb3 (sha256 cc012cf2df05681f...)
+Keyboard binary after fix: rabbiz-osk release, built from d4c2cfe (sha256 6095f145cddf3ace...)
+Previous compositor binary kept as /usr/local/bin/rabbiz-de.prev (sha256 da714b5f1a87896d...)
+Clean reboot before each build was tested. Test client: zenity --entry (GTK) started as user gamer on wayland-0.
+Taps injected with /root/touch_swipe.py; key positions computed from the osk-preview render of
+en-us base layer (720x380 surface anchored at the bottom of 720x1600): h=(431,1431) i=(538,1364) return=(670,1564).
+
+=== BEFORE: old keyboard binary a21s-osk (pre-fix), first boot with the new compositor ===
+rabbiz-session[1293]: rabbiz-de: started rabbiz-osk pid=1316
+rabbiz-session[1316]: a21s-osk: up, layout en-us (720x380), waiting for text-input activation
+rabbiz-session[1293]: xkbcommon: ERROR: [XKB-769] (input string):6:1: syntax error, unexpected end of file, expecting ;
+rabbiz-session[1293]: xkbcommon: ERROR: [XKB-822] Failed to parse input xkb string
+client WAYLAND_DEBUG: zwp_text_input_manager_v3 bound, get_text_input, set_cursor_rectangle, commit sent
+client WAYLAND_DEBUG counts: wl_keyboard.enter=1  zwp_text_input_v3.enter=0  zwp_text_input_v3.enable=0
+taps on h, i, return: client stdout = []   (zenity still running afterwards)
+
+=== AFTER: rabbiz-osk with NUL-terminated keymap, fresh reboot ===
+rabbiz-de: started rabbiz-osk pid=1306
+rabbiz-osk: up, layout en-us (720x380), waiting for text-input activation
+(no xkbcommon error in the journal this boot)
+client WAYLAND_DEBUG counts: wl_keyboard.enter=1  zwp_text_input_v3.enter=1  zwp_text_input_v3.enable=1
+compositor debug (smithay text_input): "discarding text-input request for unfocused client" x2 at client start
+typing runs (tap h, tap i, tap return): 
+  run 1 client stdout = [Hi]
+  run 2 client stdout = [Hi]
+  run 3 client stdout = [Hi]
+  run 4 client stdout = [Hi]
+After the runs: rabbiz-de pid 1285 and rabbiz-osk pid 1306 unchanged; no underrun/vblank/DECON timeout in dmesg;
+no rabbiz-de.fail file.
+
+=== Side observation (same boot) ===
+a21s-wayvnc.service: Scheduled restart job, restart counter is at 79.
+ERROR: ../wayvnc/src/main.c: 418: Virtual Pointer protocol not supported by compositor.
+ERROR: ../wayvnc/src/main.c: 2331: Failed to initialise wayland
+a21s-wayvnc.service: Main process exited, code=exited, status=1/FAILURE
