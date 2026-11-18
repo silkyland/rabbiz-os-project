@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Hardware volume keys + screenshot combo -> a21s-volume / a21s-screenshot.
+"""Hardware volume keys + screenshot combo -> a21s-volume / rabbiz-screenshot.
 
 Watches all evdev devices advertising KEY_VOLUMEUP, KEY_VOLUMEDOWN, KEY_MUTE,
 or KEY_POWER (`gpio-keys` and `s2mpu12-pwrkey`).
 
 - Single KEY_VOLUMEUP / KEY_VOLUMEDOWN / KEY_MUTE -> `/usr/local/bin/a21s-volume`
 - Combo KEY_POWER + KEY_VOLUMEUP (primary) or KEY_VOLUMEUP + KEY_VOLUMEDOWN held together ->
-  `/usr/local/bin/a21s-screenshot` immediately.
+  `/usr/local/bin/rabbiz-screenshot` immediately.
 - Combo KEY_POWER + KEY_VOLUMEDOWN: a tap takes a screenshot on release; holding both for 3 s
   opens the power menu (`a21s-power-key menu`) instead (see a21s_holdmenu.py).
 - A lone volume press is delayed 200 ms; if Power/another volume key joins in that time it is a combo
@@ -133,7 +133,7 @@ while True:
                 held_keys.discard(e.code)
                 if e.code in (ecodes.KEY_POWER, ecodes.KEY_VOLUMEDOWN) and hold.release():
                     last_combo_ts = now
-                    run_async(["/usr/local/bin/a21s-screenshot"])
+                    run_async(["/usr/local/bin/rabbiz-screenshot"])
                 continue
 
             if e.value == 1:
@@ -169,7 +169,7 @@ while True:
                     elif (now - last_combo_ts) >= COMBO_COOLDOWN_SEC:
                         hold.cancel()
                         last_combo_ts = now
-                        run_async(["/usr/local/bin/a21s-screenshot"])
+                        run_async(["/usr/local/bin/rabbiz-screenshot"])
                     continue
 
             # Autorepeat belongs to the held combo, not to the volume control.

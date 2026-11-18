@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""a21s-appearance — write the desktop contract (docs/DESKTOP-SHELL.md §3.2) from one palette.
+"""rabbiz-appearance — write the desktop contract (docs/DESKTOP-SHELL.md §3.2) from one palette.
 
-Usage: a21s-appearance --accent '#3B82F6' [--light] [--bg '#0A0A0C' --surface '#131316'
+Usage: rabbiz-appearance --accent '#3B82F6' [--light] [--bg '#0A0A0C' --surface '#131316'
                          --card '#17171B' --text '#F4F4F5' --dim '#A1A1AA'] [--no-gsettings]
 Writes (idempotent, as the invoking user):
   ~/.local/share/color-schemes/A21s.colors   KDE/Qt colour scheme (Breeze style recoloured)
@@ -109,4 +109,4 @@ if not a.no_gsettings:
     nearest = min(adw, key=lambda k: dist(adw[k]))
     subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "accent-color", nearest],
                    stderr=subprocess.DEVNULL, check=False)
-print("a21s-appearance: ok", "light" if a.light else "dark", a.accent)
+print("rabbiz-appearance: ok", "light" if a.light else "dark", a.accent)

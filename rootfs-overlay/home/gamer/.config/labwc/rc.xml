@@ -141,7 +141,7 @@
          press is part of the Power+Volume screenshot combo. A labwc bind here would change the volume
          immediately (and twice per press), so there is deliberately no XF86Audio* bind. -->
     <keybind key="Print">
-      <action name="Execute" command="a21s-screenshot"/>
+      <action name="Execute" command="rabbiz-screenshot"/>
     </keybind>
     <keybind key="XF86MonBrightnessUp">
       <action name="Execute" command="brightnessctl set +10%"/>

@@ -5,7 +5,7 @@ import Quickshell.Io
 
 // Desktop contract writer: pushes the shell's accent (ShellPrefs) into every channel real apps
 // read -- KDE colour scheme + kdeglobals (Qt apps) and gsettings color-scheme (GTK/Chromium) --
-// by running /usr/local/bin/a21s-appearance. Re-applied whenever the accent or light/dark changes.
+// by running /usr/local/bin/rabbiz-appearance. Re-applied whenever the accent or light/dark changes.
 Singleton {
     id: root
 
@@ -38,7 +38,7 @@ Singleton {
     }
 
     function apply() {
-        applyProc.command = ["a21s-appearance", "--accent", root.accent].concat(root.light ? ["--light"] : [])
+        applyProc.command = ["rabbiz-appearance", "--accent", root.accent].concat(root.light ? ["--light"] : [])
         applyProc.running = true
     }
 

@@ -19,7 +19,7 @@ QT_QUICK_BACKEND=software
 QT_QUICK_CONTROLS_MOBILE=1
 QT_SCALE_FACTOR=1
 # Desktop contract (docs/DESKTOP-SHELL.md 3.2): real Qt/KDE apps follow kdeglobals + the A21s
-# colour scheme written by a21s-appearance. The shell itself overrides this in autostart.
+# colour scheme written by rabbiz-appearance. The shell itself overrides this in autostart.
 QT_QPA_PLATFORMTHEME=kde
 PLASMA_PLATFORM=phone:handset
 

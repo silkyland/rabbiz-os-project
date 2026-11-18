@@ -548,8 +548,8 @@ QtObject {
         var d = (delayMs && delayMs > 0) ? Math.round(delayMs) : 0
         if (!shotProc.running) {
             shotProc.command = d > 0
-                ? ["a21s-screenshot", "--delay", String(d)]
-                : ["a21s-screenshot"]
+                ? ["rabbiz-screenshot", "--delay", String(d)]
+                : ["rabbiz-screenshot"]
             shotProc.running = true
         }
     }

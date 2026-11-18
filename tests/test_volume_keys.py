@@ -88,7 +88,7 @@ class VolumeKeysTest(unittest.TestCase):
     def test_tap_combo_takes_one_screenshot(self):
         self.assertEqual(replay([(10, DOWN, 1), (10.03, POWER, 1),
                                  (10.15, POWER, 0), (10.18, DOWN, 0)]),
-                         [['a21s-screenshot']])
+                         [['rabbiz-screenshot']])
 
 
 if __name__ == '__main__':
