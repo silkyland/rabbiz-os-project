@@ -243,6 +243,13 @@ pub fn rss_kb() -> u64 {
 /// and the whole Wayland protocol state. `display` must be `Display::<De>`.
 /// Fails before the first page flip ⇒ exit 75 territory.
 pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
+    let profile = de_config::device_profile::DeviceProfile::load().unwrap_or_else(|error| {
+        eprintln!("device profile: {error}; using handset timing");
+        de_config::device_profile::DeviceProfile::default()
+    });
+    let form_factor =
+        de_design::motion::FormFactor::from_profile_name(&profile.display.form_factor);
+    let motion_clock = de_paint::animation::AnimationClock::new().for_form_factor(form_factor);
     let card =
         de_backend::drm::find_card().ok_or_else(|| InitError::Compositor("no drm card".into()))?;
     let (mut session, seat_notifier) = de_backend::session::activate()?;
@@ -458,7 +465,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         home_page: 0,
         launch: crate::launch::LaunchTracker::new(),
         morph: None,
-        motion_clock: de_paint::animation::AnimationClock::new(),
+        motion_clock,
         launch_error: None,
         snapshots: crate::snapshots::SnapshotCache::default(),
         catalog: de_apps::catalog::Catalog::scan(&shell_locales()),

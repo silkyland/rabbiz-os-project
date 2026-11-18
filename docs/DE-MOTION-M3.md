@@ -1,6 +1,6 @@
 # DE motion: what Material 3 teaches us (study + proposals)
 
-Status: **research and proposals**. P1 through P5 have host-side policy. P6 and P7 are documented. Lane: `de`.
+Status: **research and proposals**. The launcher runs the morph in `de-core`. Device acceptance is pending. Lane: `de`.
 Written 2026-11-18.
 Like every rule here this is a hypothesis: the numbers below are starting points to be tuned by
 feel on the A21s, and any change to `de-design` must check the goldens and record the decision in
@@ -122,8 +122,8 @@ current numbers bit-for-bit.
 The clock defaults to Standard. Expressive raises spatial `Snappy` bounce from 12 % to 16 %.
 `Soft` stays at the 25 % ceiling and `Smooth` stays at zero for apps and sheets. Reduced motion
 or safe mode selects Standard with zero spring bounce. The existing fallback durations and curves
-still apply. The retained-layer and morph drivers accept the clock. A user-facing setting and live
-compositor integration are deferred until the compositor drives these animations.
+still apply. The compositor starts the morph clock in Standard. A user-facing scheme setting is
+pending.
 
 **P3. Speed tiers by element size.** Define `Fast | Default | Slow` and choose from the covered-area
 fraction, instead of per-screen presets. Proposed starting mapping onto DE's existing ladder
@@ -180,10 +180,19 @@ work needs overlay lifecycle and compositor wiring. Not tested on device. [Overl
 multiply durations by a factor read from the profile rather than hard-coding the phone numbers; handset
 stays at 1.0. (`devices/<vendor>/<codename>/device.toml` already carries `form_factor`.)
 
+The compositor reads `[display].form_factor` from `/etc/rabbiz-de/device.toml` or the path in
+`RABBIZ_DE_DEVICE_PROFILE`. Missing profiles and unknown form factors use handset timing. The
+handset, tablet and desktop factors are 1.0, 1.2 and 1.1. The 600 ms cap applies before deriving
+the 45 % exit duration. Reduced-motion and safe-mode spring timing keep their existing path.
+
 **P9. Make motion testable.** Add (a) numeric tests that each spring settles within its stated duration and
 within its bounce limit, (b) golden frame strips for the morph at t = 0, 25, 50, 75, 100 %, and (c) an
 on-device frame-time log for the launch morph, recorded as a finding with `lane: de` and its evidence
 level. Without (c) nothing here may be called "verified on device".
+
+Normal spring decay now reaches its stated 1 % position band for a start at rest. The preset
+durations and bounce values are unchanged. The simulator captures launch and close strips at
+0, 25, 50, 75 and 100 % elapsed time using the live pose calculation and a synthetic app buffer.
 
 ## 4. Explicitly not adopted
 

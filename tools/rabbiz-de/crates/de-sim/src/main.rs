@@ -147,8 +147,70 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
         "error" => Some(de_ui::error::render(size, s, t, "com.example.app")),
         "first_run" => Some(de_ui::first_run::render(size, s, t)),
         "settings" => Some(de_ui::settings::render_index(size, s, t, "09:41")),
+        "morph-open" | "morph-close" => Some(morph_strip(size, s, name == "morph-open")),
         _ => None,
     }
+}
+
+fn morph_strip(size: Size, strings: &de_ui::i18n::Strings, opening: bool) -> Pixels {
+    use de_api::Rect;
+    use de_design::motion::{Transition, APP_CONTENT_FADE_MS};
+    use de_paint::{animation::AnimationClock, Canvas};
+    use de_ui::home::HomeHit;
+    use de_ui::launch_morph::{morph_frame, morph_icon, MorphAnimator, MorphPose};
+
+    let theme = &de_design::tokens::DEFAULT;
+    let home = render_scene("home", size, strings).expect("home fixture");
+    let mut app = Canvas::new(size);
+    app.blit(
+        &de_ui::settings::render_index(size, strings, theme, "09:41"),
+        de_api::Point::ZERO,
+    );
+    // The demonstration client uses the Settings content and lets the shell
+    // draw the gesture pill above it, as it does for a real Wayland window.
+    let bar_h = de_ui::chrome::NAV_H;
+    app.fill_rect(Rect::new(0, size.h - bar_h, size.w, bar_h), theme.bg);
+    let app = app.into_pixels();
+    let bar = de_ui::shell_stub::gesture_bar(size);
+    let src = de_ui::home::icon_rect(size, HomeHit::Grid(0), 4).expect("grid bounds");
+    let dst = Rect::new(0, 0, size.w, size.h);
+    let icon = morph_icon(theme, &de_ui::chrome::IconEntry::new("app0", "App 0"), src);
+    let clock = AnimationClock::new();
+    let mut animator = MorphAnimator::new(if opening { 0.0 } else { 1.0 });
+    animator.retarget(opening);
+    let timing = Transition::AppWindow.timing();
+    let motion = if opening {
+        timing.enter()
+    } else {
+        timing.exit()
+    };
+    let step_ms = motion.duration_ms as f32 / 4.0;
+    let width = (size.w / 4).max(1);
+    let height = (size.h / 4).max(1);
+    let mut strip = Canvas::new(Size::new(5 * width, height));
+    for i in 0..=4 {
+        let progress = animator.advance(if i == 0 { 0.0 } else { step_ms / 1000.0 }, &clock);
+        // The synthetic app supplies its first buffer at t=0. A real late
+        // buffer is covered by the compositor handshake test.
+        let ready = if opening {
+            i as f32 * step_ms / APP_CONTENT_FADE_MS as f32
+        } else {
+            1.0
+        };
+        let pose = MorphPose::at(progress, src, dst, ready);
+        let mut frame = Canvas::new(size);
+        frame.blit(
+            &morph_frame(&home, theme, pose, &icon, &app),
+            de_api::Point::ZERO,
+        );
+        frame.blit(&bar, de_api::Point::new(0, size.h - bar.size.h));
+        strip.blit_scaled(
+            &frame.into_pixels(),
+            Rect::new(i * width, 0, width, height),
+            1.0,
+        );
+    }
+    strip.into_pixels()
 }
 
 /// All scene names for `--scene all` (golden file stems, 1:1).
@@ -169,6 +231,8 @@ fn all_scenes() -> &'static [&'static str] {
         "error",
         "first_run",
         "settings",
+        "morph-open",
+        "morph-close",
     ]
 }
 

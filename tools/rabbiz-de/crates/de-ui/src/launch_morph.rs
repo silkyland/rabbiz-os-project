@@ -9,13 +9,13 @@
 
 use de_api::{Pixels, Point, Rect};
 use de_design::motion::{MotionKind, SpringPreset, Transition, TransitionTiming, DURATION_MAX_MS};
-use de_design::tokens::{self, Theme};
+use de_design::tokens::Theme;
 use de_paint::{
     animation::{AnimationClock, SpringValue},
     Canvas,
 };
 
-use crate::chrome::{self, style, IconEntry};
+use crate::chrome::{self, IconEntry};
 use crate::transitions::{fade_in, lerp, lerp_rect, with_opacity};
 
 /// Geometry shared by the compositor and the host renderer.
@@ -62,81 +62,20 @@ pub fn morph_icon(t: &Theme, entry: &IconEntry, bounds: Rect) -> Pixels {
     canvas.into_pixels()
 }
 
-/// One morph frame over `under` (usually the home screen pixels).
-///
-/// `src` is the icon's rect in the grid, `dst` the window's target rect
-/// (normally the full output minus chrome). Progress semantics:
-/// card rect + radius lerp, icon crossfades into the app surface, the
-/// label fades out first (gone by p=0.35), content fades in last
-/// (from p=0.55).
+/// Paint the compositor's morph layers onto a host canvas for frame goldens.
 #[must_use]
 pub fn morph_frame(
     under: &Pixels,
     t: &Theme,
-    p: f32,
-    src: Rect,
-    dst: Rect,
-    icon: Option<&Pixels>,
-    label: &str,
+    pose: MorphPose,
+    icon: &Pixels,
+    app: &Pixels,
 ) -> Pixels {
     let mut c = Canvas::new(under.size);
     c.blit(under, Point::ZERO);
-
-    let r = MorphPose::at(p, src, dst, 1.0).card;
-    let radius = lerp(tokens::ICON_TILE_RADIUS, 0.0, p);
-    c.fill_rounded_rect(r, radius, t.surface1);
-
-    // Icon rides the morph until the surface wins the crossfade.
-    if let Some(px) = icon {
-        let a = 1.0 - fade_in(p, 0.55, 0.85);
-        if a > 0.0 {
-            let box_r = Rect::new(
-                r.x + (r.w - 96) / 2,
-                lerp(
-                    src.y as f32,
-                    r.y as f32 + (r.h as f32 - 96.0) / 2.0,
-                    fade_in(p, 0.0, 0.4),
-                ) as i32,
-                96,
-                96,
-            );
-            let e = IconEntry {
-                id: String::new(),
-                label: label.into(),
-                icon: Some(px.clone()),
-            };
-            // Opacity on an image needs a per-pixel fade — cheap path: draw
-            // the icon onto a 96-px card and blit it (full alpha); the
-            // crossfade is approximated by the surface fill above. For a
-            // spring-driven morph this reads fine.
-            let _ = a;
-            chrome::draw_app_icon(&mut c, t, &e, box_r);
-        }
-    } else {
-        // First-party tile keeps its look the whole way.
-        let e = IconEntry {
-            id: String::new(),
-            label: label.into(),
-            icon: None,
-        };
-        let box_r = Rect::new(r.x + (r.w - 96) / 2, r.y + (r.h - 96) / 2, 96, 96);
-        if p < 0.85 {
-            chrome::draw_app_icon(&mut c, t, &e, box_r);
-        }
-    }
-
-    // App label fades out quickly (shared-element label hand-off).
-    let la = 1.0 - fade_in(p, 0.0, 0.35);
-    if la > 0.0 {
-        chrome::draw(
-            &mut c,
-            label,
-            &style::label(with_opacity(t.text, la)),
-            src.x + (src.w - 96) / 2,
-            src.y + src.h + 8,
-            None,
-        );
-    }
+    c.fill_rect(pose.card, with_opacity(t.surface1, pose.card_alpha));
+    c.blit_scaled(app, pose.card, pose.app_alpha);
+    c.blit_scaled(icon, pose.icon, pose.icon_alpha);
     c.into_pixels()
 }
 
@@ -197,10 +136,11 @@ impl MorphAnimator {
         }
         self.elapsed_ms += dt_s * 1000.0;
         if let Some(from) = self.timed_from {
+            let timing = self.timing.for_form_factor(clock.form_factor());
             let motion = if self.spring.target == 1.0 {
-                self.timing.enter()
+                timing.enter()
             } else {
-                self.timing.exit()
+                timing.exit()
             };
             if self.elapsed_ms >= motion.duration_ms as f32 {
                 self.timed_from = None;
@@ -246,8 +186,10 @@ mod tests {
         let t = de_design::tokens::DEFAULT;
         let src = Rect::new(100, 400, 96, 96);
         let dst = Rect::new(0, 56, 720, 1536);
-        let a = morph_frame(&under, &t, 0.0, src, dst, None, "App");
-        let b = morph_frame(&under, &t, 1.0, src, dst, None, "App");
+        let icon = morph_icon(&t, &IconEntry::new("app", "App"), src);
+        let app = Canvas::filled(dst.size(), t.accent).into_pixels();
+        let a = morph_frame(&under, &t, MorphPose::at(0.0, src, dst, 1.0), &icon, &app);
+        let b = morph_frame(&under, &t, MorphPose::at(1.0, src, dst, 1.0), &icon, &app);
         // Closed: tile drawn at src; open: surface covers dst.
         assert_ne!(a.data, b.data);
     }

@@ -3,7 +3,7 @@
 //! `SpringPreset`'s duration/bounce; retargeting preserves velocity, which is
 //! what makes gestures interruptible.
 
-use de_design::motion::{self, DegradeLevel, MotionKind, MotionScheme, SpringPreset};
+use de_design::motion::{self, DegradeLevel, FormFactor, MotionKind, MotionScheme, SpringPreset};
 
 /// Clock feeding all animations; `now_s` is seconds since compositor start.
 #[derive(Debug, Default)]
@@ -11,6 +11,7 @@ pub struct AnimationClock {
     pub now_s: f64,
     scheme: MotionScheme,
     no_bounce: bool,
+    form_factor: FormFactor,
 }
 
 impl AnimationClock {
@@ -47,6 +48,23 @@ impl AnimationClock {
         self.no_bounce
     }
 
+    #[must_use]
+    pub fn for_form_factor(self, form_factor: FormFactor) -> Self {
+        Self {
+            form_factor,
+            ..self
+        }
+    }
+
+    #[must_use]
+    pub fn form_factor(&self) -> FormFactor {
+        if self.motion_restricted() {
+            FormFactor::Handset
+        } else {
+            self.form_factor
+        }
+    }
+
     fn spring_bounce(&self, preset: SpringPreset, kind: MotionKind) -> f32 {
         if self.no_bounce {
             0.0
@@ -70,7 +88,8 @@ struct Osc {
 }
 
 impl Osc {
-    fn of(p: SpringPreset, bounce: f32) -> Self {
+    fn of(preset: SpringPreset, kind: MotionKind, clock: &AnimationClock) -> Self {
+        let bounce = clock.spring_bounce(preset, kind);
         let bounce = bounce.max(0.0);
         // Overshoot = e^(-ζπ/√(1-ζ²)) → ζ = -ln(b)/√(π²+ln²b); bounce 0 → ζ=1.
         let zeta = if bounce <= 0.0 {
@@ -79,8 +98,16 @@ impl Osc {
             let l = bounce.ln();
             (-l / (std::f32::consts::PI * std::f32::consts::PI + l * l).sqrt()).min(0.999)
         };
-        // Settle ~4.6/(ζω) for 1 % band → ω = 4.6/(ζ·duration).
-        let omega = 4.6 / (zeta * p.duration_s().max(0.05));
+        let decay = if clock.motion_restricted() {
+            4.6 // Preserve the previous restricted-motion spring evaluation.
+        } else if zeta >= 1.0 {
+            6.638_352 // (1 + decay) * exp(-decay) = 0.01 for a start at rest.
+        } else {
+            // Bound the rest-start response by exp(-decay)/sqrt(1-ζ²).
+            100.0_f32.ln() - 0.5 * (1.0 - zeta * zeta).ln()
+        };
+        let duration = clock.form_factor().scale_s(preset.duration_s());
+        let omega = decay / (zeta * duration.max(0.05));
         Self { zeta, omega }
     }
 
@@ -165,9 +192,12 @@ impl SpringValue {
             self.snap();
             return false;
         }
-        let bounce = clock.spring_bounce(self.preset, self.kind);
-        let (value, velocity) =
-            Osc::of(self.preset, bounce).step(self.value, self.velocity, self.target, dt_s);
+        let (value, velocity) = Osc::of(self.preset, self.kind, clock).step(
+            self.value,
+            self.velocity,
+            self.target,
+            dt_s,
+        );
         // Critical damping can still overshoot with inherited velocity.
         let (value, velocity) = if clock.no_bounce || self.kind == MotionKind::Effects {
             let bounded = value.clamp(self.value.min(self.target), self.value.max(self.target));
@@ -333,6 +363,38 @@ mod tests {
                 (peak - (1.0 + bounce)).abs() < 1e-4,
                 "{preset:?}: peak={peak}"
             );
+        }
+    }
+
+    #[test]
+    fn springs_stay_in_the_one_percent_band_by_the_scaled_duration() {
+        for form_factor in [FormFactor::Handset, FormFactor::Tablet, FormFactor::Desktop] {
+            for scheme in [MotionScheme::Standard, MotionScheme::Expressive] {
+                let clock =
+                    AnimationClock::with_motion(scheme, false, false).for_form_factor(form_factor);
+                for (preset, _) in PRESETS {
+                    for kind in [MotionKind::Spatial, MotionKind::Effects] {
+                        let duration = form_factor.scale_s(preset.duration_s());
+                        let bounce = clock.spring_bounce(preset, kind);
+                        let mut spring = SpringValue::new(0.0, preset, kind);
+                        spring.retarget(1.0);
+                        spring.advance(duration, &clock);
+                        for _ in 0..600 {
+                            assert!(
+                                (spring.value - 1.0).abs() <= 0.010_01,
+                                "{form_factor:?} {scheme:?} {spring:?}"
+                            );
+                            spring.advance(0.001, &clock);
+                        }
+                        let mut spring = SpringValue::new(0.0, preset, kind);
+                        spring.retarget(1.0);
+                        for _ in 0..600 {
+                            spring.advance(0.001, &clock);
+                            assert!((0.0..=1.0 + bounce + 1e-5).contains(&spring.value));
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -102,9 +102,53 @@ pub const STAGGER_MS: u32 = 20;
 pub const STAGGER_MAX: usize = 8;
 /// Hard cap: nothing animates longer than this (§7.17a "Rhythm").
 pub const DURATION_MAX_MS: u32 = 600;
+/// Crossfade from the launch placeholder after the first app buffer.
+pub const APP_CONTENT_FADE_MS: u32 = 120;
 
 /// Fixed-duration ladder in ms (fallback path and general durations).
 pub const DURATIONS_MS: [u32; 5] = [90, 160, 240, 360, 520];
+
+/// Timing scale selected from the device profile's display form factor.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum FormFactor {
+    #[default]
+    Handset,
+    Tablet,
+    Desktop,
+}
+
+impl FormFactor {
+    #[must_use]
+    pub fn from_profile_name(name: &str) -> Self {
+        match name {
+            "tablet" => Self::Tablet,
+            "desktop" => Self::Desktop,
+            _ => Self::Handset,
+        }
+    }
+
+    const fn duration_percent(self) -> u32 {
+        match self {
+            Self::Handset => 100,
+            Self::Tablet => 120,
+            Self::Desktop => 110,
+        }
+    }
+
+    #[must_use]
+    pub fn scale_ms(self, duration: u32) -> u32 {
+        (duration.min(DURATION_MAX_MS) * self.duration_percent() / 100).min(DURATION_MAX_MS)
+    }
+
+    #[must_use]
+    pub fn scale_s(self, duration: f32) -> f32 {
+        let scaled = match self {
+            Self::Handset => duration,
+            _ => duration * (self.duration_percent() as f32 / 100.0),
+        };
+        scaled.min(DURATION_MAX_MS as f32 / 1000.0)
+    }
+}
 
 /// Speed by the fraction of the output covered by the moving surface.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -206,7 +250,11 @@ impl Transition {
             Self::RecentCard => (Default, Permanent),
             Self::AppWindow | Self::ClearRecents => (Slow, Permanent),
         };
-        TransitionTiming { tier, exit_kind }
+        TransitionTiming {
+            tier,
+            exit_kind,
+            form_factor: FormFactor::Handset,
+        }
     }
 
     /// Resolve the tier from the visible area of the animated surface divided
@@ -226,13 +274,22 @@ impl Transition {
 pub struct TransitionTiming {
     pub tier: SpeedTier,
     pub exit_kind: ExitKind,
+    form_factor: FormFactor,
 }
 
 impl TransitionTiming {
     #[must_use]
+    pub const fn for_form_factor(self, form_factor: FormFactor) -> Self {
+        Self {
+            form_factor,
+            ..self
+        }
+    }
+
+    #[must_use]
     pub fn enter(self) -> TimedMotion {
         TimedMotion {
-            duration_ms: self.tier.enter_ms(),
+            duration_ms: self.form_factor.scale_ms(self.tier.enter_ms()),
             curve: BEZIER_ENTER,
         }
     }
@@ -240,7 +297,7 @@ impl TransitionTiming {
     #[must_use]
     pub fn exit(self) -> TimedMotion {
         TimedMotion {
-            duration_ms: self.tier.enter_ms() * 45 / 100,
+            duration_ms: self.enter().duration_ms * 45 / 100,
             curve: match self.exit_kind {
                 ExitKind::Temporary => BEZIER_ENTER,
                 ExitKind::Permanent => BEZIER_EXIT,
@@ -426,6 +483,30 @@ pub const REDUCED_MOTION_MS: u32 = 120;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn form_factor_scales_the_enter_budget_before_shortening_the_exit() {
+        let medium = Transition::Power.timing();
+        let fullscreen = Transition::AppWindow.timing();
+        assert_eq!(fullscreen.for_form_factor(FormFactor::Handset), fullscreen);
+        assert_eq!(
+            medium
+                .for_form_factor(FormFactor::Tablet)
+                .enter()
+                .duration_ms,
+            432
+        );
+        assert_eq!(
+            medium
+                .for_form_factor(FormFactor::Desktop)
+                .enter()
+                .duration_ms,
+            396
+        );
+        let tablet = fullscreen.for_form_factor(FormFactor::Tablet);
+        assert_eq!(tablet.enter().duration_ms, DURATION_MAX_MS);
+        assert_eq!(tablet.exit().duration_ms, 270);
+    }
 
     #[test]
     fn covered_area_selects_ladder_tiers_and_shorter_exits() {

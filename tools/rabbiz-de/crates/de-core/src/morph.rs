@@ -3,6 +3,7 @@
 use std::time::{Duration, Instant};
 
 use de_api::{Pixels, Rect};
+use de_design::motion::{FormFactor, APP_CONTENT_FADE_MS};
 use de_paint::animation::AnimationClock;
 use de_ui::launch_morph::{MorphAnimator, MorphPose};
 use de_ui::nav::Screen;
@@ -10,8 +11,6 @@ use smithay::backend::renderer::element::solid::SolidColorBuffer;
 use smithay::desktop::Window;
 
 use crate::state::{De, Foreground};
-
-const CONTENT_FADE: Duration = Duration::from_millis(120);
 
 #[derive(Clone)]
 pub(crate) struct LaunchOrigin {
@@ -37,12 +36,18 @@ pub(crate) struct WindowMorph {
     pub backing: SolidColorBuffer,
     animator: MorphAnimator,
     ready_at: Option<Instant>,
+    content_fade: Duration,
     last_frame: Option<Instant>,
     last_drag_ms: Option<u64>,
 }
 
 impl WindowMorph {
-    fn new(origin: LaunchOrigin, window: Option<Window>, phase: Phase) -> Self {
+    fn new(
+        origin: LaunchOrigin,
+        window: Option<Window>,
+        phase: Phase,
+        form_factor: FormFactor,
+    ) -> Self {
         let opening = phase == Phase::Opening;
         let mut animator = MorphAnimator::new(if opening { 0.0 } else { 1.0 });
         if phase != Phase::Dragging {
@@ -57,6 +62,7 @@ impl WindowMorph {
             backing: SolidColorBuffer::new((1, 1), color),
             animator,
             ready_at: None,
+            content_fade: Duration::from_millis(form_factor.scale_ms(APP_CONTENT_FADE_MS).into()),
             last_frame: None,
             last_drag_ms: None,
         }
@@ -77,8 +83,9 @@ impl WindowMorph {
     fn content_ready(&self, now: Instant) -> f32 {
         if self.phase == Phase::Opening {
             self.ready_at.map_or(0.0, |ready| {
-                (now.saturating_duration_since(ready).as_secs_f32() / CONTENT_FADE.as_secs_f32())
-                    .min(1.0)
+                (now.saturating_duration_since(ready).as_secs_f32()
+                    / self.content_fade.as_secs_f32())
+                .min(1.0)
             })
         } else if self.window.is_some() {
             1.0
@@ -137,7 +144,12 @@ impl De {
             screen: self.nav.current,
             home_page: self.home_page,
         };
-        self.morph = Some(WindowMorph::new(origin, None, Phase::Opening));
+        self.morph = Some(WindowMorph::new(
+            origin,
+            None,
+            Phase::Opening,
+            self.motion_clock.form_factor(),
+        ));
     }
 
     pub(crate) fn first_app_frame(&mut self, window: Window) {
@@ -173,7 +185,12 @@ impl De {
         {
             if let Some(window) = self.space.elements().last().cloned() {
                 if let Some(origin) = self.origin_for(&window) {
-                    self.morph = Some(WindowMorph::new(origin, Some(window), Phase::Dragging));
+                    self.morph = Some(WindowMorph::new(
+                        origin,
+                        Some(window),
+                        Phase::Dragging,
+                        self.motion_clock.form_factor(),
+                    ));
                 }
             }
         }
@@ -199,7 +216,12 @@ impl De {
             self.morph = None;
         } else if self.foreground == Foreground::App && self.space.elements().next().is_none() {
             if let Some(origin) = self.origin_for(window) {
-                self.morph = Some(WindowMorph::new(origin, None, Phase::Closing));
+                self.morph = Some(WindowMorph::new(
+                    origin,
+                    None,
+                    Phase::Closing,
+                    self.motion_clock.form_factor(),
+                ));
             }
         }
     }
@@ -235,7 +257,7 @@ mod tests {
             screen: Screen::Home,
             home_page: 0,
         };
-        let mut morph = WindowMorph::new(origin, None, Phase::Opening);
+        let mut morph = WindowMorph::new(origin, None, Phase::Opening, FormFactor::Handset);
         let clock = AnimationClock::new();
         let now = Instant::now();
         let output = Rect::new(0, 0, 720, 1600);
@@ -248,9 +270,9 @@ mod tests {
         assert_eq!(morph.next_frame_at(Duration::from_millis(16)), None);
 
         morph.ready_at = Some(waiting);
-        let half = waiting + CONTENT_FADE / 2;
+        let half = waiting + morph.content_fade / 2;
         assert!(!morph.tick(half, &clock));
         assert_eq!(morph.pose(output, half).app_alpha, 0.5);
-        assert!(morph.tick(waiting + CONTENT_FADE, &clock));
+        assert!(morph.tick(waiting + morph.content_fade, &clock));
     }
 }

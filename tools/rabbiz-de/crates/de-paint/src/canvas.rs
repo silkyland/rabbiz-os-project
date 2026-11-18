@@ -92,6 +92,32 @@ impl Canvas {
         blit_premultiplied(&mut self.pixmap, src, dst.x, dst.y);
     }
 
+    /// Composite a scaled image with a uniform opacity.
+    pub fn blit_scaled(&mut self, pixels: &Pixels, dst: Rect, opacity: f32) {
+        if dst.is_empty() || opacity <= 0.0 || pixels.size.w <= 0 || pixels.size.h <= 0 {
+            return;
+        }
+        let Some(image) = tiny_skia::PixmapRef::from_bytes(
+            &pixels.data,
+            pixels.size.w as u32,
+            pixels.size.h as u32,
+        ) else {
+            return;
+        };
+        let transform = Transform::from_scale(
+            dst.w as f32 / pixels.size.w as f32,
+            dst.h as f32 / pixels.size.h as f32,
+        )
+        .post_translate(dst.x as f32, dst.y as f32);
+        let paint = PixmapPaint {
+            opacity: opacity.clamp(0.0, 1.0),
+            quality: tiny_skia::FilterQuality::Bilinear,
+            ..PixmapPaint::default()
+        };
+        self.pixmap
+            .draw_pixmap(0, 0, image, &paint, transform, None);
+    }
+
     /// Blit only `region` of `src` at `dst` (scroll/parallax crops without
     /// materialising a slice).
     pub fn blit_region(&mut self, src: &Pixels, region: Rect, dst: Point) {
@@ -193,12 +219,6 @@ pub fn blit_premultiplied(dst: &mut Pixmap, src: &Pixels, dx: i32, dy: i32) {
             data[di + 3] = (sa + (u32::from(data[di + 3]) * inv + 127) / 255).min(255) as u8;
         }
     }
-}
-
-/// `PixmapPaint` helper kept for future scaled blits.
-#[allow(dead_code)]
-fn pixmap_paint() -> PixmapPaint {
-    PixmapPaint::default()
 }
 
 #[cfg(test)]
