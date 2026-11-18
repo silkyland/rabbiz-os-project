@@ -523,6 +523,8 @@ static int a21s_gyro_read_raw(struct iio_dev *indio_dev,
 	if (mask == IIO_CHAN_INFO_RAW) {
 		if (chan->channel2 < IIO_MOD_X || chan->channel2 > IIO_MOD_Z)
 			return -EINVAL;
+		if (!c->gyro_valid)
+			return -ENODATA;
 		*val = c->gyro[chan->channel2 - IIO_MOD_X];
 		return IIO_VAL_INT;
 	}
@@ -560,6 +562,8 @@ static int a21s_accel_read_raw(struct iio_dev *indio_dev,
 	if (mask == IIO_CHAN_INFO_RAW) {
 		if (chan->channel2 < IIO_MOD_X || chan->channel2 > IIO_MOD_Z)
 			return -EINVAL;
+		if (!c->accel_valid)
+			return -ENODATA;
 		*val = c->accel[chan->channel2 - IIO_MOD_X];
 		return IIO_VAL_INT;
 	}
@@ -594,6 +598,8 @@ static int a21s_light_read_raw(struct iio_dev *indio_dev,
 	struct a21s_chub_dev *c = *(struct a21s_chub_dev **)iio_priv(indio_dev);
 
 	if (mask == IIO_CHAN_INFO_PROCESSED || mask == IIO_CHAN_INFO_RAW) {
+		if (!c->light_valid)
+			return -ENODATA;
 		*val = (int)c->light_lux;
 		return IIO_VAL_INT;
 	}
