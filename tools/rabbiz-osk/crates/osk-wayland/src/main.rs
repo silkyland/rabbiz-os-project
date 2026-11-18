@@ -792,6 +792,9 @@ fn spawn_clipboard_watch(items: Arc<Mutex<Vec<String>>>, changed: Arc<AtomicBool
                 }
                 changed.store(true, Ordering::SeqCst);
             }
+            // wl-paste exited (or its stdout failed) — reap it so the child
+            // does not linger as a zombie under rabbiz-osk.
+            let _ = child.wait();
         })
         .ok();
 }
