@@ -23,8 +23,9 @@ use smithay::desktop::{layer_map_for_output, LayerMap};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
-use smithay::reexports::wayland_server::Display;
+use smithay::reexports::wayland_server::{Display, Resource};
 use smithay::utils::{Physical, Point, Scale};
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::wayland::socket::ListeningSocketSource;
 
@@ -622,6 +623,20 @@ fn dump_frame_if_triggered(de: &crate::state::De) {
         return;
     }
     let _ = std::fs::remove_file(&trigger);
+    let census: Vec<String> = de
+        .space
+        .elements()
+        .map(|w| {
+            w.wl_surface()
+                .map(|s| format!("{:?} alive={}", s.id(), s.is_alive()))
+                .unwrap_or_else(|| "no-surface".into())
+        })
+        .collect();
+    eprintln!(
+        "rabbiz-de: shot census foreground={:?} space=[{}]",
+        de.foreground,
+        census.join(", ")
+    );
     let Some(px) = crate::composite::composite_output(de) else {
         return;
     };

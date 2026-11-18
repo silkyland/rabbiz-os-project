@@ -6,6 +6,7 @@
 use smithay::desktop::{PopupKind, Window};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
 use smithay::reexports::wayland_server::protocol::{wl_seat, wl_surface::WlSurface};
+use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Serial, Size};
 use smithay::wayland::shell::xdg::decoration::XdgDecorationHandler;
 use smithay::wayland::shell::xdg::{
@@ -60,6 +61,7 @@ impl XdgShellHandler for De {
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         self.snapshots
             .forget(&crate::snapshots::window_app_id(&surface));
+        let n = self.space.elements().count();
         let window = self
             .space
             .elements()
@@ -69,6 +71,11 @@ impl XdgShellHandler for De {
                     .unwrap_or(false)
             })
             .cloned();
+        eprintln!(
+            "rabbiz-de: toplevel_destroyed {:?} matched={} space={n}",
+            surface.wl_surface().id(),
+            window.is_some(),
+        );
         if let Some(window) = window {
             self.space.unmap_elem(&window);
             self.app_disappeared(&window);
