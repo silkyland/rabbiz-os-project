@@ -102,12 +102,21 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             Some(de_ui::drawer::render(size, s, t, &sim_status(), &apps, 0))
         }
         "recents" => {
+            let card = de_ui::recents::card_rect(size);
+            let settings = de_ui::settings::render_index(size, s, t, "09:41");
+            let preview = de_paint::wallpaper::cover_scale(&settings, card.size());
+            let mut recent = de_ui::recents::RecentEntry::new("rabbiz-settings", s.get("settings.title"));
+            recent.snapshot = Some(std::sync::Arc::new(de_ui::recents::round_snapshot(preview, card)));
             let m = de_ui::recents::RecentsModel::new(vec![
-                de_ui::recents::RecentEntry::new("rabbiz-calculator", "Calculator"),
+                recent,
                 de_ui::recents::RecentEntry::new("rabbiz-files", "Files"),
                 de_ui::recents::RecentEntry::new("rabbiz-browser", "Browser"),
             ]);
-            Some(de_ui::recents::render(size, s, t, &sim_status(), &m))
+            let home = render_scene("home", size, s)?;
+            let backdrop = de_paint::glass::blurred_backdrop(&home);
+            Some(de_ui::recents::render_with_backdrop(
+                size, s, t, &sim_status(), &m, Some(&backdrop),
+            ))
         }
         "shade" => Some(de_ui::shade::render(size, s, t, "09:41")),
         "panel-notifications" | "panel-quick" => {

@@ -10,9 +10,8 @@ use de_paint::{svg, Canvas};
 
 /// Rabbiz mark (bunny logo), embedded SVG.
 const MARK_SVG: &[u8] = include_bytes!("../../../assets/branding/rabbiz-mark.svg");
-/// `RabbizOS` wordmark for the dark theme (cream/copper variant of the b`rand`
-/// SVG, same artwork — the light-bg original is invisible on `bg`).
-const WORDMARK_SVG: &[u8] = include_bytes!("../../../assets/branding/rabbizos-wordmark-dark.svg");
+/// `RabbizOS` wordmark for the active theme (`tokens::DEFAULT` is light cream).
+const WORDMARK_SVG: &[u8] = include_bytes!("../../../assets/branding/rabbizos-wordmark.svg");
 
 /// Progress hairline y position (contract constant).
 const HAIRLINE_Y: i32 = 980;

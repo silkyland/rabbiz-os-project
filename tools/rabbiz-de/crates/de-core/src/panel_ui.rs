@@ -46,6 +46,8 @@ pub(crate) struct PanelUi {
     kind: PanelKind,
     pub(crate) pull: Pull,
     start_x: i32,
+    start_y: i32,
+    slider_drag: Option<usize>,
     /// Pre-rendered panel image per kind, so a pull never waits on a raster.
     pub(crate) pixels: [Option<Pixels>; 2],
     pub(crate) generation: u64,
@@ -58,6 +60,10 @@ pub(crate) struct PanelUi {
     blur: Option<(String, Pixels)>,
     capture_pending: bool,
     blur_rx: Option<(String, std::sync::mpsc::Receiver<Pixels>)>,
+    pub(crate) use_gpu_blur: bool,
+    pub(crate) gpu_blur_dirty: bool,
+    pub(crate) gpu_blur: Option<de_render::blur::GpuBlur>,
+    pub(crate) scrim_buf: Option<smithay::backend::renderer::element::solid::SolidColorBuffer>,
     /// Panel raster worker: kind index → pixels. Keeps the ~90 ms raster
     /// off the frame path entirely.
     render_rx: Option<(usize, u64, std::sync::mpsc::Receiver<Pixels>)>,
@@ -80,6 +86,8 @@ impl PanelUi {
             kind: PanelKind::Notifications,
             pull: Pull::new(),
             start_x: 0,
+            start_y: 0,
+            slider_drag: None,
             pixels: [None, None],
             generation: 0,
             tex: None,
@@ -89,6 +97,10 @@ impl PanelUi {
             blur: None,
             capture_pending: false,
             blur_rx: None,
+            use_gpu_blur: false,
+            gpu_blur_dirty: false,
+            gpu_blur: None,
+            scrim_buf: None,
             render_rx: None,
             content_gen: 0,
             last_tick: None,
@@ -181,12 +193,46 @@ impl De {
 
     pub(crate) fn panel_touch_started(&mut self, pos: Point) {
         self.panels.start_x = pos.x;
+        self.panels.start_y = pos.y;
+        self.panels.slider_drag = None;
+        if self.panels.pull.shown() && self.panels.kind == PanelKind::Quick {
+            let size = Size::new(self.output.width as i32, self.output.height as i32);
+            match panels::quick_hit(size, pos) {
+                Some(QuickHit::Brightness(_)) => self.panels.slider_drag = Some(0),
+                Some(QuickHit::Volume(_)) => self.panels.slider_drag = Some(1),
+                _ => {}
+            }
+        }
     }
 
     /// Finger moved. `from_top` is true for a pull that started in the top
     /// strip; `dy` is relative to touch-down. Returns whether the panel took
     /// the movement (the caller then skips home paging and the rest).
-    pub(crate) fn panel_progress(&mut self, from_top: bool, dy: f32) -> bool {
+    pub(crate) fn panel_progress(&mut self, from_top: bool, dx: f32, dy: f32) -> bool {
+        if let Some(idx) = self.panels.slider_drag {
+            let size = Size::new(self.output.width as i32, self.output.height as i32);
+            let x = self.panels.start_x + dx.round() as i32;
+            let y = self.panels.start_y;
+            if let Some(hit) = panels::quick_hit(size, Point::new(x.clamp(0, size.w - 1), y)) {
+                match (idx, hit) {
+                    (0, QuickHit::Brightness(f)) if self.panels.control_state.brightness.is_some() => {
+                        self.panels.brightness = f;
+                        self.panels.controls.request(de_system::controls::Action::Brightness(f));
+                        self.panels.stale = [true; 2];
+                        self.panels.content_gen += 1;
+                    }
+                    (1, QuickHit::Volume(f)) if self.panels.control_state.volume.is_some() => {
+                        self.panels.volume = f;
+                        self.panels.controls.request(de_system::controls::Action::Volume(f));
+                        self.panels.stale = [true; 2];
+                        self.panels.content_gen += 1;
+                    }
+                    _ => {}
+                }
+            }
+            self.panel_touch();
+            return true;
+        }
         if self.panels.pull.dragging() {
             self.panels.pull.drag(dy);
             self.panel_touch();
@@ -221,6 +267,7 @@ impl De {
     }
 
     pub(crate) fn panel_released(&mut self, vy: f32) {
+        self.panels.slider_drag = None;
         if self.panels.pull.dragging() {
             self.panels.pull.release(vy);
             self.panels.last_tick = None;
@@ -386,11 +433,13 @@ impl De {
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {}
             }
         }
-        // Pull-begin asked for a fresh backdrop: composite here (never in
-        // the input handler), blur off-thread.
+        // Pull-begin asked for a fresh backdrop: on GL, blur on GPU in <1 ms
+        // directly from the live scene; on Soft, composite + blur off-thread.
         if self.panels.capture_pending {
             self.panels.capture_pending = false;
-            if let Some(scene) = crate::composite::composite_output(self) {
+            if self.panels.use_gpu_blur {
+                self.panels.gpu_blur_dirty = true;
+            } else if let Some(scene) = crate::composite::composite_output(self) {
                 let wp_id = self.app_prefs.prefs().wallpaper_id.clone();
                 let (tx, rx) = std::sync::mpsc::channel();
                 std::thread::spawn(move || {
@@ -438,32 +487,46 @@ impl De {
             return;
         };
         let size = Size::new(self.output.width as i32, self.output.height as i32);
-        let wp_id = self.app_prefs.prefs().wallpaper_id.clone();
-        if self.panels.blur.as_ref().map(|(id, _)| id.as_str()) != Some(wp_id.as_str()) {
-            let wp = self.wallpaper_for(&wp_id, size);
-            self.panels.blur = Some((wp_id, de_paint::glass::blurred_backdrop(&wp)));
-        }
         let (status, date) = self.shell_meta();
         let strings = self.strings.clone();
-        let Some((_, backdrop)) = self.panels.blur.as_ref() else {
-            return;
-        };
-        let backdrop = backdrop.clone();
         let notifications = self.panels.notifications.clone();
         let quick = matches!(kind, PanelKind::Quick).then(|| self.quick_model());
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let px = match quick {
-                Some(m) => panels::render_quick(
-                    size, &strings, &tokens::DEFAULT, &backdrop, &status.clock, &date, &m,
-                ),
-                None => panels::render_notifications(
-                    size, &strings, &tokens::DEFAULT, &backdrop, &status.clock, &date,
-                    &notifications,
-                ),
+        if self.panels.use_gpu_blur {
+            std::thread::spawn(move || {
+                let px = match quick {
+                    Some(m) => panels::render_quick_controls(
+                        size, &strings, &tokens::DEFAULT, &status.clock, &date, &m,
+                    ),
+                    None => panels::render_notifications_controls(
+                        size, &strings, &tokens::DEFAULT, &status.clock, &date, &notifications,
+                    ),
+                };
+                let _ = tx.send(px);
+            });
+        } else {
+            let wp_id = self.app_prefs.prefs().wallpaper_id.clone();
+            if self.panels.blur.as_ref().map(|(id, _)| id.as_str()) != Some(wp_id.as_str()) {
+                let wp = self.wallpaper_for(&wp_id, size);
+                self.panels.blur = Some((wp_id, de_paint::glass::blurred_backdrop(&wp)));
+            }
+            let Some((_, backdrop)) = self.panels.blur.as_ref() else {
+                return;
             };
-            let _ = tx.send(px);
-        });
+            let backdrop = backdrop.clone();
+            std::thread::spawn(move || {
+                let px = match quick {
+                    Some(m) => panels::render_quick(
+                        size, &strings, &tokens::DEFAULT, &backdrop, &status.clock, &date, &m,
+                    ),
+                    None => panels::render_notifications(
+                        size, &strings, &tokens::DEFAULT, &backdrop, &status.clock, &date,
+                        &notifications,
+                    ),
+                };
+                let _ = tx.send(px);
+            });
+        }
         self.panels.render_rx = Some((kind as usize, self.panels.content_gen, rx));
     }
 

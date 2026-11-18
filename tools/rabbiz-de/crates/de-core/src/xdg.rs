@@ -1,7 +1,7 @@
 //! xdg-shell + xdg-decoration + xdg-activation handlers (M1-T2).
 //!
 //! Handset policy: every toplevel is configured fullscreen at the output
-//! size and mapped at (0,0); move/resize/minimize requests are no-ops.
+//! size and mapped at (0,0); minimizing the foreground window returns Home.
 
 use smithay::desktop::{PopupKind, Window};
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
@@ -60,8 +60,6 @@ impl XdgShellHandler for De {
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
-        self.snapshots
-            .forget(&crate::snapshots::window_app_id(&surface));
         let n = self.space.elements().count();
         let window = self
             .space
@@ -83,8 +81,8 @@ impl XdgShellHandler for De {
         // Last window gone → the shell reappears.
         if self.space.elements().next().is_none() {
             self.foreground = crate::state::Foreground::Shell;
-            self.shell_dirty = true;
         }
+        self.shell_dirty = true;
         self.focus_foreground();
         self.needs_present = true;
     }
@@ -113,7 +111,13 @@ impl XdgShellHandler for De {
         );
         surface.send_configure();
     }
-    fn minimize_request(&mut self, _surface: ToplevelSurface) {}
+    fn minimize_request(&mut self, surface: ToplevelSurface) {
+        if self.foreground == crate::state::Foreground::App
+            && self.recent_windows().first().and_then(Window::toplevel) == Some(&surface)
+        {
+            self.minimize_foreground();
+        }
+    }
 }
 
 smithay::delegate_xdg_shell!(De);
@@ -160,8 +164,10 @@ impl XdgActivationHandler for De {
         _data: XdgActivationTokenData,
         surface: WlSurface,
     ) {
-        if let Some(window) = self.window_for_surface(&surface) {
+        if self.foreground == crate::state::Foreground::App {
+            let Some(window) = self.window_for_surface(&surface) else { return; };
             self.space.raise_element(&window, true);
+            self.focus_foreground();
             self.needs_present = true;
         }
     }

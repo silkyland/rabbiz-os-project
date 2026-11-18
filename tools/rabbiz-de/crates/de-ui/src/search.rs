@@ -35,6 +35,19 @@ pub struct SearchRow {
 /// them by kind in the order they appear.
 #[must_use]
 pub fn render(size: Size, s: &Strings, t: &Theme, query: &str, rows: &[SearchRow]) -> Pixels {
+    render_with_caret(size, s, t, query, rows, !query.is_empty())
+}
+
+/// Render the search overlay with explicit caret visibility (for blinking `|`).
+#[must_use]
+pub fn render_with_caret(
+    size: Size,
+    s: &Strings,
+    t: &Theme,
+    query: &str,
+    rows: &[SearchRow],
+    show_caret: bool,
+) -> Pixels {
     let mut c = Canvas::filled(size, t.bg);
     c.fill_rect(Rect::new(0, 0, size.w, size.h), t.scrim);
 
@@ -61,9 +74,14 @@ pub fn render(size: Size, s: &Strings, t: &Theme, query: &str, rows: &[SearchRow
         field.y + 20,
         Some(field.w - 88),
     );
-    if !query.is_empty() {
+    if show_caret {
+        let caret_x = if query.is_empty() {
+            field.x + 64
+        } else {
+            r.x + r.w + 2
+        };
         c.fill_rect(
-            Rect::new(r.x + r.w + 2, field.y + (field.h - 36) / 2, 3, 36),
+            Rect::new(caret_x, field.y + (field.h - 36) / 2, 3, 36),
             t.accent,
         );
     }
@@ -161,7 +179,7 @@ fn row_rects(size: Size, rows: &[SearchRow]) -> Vec<Rect> {
             if row.kind != kind {
                 continue;
             }
-            if y + 88 > size.h - 120 {
+            if y + 80 > size.h - 120 {
                 break;
             }
             rects[i] = Rect::new(chrome::MARGIN, y, chrome::content_w(size), 80);

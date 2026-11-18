@@ -1,116 +1,35 @@
-//! Recents snapshot cache (M3-T4): the last presented pixels of each
-//! fullscreen app, keyed by toplevel `app_id`, so the recents rail can draw
-//! real thumbnails instead of placeholders.
-//!
-//! Pure data — no smithay types cross this seam. The compositor calls
-//! [`SnapshotCache::record`] wherever a surface snapshot is captured and
-//! [`SnapshotCache::forget`] on `toplevel_destroyed`; `recents::render`
-//! reads entries back in recency order.
-//!
-//! A 720×1600 RGBA frame is ~4.4 MB, so the cache is LRU-bounded: a new
-//! record past `cap` evicts the least-recently-touched app.
+//! Frozen Recents thumbnails. Each mapped window owns its last successful
+//! capture; background commits never replace it, and there is no disk cache.
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::sync::Arc;
 
-use de_api::Pixels;
-
-/// Default depth: 8 apps ≈ 35 MB worst case on the A21s' 2.8 GB.
-pub const DEFAULT_CAP: usize = 8;
-
-/// Last-shown frame per running app.
-#[derive(Debug)]
-pub struct SnapshotCache {
-    cap: usize,
-    /// Most-recent first; `map` keys are always a superset of `order`.
-    order: Vec<String>,
-    map: HashMap<String, Pixels>,
-}
-
-impl SnapshotCache {
-    #[must_use]
-    pub fn new(cap: usize) -> Self {
-        Self {
-            cap: cap.max(1),
-            order: Vec::new(),
-            map: HashMap::new(),
-        }
-    }
-
-    /// Store `px` for `app_id`, promoting it to most-recent.
-    pub fn record(&mut self, app_id: &str, px: Pixels) {
-        self.order.retain(|id| id != app_id);
-        self.order.insert(0, app_id.to_string());
-        self.map.insert(app_id.to_string(), px);
-        while self.order.len() > self.cap {
-            if let Some(old) = self.order.pop() {
-                self.map.remove(&old);
-            }
-        }
-    }
-
-    /// Latest snapshot for `app_id` (does not change recency — the card
-    /// order must not shuffle just because the rail re-rendered).
-    #[must_use]
-    pub fn get(&self, app_id: &str) -> Option<&Pixels> {
-        self.map.get(app_id)
-    }
-
-    /// App ids in recency order (most recent first).
-    #[must_use]
-    pub fn recent_ids(&self) -> &[String] {
-        &self.order
-    }
-
-    /// Mark `app_id` most-recent without changing its snapshot (window
-    /// raised to foreground but no new frame captured).
-    pub fn touch(&mut self, app_id: &str) {
-        if self.map.contains_key(app_id) {
-            self.order.retain(|id| id != app_id);
-            self.order.insert(0, app_id.to_string());
-        }
-    }
-
-    /// Drop an app's snapshot (`toplevel_destroyed`, recents dismissal).
-    pub fn forget(&mut self, app_id: &str) {
-        self.order.retain(|id| id != app_id);
-        self.map.remove(app_id);
-    }
-
-    pub fn clear(&mut self) {
-        self.order.clear();
-        self.map.clear();
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.map.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.map.is_empty()
-    }
-}
-
-impl Default for SnapshotCache {
-    fn default() -> Self {
-        Self::new(DEFAULT_CAP)
-    }
-}
-
-// --- capture seam (smithay) ---
-
+use de_api::{Pixels, Size};
+use de_render::DeRenderer;
+use smithay::backend::allocator::Fourcc;
+use smithay::backend::renderer::element::surface::{
+    render_elements_from_surface_tree, WaylandSurfaceRenderElement,
+};
+use smithay::backend::renderer::element::{AsRenderElements, Kind, RenderElement};
+use smithay::backend::renderer::gles::GlesTexture;
+use smithay::backend::renderer::utils::draw_render_elements;
+use smithay::backend::renderer::{ExportMem, Frame, ImportAll, Offscreen};
 use smithay::desktop::Window;
-use smithay::reexports::wayland_server::protocol::wl_shm;
-use smithay::wayland::compositor::{with_states, BufferAssignment, SurfaceAttributes};
-use smithay::wayland::seat::WaylandFocus;
+use smithay::reexports::pixman::Image;
+use smithay::utils::{Physical, Point, Rectangle, Scale, Transform};
+use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceData};
-use smithay::wayland::shm::with_buffer_contents;
 
-use de_api::Size;
+use crate::state::De;
 
-/// A toplevel's `app_id` from its xdg role state ("" when unset).
-#[must_use]
+#[derive(Default)]
+struct Thumbnail(RefCell<Option<Arc<Pixels>>>);
+
+pub(crate) fn snapshot(window: &Window) -> Option<Arc<Pixels>> {
+    window.user_data().get::<Thumbnail>()?.0.borrow().clone()
+}
+
+/// A toplevel's xdg role app id (empty if unset).
 pub fn window_app_id(toplevel: &ToplevelSurface) -> String {
     with_states(toplevel.wl_surface(), |states| {
         states
@@ -121,115 +40,156 @@ pub fn window_app_id(toplevel: &ToplevelSurface) -> String {
     })
 }
 
-/// Copy the window's committed `wl_shm` buffer into `Pixels` (RGBA bytes).
-///
-/// Returns `None` for dmabuf/EGL clients — the A21s forces software
-/// toolkits for shell-launched apps (`RABBIZ_FORCE_SOFTWARE=1`), so the
-/// common path *is* shm; GPU clients keep the icon fallback in the rail.
-#[allow(unsafe_code)] // smithay hands us a raw pool pointer, scoped to the closure.
-#[must_use]
-pub fn capture_window(window: &Window) -> Option<Pixels> {
-    let surface = window.wl_surface()?.into_owned();
-    let buffer = with_states(&surface, |states| {
-        // `BufferAssignment` isn't Clone; take a clone of the WlBuffer only.
-        match states
-            .cached_state
-            .get::<SurfaceAttributes>()
-            .current()
-            .buffer
-        {
-            Some(BufferAssignment::NewBuffer(ref b)) => Some(b.clone()),
-            _ => None,
+impl De {
+    /// Use the same stack order for drawing cards and resolving their hits.
+    pub(crate) fn recent_windows(&self) -> Vec<Window> {
+        self.space
+            .elements()
+            .rev()
+            .filter(|w| w.toplevel().is_some_and(|t| crate::comp::has_buffer(t.wl_surface())))
+            .cloned()
+            .collect()
+    }
+
+    pub(crate) fn capture_topmost(&mut self) {
+        if let Some(window) = self.recent_windows().into_iter().next() {
+            self.capture_recent_window(&window);
         }
-    });
-    let buffer = buffer?;
-    let out = with_buffer_contents(&buffer, |ptr, _len, data| {
-        let (w, h, stride, off) = (data.width, data.height, data.stride, data.offset);
-        if w <= 0 || h <= 0 || stride < w * 4 {
-            return None;
-        }
-        // wl_shm formats are little-endian words: Argb/Xrgb store B,G,R,A
-        // bytes; Abgr/Xbgr store R,G,B,A — already `Pixels` order.
-        let (swap_rb, opaque) = match data.format {
-            wl_shm::Format::Argb8888 => (true, false),
-            wl_shm::Format::Xrgb8888 => (true, true),
-            wl_shm::Format::Abgr8888 => (false, false),
-            wl_shm::Format::Xbgr8888 => (false, true),
-            _ => return None,
+    }
+
+    pub(crate) fn capture_recent_window(&mut self, window: &Window) {
+        let output = Size::new(self.output.width as i32, self.output.height as i32);
+        let card = de_ui::recents::card_rect(output);
+        // Keep GPU readback and per-window memory bounded even on a large output.
+        let downsample = (360.0 / card.w.max(1) as f32)
+            .min(800.0 / card.h.max(1) as f32)
+            .min(1.0);
+        let size = Size::new(
+            (card.w as f32 * downsample).round().max(1.0) as i32,
+            (card.h as f32 * downsample).round().max(1.0) as i32,
+        );
+        let result = match &mut self.renderer {
+            DeRenderer::Gl(r) => capture::<_, GlesTexture>(r.as_mut(), window, output, size)
+                .map_err(|e| e.to_string()),
+            DeRenderer::Soft(r) => capture::<_, Image<'static, 'static>>(r, window, output, size)
+                .map_err(|e| e.to_string()),
         };
-        let mut px = Pixels::empty(Size::new(w, h));
-        for y in 0..h {
-            // SAFETY: ptr is valid for the pool for the closure's lifetime;
-            // offset + h*stride bytes of this buffer are inside it (client-
-            // validated by wl_shm), and we never read past row `off+stride`.
-            let row = unsafe { ptr.add((off + y * stride) as usize) };
-            for x in 0..w {
-                let (b0, b1, b2, b3) = unsafe {
-                    let s = row.add((x * 4) as usize);
-                    (*s, *s.add(1), *s.add(2), *s.add(3))
-                };
-                let i = ((y * w + x) * 4) as usize;
-                px.data[i] = if swap_rb { b2 } else { b0 };
-                px.data[i + 1] = b1;
-                px.data[i + 2] = if swap_rb { b0 } else { b2 };
-                px.data[i + 3] = if opaque { 0xFF } else { b3 };
+        match result {
+            Ok(Some(px)) => {
+                window.user_data().insert_if_missing(Thumbnail::default);
+                if let Some(thumb) = window.user_data().get::<Thumbnail>() {
+                    thumb.0.replace(Some(Arc::new(de_ui::recents::round_snapshot(px, card))));
+                }
             }
+            Ok(None) => {}
+            // A failed import/readback must not erase a previous good frame.
+            Err(e) => eprintln!("recents snapshot: {e}"),
         }
-        Some(px)
-    });
-    out.ok().flatten()
+    }
+}
+
+fn capture<R, T>(
+    renderer: &mut R,
+    window: &Window,
+    output: Size,
+    size: Size,
+) -> Result<Option<Pixels>, R::Error>
+where
+    R: ImportAll + Offscreen<T> + ExportMem,
+    R::TextureId: Clone + 'static,
+{
+    let scale = Scale::from((
+        f64::from(size.w) / f64::from(output.w.max(1)),
+        f64::from(size.h) / f64::from(output.h.max(1)),
+    ));
+    let root = AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
+        window,
+        renderer,
+        Point::from((0, 0)),
+        scale,
+        1.0,
+    );
+    if root.is_empty() {
+        return Ok(None);
+    }
+    let mut elements = Vec::new();
+    for (popup, at) in crate::popups::popups_of(window) {
+        elements.extend(render_elements_from_surface_tree::<R, WaylandSurfaceRenderElement<R>>(
+            renderer,
+            popup.wl_surface(),
+            at.to_physical_precise_round(scale),
+            scale,
+            1.0,
+            Kind::Unspecified,
+        ));
+    }
+    elements.extend(root);
+    raster_snapshot::<R, T, _>(renderer, &elements, size).map(Some)
+}
+
+fn raster_snapshot<R, T, E>(
+    renderer: &mut R,
+    elements: &[E],
+    size: Size,
+) -> Result<Pixels, R::Error>
+where
+    R: Offscreen<T> + ExportMem,
+    R::TextureId: 'static,
+    E: RenderElement<R>,
+{
+    let region = Rectangle::<i32, Physical>::from_size((size.w, size.h).into());
+    let mut buffer = renderer.create_buffer(Fourcc::Abgr8888, (size.w, size.h).into())?;
+    let mut target = renderer.bind(&mut buffer)?;
+    let mut frame = renderer.render(&mut target, region.size, Transform::Normal)?;
+    frame.clear(de_design::DEFAULT.surface1.map(|v| f32::from(v) / 255.0).into(), &[region])?;
+    draw_render_elements(&mut frame, 1.0, elements, &[region])?;
+    let _ = frame.finish()?;
+    let mapping = renderer.copy_framebuffer(
+        &target,
+        Rectangle::from_size((size.w, size.h).into()),
+        Fourcc::Abgr8888,
+    )?;
+    // Smithay's GLES offscreen projection already puts the logical top row
+    // first in readback, just like Pixman. Do not flip the mapping again.
+    Ok(Pixels::new(size, renderer.map_texture(&mapping)?.to_vec()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use de_api::Size;
+    use smithay::backend::renderer::element::solid::{SolidColorBuffer, SolidColorRenderElement};
+    use smithay::backend::renderer::pixman::PixmanRenderer;
 
-    fn px(w: i32, h: i32, v: u8) -> Pixels {
-        Pixels::new(Size::new(w, h), vec![v; (w * h * 4) as usize])
+    fn assert_readback<R, T>(renderer: &mut R)
+    where
+        R: Offscreen<T> + ExportMem,
+        R::TextureId: 'static,
+    {
+        let top = SolidColorBuffer::new((3, 2), [1.0, 0.0, 0.0, 1.0]);
+        let bottom = SolidColorBuffer::new((3, 2), [0.0, 0.0, 1.0, 1.0]);
+        let elements = [
+            SolidColorRenderElement::from_buffer(&top, (0, 0), 1.0, 1.0, Kind::Unspecified),
+            SolidColorRenderElement::from_buffer(&bottom, (0, 2), 1.0, 1.0, Kind::Unspecified),
+        ];
+        let px = raster_snapshot::<R, T, _>(renderer, &elements, Size::new(3, 4)).unwrap();
+        assert_eq!(&px.data[..24], &[255, 0, 0, 255].repeat(6));
+        assert_eq!(&px.data[24..], &[0, 0, 255, 255].repeat(6));
     }
 
     #[test]
-    fn record_and_recency_order() {
-        let mut c = SnapshotCache::new(3);
-        c.record("a", px(2, 2, 1));
-        c.record("b", px(2, 2, 2));
-        c.record("a", px(2, 2, 3)); // promote a
-        assert_eq!(c.recent_ids(), &["a", "b"]);
-        assert_eq!(c.get("a").unwrap().data[0], 3);
+    fn offscreen_capture_preserves_rgba_and_row_order() {
+        assert_readback::<_, Image<'static, 'static>>(&mut PixmanRenderer::new().unwrap());
     }
 
     #[test]
-    fn lru_evicts_oldest() {
-        let mut c = SnapshotCache::new(2);
-        c.record("a", px(2, 2, 1));
-        c.record("b", px(2, 2, 2));
-        c.record("c", px(2, 2, 3)); // evicts a
-        assert_eq!(c.recent_ids(), &["c", "b"]);
-        assert!(c.get("a").is_none());
-        assert_eq!(c.len(), 2);
-    }
-
-    #[test]
-    fn touch_promotes_without_new_pixels() {
-        let mut c = SnapshotCache::new(3);
-        c.record("a", px(2, 2, 1));
-        c.record("b", px(2, 2, 2));
-        c.touch("a");
-        assert_eq!(c.recent_ids(), &["a", "b"]);
-        assert_eq!(c.get("a").unwrap().data[0], 1);
-        c.touch("ghost");
-        assert_eq!(c.recent_ids(), &["a", "b"]);
-    }
-
-    #[test]
-    fn forget_and_clear() {
-        let mut c = SnapshotCache::default();
-        c.record("a", px(2, 2, 1));
-        c.record("b", px(2, 2, 2));
-        c.forget("a");
-        assert_eq!(c.recent_ids(), &["b"]);
-        c.clear();
-        assert!(c.is_empty());
+    #[ignore = "requires an EGL device with GLES readback support"]
+    #[allow(unsafe_code)]
+    fn gles_offscreen_capture_preserves_rgba_and_row_order() {
+        use smithay::backend::egl::{EGLDevice, EGLDisplay};
+        let device = EGLDevice::enumerate().unwrap().next().expect("no EGL device");
+        // SAFETY: EGLDevice is the native display handle returned by EGL.
+        let display = unsafe { EGLDisplay::new(device) }.unwrap();
+        let mut renderer = de_render::gl::create(&display).unwrap();
+        assert_readback::<_, GlesTexture>(&mut renderer);
     }
 }

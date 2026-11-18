@@ -297,13 +297,15 @@ pub fn render_with_hidden(size: Size, s: &Strings, t: &Theme, m: &HomeModel,
     };
     chrome::status_bar_on_wallpaper(&mut c, t, &m.status);
 
-    // Clock and date, left-aligned, straight on the wallpaper.
+    // Clock and date, left-aligned, cream on wallpaper (matching status bar).
+    let on_wp = [0xFF, 0xF8, 0xF0, 0xFF];
+    let on_wp_sub = [0xFF, 0xF8, 0xF0, 0xD8];
     let clock_style = text::LabelStyle {
         size: 156.0,
         line_height: 164.0,
         weight: 400,
         tnum: true,
-        color: t.text,
+        color: on_wp,
         ..text::LabelStyle::default()
     };
     chrome::draw(&mut c, m.clock, &clock_style, LEFT - 4, 118, None);
@@ -312,10 +314,13 @@ pub fn render_with_hidden(size: Size, s: &Strings, t: &Theme, m: &HomeModel,
             size: 30.0,
             line_height: 38.0,
             weight: 600,
-            color: t.text,
+            color: on_wp_sub,
             ..text::LabelStyle::default()
         };
         chrome::draw(&mut c, m.date, &date_style, LEFT, 318, None);
+    }
+    if !m.charging.is_empty() {
+        chrome::draw(&mut c, m.charging, &style::caption(on_wp_sub), LEFT, 360, None);
     }
 
     // Search card: glass, hint text, mic and camera buttons.

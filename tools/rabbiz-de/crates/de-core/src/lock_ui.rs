@@ -118,7 +118,9 @@ impl LockUi {
         if !self.dragging {
             self.begin_drag();
         }
-        self.slide.retarget((self.drag_origin - dy).clamp(0.0, h));
+        let pos = (self.drag_origin - dy).clamp(0.0, h);
+        self.slide.value = pos;
+        self.slide.target = pos;
     }
 
     /// Finger up: `vy` is the release velocity in px/s (negative = up).

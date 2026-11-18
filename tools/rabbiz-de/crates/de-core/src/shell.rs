@@ -16,9 +16,6 @@ use de_ui::search::{SearchKind, SearchRow};
 
 use crate::state::De;
 
-/// Recents card thumbnail target (`recents.rs` cover-scales into the card).
-pub const RECENT_THUMB: Size = Size { w: 480, h: 1040 };
-
 impl De {
     /// Rasterize the current shell screen into a fresh `Pixels` frame.
     pub fn shell_pixels(&mut self) -> Pixels {
@@ -28,18 +25,35 @@ impl De {
         let (status, date) = self.shell_meta();
         let base = match self.nav.current {
             Screen::Recents => {
-                let m = self.recents_model();
-                de_ui::recents::render_with_backdrop(size, &s, &t, &status, &m,
-                    self.navigation.recents_backdrop.as_ref())
+                let windows = self.recent_windows();
+                let m = self.recents_model(&windows);
+                let count = m.entries().len().max(1);
+                self.navigation.recents_pager.set_pages(count);
+                let moving = self.morph.as_ref().and_then(|m| m.overview_window());
+                let hidden = moving.and_then(|w| windows.iter().position(|entry| entry == w));
+                de_ui::recents::render_at_pos(
+                    size,
+                    &s,
+                    &t,
+                    &status,
+                    &m,
+                    self.navigation.recents_backdrop.as_ref(),
+                    self.navigation.recents_pager.pos(),
+                    hidden,
+                )
             }
             Screen::Drawer => {
                 let ids = self.visible_ids();
                 let apps = self.app_icons(&ids);
-                de_ui::drawer::render(size, &s, &t, &status, &apps, 0)
+                de_ui::drawer::render(size, &s, &t, &status, &apps, self.navigation.drawer_scroll)
+            }
+            Screen::Settings => {
+                de_ui::settings::render_index(size, &s, &t, &status.clock)
             }
             Screen::Search => {
                 let rows = self.search_rows();
-                de_ui::search::render(size, &s, &t, "", &rows)
+                let blink = (self.started.elapsed().as_millis() / 530) % 2 == 0;
+                de_ui::search::render_with_caret(size, &s, &t, &self.navigation.search_query, &rows, blink)
             }
             Screen::Shade => de_ui::shade::render(size, &s, &t, &status.clock),
             // The interactive lock lives in `lock_ui.rs`; the nav screen
@@ -171,7 +185,7 @@ impl De {
     }
 
     /// Visible app ids under current prefs.
-    fn visible_ids(&self) -> Vec<String> {
+    pub(crate) fn visible_ids(&self) -> Vec<String> {
         let prefs = self.app_prefs.prefs();
         self.catalog.visible(prefs).map(|e| e.id.clone()).collect()
     }
@@ -206,22 +220,13 @@ impl De {
         }
     }
 
-    /// Recents rail: snapshot-cache entries (recency order) plus running
-    /// windows that have no captured frame yet.
-    fn recents_model(&mut self) -> RecentsModel {
-        let mut entries = Vec::new();
-        let mut seen: Vec<String> = self.snapshots.recent_ids().to_vec();
-        for id in seen.clone() {
-            entries.push(self.recent_entry(&id));
-        }
-        for id in self.window_app_ids() {
-            if seen.contains(&id) {
-                continue;
-            }
-            seen.push(id.clone());
-            entries.push(self.recent_entry(&id));
-        }
-        RecentsModel::new(entries)
+    fn recents_model(&mut self, windows: &[smithay::desktop::Window]) -> RecentsModel {
+        RecentsModel::new(windows.iter().map(|window| {
+            let id = window.toplevel().map(crate::snapshots::window_app_id).unwrap_or_default();
+            let mut entry = self.recent_entry(&id);
+            entry.snapshot = crate::snapshots::snapshot(window);
+            entry
+        }).collect())
     }
 
     fn recent_entry(&mut self, id: &str) -> RecentEntry {
@@ -235,16 +240,21 @@ impl De {
             .and_then(|i| i.icon);
         let mut r = RecentEntry::new(id, &title);
         r.icon = icon;
-        r.snapshot = self.snapshots.get(id).cloned();
         r
     }
 
     /// Search rows: every visible app (the query field is static until the
     /// on-screen keyboard/search input lands in M4 — tapping a row launches).
     fn search_rows(&mut self) -> Vec<SearchRow> {
+        let q = self.navigation.search_query.trim().to_lowercase();
         let ids = self.visible_ids();
         self.app_icons(&ids)
             .into_iter()
+            .filter(|i| {
+                q.is_empty()
+                    || i.label.to_lowercase().contains(&q)
+                    || i.id.to_lowercase().contains(&q)
+            })
             .map(|i| SearchRow {
                 kind: SearchKind::App,
                 id: i.id,

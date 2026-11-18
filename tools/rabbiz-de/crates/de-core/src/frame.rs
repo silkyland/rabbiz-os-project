@@ -64,6 +64,7 @@ pub struct Run {
     trace_motion: bool,
     last_morph_frame: Option<(Phase, Instant)>,
     last_panel_frame: Option<Instant>,
+    vblank_pending: bool,
 }
 
 impl Run {
@@ -103,6 +104,7 @@ impl Run {
             trace_motion: std::env::var_os("RABBIZ_DE_MOTION_TRACE").is_some(),
             last_morph_frame: None,
             last_panel_frame: None,
+            vblank_pending: false,
         })
     }
 
@@ -128,6 +130,7 @@ impl Run {
 
     fn present_once(&mut self) -> Result<(), String> {
         let t0 = Instant::now();
+        self.de.needs_present = false;
         // A pending launch that never produced a toplevel fails visibly —
         // the error screen, not a wedged morph.
         if let Some(id) = self.de.launch.check_timeout() {
@@ -140,6 +143,53 @@ impl Run {
         }
         self.de.advance_morph(t0);
         self.de.advance_home(t0);
+        self.de.advance_recents_fade(t0);
+        if self.de.foreground == crate::state::Foreground::Shell
+            && self.de.nav.current == de_ui::nav::Screen::Drawer
+            && !self.de.navigation.drawer_dragging
+            && !self.de.navigation.drawer_slide.settled()
+        {
+            let dt = self
+                .de
+                .navigation
+                .drawer_last_tick
+                .replace(t0)
+                .map_or(0.0, |last| t0.duration_since(last).as_secs_f32());
+            self.de
+                .navigation
+                .drawer_slide
+                .advance(dt, &self.de.motion_clock);
+            self.de.needs_present = true;
+            if self.de.navigation.drawer_closing && self.de.navigation.drawer_slide.settled() {
+                self.de.navigation.drawer_closing = false;
+                self.de.navigation.drawer_slide.value = 0.0;
+                self.de.navigation.drawer_slide.target = 0.0;
+                self.de.show_shell(de_ui::nav::Screen::Home);
+            }
+        } else if !self.de.navigation.drawer_dragging {
+            self.de.navigation.drawer_last_tick = None;
+        }
+        if self.de.foreground == crate::state::Foreground::Shell
+            && self.de.nav.current == de_ui::nav::Screen::Recents
+            && self.de.morph.is_none()
+            && !self.de.navigation.recents_pager.dragging()
+            && self.de.navigation.recents_pager.animating()
+        {
+            let dt = self
+                .de
+                .navigation
+                .recents_last_tick
+                .replace(t0)
+                .map_or(0.0, |last| t0.duration_since(last).as_secs_f32());
+            self.de
+                .navigation
+                .recents_pager
+                .advance(dt, &self.de.motion_clock);
+            self.de.shell_dirty = true;
+            self.de.needs_present = true;
+        } else {
+            self.de.navigation.recents_last_tick = None;
+        }
         self.de.advance_panel(t0);
         self.de.power.advance(t0);
         self.de.advance_lock(t0);
@@ -148,7 +198,9 @@ impl Run {
         if self.de.sleeping() {
             return Ok(());
         }
+        self.de.panels.use_gpu_blur = matches!(self.de.renderer, DeRenderer::Gl(_));
         self.de.panel_prepare();
+        self.de.poll_recents_backdrop();
         let size = de_api::Size::new(self.de.output.width as i32, self.de.output.height as i32);
         self.de.lock_prepare(size);
         self.de.menu_prepare(size);
@@ -232,6 +284,7 @@ impl Run {
         };
         // `copy_with_damage` completes on the frame that carried damage.
         if queued {
+            self.vblank_pending = true;
             self.de.screencopy_flush_pending();
         }
         let cpu = t0.elapsed().as_secs_f64() * 1000.0;
@@ -296,7 +349,8 @@ where
     R: Renderer
         + ImportAll
         + ImportMem
-        + smithay::backend::renderer::Bind<smithay::backend::allocator::dmabuf::Dmabuf>,
+        + smithay::backend::renderer::Bind<smithay::backend::allocator::dmabuf::Dmabuf>
+        + 'static,
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
 {
     // Upload the latest shell frame as a texture (re-rastered upstream in
@@ -336,14 +390,59 @@ where
             de_api::Size::new(de.output.width as i32, de.output.height as i32),
         );
     } else if let Some(tex) = texture_buffer::<R>(de.shell_tex.as_ref()) {
-        elements.push(DeElement::from(tex_el::<R>(
-            tex,
-            Point::<f64, Physical>::from((0.0, 0.0)),
-        )));
+        let slide_y = if de.navigation.drawer_slide.value > 0.5 {
+            de.navigation.drawer_slide.value
+        } else {
+            de.navigation.drawer_pull_y
+        };
+        if let Some(fade) = de.navigation.recents_fade.as_ref() {
+            if de.navigation.home_underlay_tex.is_none() {
+                if let Some(px) = de.navigation.home_underlay_px.as_ref() {
+                    de.navigation.home_underlay_tex = upload_any(renderer, px);
+                }
+            }
+            let mix = fade.mix(de.now);
+            let lift = f64::from(de.output.height) * 0.025 * f64::from(1.0 - mix);
+            elements.push(DeElement::from(TextureRenderElement::from_texture_buffer(
+                (0.0, lift.round()), tex, Some(mix), None, None, Kind::Unspecified,
+            )));
+            if let Some(home_tex) = texture_buffer::<R>(de.navigation.home_underlay_tex.as_ref()) {
+                elements.push(DeElement::from(tex_el::<R>(home_tex, (0.0, 0.0).into())));
+            }
+        } else if slide_y > 0.5 {
+            let h = f32::from(de.output.height.max(1) as u16);
+            let alpha = (1.0 - slide_y / h).clamp(0.0, 1.0);
+            elements.push(DeElement::from(TextureRenderElement::from_texture_buffer(
+                Point::<f64, Physical>::from((0.0, f64::from(slide_y.round()))),
+                tex,
+                Some(alpha),
+                None,
+                None,
+                Kind::Unspecified,
+            )));
+            if de.navigation.home_underlay_tex.is_none() {
+                if let Some(px) = de.navigation.home_underlay_px.as_ref() {
+                    de.navigation.home_underlay_tex = upload_any(renderer, px);
+                }
+            }
+            if let Some(home_tex) = texture_buffer::<R>(de.navigation.home_underlay_tex.as_ref()) {
+                elements.push(DeElement::from(tex_el::<R>(
+                    home_tex,
+                    Point::<f64, Physical>::from((0.0, 0.0)),
+                )));
+            }
+        } else {
+            elements.push(DeElement::from(tex_el::<R>(
+                tex,
+                Point::<f64, Physical>::from((0.0, 0.0)),
+            )));
+        }
     }
     // The lifted icon rides on top of the home frame as its own texture.
     push_drag_overlay::<R>(&mut elements, renderer, de.home, de.output);
-    push_panel::<R>(&mut elements, renderer, de.panel);
+    push_layer_elements(&mut elements, renderer, &map, BELOW_WINDOWS);
+    prepare_panel_gpu_blur(renderer, de.panel, &elements, de.output);
+    push_panel::<R>(&mut elements, renderer, de.panel, de.output);
     // Overlays, topmost last: shot feedback → lock → locked menu → fade.
     push_shot::<R>(&mut elements, renderer, de.shot_fx, de.output, de.now);
     push_lock::<R>(&mut elements, renderer, de.lock, de.output, de.now);
@@ -368,7 +467,6 @@ where
             elements.push(bar);
         }
     }
-    push_layer_elements(&mut elements, renderer, &map, BELOW_WINDOWS);
 
     let res = de
         .compositor
@@ -502,6 +600,21 @@ fn push_morph_elements<R: Renderer + ImportAll + ImportMem>(
         }
     }
     let loc = Point::<i32, Physical>::from((pose.card.x, pose.card.y));
+    if let Some(snapshot) = &morph.snapshot {
+        if morph.snapshot_texture.is_none() {
+            morph.snapshot_texture = upload_any(renderer, snapshot);
+        }
+        if let Some(tex) = texture_buffer::<R>(morph.snapshot_texture.as_ref()) {
+            elements.push(DeElement::from(TextureRenderElement::from_texture_buffer(
+                (f64::from(loc.x), f64::from(loc.y)),
+                tex,
+                Some(morph.snapshot_alpha()),
+                None,
+                Some((pose.card.w, pose.card.h).into()),
+                Kind::Unspecified,
+            )));
+        }
+    }
     if let Some(window) = morph.window.as_ref().filter(|_| pose.app_alpha > 0.0) {
         let scale = Scale::from((
             f64::from(pose.card.w) / f64::from(output.w),
@@ -525,7 +638,7 @@ fn push_morph_elements<R: Renderer + ImportAll + ImportMem>(
             Kind::Unspecified,
         )));
     }
-    if let Some(px) = morph.backdrop.as_ref() {
+    if let Some(px) = morph.backdrop.as_ref().filter(|_| morph.phase != Phase::Recents) {
         if morph.backdrop_texture.is_none() {
             morph.backdrop_texture = upload_any(renderer, px);
         }
@@ -540,8 +653,22 @@ fn push_morph_elements<R: Renderer + ImportAll + ImportMem>(
 
 impl Run {
     fn motion_wake_at(&self) -> Option<Instant> {
-        let interval = Duration::from_secs_f64(1.5 / self.de.output.refresh_hz.max(1.0));
+        let interval = Duration::from_secs_f64(0.95 / self.de.output.refresh_hz.max(1.0));
         let now = Instant::now();
+        let search_blink = (self.de.foreground == crate::state::Foreground::Shell
+            && self.de.nav.current == de_ui::nav::Screen::Search)
+            .then_some(now + Duration::from_millis(530));
+        let recents_wake = (self.de.foreground == crate::state::Foreground::Shell
+            && self.de.nav.current == de_ui::nav::Screen::Recents
+            && self.de.morph.is_none()
+            && !self.de.navigation.recents_pager.dragging()
+            && self.de.navigation.recents_pager.animating())
+        .then_some(now + interval);
+        let drawer_wake = (self.de.foreground == crate::state::Foreground::Shell
+            && self.de.nav.current == de_ui::nav::Screen::Drawer
+            && !self.de.navigation.drawer_dragging
+            && !self.de.navigation.drawer_slide.settled())
+        .then_some(now + interval);
         [
             self.de.launch.deadline(),
             self.de
@@ -553,6 +680,10 @@ impl Run {
             self.de.lock_wake_at(interval),
             self.de.power.wake_at(now),
             self.de.shot_fx.wake_at(now),
+            search_blink,
+            recents_wake,
+            self.de.navigation.recents_fade.as_ref().map(|_| now + interval),
+            drawer_wake,
         ]
         .into_iter()
         .flatten()
@@ -568,7 +699,10 @@ impl Run {
         self.de.popups.cleanup();
         layer_map_for_output(&self.de.output_obj).cleanup();
         self.de.sync_exclusive_layer_focus();
-        if self.de.needs_present {
+        // Coalesce rapid input/client events into one present per vblank: if a
+        // DRM frame is already in flight, `on_vblank` will present the latest
+        // state when the hardware is ready.
+        if self.de.needs_present && !self.vblank_pending {
             self.de.needs_present = false;
             if !self.de.sleeping() {
                 let _ = self.present().map_err(|e| eprintln!("present: {e}"));
@@ -585,6 +719,7 @@ impl Run {
     /// Called on each vblank: release the pending frame, account timing,
     /// emit stats, request the next frame.
     pub fn on_vblank(&mut self) {
+        self.vblank_pending = false;
         if let Err(e) = self.de.compositor.frame_submitted() {
             eprintln!("frame_submitted: {e:?}");
         }
@@ -694,14 +829,59 @@ where
     .map(|b| Box::new(b) as Box<dyn std::any::Any>)
 }
 
+/// Capture and blur the live scene on `GlesRenderer` (1/4-res FBO + 3 Kawase
+/// passes) when a panel pull begins. No-op on `Soft`.
+fn prepare_panel_gpu_blur<R: Renderer + ImportAll + ImportMem + 'static>(
+    renderer: &mut R,
+    panel: &mut crate::panel_ui::PanelUi,
+    scene: &Vec<DeElement<R>>,
+    output: &de_backend::drm::OutputSelection,
+) where
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    if !panel.use_gpu_blur || !panel.pull.shown() {
+        return;
+    }
+    let Some(gles) = (&mut *renderer as &mut dyn std::any::Any)
+        .downcast_mut::<smithay::backend::renderer::gles::GlesRenderer>()
+    else {
+        return;
+    };
+    let Some(scene_gles) = (scene as &dyn std::any::Any)
+        .downcast_ref::<Vec<DeElement<smithay::backend::renderer::gles::GlesRenderer>>>()
+    else {
+        return;
+    };
+    if panel.gpu_blur.is_none() {
+        match de_render::blur::GpuBlur::new(gles, output.width as i32, output.height as i32) {
+            Ok(b) => panel.gpu_blur = Some(b),
+            Err(e) => {
+                eprintln!("gpu_blur init: {e}");
+                panel.use_gpu_blur = false;
+                return;
+            }
+        }
+    }
+    let Some(blur) = panel.gpu_blur.as_mut() else {
+        return;
+    };
+    if panel.gpu_blur_dirty || !blur.has_backdrop() {
+        if let Err(e) = blur.blur_elements(gles, scene_gles, [0.086, 0.063, 0.102, 1.0]) {
+            eprintln!("gpu_blur: {e}");
+        }
+        panel.gpu_blur_dirty = false;
+    }
+}
+
 /// The notification/quick panel: one texture slid by the pull fraction, in
 /// front of everything (apps included). Fades in as it comes down.
 fn push_panel<R>(
     elements: &mut Vec<DeElement<R>>,
     renderer: &mut R,
     panel: &mut crate::panel_ui::PanelUi,
+    output: &de_backend::drm::OutputSelection,
 ) where
-    R: Renderer + ImportAll + ImportMem,
+    R: Renderer + ImportAll + ImportMem + 'static,
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
 {
     if !panel.pull.shown() {
@@ -728,6 +908,40 @@ fn push_panel<R>(
     let f = panel.pull.frac().clamp(0.0, 1.0);
     let y = -(1.0 - f) * px.size.h as f32;
     let alpha = (f * 1.6).min(1.0);
+    if panel.use_gpu_blur {
+        if let Some(blur_el) = panel
+            .gpu_blur
+            .as_ref()
+            .and_then(|b| b.element(alpha))
+            .and_then(|el| {
+                (Box::new(el) as Box<dyn std::any::Any>)
+                    .downcast::<TextureRenderElement<R::TextureId>>()
+                    .ok()
+            })
+        {
+            elements.insert(0, DeElement::from(*blur_el));
+        }
+        let scrim = de_design::tokens::DEFAULT
+            .scrim
+            .map(|v| f32::from(v) / 255.0);
+        let buf = panel.scrim_buf.get_or_insert_with(|| {
+            smithay::backend::renderer::element::solid::SolidColorBuffer::new(
+                (output.width as i32, output.height as i32),
+                scrim,
+            )
+        });
+        buf.resize((output.width as i32, output.height as i32));
+        elements.insert(
+            0,
+            DeElement::from(SolidColorRenderElement::from_buffer(
+                buf,
+                Point::<i32, Physical>::from((0, 0)),
+                1.0,
+                alpha,
+                Kind::Unspecified,
+            )),
+        );
+    }
     elements.insert(
         0,
         DeElement::from(TextureRenderElement::from_texture_buffer(
@@ -1246,6 +1460,7 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
             run.de.check_osk();
             run.de.poll_panels();
             run.de.poll_power();
+            run.de.poll_recents_backdrop();
             if run.de.needs_present { run.pump(); }
             TimeoutAction::ToDuration(Duration::from_millis(500))
         })
@@ -1296,6 +1511,11 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
             break;
         }
         if run.motion_wake_at().is_some_and(|d| Instant::now() >= d) {
+            if run.de.foreground == crate::state::Foreground::Shell
+                && run.de.nav.current == de_ui::nav::Screen::Search
+            {
+                run.de.shell_dirty = true;
+            }
             run.de.needs_present = true;
             run.pump();
         }

@@ -13,6 +13,7 @@ unlock_hint = "Swipe up to unlock"
 charging = "Charging"
 fully_charged = "Fully charged"
 fingerprint_hint = "Touch rear sensor to unlock"
+more_notifications = "+{n} more"
 
 [home]
 search_pill = "Search"

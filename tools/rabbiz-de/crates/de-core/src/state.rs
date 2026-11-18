@@ -162,8 +162,6 @@ pub struct De {
     pub(crate) motion_clock: de_paint::animation::AnimationClock,
     /// Last launch failure (shown by the error screen).
     pub launch_error: Option<String>,
-    /// Last shm frame per app for the recents rail (LRU).
-    pub snapshots: crate::snapshots::SnapshotCache,
     /// Scanned `.desktop` catalog.
     pub catalog: de_apps::catalog::Catalog,
     /// Hide/pin/dock + wallpaper prefs (`~/.config/rabbiz-de/prefs.json`).
@@ -532,7 +530,6 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         morph: None,
         motion_clock,
         launch_error: None,
-        snapshots: crate::snapshots::SnapshotCache::default(),
         catalog: de_apps::catalog::Catalog::scan(&shell_locales()),
         app_prefs: de_apps::prefs::AppPrefs::load(),
         strings: de_ui::i18n::Strings::load(shell_locale()),

@@ -268,7 +268,8 @@ pub fn render(menu: &Menu, lay: &Layout, sel: Selection, t: &Theme) -> Pixels {
                 c.fill_rect(Rect::new(local.x + 24, local.y + local.h / 2, local.w - 48, 1), t.line);
             }
             Item::Action(a) => {
-                if sel.current == Some(*i) && a.enabled {
+                let highlighted = sel.current == Some(*i) && a.enabled;
+                if highlighted {
                     c.fill_rounded_rect(
                         Rect::new(local.x + 8, local.y, local.w - 16, local.h),
                         tokens::RADIUS_ROW,
@@ -277,6 +278,8 @@ pub fn render(menu: &Menu, lay: &Layout, sel: Selection, t: &Theme) -> Pixels {
                 }
                 let color = if !a.enabled {
                     t.text3
+                } else if highlighted {
+                    t.text_on_accent
                 } else if a.danger {
                     t.danger
                 } else {
@@ -287,13 +290,18 @@ pub fn render(menu: &Menu, lay: &Layout, sel: Selection, t: &Theme) -> Pixels {
                     Some(false) => format!("    {}", a.label),
                     None => a.label.clone(),
                 };
+                let label_max = if a.shortcut.is_some() {
+                    (local.w - 64 - 108).max(80)
+                } else {
+                    local.w - 64
+                };
                 crate::chrome::draw(
                     &mut c,
                     &label,
                     &style::body(color),
                     local.x + 32,
                     local.y + (local.h - 36) / 2,
-                    Some(local.w - 64),
+                    Some(label_max),
                 );
                 if let Some(s) = &a.shortcut {
                     crate::chrome::draw(

@@ -293,7 +293,9 @@ impl De {
         let g = self.home_geometry();
         if let Some(d) = self.home_ui.drag.as_mut() {
             d.pos = pos;
-            let target = home::drop_target(g.size, pos, g.dock.len());
+            // Match the visual center of the lifted icon (drawn at y - 112 - 24).
+            let visual_center = Point::new(pos.x, (pos.y - 80).max(0));
+            let target = home::drop_target(g.size, visual_center, g.dock.len());
             if target != d.target {
                 d.target = target;
                 // The gap pocket moved: re-raster the home frame once per

@@ -13,10 +13,13 @@ use crate::i18n::Strings;
 
 const SIDE: i32 = 28;
 const CARD_RADIUS: f32 = 44.0;
-const CARD_TINT: [u8; 4] = [0xFF, 0xF8, 0xF0, 0x60];
-const CARD_TINT_ON: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xB0];
+const CARD_TINT: [u8; 4] = [0x22, 0x16, 0x28, 0x64];
+const CARD_TINT_ON: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xD8];
+const CARD_TINT_DIM: [u8; 4] = [0x22, 0x16, 0x28, 0x38];
 /// Text straight on the dimmed backdrop.
 const ON_DIM: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xFF];
+const ON_DIM_SUB: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xB8];
+const ON_DIM_MUTED: [u8; 4] = [0xFF, 0xF8, 0xF0, 0x66];
 
 // --- notifications ---------------------------------------------------------
 
@@ -45,7 +48,7 @@ const NOTIF_CARD_H: i32 = 148;
 const NOTIF_GAP: i32 = 14;
 
 fn clear_all_rect(size: Size) -> Rect {
-    Rect::new(size.w - SIDE - 64, 108, 64, 64)
+    Rect::new(size.w - SIDE - 96, 82, 96, 96)
 }
 
 /// Card rectangles for `count` notifications (stops at the screen bottom).
@@ -85,25 +88,31 @@ fn backdrop_with_veil(size: Size, backdrop: &Pixels, tint: [u8; 4]) -> Canvas {
     c
 }
 
-fn header(c: &mut Canvas, t: &Theme, clock: &str, date: &str, backdrop: &Pixels) {
-    glass::frost(c, backdrop, Rect::new(SIDE, 64, 320, 146), 36.0, CARD_TINT_ON);
+fn frost_card(c: &mut Canvas, backdrop: Option<&Pixels>, rect: Rect, radius: f32, tint: [u8; 4]) {
+    if let Some(b) = backdrop {
+        glass::frost(c, b, rect, radius, tint);
+    } else {
+        c.fill_rounded_rect(rect, radius, tint);
+    }
+}
+
+fn header(c: &mut Canvas, _t: &Theme, clock: &str, date: &str, _backdrop: Option<&Pixels>) {
     let clock_style = text::LabelStyle {
-        size: 76.0,
-        line_height: 84.0,
+        size: 80.0,
+        line_height: 88.0,
         weight: 600,
         tnum: true,
-        color: t.text,
+        color: ON_DIM,
         ..text::LabelStyle::default()
     };
-    chrome::draw(c, clock, &clock_style, SIDE + 4, 96, None);
-    let _ = t;
+    chrome::draw(c, clock, &clock_style, SIDE + 8, 64, Some(320));
     chrome::draw(
         c,
         date,
-        &style::label(t.text2),
-        SIDE + 8,
-        174,
-        Some(304),
+        &style::label(ON_DIM_SUB),
+        SIDE + 10,
+        154,
+        Some(320),
     );
 }
 
@@ -118,19 +127,47 @@ pub fn render_notifications(
     date: &str,
     items: &[Notification],
 ) -> Pixels {
-    let mut c = backdrop_with_veil(size, backdrop, t.scrim);
+    render_notifications_inner(size, s, t, Some(backdrop), clock, date, items)
+}
+
+/// Notification panel controls only (transparent gaps for GPU-blurred sheet).
+#[must_use]
+pub fn render_notifications_controls(
+    size: Size,
+    s: &Strings,
+    t: &Theme,
+    clock: &str,
+    date: &str,
+    items: &[Notification],
+) -> Pixels {
+    render_notifications_inner(size, s, t, None, clock, date, items)
+}
+
+fn render_notifications_inner(
+    size: Size,
+    s: &Strings,
+    t: &Theme,
+    backdrop: Option<&Pixels>,
+    clock: &str,
+    date: &str,
+    items: &[Notification],
+) -> Pixels {
+    let mut c = match backdrop {
+        Some(b) => backdrop_with_veil(size, b, t.scrim),
+        None => Canvas::new(size),
+    };
     header(&mut c, t, clock, date, backdrop);
     if !items.is_empty() {
         let r = clear_all_rect(size);
-        glass::frost(&mut c, backdrop, r, 32.0, CARD_TINT);
-        chrome::draw_ink_centered(&mut c, "\u{e0b8}", &text::LabelStyle::icon(30.0, t.text), r);
+        frost_card(&mut c, backdrop, r, 48.0, CARD_TINT);
+        chrome::draw_ink_centered(&mut c, "\u{e0b8}", &text::LabelStyle::icon(38.0, ON_DIM), r);
     }
     if items.is_empty() {
-        glass::frost(&mut c, backdrop, Rect::new(SIDE, size.h/2-52, size.w-SIDE*2, 96), 36.0, CARD_TINT_ON);
-        chrome::draw_centered(&mut c, s.get("panel.no_notifications"), &style::body(t.text2), size.h / 2 - 20);
+        frost_card(&mut c, backdrop, Rect::new(SIDE, size.h/2-52, size.w-SIDE*2, 96), 36.0, CARD_TINT);
+        chrome::draw_centered(&mut c, s.get("panel.no_notifications"), &style::body(ON_DIM_SUB), size.h / 2 - 20);
     }
     for (n, r) in items.iter().zip(notif_rects(size, items.len())) {
-        glass::frost(&mut c, backdrop, r, CARD_RADIUS, CARD_TINT);
+        frost_card(&mut c, backdrop, r, CARD_RADIUS, CARD_TINT_ON);
         let icon = Rect::new(r.x + 24, r.y + 26, 72, 72);
         if let Some(px) = &n.icon {
             c.blit_scaled(px, icon, 1.0);
@@ -234,8 +271,8 @@ pub fn quick_layout(size: Size) -> QuickLayout {
         )
     };
     QuickLayout {
-        settings: Rect::new(size.w - SIDE - 64 * 2 - 16, 108, 64, 64),
-        power: Rect::new(size.w - SIDE - 64, 108, 64, 64),
+        settings: Rect::new(size.w - SIDE - 96 * 2 - 14, 82, 96, 96),
+        power: Rect::new(size.w - SIDE - 96, 82, 96, 96),
         wide: [wide(0), wide(1), wide(2), wide(3)],
         sliders: [
             Rect::new(SIDE, sliders_y, inner, 96),
@@ -284,8 +321,8 @@ pub fn quick_hit(size: Size, pos: Point) -> Option<QuickHit> {
     None
 }
 
-fn slider(c: &mut Canvas, backdrop: &Pixels, t: &Theme, r: Rect, glyph: &str, frac: f32, available: bool) {
-    glass::frost(c, backdrop, r, 48.0, CARD_TINT);
+fn slider(c: &mut Canvas, backdrop: Option<&Pixels>, t: &Theme, r: Rect, glyph: &str, frac: f32, available: bool) {
+    frost_card(c, backdrop, r, 48.0, CARD_TINT);
     // Fill: a lighter glass capsule from the left edge to the knob.
     let fill_w = if available { (r.w as f32 * frac.clamp(0.0, 1.0)) as i32 } else { 0 };
     if fill_w > 0 {
@@ -295,8 +332,8 @@ fn slider(c: &mut Canvas, backdrop: &Pixels, t: &Theme, r: Rect, glyph: &str, fr
     chrome::draw_ink_centered(
         c,
         glyph,
-        &text::LabelStyle::icon(34.0, if available { t.accent } else { t.text3 }),
-        Rect::new(r.x + 14, r.y, 68, r.h),
+        &text::LabelStyle::icon(40.0, if available { t.accent } else { ON_DIM_MUTED }),
+        Rect::new(r.x + 16, r.y, 72, r.h),
     );
 }
 
@@ -310,35 +347,82 @@ pub fn render_quick(
     date: &str,
     m: &QuickModel,
 ) -> Pixels {
-    let mut c = backdrop_with_veil(size, backdrop, t.scrim);
+    render_quick_inner(size, s, t, Some(backdrop), clock, date, m)
+}
+
+/// Quick actions controls only (transparent gaps for GPU-blurred sheet).
+#[must_use]
+pub fn render_quick_controls(
+    size: Size,
+    s: &Strings,
+    t: &Theme,
+    clock: &str,
+    date: &str,
+    m: &QuickModel,
+) -> Pixels {
+    render_quick_inner(size, s, t, None, clock, date, m)
+}
+
+fn render_quick_inner(
+    size: Size,
+    s: &Strings,
+    t: &Theme,
+    backdrop: Option<&Pixels>,
+    clock: &str,
+    date: &str,
+    m: &QuickModel,
+) -> Pixels {
+    let mut c = match backdrop {
+        Some(b) => backdrop_with_veil(size, b, t.scrim),
+        None => Canvas::new(size),
+    };
     header(&mut c, t, clock, date, backdrop);
     let l = quick_layout(size);
     for (r, glyph) in [(l.settings, "\u{e8b8}"), (l.power, "\u{e8ac}")] {
-        glass::frost(&mut c, backdrop, r, 32.0, CARD_TINT);
-        chrome::draw_ink_centered(&mut c, glyph, &text::LabelStyle::icon(30.0, t.text), r);
+        frost_card(&mut c, backdrop, r, 48.0, CARD_TINT);
+        chrome::draw_ink_centered(&mut c, glyph, &text::LabelStyle::icon(38.0, ON_DIM), r);
     }
     for (i, r) in l.wide.iter().enumerate() {
         let Some(tile) = m.tiles.get(i) else { continue };
-        glass::frost(&mut c, backdrop, *r, 58.0, if tile.on { CARD_TINT_ON } else { CARD_TINT });
-        let disc = Rect::new(r.x + 18, r.y + 18, 80, 80);
-        c.fill_rounded_rect(disc, 999.0, if tile.on { t.accent } else { t.glass_hi });
-        let glyph_col = if tile.on { t.text_on_accent } else if tile.available { t.text } else { t.text3 };
-        chrome::draw_ink_centered(&mut c, tile.glyph, &text::LabelStyle::icon(38.0, glyph_col), disc);
-        let col = if tile.available { t.text } else { t.text3 };
+        frost_card(&mut c, backdrop, *r, 58.0, if tile.on { CARD_TINT_ON } else { CARD_TINT });
+        let disc = Rect::new(r.x + 16, r.y + 16, 84, 84);
+        c.fill_rounded_rect(disc, 999.0, if tile.on { t.accent } else { [0xFF, 0xF8, 0xF0, 0x28] });
+        let glyph_col = if tile.on { t.text_on_accent } else if tile.available { ON_DIM } else { ON_DIM_MUTED };
+        chrome::draw_ink_centered(&mut c, tile.glyph, &text::LabelStyle::icon(42.0, glyph_col), disc);
+        let col = if tile.on { t.text } else if tile.available { ON_DIM } else { ON_DIM_MUTED };
+        let sub_col = if tile.on { t.text2 } else if tile.available { ON_DIM_SUB } else { ON_DIM_MUTED };
         chrome::draw(&mut c, &tile.label, &style::body(col), r.x + 112, r.y + 22, Some(r.w - 112 - 16));
         let detail = if tile.available { &tile.detail } else { s.get("qs.unavailable") };
-        chrome::draw(&mut c, detail, &style::caption(t.text3), r.x + 112, r.y + 64, Some(r.w - 112 - 16));
+        chrome::draw(&mut c, detail, &style::caption(sub_col), r.x + 112, r.y + 64, Some(r.w - 112 - 16));
     }
     slider(&mut c, backdrop, t, l.sliders[0], "\u{e518}", m.brightness, m.brightness_available);
     slider(&mut c, backdrop, t, l.sliders[1], "\u{e050}", m.volume, m.volume_available);
     for (i, r) in l.round.iter().enumerate() {
         let Some(tile) = m.tiles.get(WIDE_TILES + i) else { continue };
-        glass::frost(&mut c, backdrop, *r, r.w as f32 / 2.0, if tile.on { CARD_TINT_ON } else { CARD_TINT });
-        let glyph_col = if tile.on { t.accent } else if tile.available { t.text } else { t.text3 };
-        chrome::draw_ink_centered(&mut c, tile.glyph, &text::LabelStyle::icon(40.0, glyph_col), *r);
-        let label = Rect::new(r.x + r.w/2 - 76, r.y+r.h+4, 152, 40);
-        glass::frost(&mut c, backdrop, label, 20.0, CARD_TINT_ON);
-        chrome::draw_centered_x(&mut c, &tile.label, &style::caption(t.text), r.x + r.w / 2, r.y + r.h + 10);
+        let circle_bg = if tile.on {
+            t.accent
+        } else if tile.available {
+            CARD_TINT
+        } else {
+            CARD_TINT_DIM
+        };
+        if tile.on {
+            c.fill_rounded_rect(*r, r.w as f32 / 2.0, circle_bg);
+        } else {
+            frost_card(&mut c, backdrop, *r, r.w as f32 / 2.0, circle_bg);
+        }
+        let glyph_col = if tile.on { t.text_on_accent } else if tile.available { ON_DIM } else { ON_DIM_MUTED };
+        chrome::draw_ink_centered(&mut c, tile.glyph, &text::LabelStyle::icon(56.0, glyph_col), *r);
+        let label = Rect::new(r.x + r.w / 2 - 76, r.y + r.h + 6, 152, 36);
+        let label_col = if tile.available { ON_DIM } else { ON_DIM_MUTED };
+        if let Some(px) = text::label(&tile.label, style::caption(label_col), Some(label.w - 8)) {
+            let w = px.width() as i32;
+            let h = px.height() as i32;
+            c.blit(
+                &Pixels::new(Size::new(w, h), px.data().to_vec()),
+                Point::new(label.x + (label.w - w) / 2, r.y + r.h + 10),
+            );
+        }
     }
     if let Some(message) = &m.feedback {
         chrome::draw_centered(&mut c, message, &style::label(ON_DIM), size.h - 104);

@@ -193,7 +193,9 @@ impl De {
                 }
             }
             "home.settings" => self.nav.go(Screen::Settings),
-            "home.lock" => self.nav.go(Screen::Lock),
+            "home.lock" => {
+                self.power_lock();
+            }
             other => eprintln!("rabbiz-de: unknown menu action {other}"),
         }
         self.redraw_shell();

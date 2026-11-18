@@ -225,10 +225,9 @@ impl Power {
             }
             _ => {}
         }
-        if let Some((_, s)) = self.menu_hold {
-            add(s + Duration::from_millis(HOLD_MS));
+        if self.menu_hold.is_some() {
+            add(now + Duration::from_millis(16));
         }
-        let _ = now;
         out
     }
 
@@ -479,7 +478,7 @@ impl De {
     }
 
     /// Lock the screen without sleeping (`lock` action).
-    fn power_lock(&mut self) {
+    pub(crate) fn power_lock(&mut self) {
         self.lock.open();
         self.needs_present = true;
     }
@@ -510,14 +509,18 @@ impl De {
                 self.power_lock();
             }
             PowerAction::Screenshot => {
+                self.power.menu_over_lock = false;
+                if !self.locked() {
+                    if self.space.elements().next().is_some() {
+                        self.foreground = crate::state::Foreground::App;
+                    } else {
+                        self.nav.current = Screen::Home;
+                    }
+                    self.shell_dirty = true;
+                }
                 let _ = Command::new("rabbiz-screenshot")
                     .process_group(0)
                     .spawn();
-                self.power.menu_over_lock = false;
-                if !self.locked() {
-                    self.nav.current = Screen::Home;
-                    self.shell_dirty = true;
-                }
             }
             PowerAction::SafeMode => {
                 let flag = dirs_config().join("safe-mode");

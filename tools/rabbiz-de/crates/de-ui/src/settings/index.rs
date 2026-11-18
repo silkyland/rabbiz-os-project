@@ -23,6 +23,29 @@ const SECTIONS: &[&str] = &[
     "settings.session",
 ];
 
+/// Hit-test the settings index rows (returns index into `SECTIONS`).
+#[must_use]
+pub fn hit_test(size: Size, pos: de_api::Point) -> Option<usize> {
+    let mut y = chrome::STATUS_H + 104;
+    for i in 0..SECTIONS.len() {
+        let r = Rect::new(chrome::MARGIN, y, chrome::content_w(size), 88);
+        if r.contains(pos) {
+            return Some(i);
+        }
+        y += 88;
+        if i == 3 || i == 7 {
+            y += 20;
+        }
+    }
+    None
+}
+
+/// Section key at `index`.
+#[must_use]
+pub fn section_key(index: usize) -> Option<&'static str> {
+    SECTIONS.get(index).copied()
+}
+
 #[must_use]
 pub fn render_index(size: Size, s: &Strings, t: &Theme, clock: &str) -> de_api::Pixels {
     let mut c = Canvas::filled(size, t.bg);

@@ -75,7 +75,7 @@ pub enum NavDestination {
 #[must_use]
 pub fn decide_navigation(dy: f32, vy: f32, height: f32) -> NavDestination {
     let rise = -dy / height.max(1.0);
-    if rise >= 0.75 || (rise >= 0.02 && vy <= -500.0) {
+    if rise >= 0.75 || (rise >= 0.007 && vy <= -500.0) {
         NavDestination::Home
     } else if rise >= 0.20 {
         NavDestination::Recents
@@ -112,13 +112,13 @@ impl GestureConfig {
         Self {
             output_w: 720,
             output_h: 1600,
-            nav_h: 32,
+            nav_h: 40,
             top_h: 64,
-            edge_w: 24,
+            edge_w: 44,
             slop: 12.0,
-            back_dx: 48.0,
+            back_dx: 40.0,
             hold_ms: 400,
-            fling_v: 0.5,
+            fling_v: 0.45,
         }
     }
 }
@@ -264,7 +264,6 @@ impl GestureTracker {
                     return Some(GestureEvent::Cancelled);
                 }
                 let dt = (ev.time_ms - tr.start_ms).max(1) as f32;
-                let vx = tr.dx / dt;
                 let g = match tr.zone {
                     Zone::NavBar => {
                         if tr.dx.abs() >= self.cfg.slop || tr.dy.abs() >= self.cfg.slop {
@@ -283,13 +282,28 @@ impl GestureTracker {
                         } else {
                             -tr.dx
                         };
-                        let inward_v = if tr.zone == Zone::EdgeLeft { vx } else { -vx };
+                        let stale = ev.time_ms.saturating_sub(tr.last_ms) >= 80;
+                        // `tr.vx` is already in px/ms (matching `fling_v`).
+                        let recent_vx = if stale { 0.0 } else { tr.vx };
+                        let fallback_vx = tr.dx / dt;
+                        let eff_vx = if recent_vx.abs() > fallback_vx.abs() {
+                            recent_vx
+                        } else {
+                            fallback_vx
+                        };
+                        let inward_v = if tr.zone == Zone::EdgeLeft {
+                            eff_vx
+                        } else {
+                            -eff_vx
+                        };
                         if (inward >= self.cfg.back_dx || inward_v >= self.cfg.fling_v)
-                            && inward.abs() > tr.dy.abs() * 1.4
+                            && inward.abs() > tr.dy.abs() * 1.1
                         {
                             Some(Gesture::EdgeBack {
                                 from_left: tr.zone == Zone::EdgeLeft,
                             })
+                        } else if tr.dx.abs() < self.cfg.slop && tr.dy.abs() < self.cfg.slop {
+                            Some(Gesture::Tap { pos: tr.start })
                         } else {
                             None
                         }
@@ -328,7 +342,7 @@ impl GestureTracker {
     pub fn tick(&mut self, now_ms: u64) -> Option<GestureEvent> {
         let tr = self.track.as_mut()?;
         if tr.committed { return None; }
-        if tr.zone == Zone::NavBar && tr.dy <= -(self.cfg.output_h as f32 * 0.20)
+        if tr.zone == Zone::NavBar && tr.dy <= -(self.cfg.output_h as f32 * 0.15)
             && now_ms.saturating_sub(tr.stall_ms) >= self.cfg.hold_ms {
             tr.committed = true;
             return Some(GestureEvent::Recognized(Gesture::Recents));
@@ -349,27 +363,72 @@ impl GestureTracker {
     }
 }
 
-/// Predictive Back feedback: a bounded droplet grows from the touched
-/// edge, follows the finger vertically, and uses the shared Material glyph.
+/// Predictive Back feedback: a curved water-drop bell attached flush to the
+/// touched edge, growing smoothly inward with a `<` / `>` chevron inside.
 #[must_use]
 pub fn back_feedback(size: de_api::Size, left: bool, y: i32, inward: f32) -> (de_api::Pixels, Point) {
-    use de_api::{Rect, Size};
+    use de_api::Size;
     use de_design::tokens;
     use de_paint::Canvas;
     let t = tokens::DEFAULT;
     let progress = (inward / 96.0).clamp(0.0, 1.0);
-    let w = (44.0 + 40.0 * progress).round() as i32;
-    let h = 112;
+    let w = (16.0 + 44.0 * progress).round() as i32;
+    let h = 260;
     let mut c = Canvas::new(Size::new(w, h));
-    // A neck attached to the edge and a rounded bulb, never an unbounded
-    // distortion of the application's own content.
-    let fill = if inward >= 48.0 { t.accent } else { t.surface2 };
-    c.fill_rounded_rect(Rect::new(0, 0, w, h), w as f32 / 2.0, fill);
-    let glyph = if left { "\u{e5c4}" } else { "\u{e5c8}" };
-    let color = if inward >= 48.0 { t.text_on_accent } else { t.text };
-    crate::chrome::draw_ink_centered(&mut c, glyph, &de_paint::text::LabelStyle::icon(36.0, color), Rect::new((w-36)/2, (h-36)/2, 36, 36));
-    let at = Point::new(if left { -10 } else { size.w - w + 10 },
-        (y - h/2).clamp(0, (size.h-h).max(0)));
+    let fill = if inward >= 48.0 {
+        [t.accent[0], t.accent[1], t.accent[2], 230]
+    } else {
+        [28, 24, 32, 200]
+    };
+    let width = w as usize;
+    let data = c.pixmap_mut().data_mut();
+    // Premultiply fill color.
+    let fa = u32::from(fill[3]);
+    let pr = (u32::from(fill[0]) * fa + 127) / 255;
+    let pg = (u32::from(fill[1]) * fa + 127) / 255;
+    let pb = (u32::from(fill[2]) * fa + 127) / 255;
+    for row in 0..h {
+        let u = (row as f32 + 0.5) / h as f32;
+        // Raised-cosine bell: smooth S-curve tangent at top/bottom, rounded belly.
+        let bell = (0.5 * (1.0 - (std::f32::consts::TAU * u).cos())).powf(1.6);
+        let extent = w as f32 * bell;
+        for col in 0..w {
+            let dist_from_edge = if left {
+                col as f32 + 0.5
+            } else {
+                (w - 1 - col) as f32 + 0.5
+            };
+            let cov = (extent - dist_from_edge + 0.5).clamp(0.0, 1.0);
+            if cov <= 0.0 {
+                continue;
+            }
+            let m = (cov * 255.0).round() as u32;
+            let i = (row as usize * width + col as usize) * 4;
+            data[i] = ((pr * m + 127) / 255) as u8;
+            data[i + 1] = ((pg * m + 127) / 255) as u8;
+            data[i + 2] = ((pb * m + 127) / 255) as u8;
+            data[i + 3] = ((fa * m + 127) / 255) as u8;
+        }
+    }
+    if w >= 28 {
+        let glyph = if left { "\u{e5cb}" } else { "\u{e5cc}" };
+        let color = if inward >= 48.0 {
+            t.text_on_accent
+        } else {
+            [0xFF, 0xF8, 0xF0, 0xFF]
+        };
+        let gx = if left { 2 } else { w - 34 };
+        crate::chrome::draw_ink_centered(
+            &mut c,
+            glyph,
+            &de_paint::text::LabelStyle::icon(32.0, color),
+            de_api::Rect::new(gx, (h - 32) / 2, 32, 32),
+        );
+    }
+    let at = Point::new(
+        if left { 0 } else { size.w - w },
+        (y - h / 2).clamp(0, (size.h - h).max(0)),
+    );
     (c.into_pixels(), at)
 }
 

@@ -182,7 +182,7 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &LockModel) -> Pixels {
         chrome::draw(
             &mut c,
             &n.title,
-            &style::label([0xFF, 0xF8, 0xF0, 0xFF]),
+            &style::label(t.text),
             tx,
             r.y + 16,
             Some(r.w - 96 - when_w - 48),
@@ -190,7 +190,7 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &LockModel) -> Pixels {
         chrome::draw(
             &mut c,
             &n.when,
-            &style::caption([0xFF, 0xF8, 0xF0, 0xB0]),
+            &style::caption(t.text3),
             r.x + r.w - 20 - when_w,
             r.y + 18,
             None,
@@ -198,7 +198,7 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &LockModel) -> Pixels {
         chrome::draw(
             &mut c,
             &n.body,
-            &style::caption([0xFF, 0xF8, 0xF0, 0xD8]),
+            &style::caption(t.text2),
             tx,
             r.y + 50,
             Some(r.w - 96 - 24),
@@ -208,9 +208,12 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &LockModel) -> Pixels {
         let last_y = card_rects(size, m.notifications.len())
             .last()
             .map_or(size.h / 2, |r| r.y + r.h);
+        let more = s
+            .get("lock.more_notifications")
+            .replace("{n}", &m.hidden_notifications.to_string());
         chrome::draw(
             &mut c,
-            &format!("+{} more", m.hidden_notifications),
+            &more,
             &style::caption([0xFF, 0xF8, 0xF0, 0xB0]),
             chrome::MARGIN + 20,
             last_y + 8,

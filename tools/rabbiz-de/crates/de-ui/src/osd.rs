@@ -45,7 +45,16 @@ pub fn render(
         pill.x + pill.w / 2,
         pill.y + pill.h - 56,
     );
-    let _ = label;
+    if !label.is_empty() {
+        chrome::draw(
+            &mut c,
+            label,
+            &style::caption(t.text2),
+            pill.x + pill.w + 16,
+            pill.y + pill.h / 2 - 14,
+            Some(size.w - pill.x - pill.w - 40),
+        );
+    }
     chrome::nav_pill(&mut c, t);
     c.into_pixels()
 }

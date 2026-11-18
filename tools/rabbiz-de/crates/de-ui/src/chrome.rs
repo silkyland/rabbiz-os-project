@@ -324,7 +324,7 @@ fn status_bar_fg(c: &mut Canvas, t: &Theme, info: &StatusInfo, fg: [u8; 4]) {
         .collect::<Vec<_>>()
         .join("  ");
     if !info.airplane && !carrier.is_empty() {
-        draw(c, &carrier, &badge_style(fg), dot_x, 18, None);
+        draw(c, &carrier, &badge_style(fg), dot_x, 18, Some((w / 2 - dot_x).max(60)));
     }
     // Right edge, right→left: battery, per-SIM clusters (slot N rightmost),
     // wifi, ringer, bt, dnd, airplane, alarm — the AOSP system-icons order.
@@ -461,14 +461,18 @@ pub fn settings_row(
     if !first {
         c.fill_rect(Rect::new(r.x + 16, y, r.w - 32, 1), t.line);
     }
-    draw(c, name, &style::body(t.text), r.x + 24, y + 26, None);
-    if let Some(px) = text::label(value, style::body(t.text3), None) {
+    let val_max = (r.w / 2 - 48).max(80);
+    let mut val_w = 0;
+    if let Some(px) = text::label(value, style::body(t.text3), Some(val_max)) {
         let (vw, vh) = (px.width() as i32, px.height() as i32);
+        val_w = vw;
         c.blit(
             &de_api::Pixels::new(de_api::Size::new(vw, vh), px.data().to_vec()),
             Point::new(r.x + r.w - 24 - vw - 24, y + 26),
         );
     }
+    let name_max = (r.w - 48 - val_w - 40).max(80);
+    draw(c, name, &style::body(t.text), r.x + 24, y + 26, Some(name_max));
     // chevron_right glyph.
     draw_ink_centered(
         c,

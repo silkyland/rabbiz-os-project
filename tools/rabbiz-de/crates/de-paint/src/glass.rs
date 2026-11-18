@@ -18,31 +18,67 @@ const RADIUS: i32 = 7;
 const DOWNSCALE: i32 = 4;
 
 /// One separable box-blur pass over premultiplied RGBA8 (edges clamp).
+/// Both horizontal and vertical passes stream rows sequentially so L1 cache
+/// stays hot and there are no strided column jumps.
 fn box_blur_pass(src: &[u8], w: i32, h: i32, r: i32, horizontal: bool) -> Vec<u8> {
     let mut out = vec![0u8; src.len()];
-    let (len, lines) = if horizontal { (w, h) } else { (h, w) };
+    let w_us = w as usize;
+    let stride = w_us * 4;
     let norm = (2 * r + 1) as u32;
-    for line in 0..lines {
-        let at = |i: i32| -> usize {
-            let i = i.clamp(0, len - 1);
-            let (x, y) = if horizontal { (i, line) } else { (line, i) };
-            ((y * w + x) * 4) as usize
-        };
-        let mut acc = [0u32; 4];
-        for i in -r..=r {
-            let p = at(i);
-            for (c, a) in acc.iter_mut().enumerate() {
-                *a += u32::from(src[p + c]);
+    let half = norm / 2;
+
+    if horizontal {
+        for y in 0..h as usize {
+            let srow = &src[y * stride..(y + 1) * stride];
+            let drow = &mut out[y * stride..(y + 1) * stride];
+            let mut acc = [0u32; 4];
+            for i in -r..=r {
+                let x = i.clamp(0, w - 1) as usize * 4;
+                for c in 0..4 {
+                    acc[c] += u32::from(srow[x + c]);
+                }
+            }
+            for x in 0..w_us {
+                let o = x * 4;
+                for c in 0..4 {
+                    drow[o + c] = ((acc[c] + half) / norm) as u8;
+                }
+                let add_x = (x as i32 + r + 1).clamp(0, w - 1) as usize * 4;
+                let sub_x = (x as i32 - r).clamp(0, w - 1) as usize * 4;
+                for c in 0..4 {
+                    acc[c] = acc[c] + u32::from(srow[add_x + c]) - u32::from(srow[sub_x + c]);
+                }
             }
         }
-        for i in 0..len {
-            let o = at(i);
-            for c in 0..4 {
-                out[o + c] = ((acc[c] + norm / 2) / norm) as u8;
+    } else {
+        let mut acc = vec![[0u32; 4]; w_us];
+        for i in -r..=r {
+            let sy = i.clamp(0, h - 1) as usize;
+            let srow = &src[sy * stride..(sy + 1) * stride];
+            for (x, a) in acc.iter_mut().enumerate() {
+                let p = x * 4;
+                for c in 0..4 {
+                    a[c] += u32::from(srow[p + c]);
+                }
             }
-            let (add, sub) = (at(i + r + 1), at(i - r));
-            for (c, a) in acc.iter_mut().enumerate() {
-                *a = *a + u32::from(src[add + c]) - u32::from(src[sub + c]);
+        }
+        for y in 0..h as usize {
+            let drow = &mut out[y * stride..(y + 1) * stride];
+            for (x, a) in acc.iter().enumerate() {
+                let o = x * 4;
+                for c in 0..4 {
+                    drow[o + c] = ((a[c] + half) / norm) as u8;
+                }
+            }
+            let add_y = (y as i32 + r + 1).clamp(0, h - 1) as usize;
+            let sub_y = (y as i32 - r).clamp(0, h - 1) as usize;
+            let add_row = &src[add_y * stride..(add_y + 1) * stride];
+            let sub_row = &src[sub_y * stride..(sub_y + 1) * stride];
+            for (x, a) in acc.iter_mut().enumerate() {
+                let p = x * 4;
+                for c in 0..4 {
+                    a[c] = a[c] + u32::from(add_row[p + c]) - u32::from(sub_row[p + c]);
+                }
             }
         }
     }
@@ -73,30 +109,64 @@ pub fn blurred_backdrop(src: &Pixels) -> Pixels {
 /// general affine raster pipeline for this full-screen, axis-aligned copy.
 fn upsample(src: &Pixels, size: Size) -> Pixels {
     let axis = |to: i32, from: i32| -> Vec<(usize, usize, u32)> {
-        (0..to).map(|i| {
-            let p = ((i as f32 + 0.5) * from as f32 / to as f32 - 0.5)
-                .clamp(0.0, (from - 1) as f32);
-            let low = p.floor() as usize;
-            (low, (low + 1).min(from as usize - 1), ((p - low as f32) * 256.0) as u32)
-        }).collect()
+        (0..to)
+            .map(|i| {
+                let p = ((i as f32 + 0.5) * from as f32 / to as f32 - 0.5)
+                    .clamp(0.0, (from - 1) as f32);
+                let low = p.floor() as usize;
+                (
+                    low,
+                    (low + 1).min(from as usize - 1),
+                    ((p - low as f32) * 256.0) as u32,
+                )
+            })
+            .collect()
     };
-    let xs = axis(size.w, src.size.w);
+    let xs: Vec<(usize, usize, u32)> = axis(size.w, src.size.w)
+        .into_iter()
+        .map(|(a, b, f)| (a * 4, b * 4, f))
+        .collect();
     let ys = axis(size.h, src.size.h);
     let mut out = Pixels::empty(size);
-    let stride = src.size.w as usize * 4;
-    for (y, &(y0, y1, fy)) in ys.iter().enumerate() {
-        for (x, &(x0, x1, fx)) in xs.iter().enumerate() {
-            let dest = (y * size.w as usize + x) * 4;
+    let src_stride = src.size.w as usize * 4;
+    let dst_stride = size.w as usize * 4;
+    for (out_row, &(y0, y1, fy)) in out.data.chunks_exact_mut(dst_stride).zip(ys.iter()) {
+        let row0 = &src.data[y0 * src_stride..(y0 + 1) * src_stride];
+        let row1 = &src.data[y1 * src_stride..(y1 + 1) * src_stride];
+        let inv_fy = 256 - fy;
+        for (dst_px, &(x0, x1, fx)) in out_row.chunks_exact_mut(4).zip(xs.iter()) {
+            let inv_fx = 256 - fx;
+            let p00 = &row0[x0..x0 + 4];
+            let p01 = &row0[x1..x1 + 4];
+            let p10 = &row1[x0..x0 + 4];
+            let p11 = &row1[x1..x1 + 4];
             for c in 0..4 {
-                let a = u32::from(src.data[y0*stride+x0*4+c]) * (256-fx)
-                    + u32::from(src.data[y0*stride+x1*4+c]) * fx;
-                let b = u32::from(src.data[y1*stride+x0*4+c]) * (256-fx)
-                    + u32::from(src.data[y1*stride+x1*4+c]) * fx;
-                out.data[dest+c] = ((a*(256-fy)+b*fy+32768)>>16) as u8;
+                let a = u32::from(p00[c]) * inv_fx + u32::from(p01[c]) * fx;
+                let b = u32::from(p10[c]) * inv_fx + u32::from(p11[c]) * fx;
+                dst_px[c] = ((a * inv_fy + b * fy + 32768) >> 16) as u8;
             }
         }
     }
     out
+}
+
+#[inline]
+fn frost_pixel(dst: &mut [u8], src: &[u8], tint: [u8; 4], ta: u32, inv_ta: u32, mask: u32) {
+    let a = (ta + (u32::from(src[3]) * inv_ta + 127) / 255) * mask / 255;
+    let inv_a = 255 - a;
+    if mask == 255 {
+        for c in 0..3 {
+            let sample = (u32::from(tint[c]) * ta + u32::from(src[c]) * inv_ta + 127) / 255;
+            dst[c] = (sample + (u32::from(dst[c]) * inv_a + 127) / 255).min(255) as u8;
+        }
+    } else {
+        for c in 0..3 {
+            let sample = (u32::from(tint[c]) * ta + u32::from(src[c]) * inv_ta + 127) / 255;
+            let value = (sample * mask + 127) / 255;
+            dst[c] = (value + (u32::from(dst[c]) * inv_a + 127) / 255).min(255) as u8;
+        }
+    }
+    dst[3] = (a + (u32::from(dst[3]) * inv_a + 127) / 255).min(255) as u8;
 }
 
 /// Sample the cached blurred scene through a rounded surface in one pass.
@@ -107,29 +177,52 @@ pub fn frost(c: &mut Canvas, backdrop: &Pixels, rect: Rect, radius: f32, tint: [
     let Some(clip) = rect.intersect(bounds) else { return; };
     let radius = radius.max(0.0).min(rect.w as f32 / 2.0).min(rect.h as f32 / 2.0);
     let width = c.size().w as usize;
+    let b_width = backdrop.size.w as usize;
     let target = c.pixmap_mut().data_mut();
     let ta = u32::from(tint[3]);
-    for y in clip.y..clip.y+clip.h {
-        for x in clip.x..clip.x+clip.w {
-            let dx = (radius - (x-rect.x) as f32 - 0.5)
-                .max(radius - (rect.x+rect.w-x) as f32 + 0.5).max(0.0);
-            let dy = (radius - (y-rect.y) as f32 - 0.5)
-                .max(radius - (rect.y+rect.h-y) as f32 + 0.5).max(0.0);
-            let mask = if dx > 0.0 && dy > 0.0 {
-                ((radius + 0.5 - (dx*dx+dy*dy).sqrt()).clamp(0.0, 1.0)*255.0).round() as u32
-            } else { 255 };
-            if mask == 0 { continue; }
-            let src = ((y*backdrop.size.w+x)*4) as usize;
-            let dest = (y as usize*width+x as usize)*4;
-            let a = (ta + (u32::from(backdrop.data[src+3])*(255-ta)+127)/255)*mask/255;
-            for channel in 0..4 {
-                let value = if channel == 3 { a } else {
-                    let sample = (u32::from(tint[channel])*ta
-                        + u32::from(backdrop.data[src+channel])*(255-ta)+127)/255;
-                    (sample*mask+127)/255
-                };
-                target[dest+channel] = (value + (u32::from(target[dest+channel])*(255-a)+127)/255).min(255) as u8;
+    let inv_ta = 255 - ta;
+    let r_bound = radius.ceil() as i32 + 1;
+    let left_corner_end = (rect.x + r_bound).min(clip.x + clip.w).max(clip.x);
+    let right_corner_start = (rect.x + rect.w - r_bound).max(left_corner_end).min(clip.x + clip.w);
+
+    for y in clip.y..clip.y + clip.h {
+        let dy = (radius - (y - rect.y) as f32 - 0.5)
+            .max(radius - (rect.y + rect.h - y) as f32 + 0.5)
+            .max(0.0);
+        let src_row = &backdrop.data[y as usize * b_width * 4..(y as usize + 1) * b_width * 4];
+        let dst_row = &mut target[y as usize * width * 4..(y as usize + 1) * width * 4];
+        if dy == 0.0 {
+            for x in clip.x..clip.x + clip.w {
+                let o = x as usize * 4;
+                frost_pixel(&mut dst_row[o..o + 4], &src_row[o..o + 4], tint, ta, inv_ta, 255);
             }
+            continue;
+        }
+        let corner_mask = |x: i32| -> u32 {
+            let dx = (radius - (x - rect.x) as f32 - 0.5)
+                .max(radius - (rect.x + rect.w - x) as f32 + 0.5)
+                .max(0.0);
+            if dx > 0.0 {
+                ((radius + 0.5 - (dx * dx + dy * dy).sqrt()).clamp(0.0, 1.0) * 255.0).round() as u32
+            } else {
+                255
+            }
+        };
+        for x in clip.x..left_corner_end {
+            let mask = corner_mask(x);
+            if mask == 0 { continue; }
+            let o = x as usize * 4;
+            frost_pixel(&mut dst_row[o..o + 4], &src_row[o..o + 4], tint, ta, inv_ta, mask);
+        }
+        for x in left_corner_end..right_corner_start {
+            let o = x as usize * 4;
+            frost_pixel(&mut dst_row[o..o + 4], &src_row[o..o + 4], tint, ta, inv_ta, 255);
+        }
+        for x in right_corner_start..clip.x + clip.w {
+            let mask = corner_mask(x);
+            if mask == 0 { continue; }
+            let o = x as usize * 4;
+            frost_pixel(&mut dst_row[o..o + 4], &src_row[o..o + 4], tint, ta, inv_ta, mask);
         }
     }
 }

@@ -21,7 +21,11 @@ pub enum PowerAction {
 }
 
 /// Rows that must be held to fire.
-pub const DESTRUCTIVE: [PowerAction; 2] = [PowerAction::Restart, PowerAction::PowerOff];
+pub const DESTRUCTIVE: [PowerAction; 3] = [
+    PowerAction::Restart,
+    PowerAction::PowerOff,
+    PowerAction::SafeMode,
+];
 /// Hold-to-confirm duration (ms).
 pub const HOLD_MS: u64 = 800;
 

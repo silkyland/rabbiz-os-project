@@ -13,6 +13,7 @@ unlock_hint = "ปัดขึ้นเพื่อปลดล็อก"
 charging = "กำลังชาร์จ"
 fully_charged = "ชาร์จเต็มแล้ว"
 fingerprint_hint = "แตะเซ็นเซอร์ด้านหลังเพื่อปลดล็อก"
+more_notifications = "อีก +{n} รายการ"
 
 [home]
 search_pill = "ค้นหา"
@@ -45,13 +46,13 @@ location = "ตำแหน่ง"
 screenshot = "ภาพหน้าจอ"
 record = "บันทึกหน้าจอ"
 brightness = "ความสว่าง"
-volume = "เสียง"
+volume = "ระดับเสียง"
 on = "เปิด"
 off = "ปิด"
-unavailable = "ใช้ไม่ได้"
+unavailable = "ไม่พร้อมใช้งาน"
 
-working = "กำลังปรับ…"
-failed = "ปรับค่าไม่สำเร็จ ลองอีกครั้ง"
+working = "กำลังดำเนินการ…"
+failed = "ดำเนินการไม่สำเร็จ ลองอีกครั้ง"
 
 [panel]
 no_notifications = "ไม่มีการแจ้งเตือน"

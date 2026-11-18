@@ -230,6 +230,33 @@ impl De {
                 if de.locked() {
                     return FilterResult::Intercept(());
                 }
+                if de.foreground == crate::state::Foreground::Shell
+                    && de.nav.current == de_ui::nav::Screen::Search
+                {
+                    if state == KeyState::Pressed {
+                        match raw {
+                            Some(Keysym::BackSpace) => {
+                                de.navigation.search_query.pop();
+                                de.shell_dirty = true;
+                                de.needs_present = true;
+                            }
+                            Some(Keysym::Escape) => {
+                                de.navigation.search_query.clear();
+                                de.show_shell(de_ui::nav::Screen::Home);
+                            }
+                            _ => {
+                                if let Some(ch) = keysym.modified_sym().key_char() {
+                                    if !ch.is_control() {
+                                        de.navigation.search_query.push(ch);
+                                        de.shell_dirty = true;
+                                        de.needs_present = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    return FilterResult::Intercept(());
+                }
                 FilterResult::Forward
             },
         );
@@ -260,7 +287,9 @@ impl De {
         let zone = self.gestures.zone(api_point(pos));
         // Top layers (including the OSK) own their interactive region.
         // Retain the nav strip as a way to leave the foreground client.
-        let layer_contact = zone != Zone::NavBar && hit.as_ref().is_some_and(|h| h.above_windows);
+        let layer_contact = zone != Zone::NavBar
+            && !self.panel_wants_touch()
+            && hit.as_ref().is_some_and(|h| h.above_windows);
         if !layer_contact {
             self.feed_gesture(
                 i32::from(evt.slot()),
@@ -270,11 +299,8 @@ impl De {
             );
         }
         // Power-screen contact down: arm a destructive row (800 ms hold).
-        if self.locked() {
-            if self.power.menu_over_lock {
-                self.power_menu_press(api_point(pos));
-            }
-        } else if self.foreground == crate::state::Foreground::Shell
+        if !self.locked()
+            && self.foreground == crate::state::Foreground::Shell
             && self.nav.current == de_ui::nav::Screen::Power
         {
             self.power_menu_press(api_point(pos));
@@ -409,6 +435,7 @@ impl De {
     }
 
     fn on_gesture_event(&mut self, ev: GestureEvent, time_ms: u64) {
+        use crate::navigation::RecentsAxis;
         use crate::state::Foreground;
         use de_ui::nav::Screen;
         if !matches!(ev, GestureEvent::Progress { .. } | GestureEvent::HoldDrag { .. })
@@ -424,21 +451,58 @@ impl De {
         let g = match ev {
             GestureEvent::Progress {
                 zone: Zone::NavBar,
+                dx,
                 dy,
-                ..
             } => {
-                self.follow_home_drag(dy, time_ms);
+                self.follow_home_drag(dx, dy, time_ms);
                 return;
             }
             GestureEvent::Progress { zone, dx, dy } if zone != Zone::NavBar => {
                 if matches!(zone, Zone::EdgeLeft | Zone::EdgeRight) {
                     self.back_progress(zone, dx, dy);
                 }
-                if self.panel_progress(zone == Zone::TopEdge, dy) {
+                if self.panel_progress(zone == Zone::TopEdge, dx, dy) {
                     return;
                 }
                 if zone == Zone::Content {
-                    if let GestureEvent::Progress { dx, dy, .. } = ev {
+                    if self.foreground == Foreground::Shell && self.nav.current == Screen::Drawer {
+                        if self.navigation.drawer_drag_origin == 0 && dy > 0.0 {
+                            self.navigation.drawer_dragging = true;
+                            self.navigation.drawer_pull_y = dy;
+                            self.navigation.drawer_slide.value = dy;
+                            self.navigation.drawer_slide.target = dy;
+                            self.needs_present = true;
+                        } else {
+                            self.navigation.drawer_dragging = false;
+                            self.navigation.drawer_pull_y = 0.0;
+                            let next = (self.navigation.drawer_drag_origin - dy.round() as i32).max(0);
+                            if next != self.navigation.drawer_scroll {
+                                self.navigation.drawer_scroll = next;
+                                self.shell_dirty = true;
+                                self.needs_present = true;
+                            }
+                        }
+                    } else if self.foreground == Foreground::Shell
+                        && self.nav.current == Screen::Recents
+                    {
+                        let axis = *self.navigation.recents_axis.get_or_insert_with(|| {
+                            if dx.abs() > dy.abs() { RecentsAxis::Horizontal } else { RecentsAxis::Vertical }
+                        });
+                        if axis == RecentsAxis::Horizontal {
+                            let size = de_api::Size::new(self.output.width as i32, self.output.height as i32);
+                            self.navigation.recents_pager.drag(dx, de_ui::recents::card_stride(size) as f32);
+                            self.shell_dirty = true;
+                            self.needs_present = true;
+                        }
+                    } else if self.foreground == Foreground::Shell
+                        && self.nav.current == Screen::Home
+                        && !self.home_ui.paging()
+                        && dy > 24.0
+                        && dy > dx.abs() * 1.4
+                        && self.panel_progress(true, dx, dy)
+                    {
+                        return;
+                    } else {
                         self.home_drag_progress(dx, dy);
                     }
                 }
@@ -448,6 +512,13 @@ impl De {
                 self.clear_back_feedback();
                 self.navigation.zone = zone;
                 self.navigation.start = pos;
+                self.navigation.drawer_drag_origin = self.navigation.drawer_scroll;
+                if self.foreground == Foreground::Shell && self.nav.current == Screen::Recents
+                    && zone == Zone::Content && self.morph.is_none()
+                {
+                    self.navigation.recents_axis = None;
+                    self.navigation.recents_pager.begin();
+                }
                 self.panel_touch_started(pos);
                 self.home_touch_started();
                 return;
@@ -456,8 +527,18 @@ impl De {
                 use de_ui::gestures::{decide_navigation, NavDestination};
                 match decide_navigation(dy, vy, self.output.height as f32) {
                     NavDestination::Home if self.panels.shown() => self.panel_close(),
-                    NavDestination::Home => self.show_shell(Screen::Home),
-                    NavDestination::Recents => self.show_shell(Screen::Recents),
+                    NavDestination::Home => {
+                        if self.foreground == Foreground::Shell && self.nav.current == Screen::Home {
+                            self.open_drawer_animated(None);
+                        } else if self.foreground == Foreground::App {
+                            self.minimize_foreground();
+                        } else {
+                            self.show_shell(Screen::Home);
+                        }
+                    }
+                    NavDestination::Recents => {
+                        self.show_shell(Screen::Recents);
+                    }
                     NavDestination::Cancel => { self.release_home_drag(false); }
                 }
                 return;
@@ -466,11 +547,42 @@ impl De {
                 if self.panels.pull.dragging() {
                     self.panel_released(vy);
                 } else if self.foreground == Foreground::Shell
+                    && self.nav.current == Screen::Recents
+                {
+                    match self.navigation.recents_axis {
+                        Some(RecentsAxis::Vertical) if -dy > self.output.height as f32 * 0.09 => {
+                            self.release_recents_pager(0.0);
+                            self.show_shell(Screen::Home);
+                        }
+                        Some(RecentsAxis::Horizontal) => self.release_recents_pager(vx),
+                        _ => self.release_recents_pager(0.0),
+                    }
+                } else if self.foreground == Foreground::Shell
+                    && self.nav.current == Screen::Drawer
+                    && self.navigation.drawer_pull_y > 0.0
+                {
+                    let pulled = self.navigation.drawer_pull_y;
+                    self.navigation.drawer_dragging = false;
+                    self.navigation.drawer_pull_y = 0.0;
+                    self.navigation.drawer_slide.value = pulled;
+                    self.navigation.drawer_last_tick = Some(std::time::Instant::now());
+                    if pulled > 140.0 || vy > 500.0 {
+                        self.navigation.drawer_closing = true;
+                        self.navigation
+                            .drawer_slide
+                            .retarget_with_velocity(self.output.height as f32, vy.max(0.0));
+                    } else {
+                        self.navigation.drawer_closing = false;
+                        self.navigation.drawer_slide.retarget(0.0);
+                    }
+                    self.needs_present = true;
+                } else if self.foreground == Foreground::Shell
                     && self.nav.current == Screen::Home
                     && dy < -96.0 && -dy > dx.abs() * 1.4
                 {
                     self.home_drag_cancelled();
-                    self.show_shell(Screen::Drawer);
+                    let from_y = (self.output.height as f32 + dy).max(0.0);
+                    self.open_drawer_animated(Some(from_y));
                 } else {
                     self.home_drag_released(vx);
                 }
@@ -488,6 +600,9 @@ impl De {
                 self.clear_back_feedback();
                 self.panel_cancelled();
                 self.home_drag_cancelled();
+                if self.nav.current == Screen::Recents {
+                    self.release_recents_pager(0.0);
+                }
                 self.release_home_drag(false);
                 return;
             }
@@ -497,11 +612,21 @@ impl De {
         self.clear_back_feedback();
         match g {
             Gesture::Home | Gesture::EdgeBack { .. } if self.panels.shown() => self.panel_close(),
-            Gesture::Home => self.show_shell(Screen::Home),
-            Gesture::Recents => self.show_shell(Screen::Recents),
+            Gesture::Home => {
+                if self.foreground == Foreground::App {
+                    self.minimize_foreground();
+                } else {
+                    self.show_shell(Screen::Home);
+                }
+            }
+            Gesture::Recents => {
+                self.show_shell(Screen::Recents);
+            }
             Gesture::EdgeBack { .. } => {
                 if matches!(self.foreground, Foreground::App) {
-                    // Back preserves the client and its state, like Home.
+                    // Back preserves the client and its state, morphing to Home.
+                    self.minimize_foreground();
+                } else if self.nav.current == Screen::Recents {
                     self.show_shell(Screen::Home);
                 } else {
                     self.launch.cancel();
@@ -538,24 +663,46 @@ impl De {
     }
 
     /// Switch the screen to a shell surface (app keeps running).
-    fn show_shell(&mut self, screen: de_ui::nav::Screen) {
+    pub(crate) fn show_shell(&mut self, screen: de_ui::nav::Screen) {
         use crate::state::Foreground;
+        use de_ui::nav::Screen;
+        let from_overview = self.nav.current == Screen::Recents
+            && self.foreground == Foreground::Shell && self.morph.is_none();
+        let animate_overview = !self.motion_clock.motion_restricted();
+        if screen == Screen::Home && from_overview && animate_overview {
+            self.fade_recents(false);
+            return;
+        }
+        if screen == Screen::Recents {
+            if self.morph.as_ref().is_some_and(|m| m.phase == crate::morph::Phase::Recents)
+                || self.release_home_to_recents()
+            {
+                return;
+            }
+            if from_overview {
+                if self.navigation.recents_fade.is_some() {
+                    self.fade_recents(true);
+                }
+                return;
+            }
+            self.reset_recents_pager();
+            self.prepare_recents_backdrop();
+        }
+        let fade_in = screen == Screen::Recents && self.foreground == Foreground::Shell
+            && animate_overview;
+        self.navigation.recents_fade = None;
         if matches!(self.foreground, Foreground::App) {
             // The window is still presented — grab its last frame for the
             // recents card before the shell takes over.
             self.capture_topmost();
         }
-        if screen == de_ui::nav::Screen::Recents {
-            self.prepare_recents_backdrop();
-        }
-        let to_recents = screen == de_ui::nav::Screen::Recents && self.release_home_to_recents();
-        let to_home = screen == de_ui::nav::Screen::Home && self.release_home_drag(true);
-        if !to_recents && !to_home { self.morph = None; }
+        self.morph = None;
         self.launch.cancel();
         self.foreground = Foreground::Shell;
         self.focus_foreground();
-        if !to_recents && self.nav.current != screen {
-            self.nav.current = screen;
+        self.nav.current = screen;
+        if fade_in {
+            self.fade_recents(true);
         }
         self.shell_dirty = true;
         self.needs_present = true;
@@ -574,7 +721,11 @@ impl De {
                     self.power_menu_press(pos);
                 }
             }
-            GestureEvent::Progress { dy, .. } => self.lock.drag(dy, h),
+            GestureEvent::Progress { dy, .. } => {
+                if !self.power.menu_over_lock {
+                    self.lock.drag(dy, h);
+                }
+            }
             GestureEvent::Released { vy, .. } | GestureEvent::NavReleased { vy, .. } => {
                 self.lock.release(vy, h);
                 self.power_menu_release();
@@ -650,9 +801,7 @@ impl De {
                         }
                     }
                     Some(de_ui::home::HomeHit::Drawer) => {
-                        self.nav.go(Screen::Drawer);
-                        self.shell_dirty = true;
-                        self.needs_present = true;
+                        self.open_drawer_animated(None);
                     }
                     Some(de_ui::home::HomeHit::Search) => {
                         self.nav.go(Screen::Search);
@@ -673,14 +822,85 @@ impl De {
                     self.try_launch(&rows[i].id, de_ui::search::icon_rect(size, &rows, i));
                 }
             }
-            Screen::Power => self.power_menu_tap(pos, false),
-            Screen::Recents
-                // Tap anywhere → back to the last app.
-                if self.space.elements().next().is_some() => {
+            Screen::Drawer => {
+                let ids = self.visible_ids();
+                let apps = self.app_icons(&ids);
+                match de_ui::drawer::hit_test(size, &apps, self.navigation.drawer_scroll, pos) {
+                    Some(de_ui::drawer::DrawerHit::App(id)) => {
+                        let cx = de_api::Rect::new(size.w / 2 - 56, size.h / 2 - 56, 112, 112);
+                        self.try_launch(&id, Some(cx));
+                    }
+                    Some(de_ui::drawer::DrawerHit::Search) => {
+                        self.nav.go(Screen::Search);
+                        self.shell_dirty = true;
+                        self.needs_present = true;
+                    }
+                    Some(de_ui::drawer::DrawerHit::Letter(letter)) => {
+                        if let Some(y) = de_ui::drawer::scroll_for_letter(&apps, &letter) {
+                            self.navigation.drawer_scroll = y;
+                            self.shell_dirty = true;
+                            self.needs_present = true;
+                        }
+                    }
+                    None => {}
+                }
+            }
+            Screen::Error => match de_ui::error::hit_test(size, pos) {
+                Some(de_ui::error::ErrorHit::Wait) if self.space.elements().next().is_some() => {
+                    self.launch_error = None;
                     self.foreground = Foreground::App;
                     self.focus_foreground();
                     self.needs_present = true;
                 }
+                Some(de_ui::error::ErrorHit::Wait | de_ui::error::ErrorHit::Close) => {
+                    self.launch_error = None;
+                    self.show_shell(Screen::Home);
+                }
+                None => {}
+            },
+            Screen::Settings => {
+                if let Some(idx) = de_ui::settings::index::hit_test(size, pos) {
+                    if de_ui::settings::index::section_key(idx) == Some("settings.display") {
+                        let next = de_paint::wallpaper::next_id(&self.app_prefs.prefs().wallpaper_id);
+                        if self.app_prefs.set_wallpaper(next) {
+                            self.wallpaper = None;
+                            self.shell_dirty = true;
+                            self.needs_present = true;
+                        }
+                    }
+                }
+            }
+            Screen::Power => self.power_menu_tap(pos, false),
+            Screen::Recents => {
+                if self.morph.is_some() {
+                    return;
+                }
+                let windows = self.recent_windows();
+                let index = self.navigation.recents_pager.pos();
+                self.release_recents_pager(0.0);
+                match de_ui::recents::hit_test(
+                    size,
+                    windows.len(),
+                    index,
+                    pos,
+                ) {
+                    Some(de_ui::recents::RecentsHit::ClearAll) => {
+                        for w in windows {
+                            if let Some(t) = w.toplevel() {
+                                t.send_close();
+                            }
+                        }
+                        self.show_shell(Screen::Home);
+                    }
+                    Some(de_ui::recents::RecentsHit::Card(idx)) => {
+                        if let Some(window) = windows.into_iter().nth(idx) {
+                            self.navigation.recents_fade = None;
+                            self.restore_recent(window, de_ui::recents::card_at(size, idx, index));
+                        }
+                    }
+                    None => {}
+                }
+            }
             _ => {}
         }
     }
@@ -706,6 +926,24 @@ impl De {
     pub fn try_launch(&mut self, desktop_id: &str, source: Option<de_api::Rect>) {
         self.launch.cancel();
         self.morph = None;
+        if let Some(window) = self.recent_windows().into_iter().find(|w| {
+            w.toplevel().is_some_and(|t| {
+                let id = crate::snapshots::window_app_id(t);
+                id.trim_end_matches(".desktop") == desktop_id.trim_end_matches(".desktop")
+            })
+        }) {
+            self.launch_error = None;
+            if let Some(rect) = source.filter(|_| !self.motion_clock.motion_restricted()) {
+                self.begin_launch_morph(desktop_id, rect);
+                if let Some(morph) = self.morph.as_mut() {
+                    morph.reuse_window(window);
+                }
+                self.needs_present = true;
+            } else {
+                self.show_app_window(&window);
+            }
+            return;
+        }
         match self.launch.begin(desktop_id) {
             Ok(pid) => {
                 eprintln!("launch: {desktop_id} pid={pid}");
@@ -724,38 +962,6 @@ impl De {
                 self.needs_present = true;
             }
         }
-    }
-
-    /// Grab the topmost window's committed shm frame into the recents
-    /// snapshot cache (no-op for dmabuf/EGL clients — they keep the icon
-    /// placeholder until a capture seam exists for them).
-    pub(crate) fn capture_topmost(&mut self) {
-        let Some(top) = self.space.elements().last().cloned() else {
-            return;
-        };
-        let app_id = top
-            .toplevel()
-            .map(crate::snapshots::window_app_id)
-            .unwrap_or_default();
-        if app_id.is_empty() {
-            return;
-        }
-        if let Some(px) = crate::snapshots::capture_window(&top) {
-            let thumb = de_paint::wallpaper::cover_scale(&px, crate::shell::RECENT_THUMB);
-            self.snapshots.record(&app_id, thumb);
-        } else {
-            self.snapshots.touch(&app_id);
-        }
-    }
-
-    /// App ids of all mapped windows (topmost last).
-    #[must_use]
-    pub fn window_app_ids(&self) -> Vec<String> {
-        self.space
-            .elements()
-            .filter_map(|w| w.toplevel().map(crate::snapshots::window_app_id))
-            .filter(|id| !id.is_empty())
-            .collect()
     }
 
     /// Hit-test in the same order used to compose the output.

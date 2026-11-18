@@ -125,18 +125,91 @@ pub fn render(
         c.blit_region(&px, region, list.origin());
     }
 
-    // A–Z rail on the right edge.
+    // A–Z rail on the right edge (inset clear of the 24 px EdgeRight strip).
     let mut ry = view.y + 8;
     let letters = rail_letters(apps);
     for ch in letters {
         if ry > size.h - 80 {
             break;
         }
-        chrome::draw(&mut c, &ch, &style::caption(t.text3), size.w - 24, ry, None);
+        chrome::draw(&mut c, &ch, &style::caption(t.text3), size.w - 32, ry, None);
         ry += 30;
     }
     chrome::nav_pill(&mut c, t);
     c.into_pixels()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DrawerHit {
+    Search,
+    App(String),
+    Letter(String),
+}
+
+/// Hit-test the drawer search bar, A–Z rail, and scrolled app rows.
+#[must_use]
+pub fn hit_test(size: Size, apps: &[IconEntry], scroll_px: i32, pos: de_api::Point) -> Option<DrawerHit> {
+    let sf = Rect::new(
+        chrome::MARGIN,
+        chrome::STATUS_H + 12,
+        size.w - chrome::MARGIN * 2,
+        56,
+    );
+    if sf.contains(pos) {
+        return Some(DrawerHit::Search);
+    }
+    let view = Rect::new(
+        chrome::MARGIN,
+        sf.y + sf.h + 16,
+        size.w - chrome::MARGIN - 40,
+        size.h - (sf.y + sf.h + 16) - chrome::NAV_H,
+    );
+    if pos.x >= size.w - 44 && pos.y >= view.y {
+        let mut ry = view.y + 8;
+        for ch in rail_letters(apps) {
+            if ry > size.h - 80 {
+                break;
+            }
+            if pos.y >= ry - 4 && pos.y < ry + 26 {
+                return Some(DrawerHit::Letter(ch));
+            }
+            ry += 30;
+        }
+    }
+    if !view.contains(pos) {
+        return None;
+    }
+    let total = layout_height(apps);
+    let clamped_scroll = scroll_px.max(0).min((total - view.h).max(0));
+    let local_y = pos.y - view.y + clamped_scroll;
+    let secs = sections(apps);
+    let mut y = 0;
+    for (k, start) in &secs {
+        y += HEADER_H;
+        let end = next_start(&secs, k, apps.len());
+        for app in &apps[*start..end] {
+            if local_y >= y && local_y < y + ROW_H {
+                return Some(DrawerHit::App(app.id.clone()));
+            }
+            y += ROW_H;
+        }
+    }
+    None
+}
+
+/// Scroll offset (px) that brings section `letter` to the top of the drawer.
+#[must_use]
+pub fn scroll_for_letter(apps: &[IconEntry], letter: &str) -> Option<i32> {
+    let secs = sections(apps);
+    let mut y = 0;
+    for (k, start) in &secs {
+        if k == letter {
+            return Some(y);
+        }
+        let end = next_start(&secs, k, apps.len());
+        y += HEADER_H + (end - start) as i32 * ROW_H;
+    }
+    None
 }
 
 /// Entries of the section that starts at `key` (index lookup).

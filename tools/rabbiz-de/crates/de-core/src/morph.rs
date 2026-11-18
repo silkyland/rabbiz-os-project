@@ -1,5 +1,6 @@
 //! Runtime ownership of the launcher morph and its app handoff.
 
+use std::sync::{mpsc, Arc};
 use std::time::{Duration, Instant};
 
 use de_api::{Pixels, Rect, Size};
@@ -27,6 +28,7 @@ pub(crate) enum Phase {
     Dragging,
     Returning,
     Recents,
+    Restoring,
 }
 
 pub(crate) struct WindowMorph {
@@ -37,12 +39,16 @@ pub(crate) struct WindowMorph {
     pub backing: SolidColorBuffer,
     pub backdrop: Option<Pixels>,
     pub backdrop_texture: Option<Box<dyn std::any::Any>>,
+    pub backdrop_rx: Option<mpsc::Receiver<Pixels>>,
+    pub snapshot: Option<Arc<Pixels>>,
+    pub snapshot_texture: Option<Box<dyn std::any::Any>>,
     animator: MorphAnimator,
     ready_at: Option<Instant>,
     content_fade: Duration,
     last_frame: Option<Instant>,
     last_drag_ms: Option<u64>,
     navigation: bool,
+    drag_offset_x: f32,
 }
 
 impl WindowMorph {
@@ -52,7 +58,7 @@ impl WindowMorph {
         phase: Phase,
         form_factor: FormFactor,
     ) -> Self {
-        let opening = phase == Phase::Opening;
+        let opening = matches!(phase, Phase::Opening | Phase::Restoring);
         let mut animator = MorphAnimator::new(if opening { 0.0 } else { 1.0 });
         if phase != Phase::Dragging {
             animator.retarget(opening);
@@ -66,12 +72,16 @@ impl WindowMorph {
             backing: SolidColorBuffer::new((1, 1), color),
             backdrop: None,
             backdrop_texture: None,
+            backdrop_rx: None,
+            snapshot: None,
+            snapshot_texture: None,
             animator,
             ready_at: None,
             content_fade: Duration::from_millis(form_factor.scale_ms(APP_CONTENT_FADE_MS).into()),
             last_frame: None,
             last_drag_ms: None,
             navigation: phase == Phase::Dragging,
+            drag_offset_x: 0.0,
         }
     }
 
@@ -83,6 +93,7 @@ impl WindowMorph {
         if self.phase == Phase::Dragging {
             return false;
         }
+        self.drag_offset_x *= (-15.0 * delta.max(0.0)).exp();
         self.animator.advance(delta, clock);
         self.animator.settled() && (self.phase != Phase::Opening || self.content_ready(now) >= 1.0)
     }
@@ -106,12 +117,45 @@ impl WindowMorph {
         let mut pose = MorphPose::at(progress, self.origin.rect, dst, self.content_ready(now));
         if self.navigation {
             pose.card = de_ui::launch_morph::navigation_card(progress, self.origin.rect, dst);
+            pose.card.x += self.drag_offset_x.round() as i32;
             pose.icon.x = pose.card.x + (pose.card.w - pose.icon.w) / 2;
             pose.icon.y = pose.card.y + (pose.card.h - pose.icon.h) / 2;
             pose.app_alpha = (progress * 2.0).clamp(0.0, 1.0);
             pose.icon_alpha = 1.0 - pose.app_alpha;
         }
+        if self.phase == Phase::Restoring {
+            pose.icon_alpha = 0.0;
+            pose.app_alpha = if self.snapshot.is_some() {
+                ((progress - 0.72) / (1.0 - 0.72)).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            pose.card_alpha = if self.snapshot.is_some() { 0.0 } else { 1.0 };
+        } else if self.phase == Phase::Recents && self.snapshot.is_some() {
+            pose.app_alpha = 0.0;
+            pose.card_alpha = 0.0;
+            pose.icon_alpha = 0.0;
+        }
         pose
+    }
+
+    pub fn snapshot_alpha(&self) -> f32 {
+        if self.phase == Phase::Restoring {
+            1.0 - ((self.animator.progress() - 0.84) / (1.0 - 0.84)).clamp(0.0, 1.0)
+        } else {
+            1.0
+        }
+    }
+
+    pub fn overview_window(&self) -> Option<&Window> {
+        matches!(self.phase, Phase::Recents | Phase::Restoring)
+            .then_some(self.window.as_ref())
+            .flatten()
+    }
+
+    pub fn reuse_window(&mut self, window: Window) {
+        self.window = Some(window);
+        self.ready_at = Some(Instant::now());
     }
 
     pub fn backdrop_alpha(&self) -> f32 {
@@ -178,8 +222,16 @@ impl De {
                     .insert_if_missing(|| morph.origin.clone());
                 morph.window = Some(window);
                 morph.ready_at = Some(Instant::now());
+                return;
             }
-            return;
+            if morph.phase == Phase::Opening {
+                return;
+            }
+        }
+        if self.foreground == Foreground::App {
+            if let Some(previous) = self.recent_windows().into_iter().find(|w| w != &window) {
+                self.capture_recent_window(&previous);
+            }
         }
         self.space.raise_element(&window, true);
         self.foreground = Foreground::App;
@@ -218,46 +270,138 @@ impl De {
         LaunchOrigin { rect, icon, screen: Screen::Home, home_page: self.home_page }
     }
 
-    pub(crate) fn follow_home_drag(&mut self, dy: f32, time_ms: u64) {
+    pub(crate) fn follow_home_drag(&mut self, dx: f32, dy: f32, time_ms: u64) {
+        if self.motion_clock.motion_restricted() || self.panels.shown() || self.locked() {
+            return;
+        }
         if self.morph.is_none() && dy < -12.0 && self.foreground == Foreground::App {
-            if let Some(window) = self.space.elements().last().cloned() {
+            if let Some(window) = self.recent_windows().into_iter().next() {
                 let origin = self.home_origin(&window);
+                let reuse_home = self.nav.current == Screen::Home && !self.shell_dirty;
                 self.nav.current = Screen::Home;
                 // Always render Home here; shell_px may still contain the
                 // drawer/search screen from which the app was launched.
-                let home = self.shell_pixels();
-                let backdrop = (!self.motion_clock.motion_restricted())
-                    .then(|| de_paint::glass::blurred_backdrop(&home));
-                self.shell_px = Some(home);
-                self.shell_tex = None;
+                let home = if reuse_home {
+                    if let Some(px) = self.shell_px.as_ref() {
+                        px.clone()
+                    } else {
+                        self.shell_pixels()
+                    }
+                } else {
+                    self.shell_pixels()
+                };
+                if !reuse_home || self.shell_px.is_none() {
+                    self.shell_px = Some(home.clone());
+                    self.shell_tex = None;
+                }
                 self.shell_dirty = false;
                 let mut morph = WindowMorph::new(origin, Some(window), Phase::Dragging,
                     self.motion_clock.form_factor());
-                morph.backdrop = backdrop;
+                if !self.motion_clock.motion_restricted() {
+                    let (tx, rx) = mpsc::channel();
+                    std::thread::spawn(move || {
+                        let _ = tx.send(de_paint::glass::blurred_backdrop(&home));
+                    });
+                    morph.backdrop_rx = Some(rx);
+                }
                 self.morph = Some(morph);
             }
         }
         if let Some(morph) = self.morph.as_mut().filter(|m| m.phase == Phase::Dragging) {
-            morph.drag(1.0 + dy / self.output.height.max(1) as f32, time_ms);
+            // Pulling up ~35% of screen height shrinks the card smoothly to
+            // the mid-screen Recents overview size (progress = 0.5).
+            let travel = (self.output.height.max(1) as f32 * 0.70).max(1.0);
+            let progress = (1.0 + dy / travel).clamp(0.32, 1.0);
+            let lift = ((1.0 - progress) * 2.0).clamp(0.0, 1.0);
+            morph.drag_offset_x = dx * 0.45 * lift;
+            morph.drag(progress, time_ms);
             self.needs_present = true;
         }
     }
 
-    pub(crate) fn release_home_drag(&mut self, close: bool) -> bool {
+    pub(crate) fn edge_back_to_home(&mut self, time_ms: u64) -> bool {
+        self.follow_home_drag(0.0, -48.0, time_ms);
         let Some(morph) = self.morph.as_mut().filter(|m| m.phase == Phase::Dragging) else {
             return false;
         };
-        morph.release(close);
+        morph.animator.track(0.92, -3.2);
+        self.release_home_drag(true)
+    }
+
+    pub(crate) fn minimize_foreground(&mut self) {
+        if !self.release_home_drag(true) && !self.edge_back_to_home(0) {
+            self.show_shell(Screen::Home);
+        }
+    }
+
+    pub(crate) fn release_home_drag(&mut self, minimize: bool) -> bool {
+        if minimize {
+            if let Some(window) = self.morph.as_ref()
+                .filter(|m| m.phase == Phase::Dragging)
+                .and_then(|m| m.window.clone())
+            {
+                self.capture_recent_window(&window);
+                self.focus_surface(None, smithay::utils::SERIAL_COUNTER.next_serial());
+            }
+        }
+        let Some(morph) = self.morph.as_mut().filter(|m| m.phase == Phase::Dragging) else {
+            return false;
+        };
+        morph.release(minimize);
         self.needs_present = true;
         true
     }
 
     pub(crate) fn release_home_to_recents(&mut self) -> bool {
+        let Some(window) = self.morph.as_ref()
+            .filter(|m| m.phase == Phase::Dragging)
+            .and_then(|m| m.window.clone()) else { return false; };
+        self.capture_recent_window(&window);
+        self.reset_recents_pager();
+        self.navigation.home_underlay_px = self.shell_px.clone();
+        self.navigation.home_underlay_tex = None;
         let Some(morph) = self.morph.as_mut().filter(|m| m.phase == Phase::Dragging) else { return false; };
+        self.navigation.recents_backdrop = morph.backdrop.take().or_else(|| self.shell_px.clone());
+        self.navigation.recents_blur_rx = morph.backdrop_rx.take();
+        morph.snapshot = crate::snapshots::snapshot(&window);
         morph.phase = Phase::Recents;
         morph.animator.settle_recents();
+        self.foreground = Foreground::Shell;
+        self.focus_foreground();
+        self.nav.current = Screen::Recents;
+        self.shell_dirty = true;
         self.needs_present = true;
         true
+    }
+
+    pub(crate) fn restore_recent(&mut self, window: Window, card: Rect) {
+        self.launch.cancel();
+        let snapshot = crate::snapshots::snapshot(&window);
+        if self.motion_clock.motion_restricted() {
+            self.morph = None;
+            self.show_app_window(&window);
+            return;
+        }
+        let origin = LaunchOrigin {
+            rect: card,
+            icon: Pixels::empty(Size::new(1, 1)),
+            screen: Screen::Recents,
+            home_page: self.home_page,
+        };
+        let mut morph = WindowMorph::new(
+            origin, Some(window), Phase::Restoring, self.motion_clock.form_factor(),
+        );
+        morph.snapshot = snapshot;
+        self.morph = Some(morph);
+        self.shell_dirty = true;
+        self.needs_present = true;
+    }
+
+    pub(crate) fn show_app_window(&mut self, window: &Window) {
+        self.space.raise_element(window, true);
+        self.foreground = Foreground::App;
+        self.focus_foreground();
+        self.needs_present = true;
     }
 
     /// Close the last app after its window disappears. Keep the icon as the
@@ -281,9 +425,22 @@ impl De {
         let Some(morph) = self.morph.as_mut() else {
             return;
         };
+        if let Some(rx) = morph.backdrop_rx.take() {
+            match rx.try_recv() {
+                Ok(px) => {
+                    morph.backdrop = Some(px);
+                    morph.backdrop_texture = None;
+                    self.needs_present = true;
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    morph.backdrop_rx = Some(rx);
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {}
+            }
+        }
         if morph.tick(now, &self.motion_clock) {
             self.foreground = match morph.phase {
-                Phase::Opening | Phase::Returning => {
+                Phase::Opening | Phase::Returning | Phase::Restoring => {
                     if let Some(window) = &morph.window {
                         self.space.raise_element(window, true);
                     }
@@ -331,5 +488,40 @@ mod tests {
         assert!(!morph.tick(half, &clock));
         assert_eq!(morph.pose(output, half).app_alpha, 0.5);
         assert!(morph.tick(waiting + morph.content_fade, &clock));
+    }
+
+    #[test]
+    fn overview_settles_on_the_same_card_and_restore_starts_there() {
+        let output = Rect::new(0, 0, 720, 1600);
+        let card = de_ui::recents::card_rect(output.size());
+        let origin = LaunchOrigin {
+            rect: Rect::new(40, 440, 96, 96),
+            icon: Pixels::empty(Size::new(96, 96)),
+            screen: Screen::Home,
+            home_page: 0,
+        };
+        let now = Instant::now();
+        let clock = AnimationClock::new();
+        let mut morph = WindowMorph::new(origin.clone(), None, Phase::Dragging, FormFactor::Handset);
+        morph.animator.track(0.68, -1.2);
+        morph.phase = Phase::Recents;
+        morph.snapshot = Some(Arc::new(Pixels::empty(Size::new(1, 1))));
+        morph.animator.settle_recents();
+        assert!(morph.pose(output, now).card.w > card.w);
+        for frame in 0..60 {
+            morph.tick(now + Duration::from_millis(frame * 16), &clock);
+        }
+        assert_eq!(morph.pose(output, now).card, card);
+        let mut restore = WindowMorph::new(
+            LaunchOrigin { rect: card, ..origin }, None, Phase::Restoring, FormFactor::Handset,
+        );
+        restore.snapshot = morph.snapshot;
+        assert_eq!(restore.pose(output, now).card, card);
+        assert_eq!(restore.snapshot_alpha(), 1.0);
+        restore.tick(now, &clock);
+        assert!(restore.tick(now + Duration::from_millis(600), &clock));
+        assert_eq!(restore.pose(output, now).card, output);
+        assert_eq!(restore.pose(output, now).app_alpha, 1.0);
+        assert_eq!(restore.snapshot_alpha(), 0.0);
     }
 }

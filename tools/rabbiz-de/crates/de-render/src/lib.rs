@@ -4,6 +4,7 @@
 //! Both consume premultiplied RGBA8 [`Pixels`](de_api::Pixels) uploaded via
 //! [`DeRenderer::upload`] and composite the same [`DeElement`]s.
 
+pub mod blur;
 pub mod gl;
 pub mod soft;
 pub mod target;
