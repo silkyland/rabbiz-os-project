@@ -38,6 +38,22 @@ airplane = "โหมดเครื่องบิน"
 rotate = "หมุนอัตโนมัติ"
 battery_saver = "ประหยัดแบตเตอรี่"
 
+flashlight = "ไฟฉาย"
+hotspot = "ฮอตสปอต"
+location = "ตำแหน่ง"
+screenshot = "ภาพหน้าจอ"
+record = "บันทึกหน้าจอ"
+brightness = "ความสว่าง"
+volume = "เสียง"
+on = "เปิด"
+off = "ปิด"
+unavailable = "ใช้ไม่ได้"
+
+[panel]
+no_notifications = "ไม่มีการแจ้งเตือน"
+clear_all = "ล้างทั้งหมด"
+notifications = "การแจ้งเตือน"
+
 [power]
 title = "พลังงาน"
 power_off = "ปิดเครื่อง"

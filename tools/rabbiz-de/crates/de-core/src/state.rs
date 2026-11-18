@@ -145,6 +145,8 @@ pub struct De {
     pub(crate) shell_menu: Option<crate::shell_menu::ShellMenu>,
     /// Finger-tracked home pager + icon rearrange (`home_ui.rs`).
     pub(crate) home_ui: crate::home_ui::HomeUi,
+    /// Notification panel and quick actions (`panel_ui.rs`).
+    pub(crate) panels: crate::panel_ui::PanelUi,
     /// Whether the screen shows a fullscreen app or a shell surface.
     pub foreground: Foreground,
     /// System-gesture recognizer (edge-back / home / recents / shade).
@@ -467,6 +469,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         popup_grab: None,
         shell_menu: None,
         home_ui: crate::home_ui::HomeUi::new(),
+        panels: crate::panel_ui::PanelUi::new(),
         output_obj,
 
         compositor_state,

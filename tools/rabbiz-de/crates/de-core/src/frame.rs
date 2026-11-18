@@ -138,6 +138,8 @@ impl Run {
         }
         self.de.advance_morph(t0);
         self.de.advance_home(t0);
+        self.de.advance_panel(t0);
+        self.de.panel_prepare();
         // Shell surface: re-raster on dirty or when the clock minute rolls.
         let minute = minute_of_day();
         // While the pager moves the home screen is drawn from layers (see
@@ -179,6 +181,7 @@ impl Run {
             foreground,
             morph,
             home_ui,
+            panels,
             ..
         } = de;
         let mut parts = FrameParts {
@@ -195,6 +198,7 @@ impl Run {
             foreground: *foreground,
             morph,
             home: home_ui,
+            panel: panels,
             layered,
             now: t0,
         };
@@ -245,6 +249,7 @@ struct FrameParts<'a> {
     foreground: crate::state::Foreground,
     morph: &'a mut Option<WindowMorph>,
     home: &'a mut crate::home_ui::HomeUi,
+    panel: &'a mut crate::panel_ui::PanelUi,
     /// Draw the home screen from `home` layers instead of `shell_tex`.
     layered: bool,
     now: Instant,
@@ -302,6 +307,7 @@ where
     }
     // The lifted icon rides on top of the home frame as its own texture.
     push_drag_overlay::<R>(&mut elements, renderer, de.home, de.output);
+    push_panel::<R>(&mut elements, renderer, de.panel);
     // Gesture bar on top of everything.
     let bar_y = f64::from(de.output.height) - f64::from(de_ui::chrome::NAV_H);
     if let Some(tex) = texture_buffer::<R>(de.gesture_bar.as_ref()) {
@@ -481,6 +487,7 @@ impl Run {
                 .as_ref()
                 .and_then(|morph| morph.next_frame_at(interval)),
             self.de.home_wake_at(interval),
+            self.de.panel_wake_at(interval),
         ]
         .into_iter()
         .flatten()
@@ -618,6 +625,46 @@ where
     )
     .ok()
     .map(|b| Box::new(b) as Box<dyn std::any::Any>)
+}
+
+/// The notification/quick panel: one texture slid by the pull fraction, in
+/// front of everything (apps included). Fades in as it comes down.
+fn push_panel<R>(
+    elements: &mut Vec<DeElement<R>>,
+    renderer: &mut R,
+    panel: &mut crate::panel_ui::PanelUi,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    if !panel.pull.shown() {
+        panel.tex = None;
+        panel.tex_generation = u64::MAX;
+        return;
+    }
+    if panel.tex.is_none() || panel.tex_generation != panel.generation {
+        let Some(px) = panel.pixels.as_ref() else { return };
+        panel.tex = upload_any(renderer, px);
+        panel.tex_generation = panel.generation;
+    }
+    let (Some(tex), Some(px)) = (texture_buffer::<R>(panel.tex.as_ref()), panel.pixels.as_ref())
+    else {
+        return;
+    };
+    let f = panel.pull.frac().clamp(0.0, 1.0);
+    let y = -(1.0 - f) * px.size.h as f32;
+    let alpha = (f * 1.6).min(1.0);
+    elements.insert(
+        0,
+        DeElement::from(TextureRenderElement::from_texture_buffer(
+            Point::<f64, Physical>::from((0.0, f64::from(y.round()))),
+            tex,
+            Some(alpha),
+            None,
+            None,
+            Kind::Unspecified,
+        )),
+    );
 }
 
 /// Lifted icon + landing highlight, in front of everything else.

@@ -10,6 +10,7 @@ mod home_ui;
 mod layer_shell;
 pub mod misc;
 mod morph;
+mod panel_ui;
 mod osk;
 mod popups;
 mod shell_menu;

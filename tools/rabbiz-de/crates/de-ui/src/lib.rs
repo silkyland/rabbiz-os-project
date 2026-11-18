@@ -14,6 +14,8 @@ pub mod menu;
 pub mod nav;
 pub mod nav_bar;
 pub mod osd;
+pub mod panels;
+pub mod pull;
 pub mod pager;
 pub mod power;
 pub mod qs;

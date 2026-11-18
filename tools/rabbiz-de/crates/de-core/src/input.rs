@@ -245,7 +245,7 @@ impl De {
             zone,
             self.foreground == crate::state::Foreground::Shell,
             layer_contact,
-        );
+        ) || self.panel_wants_touch();
         if self.touch_claimed {
             return;
         }
@@ -369,20 +369,28 @@ impl De {
                 self.follow_home_drag(dy, time_ms);
                 return;
             }
-            GestureEvent::Progress {
-                zone: Zone::Content,
-                dx,
-                dy,
-            } => {
-                self.home_drag_progress(dx, dy);
+            GestureEvent::Progress { zone, dy, .. } if zone != Zone::NavBar => {
+                if self.panel_progress(zone == Zone::TopEdge, dy) {
+                    return;
+                }
+                if zone == Zone::Content {
+                    if let GestureEvent::Progress { dx, dy, .. } = ev {
+                        self.home_drag_progress(dx, dy);
+                    }
+                }
                 return;
             }
-            GestureEvent::Started { .. } => {
+            GestureEvent::Started { pos, .. } => {
+                self.panel_touch_started(pos);
                 self.home_touch_started();
                 return;
             }
-            GestureEvent::Released { vx, .. } => {
-                self.home_drag_released(vx);
+            GestureEvent::Released { vx, vy, .. } => {
+                if self.panels.pull.dragging() {
+                    self.panel_released(vy);
+                } else {
+                    self.home_drag_released(vx);
+                }
                 return;
             }
             GestureEvent::HoldDrag { pos } => {
@@ -394,6 +402,7 @@ impl De {
                 return;
             }
             GestureEvent::Cancelled => {
+                self.panel_cancelled();
                 self.home_drag_cancelled();
                 self.release_home_drag(false);
                 return;
@@ -402,9 +411,9 @@ impl De {
             GestureEvent::Progress { .. } => return,
         };
         match g {
+            Gesture::Home | Gesture::EdgeBack { .. } if self.panels.shown() => self.panel_close(),
             Gesture::Home => self.show_shell(Screen::Home),
             Gesture::Recents => self.show_shell(Screen::Recents),
-            Gesture::ShadePull => self.show_shell(Screen::Shade),
             Gesture::EdgeBack { .. } => {
                 if matches!(self.foreground, Foreground::App) {
                     // Phone v1: back dismisses the topmost fullscreen app —
@@ -416,6 +425,11 @@ impl De {
                     self.nav.back();
                     self.shell_dirty = true;
                     self.needs_present = true;
+                }
+            }
+            Gesture::Tap { .. } if self.panels.shown() => {
+                if let Gesture::Tap { pos } = g {
+                    self.panel_tap(pos);
                 }
             }
             Gesture::Tap { pos } => {
@@ -590,7 +604,7 @@ impl De {
     /// Grab the topmost window's committed shm frame into the recents
     /// snapshot cache (no-op for dmabuf/EGL clients — they keep the icon
     /// placeholder until a capture seam exists for them).
-    fn capture_topmost(&mut self) {
+    pub(crate) fn capture_topmost(&mut self) {
         let Some(top) = self.space.elements().last().cloned() else {
             return;
         };

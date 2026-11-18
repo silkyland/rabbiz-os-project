@@ -34,8 +34,6 @@ pub enum Gesture {
     Home,
     /// Bottom-strip upward swipe followed by a ≥ `HOLD_MS` stall.
     Recents,
-    /// Top-edge downward drag (progress via [`GestureEvent::Progress`]).
-    ShadePull,
     /// Short touch with little movement.
     Tap { pos: Point },
     /// Touch held ≥ `HOLD_MS` without moving past the slop.
@@ -254,13 +252,6 @@ impl GestureTracker {
                             Some(Gesture::Tap { pos: tr.start })
                         }
                     }
-                    Zone::TopEdge => {
-                        if tr.dy >= self.cfg.home_dy || vy >= self.cfg.fling_v {
-                            Some(Gesture::ShadePull)
-                        } else {
-                            Some(Gesture::Tap { pos: tr.start })
-                        }
-                    }
                     Zone::EdgeLeft | Zone::EdgeRight => {
                         let inward = if tr.zone == Zone::EdgeLeft {
                             tr.dx
@@ -278,19 +269,12 @@ impl GestureTracker {
                             None
                         }
                     }
-                    Zone::Content => {
+                    // Content and the top strip: a tap, or a drag that ends with a velocity.
+                    Zone::Content | Zone::TopEdge => {
                         if tr.dx.abs() < self.cfg.slop && tr.dy.abs() < self.cfg.slop {
                             Some(Gesture::Tap { pos: tr.start })
                         } else {
-                            // A stale velocity (finger rested before lifting) is no fling.
-                            let fresh = ev.time_ms.saturating_sub(tr.last_ms) < 80;
-                            let k = if fresh { 1000.0 } else { 0.0 };
-                            return Some(GestureEvent::Released {
-                                dx: tr.dx,
-                                dy: tr.dy,
-                                vx: tr.vx * k,
-                                vy: tr.vy * k,
-                            });
+                            return Some(Self::released(&tr, ev.time_ms));
                         }
                     }
                 };
@@ -298,6 +282,19 @@ impl GestureTracker {
                     Some(GestureEvent::Recognized(g))
                 })
             }
+        }
+    }
+
+    /// The release of a drag: displacement plus the velocity of the last
+    /// moments. A stale velocity (the finger rested before lifting) is no fling.
+    fn released(tr: &Track, now_ms: u64) -> GestureEvent {
+        let fresh = now_ms.saturating_sub(tr.last_ms) < 80;
+        let k = if fresh { 1000.0 } else { 0.0 };
+        GestureEvent::Released {
+            dx: tr.dx,
+            dy: tr.dy,
+            vx: tr.vx * k,
+            vy: tr.vy * k,
         }
     }
 
@@ -392,14 +389,31 @@ mod tests {
     }
 
     #[test]
-    fn top_edge_pull_is_shade() {
+    fn top_edge_pull_reports_progress_then_release_with_velocity() {
         let mut t = tr();
         t.feed(&ev(TouchPhase::Down, 360, 20, 0));
+        assert!(matches!(
+            t.feed(&ev(TouchPhase::Motion, 360, 200, 100)),
+            Some(GestureEvent::Progress {
+                zone: Zone::TopEdge,
+                ..
+            })
+        ));
         t.feed(&ev(TouchPhase::Motion, 360, 300, 120));
-        assert_eq!(
-            t.feed(&ev(TouchPhase::Up, 360, 300, 240)),
-            Some(GestureEvent::Recognized(Gesture::ShadePull))
-        );
+        match t.feed(&ev(TouchPhase::Up, 360, 300, 130)) {
+            Some(GestureEvent::Released { dy, vy, .. }) => {
+                assert_eq!(dy, 280.0);
+                assert!(vy > 500.0);
+            }
+            other => panic!("{other:?}"),
+        }
+        // A tap in the top strip stays a tap.
+        let mut t = tr();
+        t.feed(&ev(TouchPhase::Down, 360, 20, 0));
+        assert!(matches!(
+            t.feed(&ev(TouchPhase::Up, 361, 21, 80)),
+            Some(GestureEvent::Recognized(Gesture::Tap { .. }))
+        ));
     }
 
     #[test]

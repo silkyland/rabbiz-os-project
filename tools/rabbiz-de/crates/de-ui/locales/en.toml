@@ -38,6 +38,22 @@ airplane = "Airplane"
 rotate = "Auto-rotate"
 battery_saver = "Battery Saver"
 
+flashlight = "Flashlight"
+hotspot = "Hotspot"
+location = "Location"
+screenshot = "Screenshot"
+record = "Screen record"
+brightness = "Brightness"
+volume = "Volume"
+on = "On"
+off = "Off"
+unavailable = "Not available"
+
+[panel]
+no_notifications = "No notifications"
+clear_all = "Clear all"
+notifications = "Notifications"
+
 [power]
 title = "Power"
 power_off = "Power off"

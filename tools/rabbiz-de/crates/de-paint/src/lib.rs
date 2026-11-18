@@ -8,6 +8,7 @@ pub mod animation;
 pub mod canvas;
 pub mod damage;
 pub mod fonts;
+pub mod glass;
 pub mod image;
 pub mod layer;
 pub mod svg;
