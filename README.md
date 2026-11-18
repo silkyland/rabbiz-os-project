@@ -15,6 +15,14 @@ system under active development; hardware support and remaining work are listed 
 
 [Contributing](CONTRIBUTING.md) · [Lanes](docs/LANES.md) · [Brand & mascot](docs/BRAND.md) · [Desktop shell](docs/DESKTOP-SHELL.md) · [Roadmap](ROADMAP.md)
 
+## Support the project
+
+RabbizOS is built in spare time on real hardware. If it is useful to you, you can support it:
+
+[Buy Me a Coffee](https://buymeacoffee.com/silkyland) · [PayPal](https://www.paypal.com/paypalme/nuntates)
+
+Donations are optional and do not buy priority on issues or pull requests.
+
 The platform combines **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`)** directly on supported phone and tablet hardware (zero Android runtime).
 
 - **Primary Device (Phase 1):** Samsung Galaxy A21s (`SM-A217F`, Exynos 850 / `S5E3830`, 3 GB RAM) — **Booting & Working**
