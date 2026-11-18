@@ -69,7 +69,10 @@
 #define TOPOFF1_MA		150
 #define TOPOFF2_MA		100
 
-#define WD_KICK_MS		40000	/* < WDT timeout (100 s) */
+/* Poll period: also kicks the 100 s hardware watchdog. 1 s so a VBUS
+ * transition reaches power_supply_changed (and upower) promptly;
+ * there is no MUIC/MFD IRQ wired for this minimal driver yet. */
+#define WD_KICK_MS		1000
 
 struct s2mu106_charger {
 	struct i2c_client *client;
