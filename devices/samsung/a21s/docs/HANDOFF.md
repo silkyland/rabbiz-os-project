@@ -6,6 +6,15 @@ docs, stale state to `device.toml` + `ROADMAP.md`. Section anchors below
 are kept so older `HANDOFF §0.x` citations still resolve. The canonical
 entry point is [findings/README.md](../findings/README.md).
 
+## -1. Active handoff — kernel lane (evening 2026-11-18)
+
+Continuing kernel work tonight? Read
+[HANDOFF-kernel-lane.md](HANDOFF-kernel-lane.md) — self-contained:
+access, verified state after the day's boot-avb flash (kernel `#5`,
+thermal zones + passive cooling live, FG renamed), the ordered cpuidle
+MPIDR RE plan, the pending kernel queue (DSI acceptance, suspend abox
+veto, ET520/CHUB/mic probes) and safety notes.
+
 ## 0. Latest session — SteamOS ⇄ phone session-switch + DSI underrun wedge
 
 Status: **kernel fix written, not boot-tested**
