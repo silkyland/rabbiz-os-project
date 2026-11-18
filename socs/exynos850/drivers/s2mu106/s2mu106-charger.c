@@ -196,6 +196,17 @@ static int s2mu106_psy_get(struct power_supply *psy,
 			return v;
 		val->intval = !!(v & 0x01);
 		break;
+	case POWER_SUPPLY_PROP_CHARGE_TYPE:
+		/* vendor s2mu106_get_charge_type: STATUS3 BAT_STATUS
+		 * bits[3:1] 0x2/0x3 (pre-charge) or 0x6 -> fast charging */
+		v = i2c_smbus_read_byte_data(c, S2MU106_CHG_STATUS3);
+		if (v < 0)
+			return v;
+		v = (v >> 1) & 0x7;
+		val->intval = (v == 0x2 || v == 0x3 || v == 0x6) ?
+			POWER_SUPPLY_CHARGE_TYPE_FAST :
+			POWER_SUPPLY_CHARGE_TYPE_UNKNOWN;
+		break;
 	case POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX:
 		v = i2c_smbus_read_byte_data(c, S2MU106_CHG_CTRL7);
 		if (v < 0)
@@ -242,6 +253,7 @@ static enum power_supply_property s2mu106_psy_props[] = {
 	POWER_SUPPLY_PROP_STATUS,
 	POWER_SUPPLY_PROP_HEALTH,
 	POWER_SUPPLY_PROP_PRESENT,
+	POWER_SUPPLY_PROP_CHARGE_TYPE,
 	POWER_SUPPLY_PROP_CONSTANT_CHARGE_CURRENT_MAX,
 	POWER_SUPPLY_PROP_INPUT_CURRENT_LIMIT,
 };
