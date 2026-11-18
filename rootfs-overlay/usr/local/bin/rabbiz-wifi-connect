@@ -1,7 +1,7 @@
 #!/bin/bash
-# a21s-wifi-connect — join a Wi-Fi network without exposing the PSK in argv.
+# rabbiz-wifi-connect — join a Wi-Fi network without exposing the PSK in argv.
 #
-# usage: a21s-wifi-connect <SSID>          # WPA PSK on stdin (empty line = open network)
+# usage: rabbiz-wifi-connect <SSID>          # WPA PSK on stdin (empty line = open network)
 #
 # Why a helper: `nmcli device wifi connect SSID password <psk>` leaves the secret in
 # /proc/<pid>/cmdline for the whole connect. Here the PSK arrives on stdin and nmcli

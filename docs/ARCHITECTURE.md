@@ -155,7 +155,7 @@ Invariants:
   the only interactive user on a single-user phone.
 - **Rejected:** a root helper or setuid wrapper (wider blast radius than a scoped polkit rule); running the shell as
   root (defeats the session/seat model).
-- **Consequence:** the PSK can no longer be handed to root-only `nmcli connection load`; `a21s-wifi-connect` feeds
+- **Consequence:** the PSK can no longer be handed to root-only `nmcli connection load`; `rabbiz-wifi-connect` feeds
   nmcli's `--ask` prompt on a pty with `stty -echo` so the secret never enters argv.
 
 ## Known constraints and sharp edges

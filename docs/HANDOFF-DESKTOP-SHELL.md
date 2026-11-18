@@ -11,11 +11,11 @@
 |---|---|
 | M7.0 split `Components` -> `Widgets`/`Windowing`/`Desktop`/`Panels` | **done, verified** |
 | M7.1 `Launcher` singleton + morph driven by real toplevel map (`LaunchFlow.js`) | **done, verified** (kalk, kclock, index, marknote) |
-| M7.2 desktop contract v1 (`a21s-appearance`, `Appearance` service, kde platform theme) | **done for Qt apps, verified**; GTK/Chromium unchecked |
+| M7.2 desktop contract v1 (`rabbiz-appearance`, `Appearance` service, kde platform theme) | **done for Qt apps, verified**; GTK/Chromium unchecked |
 | M7.3 desktop surface (icons/widgets on the desktop, new dock) | **mostly there** — code-inspected 2026-11-16: wallpaper w/ parallax, morphing clock, swipeable hero deck (Steam + Now Playing MPRIS + telemetry), 2x4 grid, dock, drawer overlay. Not yet device-verified this session; free-position widgets and S5 frame-time numbers still open |
 | M7.4 base apps are real Linux apps; QML Calc/Clock/Notes/Gallery/Files/Spotify deleted | **done, verified** |
 | OSK language toggle + full Thai (owner request 2026-11-16) | **layout shipped; Latin verified, Thai view not yet** — squeekboard has no long-press support and no cycle action (`show_prefs`/`set_view`/`erase`/`lock_view` only, and upstream has no toggle feature), so EN/TH now live as views of ONE custom layout at `~/.local/share/squeekboard/keyboards/us.yaml`: the globe slot is `TH` in Latin views and `EN` in Thai views (`set_view`, instant, no popover), and a small keyboard icon still opens the layout popover. squeekboard confirmed `Loaded layout Path: .../keyboards/us.yaml`; the visual/tap pass could not finish because the device rebooted twice and the shell segfaulted while CMA was down to 23 MiB (dmabuf probing in the crash log — the GPU/CMA task's F2 leak, not this YAML). Re-check when the device is free: open a text field, confirm TH/EN keys, tap TH, type a Thai character. The Thai views were then expanded to a Gboard-like full set: 11 keys per row, all Thai letters + tone marks, a `ไทย`-labelled space bar, comma, an emoji page (static palette; squeekboard has **no clipboard support** — only a KEY_PASTE constant, no paste action), and TH/EN/emoji/prefs keys in every bottom row. The Latin view was verified on screen (123 / ☺ / TH / globe / space / . / return); the Thai page could not be captured because another task kept taking the device (a Calculator window appeared between two of our taps) |
-| OSK theme (owner report 2026-11-16) | **fixed** — squeekboard is GTK3 and ignored `gsettings color-scheme`, so it stayed light in dark mode; `a21s-appearance` now writes `~/.config/gtk-3.0/settings.ini` (`gtk-application-prefer-dark-theme`) and restarts squeekboard (it reads GTK settings only at start). Verified with screenshots: light theme → light keyboard, dark theme → dark keyboard. Restarting the OSK takes ~0.5 s, which is why it only happens when the value actually changes |
+| OSK theme (owner report 2026-11-16) | **fixed** — squeekboard is GTK3 and ignored `gsettings color-scheme`, so it stayed light in dark mode; `rabbiz-appearance` now writes `~/.config/gtk-3.0/settings.ini` (`gtk-application-prefer-dark-theme`) and restarts squeekboard (it reads GTK settings only at start). Verified with screenshots: light theme → light keyboard, dark theme → dark keyboard. Restarting the OSK takes ~0.5 s, which is why it only happens when the value actually changes |
 | Browser cleanup (owner request 2026-11-16) | **done** — `angelfish` (the non-Chrome browser) removed with `pacman -Rns` (it also took `qt6-websockets` + `futuresql`); `qt6-webengine` stayed because KDE PIM still needs it (remove Merkuro Mail to free another ~270 MB). `a21s-browser` = Google Chrome and remains the only browser; it used to open a KDE-wallet password dialog on start, now `--password-store=basic` is passed and Chrome opens its New Tab page directly (verified). The drawer still lists "Browser" (our entry) and "Google Chrome" (package entry) — hide one later if it bothers |
 | Launcher-IPC crash 2026-11-16 ~15:03 | **not the base apps** — `ipc call launcher launch a21s-clock` produced a Quickshell **segfault** (crash `064lx4lot`, signal 11) whose qslog ends in dmabuf format probing, and the device was then **cleanly rebooted** by another task's GPU/CMA testing (systemd "Reached target System Reboot", not a panic). The five apps render fine started through their wrappers with `QT_QUICK_BACKEND=software`. Re-verify the launcher path once the GPU task is settled; do not attribute this to the apps without evidence |
 | Base apps in-house (owner decision 2026-11-16) | **all six render + interaction spot checks pass; KDE originals removed** — `apps/{calculator,clock,notes,photos,music,terminal}` share `A21sKit` ([BASE-APPS.md](BASE-APPS.md)); each launched on the device under the device lock and screenshotted in the shell tone (no QML errors in their logs). Wrappers + `A21s <App>` desktop entries deployed. Verified : photos viewer+swipe, music playback, terminal command via PTY, notes autosave JSON, clock alarm persisted; `pacman -Rns` removed kalk/kclock/marknote/elisa/qmlkonsole, then koko + maui-pix (the entries the home photo icon resolved to). Tapping the home Gallery icon now launches the in-house Photos (process verified). The seed lists in `Desktop/IconLayout.js` now prefer `a21s-photos`/`a21s-terminal` (the `a21s-gallery.desktop`/`org.kde.qmlkonsole.desktop` shims only cover the fallbacks). Still unverified: alarm actually ringing, note Thai typing/list round-trip, calculator tap-through. See BASE-APPS.md §5 |
@@ -29,7 +29,7 @@
 | M7.8 Settings v2 (thin shell-owned panels; `plasma-settings` lacks Wi-Fi/BT/sound/battery) | **app ships and is wired** (pre-existing, not a rewrite): verified Wi-Fi list + join dialog, accent live update, volume slider, new light/dark switch; BT pair untested |
 | M7.10 **home editing** (long-press, drag & drop, snap/align, persisted layout) | **not started** — spec §7.1 |
 | M7.11 **clipboard system** | **not started** — spec §7.2 |
-| M7.12 **on-screen keyboard rework** (owner: many bugs, poor UX) | **host half started 2026-11-17** — `tools/a21s-osk`: `osk-core` (layouts, geometry, shift FSM, gestures, Thai grapheme backspace) + `osk-render` PNG previews + EN/TH layouts, 29 host tests; no Wayland client yet, squeekboard still live (plan §12) |
+| M7.12 **on-screen keyboard rework** (owner: many bugs, poor UX) | **host half started 2026-11-17** — `tools/rabbiz-osk`: `osk-core` (layouts, geometry, shift FSM, gestures, Thai grapheme backspace) + `osk-render` PNG previews + EN/TH layouts, 29 host tests; no Wayland client yet, squeekboard still live (plan §12) |
 | M7.9 **gesture system** (Android-style) | **core done, verified with injected touch** (§4): bottom swipe-up=home, swipe-up+hold=recents, swipe along bar=prev/next app, side-edge swipe=back; all work over fullscreen windows (surfaces moved to the Overlay layer). Missing: back-arrow chip + live card following the finger, reverse morph from a window snapshot, Steam resume matching |
 
 Owner decisions (2026-11-16): home = touch-first desktop; replace home-grown apps with real Linux apps (Settings,
@@ -69,12 +69,12 @@ AGENTS.md hard rules still apply).
   toggles only worked because NM's default allows `allow_active`). After adding/editing a rule run
   `systemctl restart polkit`; `nmcli connection load` stays root-only no matter what.
   **Never pre-fill a pty for a password prompt**: the tty echoes it before `nmcli` disables echo (this leaked a PSK
-  into a session log once). Use `stty -echo` first, as `a21s-wifi-connect` does, and never `cat` the helper's raw
+  into a session log once). Use `stty -echo` first, as `rabbiz-wifi-connect` does, and never `cat` the helper's raw
   output — grep only for `Error:`/`activated`.
   **Wi-Fi devices:** `p2p0` is typed `wifi` too. Pass `ifname wlan0` to `nmcli device wifi connect`, and skip
   `p2p*` when discovering the Wi-Fi device, or NM activates on p2p0 and fails with "ssid-not-found".
   **Duplicate profiles:** `nmcli device wifi connect <ssid>` creates `<ssid> 1`, `<ssid> 2`... when a profile with
-  that name exists; `a21s-wifi-connect` looks profiles up by SSID to avoid that.
+  that name exists; `rabbiz-wifi-connect` looks profiles up by SSID to avoid that.
   **USB link drops under load**: `en18` lost `172.16.42.2` and `ssh root@172.16.42.1` hung twice in one session
   (device stayed up, no reboot). The phone also listens on Wi-Fi: `ssh root@<wifi-ip>` kept working, `shell_reload.sh
   root@<wifi-ip>` too — use it when USB is flaky.
@@ -118,11 +118,11 @@ AGENTS.md hard rules still apply).
    airplane mode is `nmcli radio wifi/wwan` + BlueZ power and no longer calls `rfkill unblock all`; FIFO queues in
    `Network`/`Bluetooth`/`SystemControl`; telemetry is one `a21s-telemetry` process (bash builtins, no per-value forks)
    and stops while asleep; the rotation tile is honestly labelled "Rotate"; the governor defaults to `schedutil`;
-   the Wi-Fi PSK goes over stdin to `a21s-wifi-connect` (nmcli pty prompt, echo off) instead of argv.
+   the Wi-Fi PSK goes over stdin to `rabbiz-wifi-connect` (nmcli pty prompt, echo off) instead of argv.
    **The blocker behind all of it:** labwc has no polkit agent, so `gamer` got "Insufficient privileges" for every NM
    action. New `rootfs-overlay/etc/polkit-1/rules.d/51-a21s-shell.rules` allows *only* `gamer` and *only*
    `org.freedesktop.NetworkManager.*` — recorded in `docs/ARCHITECTURE.md` ADR-9. Verified: `nmcli radio wifi off/on`
-   as gamer, joining an unsaved network through `a21s-wifi-connect` (connection up, `<wifi-ip>`, HTTP 301),
+   as gamer, joining an unsaved network through `rabbiz-wifi-connect` (connection up, `<wifi-ip>`, HTTP 301),
    `nmcli connection add` as gamer. Also fixed on the way: activate on `wlan0`, never `p2p0` (NM otherwise fails with
    "association took too long / ssid-not-found"), and `Network.qml` no longer treats `p2p0` as the Wi-Fi device.
    **Open:** updating the PSK of an *existing* profile via `nmcli --ask connection modify` hit the 45 s pty timeout in
@@ -133,12 +133,12 @@ AGENTS.md hard rules still apply).
    updates shell chrome **live** (no restart) and rewrites the app contract; volume slider -> PipeWire 0.71 with the UI
    agreeing; Display & Sleep (brightness, timeouts); new Theme > Light theme switch flips
    `gsettings color-scheme` prefer-dark/prefer-light and `kdeglobals` BackgroundNormal 10,10,12 <-> 246,246,248.
-   Fixed here: `a21s-appearance` wrote `color-scheme` but never `accent-color`, so GTK/Chromium ignored the shell
+   Fixed here: `rabbiz-appearance` wrote `color-scheme` but never `accent-color`, so GTK/Chromium ignored the shell
    accent (now mapped to the nearest libadwaita accent; green/amber/red verified); added the missing
    `ShellPrefs.lightTheme` + `Appearance.light` binding + the Settings switch (no dark/light control existed).
    **Open:** BT pair/connect needs a device in range (MX Keys and the Xbox pad are paired but powered off); the Wi-Fi
    password field was not typed (agents must not type secrets), so `Network.connectTo` is verified only down to
-   `a21s-wifi-connect`; shell chrome stays dark in light mode because `Theme.qml` is still literal (item 9).
+   `rabbiz-wifi-connect`; shell chrome stays dark in light mode because `Theme.qml` is still literal (item 9).
 4. **M7.9 gestures** (§4) then **M7.6 close morph** (S1: `ScreencopyView` of the toplevel -> shrink to its icon;
    fallback icon-only morph; `LaunchFlow.close()` already has a 600 ms timeout).
 5. **M7.3 desktop surface:** wallpaper + icons/widgets on the desktop + dock + drawer overlay. Measure frame time
@@ -265,7 +265,7 @@ Design:
 Owner: the current keyboard has many bugs and bad UX. **I have not reproduced the bugs yet** — the first step is a
 triage, not a rewrite (use the `reproduce-my-bug` skill).
 Facts **(verified):** `squeekboard 1.43.1` runs; custom layouts are `~/.local/share/squeekboard/keyboards/{us,th}.yaml`
-(84 + 113 lines); control via `a21s-osk-ctl` (`toggle` over `sm.puri.OSK0`, `lang-next` reorders gsettings
+(84 + 113 lines); control via `rabbiz-osk-ctl` (`toggle` over `sm.puri.OSK0`, `lang-next` reorders gsettings
 input-sources); `QT_IM_MODULE`/`GTK_IM_MODULE` must stay unset (AGENTS.md); `fcitx5 5.1.23` and `fcitx5-libthai` are in
 the ALARM repo (not installed); labwc supports `zwp_input_method_v2`, `zwp_text_input_v3`, `zwp_virtual_keyboard`;
 Quickshell has no binding for any of them, so a custom keyboard cannot be written purely in the shell's QML.
@@ -292,4 +292,4 @@ Plan:
 Suggested order: Steam resume matching + gesture polish (finish M7.9) -> 7.3 triage (cheap, unblocks UX judgement) ->
 7.2 clipboard (small, independent) -> 7.1 home editing (largest) -> OSK rewrite only if triage demands it.
 Disjoint files for parallel agents: 7.1 `Desktop/*` + `HomeLayout.js`; 7.2 `Services/Clipboard.qml`,
-`Panels/ClipboardSheet.qml`, `rootfs-overlay` autostart; 7.3 `rootfs-overlay/.../squeekboard`, `a21s-osk-ctl`.
+`Panels/ClipboardSheet.qml`, `rootfs-overlay` autostart; 7.3 `rootfs-overlay/.../squeekboard`, `rabbiz-osk-ctl`.

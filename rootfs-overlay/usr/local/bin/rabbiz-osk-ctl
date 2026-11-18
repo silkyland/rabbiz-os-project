@@ -1,5 +1,5 @@
 #!/bin/sh
-# a21s-osk-ctl — system-level squeekboard control for a21s-shell.
+# rabbiz-osk-ctl — system-level squeekboard control for a21s-shell.
 #
 #   toggle      force show/hide the OSK via sm.puri.OSK0 D-Bus — works even
 #               in apps with no text-input-v3 (terminals, XWayland, games)
@@ -26,7 +26,7 @@ toggle)
         -m sm.puri.OSK0.SetVisible "$next" >/dev/null 2>&1
     ;;
 lang-next)
-    # a21s-osk answers on org.rabbiz.OSK1 and cycles inside its own layouts (no gsettings).
+    # rabbiz-osk answers on org.rabbiz.OSK1 and cycles inside its own layouts (no gsettings).
     if gdbus call --session -d sm.puri.OSK0 -o /org/rabbiz/OSK1 \
         -m org.rabbiz.OSK1.NextLanguage >/dev/null 2>&1; then
         exit 0
@@ -47,7 +47,7 @@ lang-next)
     gsettings set org.gnome.desktop.input-sources current "uint32 0" 2>/dev/null
     ;;
 *)
-    echo "usage: a21s-osk-ctl [toggle|lang-next]" >&2
+    echo "usage: rabbiz-osk-ctl [toggle|lang-next]" >&2
     exit 1
     ;;
 esac

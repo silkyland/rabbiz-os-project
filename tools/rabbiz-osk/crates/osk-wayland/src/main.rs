@@ -1,11 +1,11 @@
-//! `a21s-osk` — the real keyboard: a bottom layer-shell surface that draws `osk-core` layouts
+//! `rabbiz-osk` — the real keyboard: a bottom layer-shell surface that draws `osk-core` layouts
 //! with `osk-render` and delivers text through `zwp_input_method_v2`.
 //!
 //! It never takes keyboard focus; text goes only through the input-method protocol, so no
 //! keymap tricks are needed for Thai or emoji. squeekboard must not run at the same time.
 //!
 //! Compatibility: it also owns the `sm.puri.OSK0` D-Bus name (SetVisible/Visible) so the shell's
-//! Quick Settings tiles and `a21s-osk-ctl` keep working, plus `org.rabbiz.OSK1.ReloadTheme`.
+//! Quick Settings tiles and `rabbiz-osk-ctl` keep working, plus `org.rabbiz.OSK1.ReloadTheme`.
 
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
@@ -178,7 +178,7 @@ impl App {
         {
             Ok(pair) => pair,
             Err(err) => {
-                eprintln!("a21s-osk: buffer error {err:?}");
+                eprintln!("rabbiz-osk: buffer error {err:?}");
                 return;
             }
         };
@@ -191,7 +191,7 @@ impl App {
         let surface = self.layer.wl_surface().clone();
         surface.damage_buffer(0, 0, w, h);
         if let Err(err) = buffer.attach_to(&surface) {
-            eprintln!("a21s-osk: attach failed {err:?}");
+            eprintln!("rabbiz-osk: attach failed {err:?}");
             return;
         }
         surface.commit();
@@ -270,7 +270,7 @@ impl App {
                 return;
             }
             Some(1) => {
-                eprintln!("a21s-osk: voice typing is not available on this device");
+                eprintln!("rabbiz-osk: voice typing is not available on this device");
                 return;
             }
             _ => {}
@@ -303,7 +303,7 @@ impl App {
                     self.draw();
                 }
             }
-            other => eprintln!("a21s-osk: clipboard unavailable ({other:?})"),
+            other => eprintln!("rabbiz-osk: clipboard unavailable ({other:?})"),
         }
     }
 
@@ -446,7 +446,7 @@ impl SeatHandler for App {
     fn new_capability(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat, cap: Capability) {
         if cap == Capability::Touch {
             if let Err(err) = self.seats.get_touch(qh, &seat) {
-                eprintln!("a21s-osk: no touch: {err:?}");
+                eprintln!("rabbiz-osk: no touch: {err:?}");
             }
         }
     }
@@ -668,7 +668,7 @@ impl Dispatch<ZwpInputMethodV2, ()> for App {
             }
             ImEvent::Done => state.done_count += 1,
             ImEvent::Unavailable => {
-                eprintln!("a21s-osk: another input method owns the seat (squeekboard?)");
+                eprintln!("rabbiz-osk: another input method owns the seat (squeekboard?)");
                 std::process::exit(2);
             }
             _ => {}
@@ -709,7 +709,7 @@ struct Osk1Service {
 
 #[zbus::interface(name = "org.rabbiz.OSK1")]
 impl Osk1Service {
-    /// Re-read ~/.config/a21s-osk/theme.toml and repaint without restarting.
+    /// Re-read ~/.config/rabbiz-osk/theme.toml and repaint without restarting.
     fn reload_theme(&self) {
         self.reload_theme.store(true, Ordering::SeqCst);
     }
@@ -736,11 +736,11 @@ const KEYMAP: &str = r#"xkb_keymap {
 fn upload_keymap(keyboard: &ZwpVirtualKeyboardV1) {
     use std::io::Write;
     let Ok(mut file) = tempfile_memfd() else {
-        eprintln!("a21s-osk: cannot create keymap fd");
+        eprintln!("rabbiz-osk: cannot create keymap fd");
         return;
     };
     if file.write_all(KEYMAP.as_bytes()).is_err() {
-        eprintln!("a21s-osk: cannot write keymap");
+        eprintln!("rabbiz-osk: cannot write keymap");
         return;
     }
     let fd = std::os::fd::AsFd::as_fd(&file);
@@ -749,7 +749,7 @@ fn upload_keymap(keyboard: &ZwpVirtualKeyboardV1) {
 
 fn tempfile_memfd() -> std::io::Result<std::fs::File> {
     use std::os::fd::FromRawFd;
-    let name = c"a21s-osk-keymap";
+    let name = c"rabbiz-osk-keymap";
     let fd = unsafe { libc::memfd_create(name.as_ptr(), libc::MFD_CLOEXEC) };
     if fd < 0 {
         return Err(std::io::Error::last_os_error());
@@ -771,7 +771,7 @@ fn spawn_clipboard_watch(items: Arc<Mutex<Vec<String>>>, changed: Arc<AtomicBool
                 .stderr(Stdio::null())
                 .spawn();
             let Ok(mut child) = child else {
-                eprintln!("a21s-osk: wl-paste not available; clipboard history disabled");
+                eprintln!("rabbiz-osk: wl-paste not available; clipboard history disabled");
                 return;
             };
             let Some(stdout) = child.stdout.take() else { return };
@@ -820,7 +820,7 @@ fn spawn_dbus(
                 Ok(_conn) => loop {
                     std::thread::park();
                 },
-                Err(err) => eprintln!("a21s-osk: D-Bus unavailable ({err}); compat methods disabled"),
+                Err(err) => eprintln!("rabbiz-osk: D-Bus unavailable ({err}); compat methods disabled"),
             }
         })
         .ok();
@@ -864,7 +864,7 @@ fn parse_hex(value: &str) -> Option<(u8, u8, u8)> {
 
 fn theme_path() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/home/gamer".into());
-    std::path::Path::new(&home).join(".config/a21s-osk/theme.toml")
+    std::path::Path::new(&home).join(".config/rabbiz-osk/theme.toml")
 }
 
 fn poll_fd(fd: std::os::fd::BorrowedFd<'_>, timeout_ms: i32) -> bool {
@@ -884,7 +884,7 @@ fn main() {
     ]
     .iter()
     .map(|(_, src)| Layout::parse(src).unwrap_or_else(|err| {
-        eprintln!("a21s-osk: bad layout: {err}");
+        eprintln!("rabbiz-osk: bad layout: {err}");
         std::process::exit(1);
     }))
     .collect::<Vec<_>>();
@@ -892,7 +892,7 @@ fn main() {
     let mut keyboard = match Keyboard::new(layouts) {
         Ok(keyboard) => keyboard,
         Err(err) => {
-            eprintln!("a21s-osk: {err}");
+            eprintln!("rabbiz-osk: {err}");
             std::process::exit(1);
         }
     };
@@ -900,7 +900,7 @@ fn main() {
     keyboard.predictor = osk_core::predict::Predictor::load(&osk_core::predict::state_path());
     keyboard.load_recents(&emoji_state_path());
 
-    let connection = Connection::connect_to_env().expect("a21s-osk needs a Wayland session");
+    let connection = Connection::connect_to_env().expect("rabbiz-osk needs a Wayland session");
     let (globals, mut queue) = registry_queue_init(&connection).expect("registry");
     let qh = queue.handle();
     let compositor = CompositorState::bind(&globals, &qh).expect("wl_compositor");
@@ -916,7 +916,7 @@ fn main() {
         .expect("wl_seat");
 
     let surface = compositor.create_surface(&qh);
-    let layer = layer_shell.create_layer_surface(&qh, surface, Layer::Top, Some("a21s-osk"), None);
+    let layer = layer_shell.create_layer_surface(&qh, surface, Layer::Top, Some("rabbiz-osk"), None);
     layer.set_anchor(Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
     let h = keyboard.layout().height_px().round() as u32;
     layer.set_size(0, h);
@@ -974,7 +974,7 @@ fn main() {
         sheet: None,
     };
     eprintln!(
-        "a21s-osk: up, layout {} ({}x{}), waiting for text-input activation",
+        "rabbiz-osk: up, layout {} ({}x{}), waiting for text-input activation",
         app.keyboard.layout().id,
         app.w,
         app.h
@@ -982,7 +982,7 @@ fn main() {
 
     loop {
         if let Err(err) = queue.dispatch_pending(&mut app) {
-            eprintln!("a21s-osk: dispatch: {err}");
+            eprintln!("rabbiz-osk: dispatch: {err}");
             break;
         }
         let _ = app.conn.flush();
@@ -1008,14 +1008,14 @@ fn main() {
         {
             let path = osk_core::predict::state_path();
             if let Err(err) = app.keyboard.predictor.save(&path) {
-                eprintln!("a21s-osk: predictor save failed: {err}");
+                eprintln!("rabbiz-osk: predictor save failed: {err}");
             }
             app.keyboard.predictor.mark_clean();
             app.predictor_saved = Instant::now();
         }
         if app.keyboard.recents_dirty() {
             if let Err(err) = app.keyboard.save_recents(&emoji_state_path()) {
-                eprintln!("a21s-osk: emoji recents save failed: {err}");
+                eprintln!("rabbiz-osk: emoji recents save failed: {err}");
             }
             app.keyboard.mark_recents_clean();
         }

@@ -64,14 +64,14 @@ QtObject {
     }
 
     function wifiConnect(ssid, password) {
-        // The PSK goes to a21s-wifi-connect on stdin: nmcli's `password` argument would
+        // The PSK goes to rabbiz-wifi-connect on stdin: nmcli's `password` argument would
         // expose it in the process list for the whole 40 s connect (review finding).
         root._connOut = ""
         root._connPsk = password || ""
         root.wifiConnecting = true
         root.wifiConnectingSsid = ssid
         root.wifiLastError = ""
-        _runConn(["a21s-wifi-connect", ssid])
+        _runConn(["rabbiz-wifi-connect", ssid])
     }
 
     // Mobile data is the WWAN radio state, not the modem power: powering the modem down
@@ -250,7 +250,7 @@ QtObject {
 
     property var connProc: Process {
         stdinEnabled: true
-        // a21s-wifi-connect reads the PSK from stdin (never argv) and joins the network.
+        // rabbiz-wifi-connect reads the PSK from stdin (never argv) and joins the network.
         onStarted: connProc.write((root._connPsk.length > 0 ? root._connPsk : "") + "\n")
         function _dispatch() {
             if (root._connQueue.length > 0 && !connProc.running) {

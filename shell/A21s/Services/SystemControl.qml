@@ -170,11 +170,11 @@ QtObject {
     // --- On-screen keyboard (squeekboard via sm.puri.OSK0 / gsettings) ---
 
     function toggleOsk() {
-        _runCmd(["a21s-osk-ctl", "toggle"])
+        _runCmd(["rabbiz-osk-ctl", "toggle"])
     }
 
     function nextOskLanguage() {
-        _runCmd(["a21s-osk-ctl", "lang-next"])
+        _runCmd(["rabbiz-osk-ctl", "lang-next"])
     }
 
     function setGovernor(name) {
@@ -548,8 +548,8 @@ QtObject {
         var d = (delayMs && delayMs > 0) ? Math.round(delayMs) : 0
         if (!shotProc.running) {
             shotProc.command = d > 0
-                ? ["a21s-screenshot", "--delay", String(d)]
-                : ["a21s-screenshot"]
+                ? ["rabbiz-screenshot", "--delay", String(d)]
+                : ["rabbiz-screenshot"]
             shotProc.running = true
         }
     }

@@ -864,7 +864,7 @@ ApplicationWindow {
                             anchors.fill: parent
                             onClicked: {
                                 // A saved network already has its PSK in NetworkManager: connect straight
-                                // away instead of asking for the password again (a21s-wifi-connect then
+                                // away instead of asking for the password again (rabbiz-wifi-connect then
                                 // just activates the stored profile). Dialog only for new networks.
                                 var saved = Network.savedSsids.indexOf(modelData.ssid) >= 0
                                 if (!modelData.inUse && saved)

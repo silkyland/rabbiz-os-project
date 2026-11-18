@@ -344,7 +344,7 @@ live services (`Network`, `UPower`, `Media`), not mocks.
   `input-sources=[us,th]` set in labwc `autostart` — Thai Kedmanee
   layout + emoji pane built in. Custom layouts in
   `~/.local/share/squeekboard/keyboards/{us,th}.yaml` (Gboard-style
-  number row) override the compiled-in ones by name. `a21s-osk-ctl`
+  number row) override the compiled-in ones by name. `rabbiz-osk-ctl`
   gives system-level control: `toggle` force-shows/hides via
   `sm.puri.OSK0 SetVisible` (covers apps without text-input-v3 —
   terminals, XWayland, games), `lang-next` flips EN⇄TH instantly by
@@ -358,7 +358,7 @@ live services (`Network`, `UPower`, `Media`), not mocks.
 - **runuser env trap**: `runuser -u gamer` inherits the *parent's*
   `XDG_RUNTIME_DIR`/`DBUS_SESSION_BUS_ADDRESS` (e.g. `/run/user/0`) —
   gdbus/gsettings calls then hit "Could not connect: Permission denied".
-  `a21s-osk-ctl` repoints both at the runtime dir owned by the current
+  `rabbiz-osk-ctl` repoints both at the runtime dir owned by the current
   uid before touching the session bus.
 - **Disk is ~99% full** (22G root, Steam ~7.5G) — installs must be
   batched; `pacman -Scc` between waves. Freed: stale `7.3.4-1-aarch64-ARCH`

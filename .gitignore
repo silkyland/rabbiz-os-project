@@ -11,11 +11,11 @@ tools/rabbiz-de/**/target/
 tools/rabbiz-de/target-*/
 tools/rabbiz-de/build/
 
-# a21s-osk (M7.12): Rust build products (workspace + spike crates)
-tools/a21s-osk/**/target/
-tools/a21s-osk/spikes/*/Cargo.lock
+# rabbiz-osk (M7.12): Rust build products (workspace + spike crates)
+tools/rabbiz-osk/**/target/
+tools/rabbiz-osk/spikes/*/Cargo.lock
 # downloaded Unicode/CLDR sources for the emoji dataset (regenerated, not shipped)
-tools/a21s-osk/data/raw/
+tools/rabbiz-osk/data/raw/
 
 # deep-plan working memory
 docs/.deep-plan/
@@ -43,3 +43,6 @@ dist/
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# private redaction rules for scripts/release/public_history.sh (hold real MACs, names)
+scripts/release/redact.local.txt

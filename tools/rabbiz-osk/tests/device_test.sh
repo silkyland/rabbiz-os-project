@@ -1,5 +1,5 @@
 #!/bin/bash
-# Device-side test harness for a21s-osk (root). Not part of the image; /tmp only.
+# Device-side test harness for rabbiz-osk (root). Not part of the image; /tmp only.
 set -u
 GAMER_UID=$(id -u gamer)
 GAMER_ENV="XDG_RUNTIME_DIR=/run/user/$GAMER_UID WAYLAND_DISPLAY=wayland-0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$GAMER_UID/bus"
@@ -15,7 +15,7 @@ start() {
   as_gamer python3 /tmp/osk_test_client.py >/tmp/osk-client.log 2>&1 &
   echo $! >/tmp/osk-client.pid
   sleep 3
-  as_gamer /usr/local/bin/a21s-osk >/tmp/osk-kb.log 2>&1 &
+  as_gamer /usr/local/bin/rabbiz-osk >/tmp/osk-kb.log 2>&1 &
   echo $! >/tmp/osk-kb.pid
   sleep 3
   echo "--- keyboard log ---"

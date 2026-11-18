@@ -5,7 +5,7 @@ work runs. Every change and every finding names both (`device: any` when it is d
 
 ## `de` — desktop environment
 
-Scope: `tools/rabbiz-de/`, `shell/` (legacy QML, being replaced), `apps/`, `tools/a21s-osk/`,
+Scope: `tools/rabbiz-de/`, `shell/` (legacy QML, being replaced), `apps/`, `tools/rabbiz-osk/`,
 design tokens and assets.
 
 - Develops and verifies on a host: `./scripts/de_test_host.sh` (cargo tests + golden images),
@@ -45,7 +45,7 @@ Scope: `docs/`, `findings/`, `devices/*/findings/`. No code changes. Same eviden
 
 | Path | Lane | Notes |
 |---|---|---|
-| `tools/rabbiz-de/`, `tools/a21s-osk/`, `tools/a21s-mirror/`, `shell/`, `apps/`, `assets/` | `de` | `shell/` is legacy QML, being replaced by `rabbiz-de` |
+| `tools/rabbiz-de/`, `tools/rabbiz-osk/`, `tools/a21s-mirror/`, `shell/`, `apps/`, `assets/` | `de` | `shell/` is legacy QML, being replaced by `rabbiz-de` |
 | `socs/<soc>/drivers/` | `kernel` | shared by every device on that SoC |
 | `devices/<vendor>/<codename>/kernel/` | `kernel` | defconfig, DTS patches for one device |
 | `devices/<vendor>/<codename>/docs/`, `findings/` | `docs` | hardware notes and evidence for one device |

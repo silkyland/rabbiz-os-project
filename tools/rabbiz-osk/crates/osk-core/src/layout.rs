@@ -1,6 +1,6 @@
 //! Layout model: parse a layout TOML, resolve named keys, compute key rectangles.
 //!
-//! Layout files live in `tools/a21s-osk/data/layouts/*.toml` and are shared by every
+//! Layout files live in `tools/rabbiz-osk/data/layouts/*.toml` and are shared by every
 //! platform: the Wayland client renders exactly the rectangles this module computes,
 //! and the host PNG preview uses the same numbers.
 

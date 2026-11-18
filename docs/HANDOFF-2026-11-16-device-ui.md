@@ -126,7 +126,7 @@ findings, including unfinished work. Included in the snapshot:
   tools/a21s-mirror` passed in this session; no new hardware mirror test was
   run while the owner was travelling.
 - `docs/PLAN-keyboard.md`: retained as **plan only**, with its verified,
-  unverified and decision tags. `tools/a21s-osk/spikes/s2-render/Cargo.toml`
+  unverified and decision tags. `tools/rabbiz-osk/spikes/s2-render/Cargo.toml`
   is only a dependency manifest: no Rust target/source exists yet, so the
   spike is not runnable and is not represented as implemented.
 - Browser benchmark HTML and shell performance comparison tooling; their

@@ -20,9 +20,12 @@ command -v gsettings >/dev/null 2>&1 && {
   gsettings set org.gnome.desktop.a11y.applications screen-keyboard-enabled true
   gsettings set org.gnome.desktop.input-sources sources "[('xkb','us'),('xkb','th')]"
 } &
-# a21s-osk (tools/a21s-osk) is the default keyboard; squeekboard stays as the fallback for
+# rabbiz-osk (tools/rabbiz-osk) is the default keyboard; squeekboard stays as the fallback for
 # images that do not ship the binary yet. Never start both: the seat accepts one input method.
-if command -v a21s-osk >/dev/null 2>&1; then
+# a21s-osk is the pre-2026-11-18 name of the same binary; keep the fallback for devices not yet redeployed.
+if command -v rabbiz-osk >/dev/null 2>&1; then
+  rabbiz-osk &
+elif command -v a21s-osk >/dev/null 2>&1; then
   a21s-osk &
 else
   command -v squeekboard >/dev/null 2>&1 && squeekboard &
