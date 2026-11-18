@@ -65,12 +65,16 @@ impl<'a> HomeModel<'a> {
 /// Pages needed for `n` apps.
 #[must_use]
 pub const fn pages_for(n: usize) -> usize {
-    if n == 0 { 1 } else { n.div_ceil(PAGE_SIZE) }
+    if n == 0 {
+        1
+    } else {
+        n.div_ceil(PAGE_SIZE)
+    }
 }
 
 /// Slice of `apps` living on `page` (empty when out of range).
 #[must_use]
-pub fn page_slice<'a>(apps: &'a [IconEntry], page: usize) -> &'a [IconEntry] {
+pub fn page_slice(apps: &[IconEntry], page: usize) -> &[IconEntry] {
     let start = page * PAGE_SIZE;
     if start >= apps.len() {
         return &[];
@@ -81,7 +85,7 @@ pub fn page_slice<'a>(apps: &'a [IconEntry], page: usize) -> &'a [IconEntry] {
 /// What a tap on the home screen hit.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HomeHit {
-    /// Grid icon at page-local index (0..apps_on_page).
+    /// Grid icon at page-local index (`0..apps_on_page`).
     Grid(usize),
     /// Dock slot index.
     Dock(usize),
@@ -93,13 +97,13 @@ pub enum HomeHit {
 /// the search pill, dock slots. Pure — `de-core` calls it on
 /// [`crate::gestures::Gesture::Tap`].
 #[must_use]
-pub fn hit_test(
-    size: Size,
-    pos: Point,
-    apps_on_page: usize,
-    dock_len: usize,
-) -> Option<HomeHit> {
-    let sp = Rect::new(chrome::MARGIN, SEARCH_Y.min(size.h - 420), chrome::content_w(size), 64);
+pub fn hit_test(size: Size, pos: Point, apps_on_page: usize, dock_len: usize) -> Option<HomeHit> {
+    let sp = Rect::new(
+        chrome::MARGIN,
+        SEARCH_Y.min(size.h - 420),
+        chrome::content_w(size),
+        64,
+    );
     if sp.contains(pos) {
         return Some(HomeHit::Search);
     }
@@ -112,12 +116,15 @@ pub fn hit_test(
             return Some(HomeHit::Grid(i));
         }
     }
-    let dock = Rect::new(chrome::MARGIN, DOCK_Y.min(size.h - 240), chrome::content_w(size), 120);
-    let slots = dock_len.max(4).min(6);
+    let dock = Rect::new(
+        chrome::MARGIN,
+        DOCK_Y.min(size.h - 240),
+        chrome::content_w(size),
+        120,
+    );
+    let slots = dock_len.clamp(4, 6);
     for i in 0..dock_len.min(slots) {
-        let ix = dock.x
-            + 40
-            + i as i32 * ((dock.w - 80 - 88) / ((slots.max(2) - 1).max(1) as i32));
+        let ix = dock.x + 40 + i as i32 * ((dock.w - 80 - 88) / ((slots.max(2) - 1).max(1) as i32));
         if Rect::new(ix, dock.y + 16, 88, 88).contains(pos) {
             return Some(HomeHit::Dock(i));
         }
@@ -126,6 +133,8 @@ pub fn hit_test(
 }
 
 /// Render the home screen.
+#[allow(clippy::too_many_lines)] // one pass over home's visual layers
+#[must_use]
 pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     let mut c = match m.wallpaper {
         Some(wp) => {
@@ -140,9 +149,23 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     // Compact Smart Widget: time, date, charging note (glass card).
     let hero = Rect::new(chrome::MARGIN, 88, chrome::content_w(size), 184);
     c.fill_rounded_rect(hero, tokens::RADIUS_CARD, t.glass);
-    chrome::draw(&mut c, m.clock, &style::h2(t.text), hero.x + 24, hero.y + 24, None);
+    chrome::draw(
+        &mut c,
+        m.clock,
+        &style::h2(t.text),
+        hero.x + 24,
+        hero.y + 24,
+        None,
+    );
     if !m.date.is_empty() {
-        chrome::draw(&mut c, m.date, &style::label(t.text2), hero.x + 24, hero.y + 76, None);
+        chrome::draw(
+            &mut c,
+            m.date,
+            &style::label(t.text2),
+            hero.x + 24,
+            hero.y + 76,
+            None,
+        );
     }
     if !m.charging.is_empty() {
         chrome::draw(
@@ -180,15 +203,39 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     }
 
     // Search pill.
-    let sp = Rect::new(chrome::MARGIN, SEARCH_Y.min(size.h - 420), chrome::content_w(size), 64);
+    let sp = Rect::new(
+        chrome::MARGIN,
+        SEARCH_Y.min(size.h - 420),
+        chrome::content_w(size),
+        64,
+    );
     c.fill_rounded_rect(sp, tokens::RADIUS_PILL, t.glass);
-    chrome::draw(&mut c, "\u{e8b6}", &text::LabelStyle::icon(26.0, t.text3), sp.x + 24, sp.y + 18, None);
-    chrome::draw(&mut c, s.get("home.search_hint"), &style::label(t.text3), sp.x + 64, sp.y + 18, None);
+    chrome::draw(
+        &mut c,
+        "\u{e8b6}",
+        &text::LabelStyle::icon(26.0, t.text3),
+        sp.x + 24,
+        sp.y + 18,
+        None,
+    );
+    chrome::draw(
+        &mut c,
+        s.get("home.search_hint"),
+        &style::label(t.text3),
+        sp.x + 64,
+        sp.y + 18,
+        None,
+    );
 
     // Dock: glass shelf, pinned icons (or empty slots up to 4).
-    let dock = Rect::new(chrome::MARGIN, DOCK_Y.min(size.h - 240), chrome::content_w(size), 120);
+    let dock = Rect::new(
+        chrome::MARGIN,
+        DOCK_Y.min(size.h - 240),
+        chrome::content_w(size),
+        120,
+    );
     c.fill_rounded_rect(dock, tokens::RADIUS_SHEET, t.glass);
-    let slots = m.dock.len().max(4).min(6);
+    let slots = m.dock.len().clamp(4, 6);
     for i in 0..slots {
         let ix = dock.x + 40 + i as i32 * ((dock.w - 80 - 88) / ((slots.max(2) - 1).max(1) as i32));
         let r = Rect::new(ix, dock.y + 16, 88, 88);
@@ -207,7 +254,10 @@ fn draw_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, x: i32, y: i32) {
     chrome::draw_app_icon(c, t, e, Rect::new(x + (CELL_W - 96) / 2, y + 8, 96, 96));
     if let Some(px) = text::label_clamped(&e.label, style::label(t.text), 150, 2) {
         let (w, h) = (px.width() as i32, px.height() as i32);
-        c.blit(&Pixels::new(Size::new(w, h), px.data().to_vec()), Point::new(x + (CELL_W - w) / 2, y + 108));
+        c.blit(
+            &Pixels::new(Size::new(w, h), px.data().to_vec()),
+            Point::new(x + (CELL_W - w) / 2, y + 108),
+        );
     }
 }
 
@@ -221,7 +271,7 @@ mod tests {
         assert_eq!(pages_for(16), 1);
         assert_eq!(pages_for(17), 2);
         let apps: Vec<IconEntry> = (0..20)
-            .map(|i| IconEntry::new("a", "x"))
+            .map(|_i| IconEntry::new("a", "x"))
             .enumerate()
             .map(|(i, mut e)| {
                 e.id = format!("a{i}");
@@ -239,12 +289,22 @@ mod tests {
         // First grid cell centre.
         let gx = (720 - CELL_W * 4) / 2;
         assert_eq!(
-            hit_test(size, Point::new(gx + CELL_W / 2, GRID_Y + CELL_H / 2), 16, 4),
+            hit_test(
+                size,
+                Point::new(gx + CELL_W / 2, GRID_Y + CELL_H / 2),
+                16,
+                4
+            ),
             Some(HomeHit::Grid(0))
         );
         // Last grid cell on the first row.
         assert_eq!(
-            hit_test(size, Point::new(gx + 3 * CELL_W + CELL_W / 2, GRID_Y + CELL_H / 2), 16, 4),
+            hit_test(
+                size,
+                Point::new(gx + 3 * CELL_W + CELL_W / 2, GRID_Y + CELL_H / 2),
+                16,
+                4
+            ),
             Some(HomeHit::Grid(3))
         );
         // Search pill centre (y = min(SEARCH_Y, h-420) = 1180 at 1600).

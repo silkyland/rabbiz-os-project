@@ -1,6 +1,6 @@
 //! Input events delivered from the libinput backend to `de-core`/`de-ui`.
 //!
-//! Every event carries the kernel/libinput timestamp (`time_ms`, CLOCK_MONOTONIC
+//! Every event carries the kernel/libinput timestamp (`time_ms`, `CLOCK_MONOTONIC`
 //! milliseconds) so gesture code can compute release velocity for the
 //! spring-based motion contract (plan §7.17a).
 
@@ -82,16 +82,20 @@ pub enum InputEvent {
 }
 
 impl InputEvent {
+    #[allow(clippy::match_same_arms)] // payload types differ; arms can't merge
     #[must_use]
     pub fn time_ms(&self) -> u64 {
         match *self {
             Self::Touch(t) => t.time_ms,
-            Self::Pointer(PointerEvent::Motion { time_ms, .. })
-            | Self::Pointer(PointerEvent::Button { time_ms, .. })
-            | Self::Pointer(PointerEvent::Axis { time_ms, .. }) => time_ms,
+            Self::Pointer(
+                PointerEvent::Motion { time_ms, .. }
+                | PointerEvent::Button { time_ms, .. }
+                | PointerEvent::Axis { time_ms, .. },
+            ) => time_ms,
             Self::Key(k) => k.time_ms,
-            Self::Switch(SwitchEvent::Lid { time_ms, .. })
-            | Self::Switch(SwitchEvent::TabletMode { time_ms, .. }) => time_ms,
+            Self::Switch(
+                SwitchEvent::Lid { time_ms, .. } | SwitchEvent::TabletMode { time_ms, .. },
+            ) => time_ms,
         }
     }
 }

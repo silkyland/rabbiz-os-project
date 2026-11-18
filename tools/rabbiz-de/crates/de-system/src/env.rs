@@ -30,19 +30,26 @@ const UNSETS: &[&str] = &[
 ];
 
 /// Print the contract as `KEY='VALUE'` / `unset KEY` lines for `eval`.
+#[must_use]
 pub fn shell_lines() -> String {
     let mut out = String::new();
     for (k, v) in EXPORTS {
-        out.push_str(&format!("{k}='{v}'\n"));
+        out.push_str(k);
+        out.push_str("='");
+        out.push_str(v);
+        out.push_str("'\n");
     }
     for k in UNSETS {
-        out.push_str(&format!("unset {k}\n"));
+        out.push_str("unset ");
+        out.push_str(k);
+        out.push('\n');
     }
     out
 }
 
 /// The same contract as a `Vec<(key, Option<value>)>` for `Command::env`
 /// (`None` = remove).
+#[must_use]
 pub fn app_env() -> Vec<(&'static str, Option<&'static str>)> {
     let mut v: Vec<_> = EXPORTS.iter().map(|(k, v)| (*k, Some(*v))).collect();
     v.extend(UNSETS.iter().map(|k| (*k, None)));

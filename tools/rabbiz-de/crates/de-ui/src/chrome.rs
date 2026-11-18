@@ -6,7 +6,6 @@ use de_api::{Point, Rect, Size};
 use de_design::tokens::{self, Theme};
 use de_paint::{text, Canvas};
 
-
 /// Status bar height incl. cutout inset (§7.17: 56 px).
 pub const STATUS_H: i32 = tokens::STATUS_BAR_HEIGHT;
 /// Nav pill area (gesture bar 32 px).
@@ -23,20 +22,51 @@ pub fn content_w(size: Size) -> i32 {
 pub mod style {
     use de_paint::text::LabelStyle;
 
+    #[must_use]
     pub fn body(color: [u8; 4]) -> LabelStyle {
-        LabelStyle { color, ..LabelStyle::default() }
+        LabelStyle {
+            color,
+            ..LabelStyle::default()
+        }
     }
+    #[must_use]
     pub fn label(color: [u8; 4]) -> LabelStyle {
-        LabelStyle { size: 22.0, line_height: 28.0, color, ..LabelStyle::default() }
+        LabelStyle {
+            size: 22.0,
+            line_height: 28.0,
+            color,
+            ..LabelStyle::default()
+        }
     }
+    #[must_use]
     pub fn caption(color: [u8; 4]) -> LabelStyle {
-        LabelStyle { size: 20.0, line_height: 26.0, color, ..LabelStyle::default() }
+        LabelStyle {
+            size: 20.0,
+            line_height: 26.0,
+            color,
+            ..LabelStyle::default()
+        }
     }
+    #[must_use]
     pub fn h2(color: [u8; 4]) -> LabelStyle {
-        LabelStyle { size: 32.0, line_height: 40.0, weight: 600, color, ..LabelStyle::default() }
+        LabelStyle {
+            size: 32.0,
+            line_height: 40.0,
+            weight: 600,
+            color,
+            ..LabelStyle::default()
+        }
     }
+    #[must_use]
     pub fn display(color: [u8; 4]) -> LabelStyle {
-        LabelStyle { size: 104.0, line_height: 112.0, weight: 600, tnum: true, color, ..LabelStyle::default() }
+        LabelStyle {
+            size: 104.0,
+            line_height: 112.0,
+            weight: 600,
+            tnum: true,
+            color,
+            ..LabelStyle::default()
+        }
     }
 }
 
@@ -47,10 +77,20 @@ pub fn blit_centered(c: &mut Canvas, px: &de_api::Pixels, y: i32) {
 }
 
 /// Draw a label; returns the rect the pixels occupy.
-pub fn draw(c: &mut Canvas, s: &str, st: &text::LabelStyle, x: i32, y: i32, max_w: Option<i32>) -> Rect {
+pub fn draw(
+    c: &mut Canvas,
+    s: &str,
+    st: &text::LabelStyle,
+    x: i32,
+    y: i32,
+    max_w: Option<i32>,
+) -> Rect {
     if let Some(px) = text::label(s, *st, max_w) {
         let r = Rect::new(x, y, px.width() as i32, px.height() as i32);
-        c.blit(&de_api::Pixels::new(de_api::Size::new(r.w, r.h), px.data().to_vec()), Point::new(x, y));
+        c.blit(
+            &de_api::Pixels::new(de_api::Size::new(r.w, r.h), px.data().to_vec()),
+            Point::new(x, y),
+        );
         return r;
     }
     Rect::new(x, y, 0, 0)
@@ -66,13 +106,17 @@ pub fn draw_centered_x(c: &mut Canvas, s: &str, st: &text::LabelStyle, cx: i32, 
     if let Some(px) = text::label(s, *st, None) {
         let w = px.width() as i32;
         let h = px.height() as i32;
-        c.blit(&de_api::Pixels::new(de_api::Size::new(w, h), px.data().to_vec()), Point::new(cx - w / 2, y));
+        c.blit(
+            &de_api::Pixels::new(de_api::Size::new(w, h), px.data().to_vec()),
+            Point::new(cx - w / 2, y),
+        );
     }
 }
 
 /// What the status bar paints (M3-T1): built from `ServicesSnapshot` + the
 /// clock string the compositor formats (the shell never reads time itself).
 #[derive(Debug, Clone, Default)]
+#[allow(clippy::struct_excessive_bools)] // indicator flags, not a state machine
 pub struct StatusInfo {
     pub clock: String,
     /// `None` = no battery present.
@@ -116,7 +160,10 @@ impl StatusInfo {
                 WifiState::Disabled => Some(false),
                 WifiState::Unknown => None,
             },
-            bluetooth: matches!(snap.bluetooth, BluetoothState::On | BluetoothState::Connected { .. }),
+            bluetooth: matches!(
+                snap.bluetooth,
+                BluetoothState::On | BluetoothState::Connected { .. }
+            ),
             dnd: snap.dnd,
             airplane: snap.airplane,
             privacy_cam: snap.privacy.camera,
@@ -147,7 +194,14 @@ fn status_bar_fg(c: &mut Canvas, t: &Theme, info: &StatusInfo, fg: [u8; 4]) {
     let ic = |col: [u8; 4]| text::LabelStyle::icon(22.0, col);
     let fg_dim = [fg[0], fg[1], fg[2], (u16::from(fg[3]) * 3 / 5) as u8];
     // Left: clock after the 72 px cutout inset.
-    let clock_r = draw(c, &info.clock, &style::label(fg), tokens::CUTOUT_INSET, 14, None);
+    let clock_r = draw(
+        c,
+        &info.clock,
+        &style::label(fg),
+        tokens::CUTOUT_INSET,
+        14,
+        None,
+    );
     // Privacy dots right after the clock (green camera/mic, §7.17).
     let mut dot_x = clock_r.x + clock_r.w + 12;
     for active in [info.privacy_cam, info.privacy_mic] {
@@ -179,11 +233,11 @@ fn status_bar_fg(c: &mut Canvas, t: &Theme, info: &StatusInfo, fg: [u8; 4]) {
         x = r.x - 8;
     }
     for (show, g, col) in [
-        (info.wifi.unwrap_or(false), "\u{e63e}", fg),         // wifi
-        (info.wifi == Some(false), "\u{e648}", fg_dim),       // wifi_off
-        (info.bluetooth, "\u{e1a7}", fg),                     // bluetooth
-        (info.dnd, "\u{e644}", fg),                           // do_not_disturb_on
-        (info.airplane, "\u{e195}", t.accent),                // airplanemode_active
+        (info.wifi.unwrap_or(false), "\u{e63e}", fg),   // wifi
+        (info.wifi == Some(false), "\u{e648}", fg_dim), // wifi_off
+        (info.bluetooth, "\u{e1a7}", fg),               // bluetooth
+        (info.dnd, "\u{e644}", fg),                     // do_not_disturb_on
+        (info.airplane, "\u{e195}", t.accent),          // airplanemode_active
     ] {
         if !show {
             continue;
@@ -214,48 +268,60 @@ impl IconEntry {
     /// Plain labelled tile (golden/sim path — no asset lookup).
     #[must_use]
     pub fn new(id: &str, label: &str) -> Self {
-        Self { id: id.into(), label: label.into(), icon: None }
+        Self {
+            id: id.into(),
+            label: label.into(),
+            icon: None,
+        }
     }
 }
 
 /// Draw an app icon inside `r`: real pixels when present, else the sand
 /// tile + plum initial (same look as `de-apps::icons::tile_icon`).
 pub fn draw_app_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, r: Rect) {
-    match &e.icon {
-        Some(px) => c.blit(px, r.origin()),
-        None => {
-            c.fill_rounded_rect(r, tokens::ICON_TILE_RADIUS * (r.w as f32 / 96.0), t.icon_tile);
-            let letter: String = e
-                .label
-                .chars()
-                .find(|ch| ch.is_alphanumeric())
-                .map(|ch| ch.to_uppercase().collect())
-                .unwrap_or_else(|| "?".into());
-            let st = text::LabelStyle {
-                size: r.w as f32 * 0.44,
-                line_height: r.w as f32 * 0.5,
-                weight: 600,
-                color: t.icon_glyph,
-                ..Default::default()
-            };
-            if let Some(px) = text::label(&letter, st, None) {
-                let (w, h) = (px.width() as i32, px.height() as i32);
-                c.blit(
-                    &de_api::Pixels::new(de_api::Size::new(w, h), px.data().to_vec()),
-                    Point::new(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2),
-                );
-            }
+    if let Some(px) = &e.icon {
+        c.blit(px, r.origin());
+    } else {
+        c.fill_rounded_rect(
+            r,
+            tokens::ICON_TILE_RADIUS * (r.w as f32 / 96.0),
+            t.icon_tile,
+        );
+        let letter: String = e
+            .label
+            .chars()
+            .find(|ch| ch.is_alphanumeric())
+            .map_or_else(|| "?".into(), |ch| ch.to_uppercase().collect());
+        let st = text::LabelStyle {
+            size: r.w as f32 * 0.44,
+            line_height: r.w as f32 * 0.5,
+            weight: 600,
+            color: t.icon_glyph,
+            ..Default::default()
+        };
+        if let Some(px) = text::label(&letter, st, None) {
+            let (w, h) = (px.width() as i32, px.height() as i32);
+            c.blit(
+                &de_api::Pixels::new(de_api::Size::new(w, h), px.data().to_vec()),
+                Point::new(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2),
+            );
         }
     }
 }
 
 /// Grouped-card row: 88 px row, `line` divider, label left, value+chevron right.
-pub fn settings_row(c: &mut Canvas, t: &Theme, y: i32, name: &str, value: &str, first: bool, last: bool) {
+pub fn settings_row(
+    c: &mut Canvas,
+    t: &Theme,
+    y: i32,
+    name: &str,
+    value: &str,
+    first: bool,
+    last: bool,
+) {
     let w = c.size().w;
     let r = Rect::new(MARGIN, y, w - MARGIN * 2, 88);
-    let radius = if first && last {
-        tokens::RADIUS_CARD
-    } else if first || last {
+    let radius = if first || last {
         tokens::RADIUS_CARD
     } else {
         0.0
@@ -273,7 +339,14 @@ pub fn settings_row(c: &mut Canvas, t: &Theme, y: i32, name: &str, value: &str, 
         );
     }
     // chevron_right glyph.
-    draw(c, "\u{e5cc}", &text::LabelStyle::icon(24.0, t.text3), r.x + r.w - 36, y + 32, None);
+    draw(
+        c,
+        "\u{e5cc}",
+        &text::LabelStyle::icon(24.0, t.text3),
+        r.x + r.w - 36,
+        y + 32,
+        None,
+    );
 }
 
 #[cfg(test)]

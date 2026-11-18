@@ -9,6 +9,7 @@ use de_paint::Canvas;
 use crate::chrome::{self, StatusInfo};
 use crate::i18n::Strings;
 
+#[must_use]
 pub fn render(size: Size, _s: &Strings, t: &Theme, status: &StatusInfo) -> de_api::Pixels {
     let mut c = Canvas::filled(size, t.bg);
     chrome::status_bar(&mut c, t, status);

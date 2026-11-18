@@ -7,12 +7,16 @@ use de_paint::Canvas;
 use crate::chrome;
 use crate::i18n::Strings;
 
+#[must_use]
 pub fn render(size: Size, s: &Strings, t: &Theme) -> de_api::Pixels {
     let mut c = Canvas::filled(size, t.bg);
     chrome::status_bar(&mut c, t, &chrome::StatusInfo::default());
     let toast = Rect::new(size.w - 160 - 24, size.h - 96 - 120, 160, 96);
     c.fill_rounded_rect(toast, tokens::RADIUS_CHIP, t.surface3);
-    c.fill_rect(Rect::new(toast.x + 2, toast.y + 2, toast.w - 4, toast.h - 4), t.surface2);
+    c.fill_rect(
+        Rect::new(toast.x + 2, toast.y + 2, toast.w - 4, toast.h - 4),
+        t.surface2,
+    );
     let _ = s;
     c.into_pixels()
 }

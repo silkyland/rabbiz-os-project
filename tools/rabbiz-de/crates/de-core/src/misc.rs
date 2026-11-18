@@ -15,7 +15,12 @@ impl DmabufHandler for De {
         &mut self.dmabuf_state
     }
 
-    fn dmabuf_imported(&mut self, _global: &DmabufGlobal, _dmabuf: Dmabuf, notifier: ImportNotifier) {
+    fn dmabuf_imported(
+        &mut self,
+        _global: &DmabufGlobal,
+        _dmabuf: Dmabuf,
+        notifier: ImportNotifier,
+    ) {
         // Lazy import at first draw is correct for both renderers; nothing to
         // do eagerly here beyond acknowledging success.
         let _ = notifier.successful::<De>();

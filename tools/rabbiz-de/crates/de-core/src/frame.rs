@@ -14,12 +14,12 @@ use smithay::backend::drm::compositor::{FrameFlags, PrimaryPlaneElement};
 use smithay::backend::renderer::element::render_elements;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
-use smithay::backend::renderer::element::AsRenderElements;
-use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
+use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 use smithay::reexports::wayland_server::Display;
 use smithay::utils::{Physical, Point, Scale};
 use smithay::wayland::socket::ListeningSocketSource;
@@ -214,8 +214,8 @@ where
     }
 
     let mut elements: Vec<DeElement<R>> = Vec::new();
-    let show_app = de.foreground == crate::state::Foreground::App
-        && de.space.elements().next().is_some();
+    let show_app =
+        de.foreground == crate::state::Foreground::App && de.space.elements().next().is_some();
     if !show_app {
         if let Some(tex) = texture_buffer::<R>(de.shell_stub.as_ref()) {
             elements.push(DeElement::from(tex_el::<R>(
@@ -251,7 +251,12 @@ where
 
     let res = de
         .compositor
-        .render_frame(renderer, &elements, [0.086, 0.063, 0.102, 1.0], FrameFlags::DEFAULT)
+        .render_frame(
+            renderer,
+            &elements,
+            [0.086, 0.063, 0.102, 1.0],
+            FrameFlags::DEFAULT,
+        )
         .map_err(|e| format!("render: {e:?}"))?;
 
     if let Err(e) = de.compositor.queue_frame(()) {
@@ -279,7 +284,6 @@ where
 }
 
 impl Run {
-
     /// Called after client/input dispatch — present only when a commit or
     /// shell change marked the scene dirty.
     pub fn pump(&mut self) {
@@ -371,7 +375,11 @@ impl Run {
             gpu_ms: None,
             missed_frames: self.missed,
             rss_kb_peak: self.rss_peak,
-            cma_free_min_kb: if self.cma_min == u64::MAX { 0 } else { self.cma_min },
+            cma_free_min_kb: if self.cma_min == u64::MAX {
+                0
+            } else {
+                self.cma_min
+            },
             renderer: self.de.kind(),
         };
         if let Some(p) = &self.summary_path {
@@ -462,11 +470,7 @@ fn minute_of_day() -> u64 {
 
 /// Run the session event loop until `run.duration` elapses (session mode:
 /// no duration → run until killed).
-pub fn event_loop(
-    mut run: Run,
-    display: Display<De>,
-    print_stats: bool,
-) -> Result<u8, String> {
+pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Result<u8, String> {
     let mut event_loop: EventLoop<Run> =
         EventLoop::try_new().map_err(|e| format!("event loop: {e}"))?;
     let handle = event_loop.handle();

@@ -2,8 +2,8 @@
 //!
 //! Usage:
 //!   de-sim --scene <name|all> [--out file.png | --out-dir dir]
-//!          [--size WxH] [--window] [--render-ms]
-//!   de-sim --bless --golden-dir <dir>   (update goldens; usually via de_golden.sh)
+//!          [--size `WxH`] [--window] [--render-ms]
+//!   de-sim --bless --golden-dir <dir>   (update goldens; usually via `de_golden.sh`)
 //!
 //! Scenes: `brand` (P0 boot frame). `all` expands to every registered scene.
 
@@ -27,6 +27,7 @@ fn sim_status() -> de_ui::chrome::StatusInfo {
 }
 
 /// Render a named scene to premultiplied pixels.
+#[allow(clippy::too_many_lines)] // flat scene-name → renderer dispatch
 fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixels> {
     let t = &de_design::tokens::DEFAULT;
     match name {
@@ -41,10 +42,15 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
                     e
                 })
                 .collect();
-            let dock: Vec<de_ui::chrome::IconEntry> = ["a21s-calculator", "a21s-files", "a21s-browser", "a21s-settings"]
-                .iter()
-                .map(|id| de_ui::chrome::IconEntry::new(id, &id[5..]))
-                .collect();
+            let dock: Vec<de_ui::chrome::IconEntry> = [
+                "a21s-calculator",
+                "a21s-files",
+                "a21s-browser",
+                "a21s-settings",
+            ]
+            .iter()
+            .map(|id| de_ui::chrome::IconEntry::new(id, &id[5..]))
+            .collect();
             let m = de_ui::home::HomeModel {
                 status: sim_status(),
                 clock: "09:41",
@@ -68,11 +74,7 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
                     e
                 })
                 .collect();
-            Some(de_ui::drawer::render(
-                size, s, t,
-                &sim_status(),
-                &apps, 0,
-            ))
+            Some(de_ui::drawer::render(size, s, t, &sim_status(), &apps, 0))
         }
         "recents" => {
             let m = de_ui::recents::RecentsModel::new(vec![
@@ -80,11 +82,7 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
                 de_ui::recents::RecentEntry::new("a21s-files", "Files"),
                 de_ui::recents::RecentEntry::new("a21s-browser", "Browser"),
             ]);
-            Some(de_ui::recents::render(
-                size, s, t,
-                &sim_status(),
-                &m,
-            ))
+            Some(de_ui::recents::render(size, s, t, &sim_status(), &m))
         }
         "shade" => Some(de_ui::shade::render(size, s, t, "09:41")),
         "status" => {
@@ -103,7 +101,11 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             Some(de_ui::status::render(size, s, t, &info))
         }
         "qs" => Some(de_ui::qs::render(
-            size, s, t, "09:41", "qs.wifi",
+            size,
+            s,
+            t,
+            "09:41",
+            "qs.wifi",
             &["Rabbiz-5G", "Home-WiFi", "CoffeeShop"],
         )),
         "osd" => Some(de_ui::osd::render(size, s, t, 0.65, "Volume", "\u{e050}")),
@@ -152,11 +154,25 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
 /// All scene names for `--scene all` (golden file stems, 1:1).
 fn all_scenes() -> &'static [&'static str] {
     &[
-        "brand", "lock", "home", "drawer", "recents", "status", "shade", "qs", "osd",
-        "power", "search", "screenshot", "error", "first_run", "settings",
+        "brand",
+        "lock",
+        "home",
+        "drawer",
+        "recents",
+        "status",
+        "shade",
+        "qs",
+        "osd",
+        "power",
+        "search",
+        "screenshot",
+        "error",
+        "first_run",
+        "settings",
     ]
 }
 
+#[allow(clippy::struct_excessive_bools)] // CLI flags
 struct Args {
     scene: String,
     out: Option<PathBuf>,
@@ -189,10 +205,10 @@ fn parse_args() -> Result<Args, String> {
             "--scene" => a.scene = it.next().ok_or("--scene needs a value")?,
             "--out" => a.out = Some(PathBuf::from(it.next().ok_or("--out needs a path")?)),
             "--out-dir" => {
-                a.out_dir = Some(PathBuf::from(it.next().ok_or("--out-dir needs a path")?))
+                a.out_dir = Some(PathBuf::from(it.next().ok_or("--out-dir needs a path")?));
             }
             "--golden-dir" => {
-                a.golden_dir = Some(PathBuf::from(it.next().ok_or("--golden-dir needs a path")?))
+                a.golden_dir = Some(PathBuf::from(it.next().ok_or("--golden-dir needs a path")?));
             }
             "--size" => {
                 let v = it.next().ok_or("--size needs WxH")?;
@@ -271,7 +287,10 @@ fn main() -> ExitCode {
                 .golden_dir
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("tests/golden"));
-            let path = dir.join(format!("{scene}-{}x{}-{}.png", args.size.w, args.size.h, args.locale));
+            let path = dir.join(format!(
+                "{scene}-{}x{}-{}.png",
+                args.size.w, args.size.h, args.locale
+            ));
             match golden::compare(&px, &path) {
                 Ok(c) => {
                     println!("{scene}: {c}");
@@ -292,7 +311,10 @@ fn main() -> ExitCode {
                 .golden_dir
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("tests/golden"));
-            let path = dir.join(format!("{scene}-{}x{}-{}.png", args.size.w, args.size.h, args.locale));
+            let path = dir.join(format!(
+                "{scene}-{}x{}-{}.png",
+                args.size.w, args.size.h, args.locale
+            ));
             match golden::write_png(&px, &path) {
                 Ok(()) => eprintln!("blessed {}", path.display()),
                 Err(e) => {
@@ -304,7 +326,10 @@ fn main() -> ExitCode {
         }
 
         if let Some(dir) = &args.out_dir {
-            let path = dir.join(format!("{scene}-{}x{}-{}.png", args.size.w, args.size.h, args.locale));
+            let path = dir.join(format!(
+                "{scene}-{}x{}-{}.png",
+                args.size.w, args.size.h, args.locale
+            ));
             if let Err(e) = golden::write_png(&px, &path) {
                 eprintln!("de-sim: {e}");
                 failed = true;
@@ -335,8 +360,10 @@ fn main() -> ExitCode {
 fn run_window(px: &Pixels) {
     // Premultiplied RGBA8 -> packed 0xAARRGGBB for minifb.
     let mut buf = Vec::with_capacity(px.data.len() / 4);
-    for c in px.data.chunks_exact(4) {
-        buf.push((c[3] as u32) << 24 | (c[0] as u32) << 16 | (c[1] as u32) << 8 | c[2] as u32);
+    for c in px.data.as_chunks::<4>().0 {
+        buf.push(
+            u32::from(c[3]) << 24 | u32::from(c[0]) << 16 | u32::from(c[1]) << 8 | u32::from(c[2]),
+        );
     }
     let (w, h) = (px.size.w as usize, px.size.h as usize);
     let Ok(mut win) = minifb::Window::new(

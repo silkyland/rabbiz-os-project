@@ -1,7 +1,7 @@
 //! Bundled fonts (M0-T5).
 //!
 //! Only the four embedded Noto faces (Regular/SemiBold, Latin/Thai) plus the
-//! Material Icons Round icon font are loaded — the FontSystem performs **no
+//! Material Icons Round icon font are loaded — the `FontSystem` performs **no
 //! system-font fallback** so host goldens and device output shape identically.
 
 use std::sync::{Mutex, OnceLock};
@@ -11,12 +11,12 @@ use cosmic_text::FontSystem;
 
 /// Noto Sans Latin — Regular (400).
 pub const NOTO_SANS_REGULAR: &[u8] = include_bytes!("../../../assets/fonts/NotoSans-Regular.ttf");
-/// Noto Sans Latin — SemiBold (600).
+/// Noto Sans Latin — `SemiBold` (600).
 pub const NOTO_SANS_SEMIBOLD: &[u8] = include_bytes!("../../../assets/fonts/NotoSans-SemiBold.ttf");
 /// Noto Sans Thai — Regular (400).
 pub const NOTO_THAI_REGULAR: &[u8] =
     include_bytes!("../../../assets/fonts/NotoSansThai-Regular.ttf");
-/// Noto Sans Thai — SemiBold (600).
+/// Noto Sans Thai — `SemiBold` (600).
 pub const NOTO_THAI_SEMIBOLD: &[u8] =
     include_bytes!("../../../assets/fonts/NotoSansThai-SemiBold.ttf");
 /// Material Icons Round (system glyphs, Apache 2.0).
@@ -42,6 +42,7 @@ pub const BUNDLED_FONTS: [&[u8]; 5] = [
 ];
 
 /// A `fontdb::Database` containing only the bundled faces.
+#[must_use]
 pub fn bundled_db() -> Database {
     let mut db = Database::new();
     for face in BUNDLED_FONTS {

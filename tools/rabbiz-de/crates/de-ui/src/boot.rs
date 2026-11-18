@@ -10,7 +10,7 @@ use de_paint::{svg, Canvas};
 
 /// Rabbiz mark (bunny logo), embedded SVG.
 const MARK_SVG: &[u8] = include_bytes!("../../../assets/branding/rabbiz-mark.svg");
-/// RabbizOS wordmark for the dark theme (cream/copper variant of the brand
+/// `RabbizOS` wordmark for the dark theme (cream/copper variant of the b`rand`
 /// SVG, same artwork — the light-bg original is invisible on `bg`).
 const WORDMARK_SVG: &[u8] = include_bytes!("../../../assets/branding/rabbizos-wordmark-dark.svg");
 
@@ -25,6 +25,7 @@ const WORDMARK_W: u32 = 360;
 ///
 /// Deterministic for a given `output`+`progress` — this is what the golden
 /// harness and the real first frame share.
+#[must_use]
 pub fn brand_frame(output: Size, progress: f32) -> Pixels {
     let theme = tokens::DEFAULT;
     let mut c = Canvas::filled(output, theme.bg);

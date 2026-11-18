@@ -34,7 +34,12 @@ impl RecentEntry {
     /// Placeholder card (no captured frame).
     #[must_use]
     pub fn new(id: &str, title: &str) -> Self {
-        Self { id: id.into(), title: title.into(), icon: None, snapshot: None }
+        Self {
+            id: id.into(),
+            title: title.into(),
+            icon: None,
+            snapshot: None,
+        }
     }
 }
 
@@ -105,12 +110,18 @@ impl RecentsModel {
 }
 
 /// Render the recents screen.
+#[must_use]
 pub fn render(size: Size, s: &Strings, t: &Theme, status: &StatusInfo, m: &RecentsModel) -> Pixels {
     let mut c = Canvas::filled(size, t.bg);
     chrome::status_bar(&mut c, t, status);
 
     if m.entries.is_empty() {
-        chrome::draw_centered(&mut c, s.get("recents.empty"), &style::body(t.text3), size.h / 2);
+        chrome::draw_centered(
+            &mut c,
+            s.get("recents.empty"),
+            &style::body(t.text3),
+            size.h / 2,
+        );
         chrome::nav_pill(&mut c, t);
         return c.into_pixels();
     }
@@ -124,36 +135,72 @@ pub fn render(size: Size, s: &Strings, t: &Theme, status: &StatusInfo, m: &Recen
         }
         // Label + icon above the card.
         let tile = Rect::new(x, y - 52, 36, 36);
-        let ie = IconEntry { id: e.id.clone(), label: e.title.clone(), icon: e.icon.clone() };
+        let ie = IconEntry {
+            id: e.id.clone(),
+            label: e.title.clone(),
+            icon: e.icon.clone(),
+        };
         chrome::draw_app_icon(&mut c, t, &ie, tile);
-        chrome::draw(&mut c, &e.title, &style::label(t.text2), x + 44, y - 46, Some(CARD_W - 44));
+        chrome::draw(
+            &mut c,
+            &e.title,
+            &style::label(t.text2),
+            x + 44,
+            y - 46,
+            Some(CARD_W - 44),
+        );
         // Card body: snapshot cover-scaled, or a placeholder tile.
-        c.fill_rounded_rect(Rect::new(x, y, CARD_W, CARD_H), tokens::RADIUS_CARD, t.surface2);
-        match &e.snapshot {
-            Some(px) => {
-                let inner = Rect::new(x + 4, y + 4, CARD_W - 8, CARD_H - 8);
-                let scaled = cover_scale(px, inner.size());
-                // Round the snapshot's corners by masking through a tile
-                // canvas: draw the image, then punch rounded corners via a
-                // clipped blit into a temp card.
-                let mut card = Canvas::new(inner.size());
-                card.blit(&scaled, de_api::Point::ZERO);
-                let card_px = card.into_pixels();
-                c.blit_region(&card_px, Rect::from_origin_size(de_api::Point::ZERO, inner.size()), inner.origin());
-            }
-            None => {
-                let ie2 = IconEntry { id: e.id.clone(), label: e.title.clone(), icon: e.icon.clone() };
-                chrome::draw_app_icon(&mut c, t, &ie2, Rect::new(x + (CARD_W - 96) / 2, y + (CARD_H - 96) / 2, 96, 96));
-            }
+        c.fill_rounded_rect(
+            Rect::new(x, y, CARD_W, CARD_H),
+            tokens::RADIUS_CARD,
+            t.surface2,
+        );
+        if let Some(px) = &e.snapshot {
+            let inner = Rect::new(x + 4, y + 4, CARD_W - 8, CARD_H - 8);
+            let scaled = cover_scale(px, inner.size());
+            // Round the snapshot's corners by masking through a tile
+            // canvas: draw the image, then punch rounded corners via a
+            // clipped blit into a temp card.
+            let mut card = Canvas::new(inner.size());
+            card.blit(&scaled, de_api::Point::ZERO);
+            let card_px = card.into_pixels();
+            c.blit_region(
+                &card_px,
+                Rect::from_origin_size(de_api::Point::ZERO, inner.size()),
+                inner.origin(),
+            );
+        } else {
+            let ie2 = IconEntry {
+                id: e.id.clone(),
+                label: e.title.clone(),
+                icon: e.icon.clone(),
+            };
+            chrome::draw_app_icon(
+                &mut c,
+                t,
+                &ie2,
+                Rect::new(x + (CARD_W - 96) / 2, y + (CARD_H - 96) / 2, 96, 96),
+            );
         }
     }
 
     // Clear-all pill (only when more than one card).
     if m.entries.len() > 1 {
         let pill_w = 200;
-        let r = Rect::new((size.w - pill_w) / 2, size.h - chrome::NAV_H - 72, pill_w, 52);
+        let r = Rect::new(
+            (size.w - pill_w) / 2,
+            size.h - chrome::NAV_H - 72,
+            pill_w,
+            52,
+        );
         c.fill_rounded_rect(r, tokens::RADIUS_PILL, t.glass);
-        chrome::draw_centered_x(&mut c, s.get("recents.clear_all"), &style::label(t.text), r.x + pill_w / 2, r.y + 12);
+        chrome::draw_centered_x(
+            &mut c,
+            s.get("recents.clear_all"),
+            &style::label(t.text),
+            r.x + pill_w / 2,
+            r.y + 12,
+        );
     }
     chrome::nav_pill(&mut c, t);
     c.into_pixels()
@@ -164,7 +211,11 @@ mod tests {
     use super::*;
 
     fn model(n: usize) -> RecentsModel {
-        RecentsModel::new((0..n).map(|i| RecentEntry::new(&format!("a{i}"), "x")).collect())
+        RecentsModel::new(
+            (0..n)
+                .map(|i| RecentEntry::new(&format!("a{i}"), "x"))
+                .collect(),
+        )
     }
 
     #[test]

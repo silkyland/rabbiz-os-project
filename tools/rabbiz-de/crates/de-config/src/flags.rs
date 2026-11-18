@@ -81,20 +81,21 @@ pub fn parse<I: Iterator<Item = String>>(args: I) -> Result<Cli, String> {
                 let id = it.next().ok_or("launch needs a desktop-id")?;
                 command = Command::Launch(id);
             }
-            "--shell" => { /* only meaningful with `env`; accepted silently */ }
-            "--json" => { /* probe output is always JSON; accepted for the contract */ }
+            // `--shell` is only meaningful with `env`; `--json` matches the probe
+            // contract — both accepted silently.
+            "--shell" | "--json" => {}
             "--force-fail" => flags.force_fail = true,
             "--require=gl" => flags.require_gl = true,
             "--stats" => flags.stats = true,
             s if s.starts_with("--stats-file") => {
-                flags.stats_file = Some(PathBuf::from(value(s, &mut it)?))
+                flags.stats_file = Some(PathBuf::from(value(s, &mut it)?));
             }
             s if s.starts_with("--stats-summary") => {
-                flags.stats_summary = Some(PathBuf::from(value(s, &mut it)?))
+                flags.stats_summary = Some(PathBuf::from(value(s, &mut it)?));
             }
             s if s.starts_with("--scenario") => flags.scenario = value(s, &mut it)?,
             s if s.starts_with("--duration") => {
-                flags.duration = Some(value(s, &mut it)?.parse().map_err(|_| "--duration N")?)
+                flags.duration = Some(value(s, &mut it)?.parse().map_err(|_| "--duration N")?);
             }
             s if s.starts_with("--renderer") => {
                 flags.renderer = match value(s, &mut it)?.as_str() {

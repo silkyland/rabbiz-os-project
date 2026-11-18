@@ -132,13 +132,13 @@ impl Canvas {
 
 /// Build a rounded-rect `Path` (tiny-skia has no built-in helper).
 fn rounded_rect_path(r: tiny_skia::Rect, radius: f32) -> Option<tiny_skia::Path> {
+    // Circle-to-cubic constant.
+    const K: f32 = 0.552_284_8;
     if radius <= 0.0 {
         let mut pb = PathBuilder::new();
         pb.push_rect(r);
         return pb.finish();
     }
-    // Circle-to-cubic constant.
-    const K: f32 = 0.552_284_75;
     let (l, t, rr, b) = (r.left(), r.top(), r.right(), r.bottom());
     let rad = radius.min((rr - l) / 2.0).min((b - t) / 2.0);
     let k = rad * K;
@@ -183,13 +183,14 @@ pub fn blit_premultiplied(dst: &mut Pixmap, src: &Pixels, dx: i32, dy: i32) {
             }
             let si = ((sy * sw + sx) * 4) as usize;
             let di = ((y * dw + x) * 4) as usize;
-            let sa = src.data[si + 3] as u32;
+            let sa = u32::from(src.data[si + 3]);
             let inv = 255 - sa;
             for c in 0..3 {
-                data[di + c] = (src.data[si + c] as u32 + (data[di + c] as u32 * inv + 127) / 255)
+                data[di + c] = (u32::from(src.data[si + c])
+                    + (u32::from(data[di + c]) * inv + 127) / 255)
                     .min(255) as u8;
             }
-            data[di + 3] = (sa + (data[di + 3] as u32 * inv + 127) / 255).min(255) as u8;
+            data[di + 3] = (sa + (u32::from(data[di + 3]) * inv + 127) / 255).min(255) as u8;
         }
     }
 }

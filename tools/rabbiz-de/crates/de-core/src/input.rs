@@ -18,14 +18,13 @@ use de_ui::gestures::{Gesture, GestureEvent, Zone};
 
 use smithay::backend::input::{
     AbsolutePositionEvent, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState,
-    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
-    PointerMotionEvent, TouchEvent as _,
+    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent, TouchEvent as _,
 };
 use smithay::desktop::WindowSurfaceType;
 use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
 use smithay::input::pointer::{AxisFrame, ButtonEvent, MotionEvent, RelativeMotionEvent};
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotion, UpEvent};
-use smithay::utils::{Logical, Point, SERIAL_COUNTER as SCOUNTER, Size};
+use smithay::utils::{Logical, Point, Size, SERIAL_COUNTER as SCOUNTER};
 
 use crate::state::De;
 
@@ -72,7 +71,10 @@ impl De {
                 let h = event.amount(Axis::Horizontal).unwrap_or(0.0);
                 frame = frame
                     .relative_direction(Axis::Vertical, event.relative_direction(Axis::Vertical))
-                    .relative_direction(Axis::Horizontal, event.relative_direction(Axis::Horizontal));
+                    .relative_direction(
+                        Axis::Horizontal,
+                        event.relative_direction(Axis::Horizontal),
+                    );
                 if event.source() == AxisSource::Finger {
                     frame = frame.value(Axis::Vertical, v).value(Axis::Horizontal, h);
                 } else {
@@ -167,7 +169,12 @@ impl De {
         // contact while a shell screen is foreground — is claimed by the
         // shell and never reaches the client.
         let zone = self.gestures.zone(api_point(pos));
-        self.feed_gesture(i32::from(evt.slot()), de_api::input::TouchPhase::Down, pos, evt.time_msec());
+        self.feed_gesture(
+            i32::from(evt.slot()),
+            de_api::input::TouchPhase::Down,
+            pos,
+            evt.time_msec(),
+        );
         self.touch_claimed =
             zone != Zone::Content || matches!(self.foreground, crate::state::Foreground::Shell);
         if self.touch_claimed {
@@ -238,7 +245,12 @@ impl De {
 
     fn on_touch_up<B: InputBackend>(&mut self, evt: B::TouchUpEvent) {
         let pos = self.last_touch_pos;
-        self.feed_gesture(i32::from(evt.slot()), de_api::input::TouchPhase::Up, pos, evt.time_msec());
+        self.feed_gesture(
+            i32::from(evt.slot()),
+            de_api::input::TouchPhase::Up,
+            pos,
+            evt.time_msec(),
+        );
         if std::mem::take(&mut self.touch_claimed) {
             self.needs_present = true;
             return;
@@ -296,8 +308,7 @@ impl De {
                 }
             }
             Gesture::PageSwitch { dir } => {
-                if matches!(self.foreground, Foreground::Shell)
-                    && self.nav.current == Screen::Home
+                if matches!(self.foreground, Foreground::Shell) && self.nav.current == Screen::Home
                 {
                     let pages = de_ui::home::pages_for(
                         self.catalog.home_order(self.app_prefs.prefs()).len(),

@@ -7,9 +7,9 @@
 //! drives it with real frame deltas and retargets mid-flight.
 
 use de_api::{Pixels, Point, Rect};
+use de_design::motion::SpringPreset;
 use de_design::tokens::{self, Theme};
 use de_paint::{animation::SpringValue, Canvas};
-use de_design::motion::SpringPreset;
 
 use crate::chrome::{self, style, IconEntry};
 use crate::transitions::{ease_out, fade_in, lerp, lerp_rect, with_opacity};
@@ -44,11 +44,19 @@ pub fn morph_frame(
         if a > 0.0 {
             let box_r = Rect::new(
                 r.x + (r.w - 96) / 2,
-                lerp(src.y as f32, r.y as f32 + (r.h as f32 - 96.0) / 2.0, fade_in(p, 0.0, 0.4)) as i32,
+                lerp(
+                    src.y as f32,
+                    r.y as f32 + (r.h as f32 - 96.0) / 2.0,
+                    fade_in(p, 0.0, 0.4),
+                ) as i32,
                 96,
                 96,
             );
-            let e = IconEntry { id: String::new(), label: label.into(), icon: Some(px.clone()) };
+            let e = IconEntry {
+                id: String::new(),
+                label: label.into(),
+                icon: Some(px.clone()),
+            };
             // Opacity on an image needs a per-pixel fade — cheap path: draw
             // the icon onto a 96-px card and blit it (full alpha); the
             // crossfade is approximated by the surface fill above. For a
@@ -58,7 +66,11 @@ pub fn morph_frame(
         }
     } else {
         // First-party tile keeps its look the whole way.
-        let e = IconEntry { id: String::new(), label: label.into(), icon: None };
+        let e = IconEntry {
+            id: String::new(),
+            label: label.into(),
+            icon: None,
+        };
         let box_r = Rect::new(r.x + (r.w - 96) / 2, r.y + (r.h - 96) / 2, 96, 96);
         if p < 0.85 {
             chrome::draw_app_icon(&mut c, t, &e, box_r);
@@ -96,7 +108,10 @@ impl MorphAnimator {
     #[must_use]
     pub fn new(from: f32) -> Self {
         // §7.17a: app open/close uses Smooth (450 ms, zero bounce).
-        Self { spring: SpringValue::new(from, SpringPreset::Smooth), target: from }
+        Self {
+            spring: SpringValue::new(from, SpringPreset::Smooth),
+            target: from,
+        }
     }
 
     /// Retarget to open (`1.0`) or closed (`0.0`), preserving velocity.

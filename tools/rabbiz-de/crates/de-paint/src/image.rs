@@ -52,8 +52,13 @@ pub fn decode_png(bytes: &[u8]) -> Result<Pixels, ImageError> {
     let mut data = Vec::with_capacity((size.area() * 4) as usize);
     match ct {
         ColorType::Rgba => {
-            for px in buf.chunks_exact(4) {
-                let (r, g, b, a) = (px[0] as u32, px[1] as u32, px[2] as u32, px[3] as u32);
+            for px in buf.as_chunks::<4>().0 {
+                let (r, g, b, a) = (
+                    u32::from(px[0]),
+                    u32::from(px[1]),
+                    u32::from(px[2]),
+                    u32::from(px[3]),
+                );
                 data.extend_from_slice(&[
                     ((r * a + 127) / 255) as u8,
                     ((g * a + 127) / 255) as u8,
@@ -63,13 +68,13 @@ pub fn decode_png(bytes: &[u8]) -> Result<Pixels, ImageError> {
             }
         }
         ColorType::Rgb => {
-            for px in buf.chunks_exact(3) {
+            for px in buf.as_chunks::<3>().0 {
                 data.extend_from_slice(&[px[0], px[1], px[2], 255]);
             }
         }
         ColorType::GrayscaleAlpha => {
-            for px in buf.chunks_exact(2) {
-                let (g, a) = (px[0] as u32, px[1] as u32);
+            for px in buf.as_chunks::<2>().0 {
+                let (g, a) = (u32::from(px[0]), u32::from(px[1]));
                 let gp = ((g * a + 127) / 255) as u8;
                 data.extend_from_slice(&[gp, gp, gp, a as u8]);
             }
@@ -90,10 +95,16 @@ pub fn decode_png(bytes: &[u8]) -> Result<Pixels, ImageError> {
 }
 
 /// Encode premultiplied pixels to PNG (un-premultiplies alpha first).
+#[allow(clippy::manual_checked_ops)] // alpha-zero guard reads better than checked_div per channel
 pub fn encode_png(pixels: &Pixels) -> Result<Vec<u8>, ImageError> {
     let mut data = Vec::with_capacity(pixels.data.len());
-    for px in pixels.data.chunks_exact(4) {
-        let (r, g, b, a) = (px[0] as u32, px[1] as u32, px[2] as u32, px[3] as u32);
+    for px in pixels.data.as_chunks::<4>().0 {
+        let (r, g, b, a) = (
+            u32::from(px[0]),
+            u32::from(px[1]),
+            u32::from(px[2]),
+            u32::from(px[3]),
+        );
         if a == 0 {
             data.extend_from_slice(&[0, 0, 0, 0]);
         } else {
@@ -124,13 +135,13 @@ mod tests {
         let size = Size::new(3, 2);
         let mut px = Pixels::empty(size);
         // Half-transparent red at (1,0).
-        let i = (1 * 4) as usize;
+        let i = 4_usize;
         px.data[i] = 128;
         px.data[i + 3] = 128;
         let png = encode_png(&px).unwrap();
         let back = decode_png(&png).unwrap();
         assert_eq!(back.size, size);
-        assert!((back.data[i] as i32 - 128).abs() <= 2);
+        assert!((i32::from(back.data[i]) - 128).abs() <= 2);
         assert_eq!(back.data[i + 3], 128);
     }
 }

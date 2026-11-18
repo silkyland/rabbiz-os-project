@@ -438,14 +438,15 @@ tests/                     golden list, protocol smoke clients
 - **Depends on:** M2.
 - **Entry criteria:** golden set approved by the owner (visual review).
 - **Tasks:**
-  - [ ] `M3-T1`: status bar + battery/charging + privacy indicators. Files: `crates/de-ui/src/status.rs`, `crates/de-system/src/{upower,privacy}.rs`.
-  - [ ] `M3-T2`: home: wallpaper parallax, clock/date, hero deck, 4×2 grid, search pill, dock, page dots. Files: `crates/de-ui/src/home/*.rs`.
-  - [ ] `M3-T3`: drawer + search + app actions + hide/pin persistence. Files: `crates/de-ui/src/{drawer,search}.rs`, `crates/de-apps/src/{catalog,prefs}.rs`.
-  - [ ] `M3-T4`: recents with snapshot cache and dismissal. Files: `crates/de-ui/src/recents.rs`, `crates/de-core/src/snapshots.rs`.
-  - [ ] `M3-T5`: launch/close morph (spring-driven, interruptible, draggable close) + the other shared-element transitions listed in 7.17a + timeout/error path. Files: `crates/de-ui/src/launch_morph.rs`, `crates/de-ui/src/transitions.rs`, `crates/de-core/src/launch.rs`.
-  - [ ] `M3-T6`: gestures: edge-back, home swipe, swipe-up-hold recents, shade pull, dock page switch. Files: `crates/de-ui/src/gestures.rs`, `crates/de-core/src/input.rs`.
-  - [ ] `M3-T7`: prefs compatibility (read legacy `prefs.json`, own `~/.config/rabbiz-de/prefs.json` with atomic writes/backup, `deAccent`/`deWallpaperId`, no legacy writes) and wallpaper/accent loading. Files: `crates/de-config/src/prefs.rs`, `crates/de-config/tests/prefs.rs`, `crates/de-paint/src/wallpaper.rs`.
+  - [x] `M3-T1`: status bar + battery/charging + privacy indicators. Files: `crates/de-ui/src/status.rs`, `crates/de-system/src/{upower,privacy}.rs`.
+  - [x] `M3-T2`: home: wallpaper parallax, clock/date, hero deck, 4×2 grid, search pill, dock, page dots. Files: `crates/de-ui/src/home/*.rs`.
+  - [x] `M3-T3`: drawer + search + app actions + hide/pin persistence. Files: `crates/de-ui/src/{drawer,search}.rs`, `crates/de-apps/src/{catalog,prefs}.rs`.
+  - [x] `M3-T4`: recents with snapshot cache and dismissal. Files: `crates/de-ui/src/recents.rs`, `crates/de-core/src/snapshots.rs`.
+  - [x] `M3-T5`: launch/close morph (spring-driven, interruptible, draggable close) + the other shared-element transitions listed in 7.17a + timeout/error path. Files: `crates/de-ui/src/launch_morph.rs`, `crates/de-ui/src/transitions.rs`, `crates/de-core/src/launch.rs`.
+  - [x] `M3-T6`: gestures: edge-back, home swipe, swipe-up-hold recents, shade pull, dock page switch. Files: `crates/de-ui/src/gestures.rs`, `crates/de-core/src/input.rs`.
+  - [x] `M3-T7`: prefs compatibility (read legacy `prefs.json`, own `~/.config/rabbiz-de/prefs.json` with atomic writes/backup, `deAccent`/`deWallpaperId`, no legacy writes) and wallpaper/accent loading. Files: `crates/de-config/src/prefs.rs`, `crates/de-config/tests/prefs.rs`, `crates/de-paint/src/wallpaper.rs`.
 - **Exit criteria:** `scripts/de_bench.sh --scenario launcher` reports p95 ≤ 16.6 ms and 0 missed frames > 2 for home scroll, drawer open, launch morph, back; a 30-app list scrolls without texture thrash; all flows work with touch and keyboard.
+- **Status (device-gated):** all M3 tasks code-complete and host-verified (unit tests + 60/60 goldens, `de-bin` arm64 release build). Exit criteria still need an on-device run — deploy/probe/bench pending device connectivity.
 
 ### M4: System surfaces and services (effort: L)
 - **Objective:** the shell is complete: shade, notifications, quick settings, lock, power, settings, OSK, screenshots.
@@ -530,15 +531,16 @@ Expected: all tests pass; 20 golden PNGs match `scripts/de_golden.sh` (mean abso
 
 ```sh
 docker run --rm --platform linux/arm64 -v "$PWD":/w -w /w/tools/rabbiz-de \
+  -e CARGO_TARGET_DIR=/w/tools/rabbiz-de/target-linux-arm64 \
   rust:1.99-bookworm bash -c '
     apt-get update -qq && apt-get install -y -qq \
       libseat-dev libinput-dev libgbm-dev libegl1-mesa-dev libdrm-dev libpixman-1-dev \
       libudev-dev libwayland-dev libxkbcommon-dev pkg-config clang cmake &&
     /usr/local/cargo/bin/cargo build --release -p de-bin &&
-    chown -R "$(id -u):$(id -g)" /w/tools/rabbiz-de/target'
+    chown -R "$(id -u):$(id -g)" /w/tools/rabbiz-de/target-linux-arm64'
 ```
 
-Expected: `target/release/rabbiz-de` exists; `rabbiz-de probe --json` (run on device) exits 0. If the container runs as root, the chown step above keeps the host `cargo` usable.
+Expected: `target-linux-arm64/release/rabbiz-de` exists; `rabbiz-de probe --json` (run on device) exits 0. If the container runs as root, the chown step above keeps the host `cargo` usable. `CARGO_TARGET_DIR` is required — sharing `target/` between the macOS host and the arm64 container corrupts the dep fingerprint cache (`can't find crate for generic_array`).
 
 **Device (serialize with `scripts/device_session.sh`):**
 

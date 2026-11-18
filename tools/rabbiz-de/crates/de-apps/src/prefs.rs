@@ -23,7 +23,9 @@ impl AppPrefs {
     /// Load `~/.config/rabbiz-de/prefs.json` (legacy-seeded on first run).
     #[must_use]
     pub fn load() -> Self {
-        Self { prefs: Prefs::load() }
+        Self {
+            prefs: Prefs::load(),
+        }
     }
 
     /// Wrap an already-loaded `Prefs` (tests, sim).

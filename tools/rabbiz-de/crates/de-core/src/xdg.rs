@@ -23,10 +23,8 @@ impl XdgShellHandler for De {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let size = Size::<i32, Logical>::from((
-            self.output.width as i32,
-            self.output.height as i32,
-        ));
+        let size =
+            Size::<i32, Logical>::from((self.output.width as i32, self.output.height as i32));
         de_protocols::configure_fullscreen(&surface, size);
         de_protocols::set_ssd(&surface);
         // A mapped toplevel resolves the pending launch and takes the

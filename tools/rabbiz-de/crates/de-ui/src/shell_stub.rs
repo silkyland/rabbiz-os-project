@@ -12,6 +12,7 @@ pub const GESTURE_BAR_H: i32 = 32;
 
 /// Rasterize the home stub (clock + brand) for `output`.
 /// Re-rasterize once per minute — the clock is the only changing part.
+#[must_use]
 pub fn home(output: Size) -> Pixels {
     let theme = tokens::DEFAULT;
     let mut c = Canvas::filled(output, theme.bg);
@@ -29,7 +30,10 @@ pub fn home(output: Size) -> Pixels {
         let cw = clock.width() as i32;
         let ch = clock.height() as i32;
         let px = Pixels::new(Size::new(cw, ch), clock.data().to_vec());
-        c.blit(&px, Point::new((output.w - cw) / 2, (output.h - ch) / 2 - 60));
+        c.blit(
+            &px,
+            Point::new((output.w - cw) / 2, (output.h - ch) / 2 - 60),
+        );
     }
 
     c.into_pixels()
@@ -37,6 +41,7 @@ pub fn home(output: Size) -> Pixels {
 
 /// Rasterize the 32 px gesture bar (pill indicator centered near the bottom
 /// edge). Transparent everywhere except the pill so it can overlay apps.
+#[must_use]
 pub fn gesture_bar(output: Size) -> Pixels {
     let theme = tokens::DEFAULT;
     let mut c = Canvas::new(Size::new(output.w, GESTURE_BAR_H));
@@ -52,6 +57,5 @@ fn clock_hhmm() -> String {
         .output()
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "--:--".to_string())
+        .map_or_else(|| "--:--".to_string(), |s| s.trim().to_string())
 }

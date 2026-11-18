@@ -164,8 +164,7 @@ impl Default for FrameGovernor {
 /// One rung up the ladder (toward `Full`).
 fn recovered(l: DegradeLevel) -> DegradeLevel {
     match l {
-        DegradeLevel::Full => DegradeLevel::Full,
-        DegradeLevel::NoStagger => DegradeLevel::Full,
+        DegradeLevel::Full | DegradeLevel::NoStagger => DegradeLevel::Full,
         DegradeLevel::NoEffects => DegradeLevel::NoStagger,
         DegradeLevel::Bezier160 => DegradeLevel::NoEffects,
         DegradeLevel::Crossfade120 => DegradeLevel::Bezier160,

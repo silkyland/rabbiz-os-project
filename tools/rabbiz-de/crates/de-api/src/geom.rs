@@ -49,7 +49,7 @@ impl Size {
 
     #[must_use]
     pub fn area(self) -> i64 {
-        self.w.max(0) as i64 * self.h.max(0) as i64
+        i64::from(self.w.max(0)) * i64::from(self.h.max(0))
     }
 }
 

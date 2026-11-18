@@ -4,7 +4,7 @@
 //! on wallpaper-adjacent glass, lock clock >= 7:1.
 
 use de_design::tokens::{
-    contrast_ratio, Theme, CONTRAST_ACCENT_ON_BG, CONTRAST_TEXT_ON_SURFACE, DARK, LIGHT,
+    contrast_ratio, CONTRAST_ACCENT_ON_BG, CONTRAST_TEXT_ON_SURFACE, DARK, LIGHT,
 };
 
 fn assert_contrast(name: &str, fg: [u8; 4], bg: [u8; 4], min: f64) {
@@ -17,7 +17,12 @@ fn dark_theme_pairs() {
     let t = DARK;
     assert_contrast("accent/bg", t.accent, t.bg, CONTRAST_ACCENT_ON_BG);
     assert_contrast("accent_hi/surface1", t.accent_hi, t.surface1, 3.0);
-    assert_contrast("text/surface1", t.text, t.surface1, CONTRAST_TEXT_ON_SURFACE);
+    assert_contrast(
+        "text/surface1",
+        t.text,
+        t.surface1,
+        CONTRAST_TEXT_ON_SURFACE,
+    );
     assert_contrast("text2/surface1", t.text2, t.surface1, 4.5);
     assert_contrast("text3/surface1", t.text3, t.surface1, 3.0);
     assert_contrast("text_on_accent/accent", t.text_on_accent, t.accent, 4.5);
@@ -31,10 +36,20 @@ fn light_theme_pairs() {
     let t = LIGHT;
     // §7.17 accent contract uses the light-map accent (copper-dark #A55C32).
     assert_contrast("accent_dim/bg", t.accent_dim, t.bg, CONTRAST_ACCENT_ON_BG);
-    assert_contrast("text/surface1", t.text, t.surface1, CONTRAST_TEXT_ON_SURFACE);
+    assert_contrast(
+        "text/surface1",
+        t.text,
+        t.surface1,
+        CONTRAST_TEXT_ON_SURFACE,
+    );
     assert_contrast("text2/surface1", t.text2, t.surface1, 4.5);
     assert_contrast("text3/surface1", t.text3, t.surface1, 3.0);
-    assert_contrast("text_on_accent/accent_dim", t.text_on_accent, t.accent_dim, 4.5);
+    assert_contrast(
+        "text_on_accent/accent_dim",
+        t.text_on_accent,
+        t.accent_dim,
+        4.5,
+    );
     // Plum text on the warm gradient wallpapers must reach 4.5; worst case
     // is glass over the lightest cream surface.
     let glass_over = blend(t.glass, t.surface2);
@@ -77,6 +92,7 @@ fn harmony_invariants() {
     }
 }
 
+#[allow(clippy::float_cmp)] // `max` is one of r/g/b bit-for-bit; equality is exact
 fn hue(c: [u8; 4]) -> f64 {
     let (r, g, b) = (
         f64::from(c[0]) / 255.0,

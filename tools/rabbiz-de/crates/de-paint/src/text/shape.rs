@@ -78,14 +78,17 @@ impl Shaped {
             }
             let i = ((y * pw + x) * 4) as usize;
             let d = px.data_mut();
-            let sa = gc.a() as u32;
+            let sa = u32::from(gc.a());
             let inv = 255 - sa;
-            d[i] = ((gc.r() as u32 * sa + 127) / 255 + (d[i] as u32 * inv + 127) / 255).min(255) as u8;
-            d[i + 1] =
-                ((gc.g() as u32 * sa + 127) / 255 + (d[i + 1] as u32 * inv + 127) / 255).min(255) as u8;
-            d[i + 2] =
-                ((gc.b() as u32 * sa + 127) / 255 + (d[i + 2] as u32 * inv + 127) / 255).min(255) as u8;
-            d[i + 3] = (sa + (d[i + 3] as u32 * inv + 127) / 255).min(255) as u8;
+            d[i] = ((u32::from(gc.r()) * sa + 127) / 255 + (u32::from(d[i]) * inv + 127) / 255)
+                .min(255) as u8;
+            d[i + 1] = ((u32::from(gc.g()) * sa + 127) / 255
+                + (u32::from(d[i + 1]) * inv + 127) / 255)
+                .min(255) as u8;
+            d[i + 2] = ((u32::from(gc.b()) * sa + 127) / 255
+                + (u32::from(d[i + 2]) * inv + 127) / 255)
+                .min(255) as u8;
+            d[i + 3] = (sa + (u32::from(d[i + 3]) * inv + 127) / 255).min(255) as u8;
         });
         Some(px)
     }

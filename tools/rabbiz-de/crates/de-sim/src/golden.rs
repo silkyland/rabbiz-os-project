@@ -35,11 +35,11 @@ impl std::fmt::Display for Compare {
 fn composite_straight(px: &Pixels) -> Vec<u8> {
     // Pixels are premultiplied; composite over BACKDROP: out = src + bg*(1-a).
     let mut out = Vec::with_capacity(px.data.len());
-    for c in px.data.chunks_exact(4) {
-        let a = c[3] as u32;
+    for c in px.data.as_chunks::<4>().0 {
+        let a = u32::from(c[3]);
         let inv = 255 - a;
         for k in 0..3 {
-            out.push(((c[k] as u32 * 255 + BACKDROP[k] as u32 * inv) / 255).min(255) as u8);
+            out.push(((u32::from(c[k]) * 255 + u32::from(BACKDROP[k]) * inv) / 255).min(255) as u8);
         }
         out.push(255);
     }
@@ -63,10 +63,10 @@ pub fn compare(actual: &Pixels, golden_path: &std::path::Path) -> Result<Compare
     let g = composite_straight(&golden);
     let px_count = (actual.size.area().max(1)) as u64;
     let (mut diff_px, mut err_sum) = (0u64, 0u64);
-    for (ca, cg) in a.chunks_exact(4).zip(g.chunks_exact(4)) {
+    for (ca, cg) in a.as_chunks::<4>().0.iter().zip(g.as_chunks::<4>().0.iter()) {
         let mut maxd = 0u64;
         for k in 0..3 {
-            let d = ca[k].abs_diff(cg[k]) as u64;
+            let d = u64::from(ca[k].abs_diff(cg[k]));
             maxd = maxd.max(d);
             err_sum += d;
         }

@@ -103,6 +103,7 @@ impl Default for SnapshotCache {
 use smithay::desktop::Window;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::wayland::compositor::{with_states, BufferAssignment, SurfaceAttributes};
+use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shell::xdg::{ToplevelSurface, XdgToplevelSurfaceData};
 use smithay::wayland::shm::with_buffer_contents;
 
@@ -129,16 +130,18 @@ pub fn window_app_id(toplevel: &ToplevelSurface) -> String {
 pub fn capture_window(window: &Window) -> Option<Pixels> {
     let surface = window.wl_surface()?.into_owned();
     let buffer = with_states(&surface, |states| {
-        states
+        // `BufferAssignment` isn't Clone; take a clone of the WlBuffer only.
+        match states
             .cached_state
             .get::<SurfaceAttributes>()
             .current()
             .buffer
-            .clone()
+        {
+            Some(BufferAssignment::NewBuffer(ref b)) => Some(b.clone()),
+            _ => None,
+        }
     });
-    let BufferAssignment::NewBuffer(buffer) = buffer? else {
-        return None;
-    };
+    let buffer = buffer?;
     let out = with_buffer_contents(&buffer, |ptr, _len, data| {
         let (w, h, stride, off) = (data.width, data.height, data.stride, data.offset);
         if w <= 0 || h <= 0 || stride < w * 4 {

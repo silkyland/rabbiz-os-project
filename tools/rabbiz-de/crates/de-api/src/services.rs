@@ -46,7 +46,7 @@ pub struct VolumeState {
     pub output_name: Option<String>,
 }
 
-/// Battery/charging snapshot (UPower).
+/// Battery/charging snapshot (`UPower`).
 #[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct BatteryState {
     /// `None` when no battery is present.

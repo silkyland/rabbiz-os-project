@@ -16,9 +16,7 @@ use smithay::wayland::selection::ext_data_control::{
 use smithay::wayland::selection::primary_selection::{
     PrimarySelectionHandler, PrimarySelectionState,
 };
-use smithay::wayland::selection::wlr_data_control::{
-    DataControlHandler, DataControlState,
-};
+use smithay::wayland::selection::wlr_data_control::{DataControlHandler, DataControlState};
 use smithay::wayland::selection::SelectionHandler;
 
 use crate::state::De;
@@ -34,7 +32,8 @@ impl DataDeviceHandler for De {
 }
 
 impl ClientDndGrabHandler for De {
-    fn started(&mut self, _source: Option<WlDataSource>, _icon: Option<WlSurface>, _s: Seat<Self>) {}
+    fn started(&mut self, _source: Option<WlDataSource>, _icon: Option<WlSurface>, _s: Seat<Self>) {
+    }
     fn dropped(&mut self, _target: Option<WlSurface>, _validated: bool, _s: Seat<Self>) {}
 }
 

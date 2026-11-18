@@ -20,6 +20,7 @@ pub enum SpringPreset {
 
 impl SpringPreset {
     /// Settle-within-1-% duration in seconds.
+    #[must_use]
     pub const fn duration_s(self) -> f32 {
         match self {
             Self::Smooth => 0.450,
@@ -29,6 +30,7 @@ impl SpringPreset {
     }
 
     /// Fractional overshoot (0 = critically damped, no bounce).
+    #[must_use]
     pub const fn bounce(self) -> f32 {
         match self {
             Self::Smooth => 0.0,
@@ -146,6 +148,7 @@ pub enum DegradeLevel {
 
 impl DegradeLevel {
     /// One rung down, saturating at `Crossfade120`.
+    #[must_use]
     pub fn degraded(self) -> Self {
         match self {
             Self::Full => Self::NoStagger,

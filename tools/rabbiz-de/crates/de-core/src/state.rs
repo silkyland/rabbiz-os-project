@@ -29,8 +29,8 @@ use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
-use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
+use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
@@ -355,8 +355,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
             .unwrap_or_else(|_| "us,th".into())
             .leak(),
         options: Some(
-            std::env::var("XKB_DEFAULT_OPTIONS")
-                .unwrap_or_else(|_| "grp:alt_shift_toggle".into()),
+            std::env::var("XKB_DEFAULT_OPTIONS").unwrap_or_else(|_| "grp:alt_shift_toggle".into()),
         ),
         ..XkbConfig::default()
     };
@@ -386,6 +385,9 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
 
     let mut space = Space::default();
     space.map_output(&output_obj, (0, 0));
+
+    // Output geometry for the gesture tracker (before `output` moves).
+    let (out_w, out_h) = (output.width as i32, output.height as i32);
 
     Ok(De {
         session,
@@ -446,8 +448,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         foreground: Foreground::Shell,
         gestures: de_ui::gestures::GestureTracker::new({
             let mut c = de_ui::gestures::GestureConfig::a21s();
-            c.output_w = output.width as i32;
-            c.output_h = output.height as i32;
+            c.output_w = out_w;
+            c.output_h = out_h;
             c
         }),
         touch_claimed: false,

@@ -504,6 +504,7 @@ dependencies = [
  "de-apps",
  "de-backend",
  "de-config",
+ "de-design",
  "de-paint",
  "de-protocols",
  "de-render",

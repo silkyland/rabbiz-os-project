@@ -72,11 +72,14 @@ impl LabelCache {
         let px = produce()?;
         let bytes = px.data().len();
         self.evict_for(bytes);
-        self.map.insert(key, Entry {
-            px: clone_pixmap(&px),
-            bytes,
-            stamp: self.clock,
-        });
+        self.map.insert(
+            key,
+            Entry {
+                px: clone_pixmap(&px),
+                bytes,
+                stamp: self.clock,
+            },
+        );
         self.bytes += bytes;
         Some(px)
     }
@@ -112,7 +115,7 @@ fn clone_pixmap(p: &Pixmap) -> Pixmap {
 static CACHE: Mutex<Option<LabelCache>> = Mutex::new(None);
 
 /// Access the shared cache. `Mutex::lock().unwrap()` is fine here: label
-/// rasterization is already serialized behind the FontSystem mutex.
+/// rasterization is already serialized behind the `FontSystem` mutex.
 pub fn with_cache<R>(f: impl FnOnce(&mut LabelCache) -> R) -> R {
     let mut g = CACHE.lock().unwrap();
     f(g.get_or_insert_with(LabelCache::new))
@@ -167,7 +170,9 @@ mod tests {
             max_width_px: None,
             max_lines: 1,
         };
-        assert!(c.get_or_insert_with(k.clone(), || Pixmap::new(4, 4)).is_some());
+        assert!(c
+            .get_or_insert_with(k.clone(), || Pixmap::new(4, 4))
+            .is_some());
         assert!(c.get_or_insert_with(k, || Pixmap::new(4, 4)).is_some());
         assert_eq!(c.stats, (1, 1));
     }

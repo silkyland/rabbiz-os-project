@@ -8,9 +8,8 @@ use smithay::reexports::input::Libinput;
 /// event source. Device nodes are opened through the session, so no extra
 /// privileges are needed.
 pub fn init(session: &LibSeatSession, seat: &str) -> LibinputInputBackend {
-    let mut ctx = Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(
-        session.clone().into(),
-    );
+    let mut ctx =
+        Libinput::new_with_udev::<LibinputSessionInterface<LibSeatSession>>(session.clone().into());
     ctx.udev_assign_seat(seat)
         .expect("libinput udev_assign_seat failed");
     LibinputInputBackend::new(ctx)

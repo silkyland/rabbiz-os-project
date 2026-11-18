@@ -30,7 +30,10 @@ struct Pending {
 impl LaunchTracker {
     #[must_use]
     pub fn new() -> Self {
-        Self { pending: None, timeout: LAUNCH_TIMEOUT }
+        Self {
+            pending: None,
+            timeout: LAUNCH_TIMEOUT,
+        }
     }
 
     /// Spawn `desktop_id` and arm the map-wait. Errors from
@@ -67,7 +70,11 @@ impl LaunchTracker {
     /// Called each frame pump. Returns the desktop-id whose launch timed
     /// out (window never mapped).
     pub fn check_timeout(&mut self) -> Option<String> {
-        if self.pending.as_ref().is_some_and(|p| p.started.elapsed() > self.timeout) {
+        if self
+            .pending
+            .as_ref()
+            .is_some_and(|p| p.started.elapsed() > self.timeout)
+        {
             self.pending.take().map(|p| p.desktop_id)
         } else {
             None

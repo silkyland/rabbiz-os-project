@@ -1,10 +1,10 @@
 //! wl_compositor + wl_shm handler impls (M1-T3).
 
+use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Client;
 use smithay::utils::{Logical, Point};
-use smithay::backend::renderer::utils::on_commit_buffer_handler;
 use smithay::wayland::buffer::BufferHandler;
 use smithay::wayland::compositor::{
     get_parent, is_sync_subsurface, with_states, CompositorClientState, CompositorHandler,
@@ -100,9 +100,7 @@ fn ensure_initial_configure(
 
     with_states(surface, |states| {
         // keep the data_map slot present for resize bookkeeping
-        states
-            .data_map
-            .insert_if_missing(|| RefCell::new(()));
+        states.data_map.insert_if_missing(|| RefCell::new(()));
     });
 
     if let Some(window) = space

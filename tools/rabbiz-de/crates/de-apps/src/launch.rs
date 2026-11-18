@@ -33,7 +33,7 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
 
     let (cmdline, extra_env) = match table.overrides.get(desktop_id) {
         Some(o) => (o.exec.clone(), o.env.clone()),
-        None => (desktop_exec(desktop_id)?, BTreeMap::new()),
+        None => (desktop_exec(desktop_id), BTreeMap::new()),
     };
     let argv = split_shellish(&cmdline);
     if argv.is_empty() {
@@ -74,7 +74,7 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
 
 /// Find `<id>.desktop` in the application dirs and extract its `Exec`,
 /// falling back to the bare id as a command name.
-fn desktop_exec(desktop_id: &str) -> Result<String, String> {
+fn desktop_exec(desktop_id: &str) -> String {
     let mut dirs: Vec<PathBuf> = Vec::new();
     if let Ok(home) = std::env::var("XDG_DATA_HOME") {
         dirs.push(PathBuf::from(home).join("applications"));
@@ -90,11 +90,11 @@ fn desktop_exec(desktop_id: &str) -> Result<String, String> {
         let f = dir.join(format!("{desktop_id}.desktop"));
         if let Ok(text) = std::fs::read_to_string(&f) {
             if let Some(exec) = parse_desktop_exec(&text) {
-                return Ok(exec);
+                return exec;
             }
         }
     }
-    Ok(desktop_id.to_string())
+    desktop_id.to_string()
 }
 
 /// Pull `Exec=` out of the `[Desktop Entry]` group and strip field codes.
@@ -133,19 +133,18 @@ fn strip_field_codes(exec: &str) -> String {
 fn split_shellish(s: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
-    let mut chars = s.chars().peekable();
+    let chars = s.chars().peekable();
     let mut quote: Option<char> = None;
-    while let Some(c) = chars.next() {
+    for c in chars {
         match quote {
             Some(q) if c == q => quote = None,
-            Some(_) => cur.push(c),
             None if c == '\'' || c == '"' => quote = Some(c),
             None if c.is_whitespace() => {
                 if !cur.is_empty() {
                     out.push(std::mem::take(&mut cur));
                 }
             }
-            None => cur.push(c),
+            _ => cur.push(c),
         }
     }
     if !cur.is_empty() {

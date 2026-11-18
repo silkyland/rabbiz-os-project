@@ -27,10 +27,10 @@ pub fn lerp_rect(a: Rect, b: Rect, t: f32) -> Rect {
 #[must_use]
 pub fn lerp_color(a: [u8; 4], b: [u8; 4], t: f32) -> [u8; 4] {
     [
-        lerp(a[0] as f32, b[0] as f32, t) as u8,
-        lerp(a[1] as f32, b[1] as f32, t) as u8,
-        lerp(a[2] as f32, b[2] as f32, t) as u8,
-        lerp(a[3] as f32, b[3] as f32, t) as u8,
+        lerp(f32::from(a[0]), f32::from(b[0]), t) as u8,
+        lerp(f32::from(a[1]), f32::from(b[1]), t) as u8,
+        lerp(f32::from(a[2]), f32::from(b[2]), t) as u8,
+        lerp(f32::from(a[3]), f32::from(b[3]), t) as u8,
     ]
 }
 
@@ -53,7 +53,12 @@ pub fn fade_in(p: f32, start: f32, end: f32) -> f32 {
 /// Alpha premultiply helper: applies `opacity` to `color`'s alpha.
 #[must_use]
 pub fn with_opacity(color: [u8; 4], opacity: f32) -> [u8; 4] {
-    [color[0], color[1], color[2], (color[3] as f32 * opacity.clamp(0.0, 1.0)) as u8]
+    [
+        color[0],
+        color[1],
+        color[2],
+        (f32::from(color[3]) * opacity.clamp(0.0, 1.0)) as u8,
+    ]
 }
 
 #[cfg(test)]

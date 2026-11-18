@@ -74,7 +74,7 @@ impl Catalog {
                 entries.push(entry_from(&de, id, locales));
             }
         }
-        entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        entries.sort_by_key(|a| a.name.to_lowercase());
         Self { entries }
     }
 
@@ -85,7 +85,6 @@ impl Catalog {
     }
 
     /// Entries visible under `prefs` (hidden apps filtered out).
-    #[must_use]
     pub fn visible<'a>(&'a self, prefs: &'a Prefs) -> impl Iterator<Item = &'a AppEntry> {
         self.entries.iter().filter(|e| !prefs.is_hidden(&e.id))
     }
@@ -168,7 +167,9 @@ fn score(e: &AppEntry, q: &str) -> Option<u32> {
     if name.contains(q) {
         return Some(400);
     }
-    if e.generic_name.to_lowercase().contains(q) || e.keywords.iter().any(|k| k.to_lowercase().contains(q)) {
+    if e.generic_name.to_lowercase().contains(q)
+        || e.keywords.iter().any(|k| k.to_lowercase().contains(q))
+    {
         return Some(200);
     }
     if e.id.to_lowercase().contains(q) {
@@ -187,26 +188,33 @@ fn entry_from(de: &DesktopEntry, id: String, locales: &[String]) -> AppEntry {
             id: a.to_string(),
             name: de
                 .action_entry_localized(a, "Name", locales)
-                .map(|s| s.into_owned())
-                .unwrap_or_else(|| a.to_string()),
+                .map_or_else(|| a.to_string(), std::borrow::Cow::into_owned),
             exec: de.action_entry(a, "Exec").unwrap_or_default().to_string(),
         })
         .collect();
     AppEntry {
         id,
-        name: de.name(locales).map(|s| s.into_owned()).unwrap_or_default(),
+        name: de
+            .name(locales)
+            .map(std::borrow::Cow::into_owned)
+            .unwrap_or_default(),
         generic_name: de
             .generic_name(locales)
-            .map(|s| s.into_owned())
+            .map(std::borrow::Cow::into_owned)
             .unwrap_or_default(),
         icon: de.icon().unwrap_or_default().to_string(),
         exec: de.exec().map(str::to_string),
-        categories: de.categories().unwrap_or_default().iter().map(|s| (*s).to_string()).collect(),
+        categories: de
+            .categories()
+            .unwrap_or_default()
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
         keywords: de
             .keywords(locales)
             .unwrap_or_default()
             .iter()
-            .map(|s| s.to_string())
+            .map(std::string::ToString::to_string)
             .collect(),
         actions,
     }
@@ -259,16 +267,8 @@ mod tests {
             "[Desktop Entry]\nName=Calculator\nName[th]=เครื่องคิดเลข\nExec=a21s-calculator\nKeywords=math;คำนวณ;\n",
         );
         // Same id in the lower-precedence dir — d1 must win.
-        write_desktop(
-            &d1,
-            "dupe",
-            "[Desktop Entry]\nName=First\nExec=first\n",
-        );
-        write_desktop(
-            &d2,
-            "dupe",
-            "[Desktop Entry]\nName=Second\nExec=second\n",
-        );
+        write_desktop(&d1, "dupe", "[Desktop Entry]\nName=First\nExec=first\n");
+        write_desktop(&d2, "dupe", "[Desktop Entry]\nName=Second\nExec=second\n");
         (base, d1)
     }
 
@@ -294,7 +294,10 @@ mod tests {
     #[test]
     fn localized_name_and_keyword_search() {
         let (base, d1) = fixture();
-        let c = Catalog::scan_dirs(&[d1.clone(), base.join("b")], &["th".to_string(), "en".to_string()]);
+        let c = Catalog::scan_dirs(
+            &[d1.clone(), base.join("b")],
+            &["th".to_string(), "en".to_string()],
+        );
         let p = Prefs::default();
         // Thai name picked up when th locale leads.
         assert_eq!(c.find("a21s-calculator").unwrap().name, "เครื่องคิดเลข");

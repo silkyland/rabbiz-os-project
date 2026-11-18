@@ -76,7 +76,9 @@ impl De {
             .into_iter()
             .cloned()
             .collect();
-        let page = self.home_page.min(de_ui::home::pages_for(ordered.len()) - 1);
+        let page = self
+            .home_page
+            .min(de_ui::home::pages_for(ordered.len()) - 1);
         let page_ids: Vec<String> = ordered
             .iter()
             .skip(page * de_ui::home::PAGE_SIZE)

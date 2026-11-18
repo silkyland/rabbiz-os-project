@@ -66,7 +66,7 @@ impl Strings {
     /// Lookup with English fallback, then the raw key as last resort.
     #[must_use]
     pub fn get<'a>(&'a self, key: &'a str) -> &'a str {
-        self.map.get(key).map(String::as_str).unwrap_or(key)
+        self.map.get(key).map_or(key, String::as_str)
     }
 }
 

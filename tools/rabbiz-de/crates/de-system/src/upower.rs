@@ -1,7 +1,7 @@
-//! Battery snapshot (M3-T1): sysfs power_supply poll.
+//! Battery snapshot (M3-T1): sysfs `power_supply` poll.
 //!
 //! Reads `/sys/class/power_supply/<Battery>/capacity` + `status` directly —
-//! no UPower D-Bus round-trip on the compositor path. The `de-system`
+//! no `UPower` D-Bus round-trip on the compositor path. The `de-system`
 //! worker polls this ~1/s; misses (desktop host, no battery) degrade to
 //! `percent: None` which the status bar renders as "no battery".
 

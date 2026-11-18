@@ -13,6 +13,7 @@ de-api.workspace = true
 de-backend.workspace = true
 de-render.workspace = true
 de-protocols.workspace = true
+de-design.workspace = true
 de-ui.workspace = true
 de-paint.workspace = true
 de-config.workspace = true

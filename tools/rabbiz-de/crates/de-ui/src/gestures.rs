@@ -32,7 +32,7 @@ pub enum Gesture {
     EdgeBack { from_left: bool },
     /// Bottom-strip upward swipe (fast, or past half the screen).
     Home,
-    /// Bottom-strip upward swipe followed by a ≥ HOLD_MS stall.
+    /// Bottom-strip upward swipe followed by a ≥ `HOLD_MS` stall.
     Recents,
     /// Top-edge downward drag (progress via [`GestureEvent::Progress`]).
     ShadePull,
@@ -40,7 +40,7 @@ pub enum Gesture {
     PageSwitch { dir: i32 },
     /// Short touch with little movement.
     Tap { pos: Point },
-    /// Touch held ≥ HOLD_MS without moving past the slop.
+    /// Touch held ≥ `HOLD_MS` without moving past the slop.
     LongPress { pos: Point },
 }
 
@@ -112,7 +112,7 @@ struct Track {
     dy: f32,
     /// Already committed mid-gesture (recents/long-press fired early).
     committed: bool,
-    /// Held position at HOLD_MS check (recents needs a stall, not a park).
+    /// Held position at `HOLD_MS` check (recents needs a stall, not a pa`rk`).
     stall_y: f32,
 }
 
@@ -147,6 +147,7 @@ impl GestureTracker {
     }
 
     /// Feed a touch event; at most one event out per call.
+    #[allow(clippy::too_many_lines)] // gesture state machine; splitting hurts clarity
     pub fn feed(&mut self, ev: &TouchEvent) -> Option<GestureEvent> {
         match ev.phase {
             TouchPhase::Down => {
@@ -195,10 +196,16 @@ impl GestureTracker {
                     && ev.time_ms - tr.start_ms >= self.cfg.hold_ms
                 {
                     tr.committed = true;
-                    return Some(GestureEvent::Recognized(Gesture::LongPress { pos: tr.start }));
+                    return Some(GestureEvent::Recognized(Gesture::LongPress {
+                        pos: tr.start,
+                    }));
                 }
                 if tr.zone != Zone::Content && !tr.committed {
-                    return Some(GestureEvent::Progress { zone: tr.zone, dx: tr.dx, dy: tr.dy });
+                    return Some(GestureEvent::Progress {
+                        zone: tr.zone,
+                        dx: tr.dx,
+                        dy: tr.dy,
+                    });
                 }
                 None
             }
@@ -226,12 +233,18 @@ impl GestureTracker {
                         }
                     }
                     Zone::EdgeLeft | Zone::EdgeRight => {
-                        let inward = if tr.zone == Zone::EdgeLeft { tr.dx } else { -tr.dx };
+                        let inward = if tr.zone == Zone::EdgeLeft {
+                            tr.dx
+                        } else {
+                            -tr.dx
+                        };
                         let inward_v = if tr.zone == Zone::EdgeLeft { vx } else { -vx };
                         if (inward >= self.cfg.back_dx || inward_v >= self.cfg.fling_v)
                             && inward.abs() > tr.dy.abs() * 1.4
                         {
-                            Some(Gesture::EdgeBack { from_left: tr.zone == Zone::EdgeLeft })
+                            Some(Gesture::EdgeBack {
+                                from_left: tr.zone == Zone::EdgeLeft,
+                            })
                         } else {
                             None
                         }
@@ -242,7 +255,9 @@ impl GestureTracker {
                         } else if tr.dx.abs() > tr.dy.abs()
                             && (tr.dx.abs() >= self.cfg.back_dx || vx.abs() >= self.cfg.fling_v)
                         {
-                            Some(Gesture::PageSwitch { dir: if tr.dx < 0.0 { -1 } else { 1 } })
+                            Some(Gesture::PageSwitch {
+                                dir: if tr.dx < 0.0 { -1 } else { 1 },
+                            })
                         } else {
                             None
                         }
@@ -271,7 +286,12 @@ mod tests {
     }
 
     fn ev(phase: TouchPhase, x: i32, y: i32, ms: u64) -> TouchEvent {
-        TouchEvent { slot: 0, phase, pos: Point::new(x, y), time_ms: ms }
+        TouchEvent {
+            slot: 0,
+            phase,
+            pos: Point::new(x, y),
+            time_ms: ms,
+        }
     }
 
     #[test]
@@ -279,7 +299,10 @@ mod tests {
         let mut t = tr();
         assert_eq!(
             t.feed(&ev(TouchPhase::Down, 360, 1590, 0)),
-            Some(GestureEvent::Started { zone: Zone::NavBar, pos: Point::new(360, 1590) })
+            Some(GestureEvent::Started {
+                zone: Zone::NavBar,
+                pos: Point::new(360, 1590)
+            })
         );
         t.feed(&ev(TouchPhase::Motion, 360, 1400, 100));
         assert_eq!(
@@ -297,7 +320,10 @@ mod tests {
             t.feed(&ev(TouchPhase::Motion, 360, 1478, 420)), // stalled ≥400 ms
             Some(GestureEvent::Recognized(Gesture::Recents))
         );
-        assert_eq!(t.feed(&ev(TouchPhase::Up, 360, 1478, 440)), Some(GestureEvent::Cancelled));
+        assert_eq!(
+            t.feed(&ev(TouchPhase::Up, 360, 1478, 440)),
+            Some(GestureEvent::Cancelled)
+        );
     }
 
     #[test]
@@ -307,13 +333,18 @@ mod tests {
         t.feed(&ev(TouchPhase::Motion, 80, 810, 100));
         assert_eq!(
             t.feed(&ev(TouchPhase::Up, 80, 810, 200)),
-            Some(GestureEvent::Recognized(Gesture::EdgeBack { from_left: true }))
+            Some(GestureEvent::Recognized(Gesture::EdgeBack {
+                from_left: true
+            }))
         );
         // Mostly-vertical edge swipe is not back.
         let mut t = tr();
         t.feed(&ev(TouchPhase::Down, 8, 800, 0));
         t.feed(&ev(TouchPhase::Motion, 40, 1000, 150));
-        assert_eq!(t.feed(&ev(TouchPhase::Up, 40, 1000, 250)), Some(GestureEvent::Cancelled));
+        assert_eq!(
+            t.feed(&ev(TouchPhase::Up, 40, 1000, 250)),
+            Some(GestureEvent::Cancelled)
+        );
     }
 
     #[test]
@@ -323,7 +354,9 @@ mod tests {
         t.feed(&ev(TouchPhase::Motion, 640, 705, 100));
         assert_eq!(
             t.feed(&ev(TouchPhase::Up, 640, 705, 180)),
-            Some(GestureEvent::Recognized(Gesture::EdgeBack { from_left: false }))
+            Some(GestureEvent::Recognized(Gesture::EdgeBack {
+                from_left: false
+            }))
         );
     }
 
@@ -351,7 +384,9 @@ mod tests {
         t.feed(&ev(TouchPhase::Down, 300, 900, 0));
         assert_eq!(
             t.feed(&ev(TouchPhase::Up, 302, 902, 120)),
-            Some(GestureEvent::Recognized(Gesture::Tap { pos: Point::new(300, 900) }))
+            Some(GestureEvent::Recognized(Gesture::Tap {
+                pos: Point::new(300, 900)
+            }))
         );
     }
 
@@ -361,7 +396,9 @@ mod tests {
         t.feed(&ev(TouchPhase::Down, 300, 900, 0));
         assert_eq!(
             t.feed(&ev(TouchPhase::Motion, 302, 901, 450)),
-            Some(GestureEvent::Recognized(Gesture::LongPress { pos: Point::new(300, 900) }))
+            Some(GestureEvent::Recognized(Gesture::LongPress {
+                pos: Point::new(300, 900)
+            }))
         );
     }
 

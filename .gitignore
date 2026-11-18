@@ -8,6 +8,7 @@
 # rabbiz-de worktrees and Rust build artifacts
 .worktrees/
 tools/rabbiz-de/**/target/
+tools/rabbiz-de/target-*/
 tools/rabbiz-de/build/
 
 # a21s-osk (M7.12): Rust build products (workspace + spike crates)

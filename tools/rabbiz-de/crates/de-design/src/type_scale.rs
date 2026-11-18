@@ -75,12 +75,13 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::assertions_on_constants)] // spec conformance: asserts const API values
     fn scale_matches_spec() {
         assert_eq!(DISPLAY.size, 104.0);
         assert_eq!(BODY.weight, 400);
         assert_eq!(LABEL.size, 22.0);
         assert!((MICRO.tracking_em - 0.08).abs() < 1e-6);
-        assert!(MICRO.tnum == false);
+        assert!(!MICRO.tnum);
         assert!(DISPLAY.tnum().tnum);
     }
 }

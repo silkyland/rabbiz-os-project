@@ -30,7 +30,13 @@ pub struct Layer {
 
 impl Layer {
     #[must_use]
-    pub fn new(id: LayerId, content: Pixels, x: f32, y: f32, preset: de_design::motion::SpringPreset) -> Self {
+    pub fn new(
+        id: LayerId,
+        content: Pixels,
+        x: f32,
+        y: f32,
+        preset: de_design::motion::SpringPreset,
+    ) -> Self {
         Self {
             id,
             content,
@@ -91,7 +97,13 @@ impl LayerTree {
     }
 
     /// Push a layer on top; returns its id.
-    pub fn push(&mut self, content: Pixels, x: f32, y: f32, preset: de_design::motion::SpringPreset) -> LayerId {
+    pub fn push(
+        &mut self,
+        content: Pixels,
+        x: f32,
+        y: f32,
+        preset: de_design::motion::SpringPreset,
+    ) -> LayerId {
         self.next_id += 1;
         let id = self.next_id;
         self.layers.push(Layer::new(id, content, x, y, preset));
@@ -138,6 +150,11 @@ impl TextureCache {
     #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
     }
 
     pub fn evict(&mut self, key: u64) {

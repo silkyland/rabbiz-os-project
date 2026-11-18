@@ -61,15 +61,14 @@ fn main() {
             }
         },
         Command::Run => {
-            let mut display = match smithay::reexports::wayland_server::Display::<
-                de_core::De,
-            >::new() {
-                Ok(d) => d,
-                Err(e) => {
-                    eprintln!("display: {e}");
-                    std::process::exit(EXIT_CRASH_FALLBACK);
-                }
-            };
+            let mut display =
+                match smithay::reexports::wayland_server::Display::<de_core::De>::new() {
+                    Ok(d) => d,
+                    Err(e) => {
+                        eprintln!("display: {e}");
+                        std::process::exit(EXIT_CRASH_FALLBACK);
+                    }
+                };
             match init(&cli.flags, &mut display) {
                 Ok(de) => {
                     match Run::new(

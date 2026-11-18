@@ -4,8 +4,20 @@
 /// All P-screens the shell can show.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
-    Boot, Lock, Home, Drawer, Recents, Shade, QuickSettings,
-    Osd, Power, Search, Screenshot, Error, FirstRun, Settings,
+    Boot,
+    Lock,
+    Home,
+    Drawer,
+    Recents,
+    Shade,
+    QuickSettings,
+    Osd,
+    Power,
+    Search,
+    Screenshot,
+    Error,
+    FirstRun,
+    Settings,
 }
 
 /// Back-stack navigation: `current` + up to 8-deep stack.
@@ -16,30 +28,47 @@ pub struct Nav {
 }
 
 impl Default for Nav {
-    fn default() -> Self { Self { current: Screen::Boot, stack: Vec::new() } }
+    fn default() -> Self {
+        Self {
+            current: Screen::Boot,
+            stack: Vec::new(),
+        }
+    }
 }
 
 impl Nav {
     #[must_use]
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Push `s` (records `current` on the stack).
     pub fn go(&mut self, s: Screen) {
-        if self.stack.len() < 8 { self.stack.push(self.current); }
+        if self.stack.len() < 8 {
+            self.stack.push(self.current);
+        }
         self.current = s;
     }
 
     /// Pop the stack; returns the screen now current.
     pub fn back(&mut self) -> Screen {
-        if let Some(p) = self.stack.pop() { self.current = p; }
+        if let Some(p) = self.stack.pop() {
+            self.current = p;
+        }
         self.current
     }
 
     /// Boot → Lock once the compositor is up.
-    pub fn booted(&mut self) { self.current = Screen::Lock; self.stack.clear(); }
+    pub fn booted(&mut self) {
+        self.current = Screen::Lock;
+        self.stack.clear();
+    }
 
     /// Lock → Home on unlock.
-    pub fn unlock(&mut self) { self.current = Screen::Home; self.stack.clear(); }
+    pub fn unlock(&mut self) {
+        self.current = Screen::Home;
+        self.stack.clear();
+    }
 }
 
 #[cfg(test)]

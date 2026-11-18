@@ -49,7 +49,11 @@ fn candidates(icon_name: &str) -> Vec<PathBuf> {
             ("hicolor", "48x48/apps"),
         ] {
             for ext in ["png", "svg"] {
-                out.push(root.join(theme).join(sub).join(format!("{icon_name}.{ext}")));
+                out.push(
+                    root.join(theme)
+                        .join(sub)
+                        .join(format!("{icon_name}.{ext}")),
+                );
             }
         }
         for ext in ["png", "svg", "xpm"] {
@@ -117,8 +121,7 @@ fn tile_icon(label: &str, size: i32) -> Pixels {
     let letter: String = label
         .chars()
         .find(|ch| ch.is_alphanumeric())
-        .map(|ch| ch.to_uppercase().collect())
-        .unwrap_or_else(|| "?".into());
+        .map_or_else(|| "?".into(), |ch| ch.to_uppercase().collect());
     let style = text::LabelStyle {
         size: size as f32 * 0.44,
         line_height: size as f32 * 0.5,

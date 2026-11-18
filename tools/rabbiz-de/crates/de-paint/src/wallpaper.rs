@@ -31,7 +31,9 @@ fn stops(id: &str) -> Option<[[u8; 3]; 3]> {
 /// Deterministic three-stop vertical gradient for `id` (unknown → ember).
 #[must_use]
 pub fn procedural(id: &str, size: Size) -> Pixels {
-    let s = stops(id).or_else(|| stops(tokens::WALLPAPER_DEFAULT)).unwrap();
+    let s = stops(id)
+        .or_else(|| stops(tokens::WALLPAPER_DEFAULT))
+        .unwrap();
     let mut px = Pixels::empty(size);
     let h = (size.h.max(1) - 1) as f32;
     for y in 0..size.h.max(0) {
@@ -56,7 +58,7 @@ pub fn procedural(id: &str, size: Size) -> Pixels {
 }
 
 fn lerp(a: u8, b: u8, t: f32) -> u8 {
-    (a as f32 + (b as f32 - a as f32) * t.clamp(0.0, 1.0) + 0.5) as u8
+    (f32::from(a) + (f32::from(b) - f32::from(a)) * t.clamp(0.0, 1.0) + 0.5) as u8
 }
 
 /// Load `<dir>/<id>.png`, cover-scale to `size`. Returns `None` when the
@@ -75,10 +77,10 @@ pub fn wallpaper(dir: Option<&Path>, id: &str, size: Size) -> Pixels {
         .and_then(|d| load(d, id, size))
         .or_else(|| {
             // Unknown id → try the default id's asset before going procedural.
-            if id != tokens::WALLPAPER_DEFAULT {
-                dir.and_then(|d| load(d, tokens::WALLPAPER_DEFAULT, size))
-            } else {
+            if id == tokens::WALLPAPER_DEFAULT {
                 None
+            } else {
+                dir.and_then(|d| load(d, tokens::WALLPAPER_DEFAULT, size))
             }
         })
         .unwrap_or_else(|| procedural(id, size));
@@ -99,7 +101,10 @@ pub fn cover_scale(src: &Pixels, size: Size) -> Pixels {
         for x in 0..size.w.max(0) {
             let sx = (((x + ox) as f32 / scale) as i32).clamp(0, sw - 1);
             let sy = (((y + oy) as f32 / scale) as i32).clamp(0, sh - 1);
-            let (si, di) = (((sy * sw + sx) * 4) as usize, ((y * size.w + x) * 4) as usize);
+            let (si, di) = (
+                ((sy * sw + sx) * 4) as usize,
+                ((y * size.w + x) * 4) as usize,
+            );
             out.data[di..di + 4].copy_from_slice(&src.data[si..si + 4]);
         }
     }
@@ -107,7 +112,7 @@ pub fn cover_scale(src: &Pixels, size: Size) -> Pixels {
 }
 
 /// Crop a `size` frame out of a wider wallpaper for the parallax shift.
-/// `shift_px` is signed (−max_shift..=max_shift); the source must be at
+/// `shift_px` is signed (−`max_shift..=max_shift`); the source must be a`t`
 /// least `size.w + 2 * max_shift` wide (use [`cover_scale`] to prepare it).
 #[must_use]
 pub fn parallax_frame(src: &Pixels, size: Size, max_shift: i32, shift_px: i32) -> Pixels {
@@ -139,13 +144,12 @@ pub fn apply_grain(px: &mut Pixels, amount: f32) {
         for x in 0..w.max(0) {
             let i = ((y * w + x) * 4) as usize;
             // Small integer hash; output in [-amp, amp].
-            let mut hsh = (x.wrapping_mul(2_654_435_761u32 as i32))
-                ^ (y.wrapping_mul(97_073))
-                ^ 0x5BF0_3635;
+            let mut hsh =
+                (x.wrapping_mul(2_654_435_761u32 as i32)) ^ (y.wrapping_mul(97_073)) ^ 0x5BF0_3635;
             hsh ^= hsh >> 13;
             let noise = (hsh % (2 * amp + 1)) - amp;
             for c in 0..3 {
-                let v = (px.data[i + c] as i32 + noise).clamp(0, 255);
+                let v = (i32::from(px.data[i + c]) + noise).clamp(0, 255);
                 px.data[i + c] = v as u8;
             }
         }
@@ -195,7 +199,7 @@ mod tests {
         assert_eq!(a.size, Size::new(160, 100));
         assert_eq!(a.data[0], 20); // centered: spare 40 → x0 = 20
         assert_eq!(b.data[0], 40); // shifted right by max_shift
-        // Clamp: beyond max behaves exactly like max.
+                                   // Clamp: beyond max behaves exactly like max.
         let c = parallax_frame(&src, Size::new(160, 100), 20, 500);
         assert_eq!(b.data, c.data);
     }
@@ -210,7 +214,7 @@ mod tests {
         assert_eq!(a.data, b.data);
         // Max deviation ≤ ~5 for 2 % grain.
         for (x, y) in a.data.iter().zip(orig.iter()) {
-            assert!((*x as i32 - *y as i32).abs() <= 6);
+            assert!((i32::from(*x) - i32::from(*y)).abs() <= 6);
         }
     }
 }
