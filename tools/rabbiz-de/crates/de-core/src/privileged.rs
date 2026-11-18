@@ -25,7 +25,7 @@ pub struct ClientIdentity {
 }
 
 static POLICY: OnceLock<Policy> = OnceLock::new();
-static LOGGED: OnceLock<Mutex<HashSet<(i32, Privileged)>>> = OnceLock::new();
+static LOGGED: OnceLock<Mutex<HashSet<(String, Privileged)>>> = OnceLock::new();
 
 /// Load the policy once at startup. `RABBIZ_DE_PRIVILEGED_POLICY` overrides the file path (tests, bring-up).
 pub(crate) fn init_policy() {
@@ -36,6 +36,19 @@ pub(crate) fn init_policy() {
         eprintln!("rabbiz-de: privileged-client policy: {w}; using the built-in list");
     }
     let _ = POLICY.set(policy);
+    eprintln!(
+        "rabbiz-de: privileged-client policy active (default-deny; set RABBIZ_DE_POLICY_LOG=1 to log which \
+         executables are hidden which protocol)"
+    );
+}
+
+/// Every client that merely lists the registry is checked against every privileged global, so a line per
+/// check would say "denied" for programs that never wanted the protocol. Logging is therefore opt-in.
+fn log_enabled() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var_os("RABBIZ_DE_POLICY_LOG").is_some_and(|v| v != "0" && !v.is_empty())
+    })
 }
 
 fn policy() -> &'static Policy {
@@ -76,15 +89,18 @@ pub(crate) fn allowed(client: &Client, g: Privileged) -> bool {
 }
 
 fn log_denied(g: Privileged, identity: Option<&ClientIdentity>) {
+    if !log_enabled() {
+        return;
+    }
     let pid = identity.map_or(-1, |i| i.pid);
+    let exe = identity
+        .and_then(|i| i.exe.as_deref())
+        .map_or_else(|| "<unknown>".to_string(), |p| p.display().to_string());
     let first = LOGGED
         .get_or_init(|| Mutex::new(HashSet::new()))
         .lock()
-        .is_ok_and(|mut set| set.insert((pid, g)));
+        .is_ok_and(|mut set| set.insert((exe.clone(), g)));
     if first {
-        let exe = identity
-            .and_then(|i| i.exe.as_deref())
-            .map_or_else(|| "<unknown>".to_string(), |p| p.display().to_string());
-        eprintln!("rabbiz-de: denied {g} exe={exe} pid={pid}");
+        eprintln!("rabbiz-de: policy hides {g} from {exe} (pid {pid})");
     }
 }

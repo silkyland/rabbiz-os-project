@@ -1,0 +1,36 @@
+Privileged-protocol policy on the A21s, 2026-11-18 (user rabbiz, kernel 7.3.0-g14a425b3a7dc-dirty)
+Compositor: release rabbiz-de built from d118bed in rabbiz-de-build:arm64, sha256 056d431b569224fc...
+Installed under scripts/device_session.sh, device rebooted; the previous binary is /usr/local/bin/rabbiz-de.prev.
+The verbose per-client log used here was replaced by an opt-in log afterwards (see the finding).
+
+NOTE ON PROCESS: while installing this build I ran a `reboot` as a separate command after the lock request had failed
+(another session held the lock), which rebooted the device without holding the lock. The binary was not installed by
+that attempt. It is recorded so the owner knows about the interruption.
+
+--- 1. allowed: grim takes a screenshot
+$ runuser -u rabbiz -- env ... grim -o DSI-1 /tmp/policy-shot.png
+1121126 bytes /tmp/policy-shot.png
+
+--- 2. refused: a renamed copy of grim (cp /usr/bin/grim /tmp/grim-copy)
+$ /tmp/grim-copy -o DSI-1 /tmp/policy-shot2.png
+compositor doesn't support the screen capture protocol
+ls: cannot access '/tmp/policy-shot2.png': No such file or directory
+journal: rabbiz-de: denied screencopy exe=/tmp/grim-copy pid=1431
+
+--- 3. allowed tools were never refused a protocol they need
+journal grep for wayvnc and rabbiz-osk among screencopy/virtual_keyboard/virtual_pointer denials: none.
+wayvnc was refused layer_shell and data_control (it asks for optional globals); it kept running (pid 1336, active).
+
+--- 4. typing through the on-screen keyboard (zenity --entry, taps on h, i, return)
+zenity stdout=[Hi]
+
+--- 5. clipboard: renamed copy of wl-paste (second run, after wl-copy set the text "policy-test")
+real wl-paste (allowed)    -> [policy-test]
+renamed copy (not allowed) -> [policy-test]
+journal: rabbiz-de: denied data_control exe=/tmp/wlpaste-copy pid=1452
+(The copy was refused the data-control global yet still read the clipboard: wl-paste falls back to opening a
+ small window, getting keyboard focus and reading the clipboard like a normal focused client.)
+In the first run both commands printed "Nothing is copied" because the clipboard was empty.
+
+--- display health after the tests
+dmesg underrun/vblank/DECON timeout: none

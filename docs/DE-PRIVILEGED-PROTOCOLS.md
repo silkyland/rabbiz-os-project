@@ -1,7 +1,7 @@
 # DE: who may use the privileged Wayland protocols (proposal, needs an owner decision)
 
-Status: **proposal**. Nothing here is enabled. Lane: `de`. Written 2026-11-18. Security rules change only with
-an explicit owner decision, so this document ends with the questions the owner has to answer.
+Status: **option B accepted by the owner on 2026-11-18 and implemented** (`d118bed`); the rest is still proposal.
+Lane: `de`. Security rules change only with an explicit owner decision, recorded below.
 
 ## 1. Problem
 
@@ -71,14 +71,33 @@ What breaks with B: any tool not on the list is refused (for example a user-inst
 `wlrctl`); the user sees nothing happen, and the log says why. The default list would be: `rabbiz-osk`,
 `wayvnc`, `grim`, `rabbiz-screenshot`, `rabbiz-screenrec`, `wl-paste`, `wl-copy`.
 
-## 6. Questions for the owner
+## 6. Owner decisions (2026-11-18) and what follows from them
 
-1. Accept default-deny with an allow-list (option B) as the default? If yes, may unlisted tools be refused
-   silently apart from the log?
-2. Mirror: drop the loopback listener and add a VNC password, or keep it open for the USB-only convenience?
-3. Should app-launched clients be forbidden from exclusive keyboard layer surfaces (this blocks fake lock
-   or password overlays), even if it breaks a future third-party on-screen keyboard?
-4. Appetite for C/D (separate user or sandbox for third-party apps) as a later milestone?
+1. **Option B (default-deny allow-list) accepted**, refusals may be silent. Implemented: `de-config/src/privileged.rs`
+   (policy, pure and tested) and `de-core/src/privileged.rs` (identity at accept, filters). Verified on the A21s
+   ([finding](../devices/samsung/a21s/findings/2026-11-18-de-privileged-policy-device-check.md)). The refusal log is
+   opt-in (`RABBIZ_DE_POLICY_LOG=1`) because every client that lists the registry is checked against every
+   privileged global.
+2. **Mirroring:** USB mirroring is allowed while the lock screen is not showing; captures are blank frames while it is
+   (implemented for screencopy, unit-tested, not shown on a device yet); the phone should dim while it is mirrored
+   (design in [DE-MIRROR-PROTOCOL.md](DE-MIRROR-PROTOCOL.md), not built). The owner prefers **our own mirror protocol**
+   over VNC for adaptiveness, performance and ecosystem. VNC stays supported, but it is not our protocol. Until the
+   native protocol exists, the loopback listener and the missing password on `a21s-wayvnc` remain open
+   ([finding](../devices/samsung/a21s/findings/2026-11-18-de-wayvnc-unauthenticated-localhost.md)); the owner's
+   answer permits the USB side, it did not address loopback.
+3. **Exclusive-keyboard layer surfaces** are no longer available to ordinary apps: the whole layer-shell global is
+   restricted to the allow-list.
+4. **Options C/D** (separate user or sandbox for third-party apps) are accepted as the long-term direction and
+   belong to the M5 sandboxing work; nothing is built.
+5. The DE should behave like a real KDE/GNOME desktop where a desktop form factor applies, with context menus in
+   apps and on the empty desktop: see [DE-DESKTOP-MODE.md](DE-DESKTOP-MODE.md).
+
+### What this does not stop (found while testing)
+
+A refused program can still read the clipboard by mapping a window and taking keyboard focus, because the DE gives
+the foreground to every new toplevel
+([finding](../devices/samsung/a21s/findings/2026-11-18-de-clipboard-focus-fallback.md)). Closing that needs
+focus-stealing prevention, a product decision that is not made yet.
 
 ## 7. Implementation sketch once decided
 

@@ -453,6 +453,11 @@ here is accepted by the owner's feel review yet.
 | wlr-layer-shell, text-input-v3, input-method-v2, virtual-keyboard | live, device-tested | `rabbiz-osk` accepted on the A21s: same-boot A/B against `a21s-osk`, EN + Thai commits, GTK/Qt/Chrome clients, focus moves between clients, hide on last client exit, OSK visible in `grim` captures ([finding](../devices/samsung/a21s/findings/2026-11-18-de-osk-typing.md), `reproduced`) |
 | wlr-screencopy-v1 | live, device-tested | shm path only: `grim -o DSI-1` works and shows the OSK/shell/shm clients; **dmabuf/EGL client content is NOT captured** — those surfaces show the clear colour ([finding](../devices/samsung/a21s/findings/2026-11-18-de-osk-typing.md)). One buffer offer per frame; `already_used` on a second copy; `copy_with_damage` waits for a damaged frame |
 | zwlr-virtual-pointer-v1 | live, device-tested | hand-rolled v2 global (`wayland-protocols-wlr` 0.3.12 bindings; smithay 0.7 has none); `a21s-wayvnc` went from crash loop to `active`, port 5900, RFB click → real capture in `rabbiz-camera` ([finding](../devices/samsung/a21s/findings/2026-11-18-de-wayvnc-needs-virtual-pointer.md), `verified`) |
+| Privileged-protocol policy (default-deny, lock-screen blank captures) | live, device-tested | policy tested once on the A21s; lock-screen blank capture is unit-tested only; focus-stealing and loopback VNC are open ([doc](DE-PRIVILEGED-PROTOCOLS.md)) |
+| Input device registry (keyboard, mouse, touchpad, gamepad) | core only | pure classification + state file, tested on host; no udev collector, not wired into the compositor |
+| Context menus in client apps (xdg popups) | partial | popups are tracked but `grab` is a no-op and popup rendering, hit-testing and capture are unverified ([doc](DE-DESKTOP-MODE.md)) |
+| Desktop form factor (windows, panel, desktop menu) | missing | handset only; design in [DE-DESKTOP-MODE.md](DE-DESKTOP-MODE.md) |
+| Native mirror protocol (replaces VNC for the companion app) | missing | design in [DE-MIRROR-PROTOCOL.md](DE-MIRROR-PROTOCOL.md) |
 | XWayland | missing | M5 |
 | D-Bus services (notifications, NetworkManager, Bluetooth, MPRIS, brightness, volume) | missing | `de-system` only polls battery and privacy state |
 | Fingerprint, hardware-key integration | missing | M4 |
