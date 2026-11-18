@@ -53,6 +53,13 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
                 continue;
             };
             blit_surface(&mut canvas, &surface, ApiPoint::new(loc.x, loc.y));
+            for (popup, offset) in crate::popups::popups_of(window) {
+                blit_surface(
+                    &mut canvas,
+                    popup.wl_surface(),
+                    ApiPoint::new(loc.x + offset.x, loc.y + offset.y),
+                );
+            }
         }
     } else if let Some(shell) = de.shell_px.as_ref() {
         canvas.blit(shell, ApiPoint::ZERO);

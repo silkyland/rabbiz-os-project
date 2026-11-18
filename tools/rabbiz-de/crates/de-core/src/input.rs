@@ -216,6 +216,11 @@ impl De {
         // contact while a shell screen is foreground — is claimed by the
         // shell and never reaches the client.
         let hit = self.surface_under(pos);
+        // An open context menu is dismissed by a touch outside it, and that touch is consumed.
+        if self.dismiss_popup_for_touch(hit.as_ref()) {
+            self.touch_claimed = true;
+            return;
+        }
         let zone = self.gestures.zone(api_point(pos));
         // Top layers (including the OSK) own their interactive region.
         // Retain the nav strip as a way to leave the foreground client.

@@ -36,6 +36,7 @@ impl XdgShellHandler for De {
     }
 
     fn new_popup(&mut self, surface: PopupSurface, _positioner: PositionerState) {
+        self.unconstrain_popup(&surface);
         if let Err(err) = self.popups.track_popup(PopupKind::from(surface)) {
             eprintln!("track_popup: {err}");
         }
@@ -48,14 +49,14 @@ impl XdgShellHandler for De {
         token: u32,
     ) {
         surface.with_pending_state(|state| {
-            state.geometry = positioner.get_geometry();
             state.positioner = positioner;
         });
+        self.unconstrain_popup(&surface);
         surface.send_repositioned(token);
     }
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
-        // Popups may grab; handset needs no interactive grab bookkeeping.
+    fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
+        self.grab_popup(surface, &seat, serial);
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {

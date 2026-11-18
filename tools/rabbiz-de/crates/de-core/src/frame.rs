@@ -14,11 +14,14 @@ use de_render::DeRenderer;
 use smithay::backend::drm::compositor::{FrameFlags, PrimaryPlaneElement};
 use smithay::backend::renderer::element::render_elements;
 use smithay::backend::renderer::element::solid::SolidColorRenderElement;
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
+use smithay::backend::renderer::element::surface::{
+    render_elements_from_surface_tree, WaylandSurfaceRenderElement,
+};
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
+use smithay::desktop::utils::send_frames_surface_tree;
 use smithay::desktop::{layer_map_for_output, LayerMap};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
@@ -264,20 +267,7 @@ where
         push_morph_elements(&mut elements, renderer, morph, output, de.now);
     }
     if show_app {
-        for window in de.space.elements().rev() {
-            let loc = de
-                .space
-                .element_location(window)
-                .unwrap_or_default()
-                .to_physical(1);
-            elements.extend(AsRenderElements::<R>::render_elements::<DeElement<R>>(
-                window,
-                renderer,
-                loc,
-                Scale::from(1.0),
-                1.0,
-            ));
-        }
+        push_window_elements(&mut elements, renderer, de.space);
     } else if let Some(tex) = texture_buffer::<R>(de.shell_tex.as_ref()) {
         elements.push(DeElement::from(tex_el::<R>(
             tex,
@@ -335,8 +325,47 @@ where
         window.send_frame(&out, time, Some(Duration::from_millis(16)), |_, _| {
             Some(out.clone())
         });
+        for (popup, _) in crate::popups::popups_of(window) {
+            send_frames_surface_tree(
+                popup.wl_surface(),
+                &out,
+                time,
+                Some(Duration::from_millis(16)),
+                |_, _| Some(out.clone()),
+            );
+        }
     }
     Ok(true)
+}
+
+/// Elements of every mapped app window, each preceded by its popups (earlier elements are in front).
+fn push_window_elements<R: Renderer + ImportAll + ImportMem>(
+    elements: &mut Vec<DeElement<R>>,
+    renderer: &mut R,
+    space: &smithay::desktop::Space<smithay::desktop::Window>,
+) where
+    R::TextureId: Texture + Clone + 'static,
+{
+    for window in space.elements().rev() {
+        let loc = space.element_location(window).unwrap_or_default().to_physical(1);
+        for (popup, offset) in crate::popups::popups_of(window) {
+            elements.extend(render_elements_from_surface_tree::<R, DeElement<R>>(
+                renderer,
+                popup.wl_surface(),
+                loc + offset.to_physical(1),
+                Scale::from(1.0),
+                1.0,
+                Kind::Unspecified,
+            ));
+        }
+        elements.extend(AsRenderElements::<R>::render_elements::<DeElement<R>>(
+            window,
+            renderer,
+            loc,
+            Scale::from(1.0),
+            1.0,
+        ));
+    }
 }
 
 fn push_layer_elements<R: Renderer + ImportAll + ImportMem>(

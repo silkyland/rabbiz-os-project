@@ -10,6 +10,7 @@ mod layer_shell;
 pub mod misc;
 mod morph;
 mod osk;
+mod popups;
 mod privileged;
 pub mod screencopy;
 pub mod seat;
