@@ -44,7 +44,7 @@ as the default for ordinary apps.
   Terminal entries use installed `gtk-launch` with that same environment.
 
 Device verification used `scripts/verify_shell_blur.sh` under the shared remote
-lock described in [DEVICE-QUEUE.md](DEVICE-QUEUE.md). Ten shade/drawer open-close
+lock described in [DEVICE-QUEUE.md](../../../../docs/DEVICE-QUEUE.md). Ten shade/drawer open-close
 cycles passed after the final cold boot with ID `61e37a65-7d1b-4c47-9cf0-8d1013275794`
 and shell PID `1174` unchanged. Warm and final DMA-BUF totals were both **74 objects,
 108,597,248 bytes**; CMA free remained `181,544 kB`. An earlier same-PID run also
@@ -79,11 +79,11 @@ startup guard. Low-CMA software recovery was exercised on the device before the
 final cold boot. Cold-boot runtime-state FileView warnings and an existing host-portal registration warning
 are separate from blur; they were not silently treated as a clean log.
 
-![Live drawer backdrop blur on A21s](a21s-shell-blur-drawer.png)
+![Live drawer backdrop blur on A21s](../../../../docs/a21s-shell-blur-drawer.png)
 
-[Home and dock capture](a21s-shell-blur-home.png) ·
-[Shade capture](a21s-shell-blur-shade.png) ·
-[Shade over a real Kalk window](a21s-shell-blur-over-app.png)
+[Home and dock capture](../../../../docs/a21s-shell-blur-home.png) ·
+[Shade capture](../../../../docs/a21s-shell-blur-shade.png) ·
+[Shade over a real Kalk window](../../../../docs/a21s-shell-blur-over-app.png)
 
 Run again on an unlocked desktop:
 
@@ -170,11 +170,11 @@ also succeeds, including while the shell lock screen obscures the test window.
 The visible run emitted one Qt text-input focus warning, no dmabuf import error.
 The kernel's earlier stock-path failure remains in the same boot's log.
 
-![Real MultiEffect blur captured from labwc on the A21s](a21s-qt-gpu-blur.png)
+![Real MultiEffect blur captured from labwc on the A21s](../../../../docs/a21s-qt-gpu-blur.png)
 
 Probe flags (after `qml6 Probe.qml --`): `--static` stops rotation; `--sharp`
 disables blur. Captures save to `/tmp/a21s-blurred.png` or `/tmp/a21s-sharp.png`.
-The window exits after 10 seconds. Source is [Probe.qml](../tools/qt-scanout/Probe.qml).
+The window exits after 10 seconds. Source is [Probe.qml](../../../../tools/qt-scanout/Probe.qml).
 
 ## Scope, version gate, rollback
 
@@ -212,7 +212,7 @@ Rollback: close the experimental app and launch it normally with
 
 The next maintainable implementation is a Mesa source fix for opt-in scanout
 allocation plus kmsro primary-node selection. A source equivalent for the first
-half is in [patches/mesa](../patches/mesa/0001-wayland-opt-in-scanout-buffers.patch);
+half is in [patches/mesa](../../../../patches/mesa/0001-wayland-opt-in-scanout-buffers.patch);
 it has been checked against Mesa 26.2.6 source but **not compiled**. The current
 binary experiment intentionally avoids rebuilding all of Mesa on the nearly full
 device rootfs.

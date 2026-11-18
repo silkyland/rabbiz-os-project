@@ -8,7 +8,7 @@
 # Deploy: copy s2mu106-charger.ko to /usr/lib/modules/$(uname -r)/extra/
 # on the A21s rootfs (never /lib - see AGENTS.md), then instantiate via
 #   echo s2mu106-charger 0x3d > /sys/bus/i2c/devices/i2c-0/new_device
-# or bind it through the DT node once patches/linux carries it.
+# or bind it through the DT node once devices/samsung/a21s/kernel/patches carries it.
 
 ccflags-y += -I$(src)
 

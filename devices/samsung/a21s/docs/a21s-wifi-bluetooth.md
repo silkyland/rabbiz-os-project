@@ -8,7 +8,7 @@ This document records how **Wi-Fi (`wlan0`)** and **Bluetooth (`hci0`)** were po
 
 The Exynos 850 integrates Samsung's **Maxwell / SCSC WLBT** subsystem (`119c0000.scsc_wifibt`), which runs shared firmware (`wifi/mx140.bin`) on an embedded Cortex-R4/M4 core and communicates with the AP via shared DRAM (`wifibt_if`, 12 MiB), mailboxes (`MBOX`), and PMU/APM syscons.
 
-Four out-of-tree kernel modules live in `drivers/scsc/` and are built against `build/linux`:
+Four out-of-tree kernel modules live in `socs/exynos850/drivers/scsc/` and are built against `build/linux`:
 1. `scsc_platform_mif.ko` — Exynos 850 (`S5E3830`) platform MIF, PMU reset/release, BAAW, IRQs, and shared memory mapping.
 2. `scsc_mx.ko` — Maxwell core manager (`mxman`), firmware loader (`mx140_file`), `mxlog`, and service management (`SM_MSG_*`).
 3. `scsc_wlan.ko` — Wi-Fi driver (`wlan0`, `cfg80211`, `HIP4`, `NACHO_S612_A21` MIB).
@@ -76,27 +76,27 @@ Flash either from Download Mode (`heimdall flash --BOOT build/images/boot-avb.im
 
 ---
 
-## 3. Kernel Driver Porting (`drivers/scsc/`)
+## 3. Kernel Driver Porting (`socs/exynos850/drivers/scsc/`)
 
-### 3.1 `scsc_platform_mif.ko` (`drivers/scsc/misc/platform_mif_3830.c`)
+### 3.1 `scsc_platform_mif.ko` (`socs/exynos850/drivers/scsc/misc/platform_mif_3830.c`)
 - Removed `scsc_platform_mif -> scsc_mx` circular `depmod` dependency in `platform_wdog_isr()` (`mxman_recovery_disabled()`).
 - Added `of_reserved_mem_lookup()` fallback for `memory-region`.
 - Switched `platform_get_resource(pdev, IORESOURCE_IRQ, i)` to `platform_get_irq_byname()`.
 - Replaced `vmap(phys_to_page(...))` / `vunmap()` in `platform_mif_map_region()` / `platform_mif_unmap_region()` with `ioremap_wc()` / `iounmap()`.
 
-### 3.2 `scsc_mx.ko` (`drivers/scsc/misc/` & `include/scsc/`)
+### 3.2 `scsc_mx.ko` (`socs/exynos850/drivers/scsc/misc/` & `include/scsc/`)
 - **`mx140_file.c`**: Changed `base_dir_request_fw` from `"../etc/wifi"` to `"wifi"` (mainline `request_firmware()` rejects `..` path components), replaced `vfs_stat` with `filp_open` + `i_size_read()`, and switched `memcpy()` to `memcpy_toio()` for `ioremap_wc` memory.
 - **`mxman.c`**:
   - Fixed `mxman_wifi_kobject_ref_get()` / `mxman_wifi_kobject_ref_put()` refcounting & NULL checks.
   - Guarded `mif->recovery_disabled_reg` (in `transports_init()`) and `mif->recovery_disabled_unreg` (in `mxman_stop()`) against `NULL` to prevent `pc : 0x0` kernel oopses.
 - **`scsc_logring.h`**: Replaced `dev_printk_emit((lvl), NULL, fmt, ...)` with `printk(fmt, ...)` to fix `mxlog_message_handler` NULL `dev` oops.
 
-### 3.3 `scsc_wlan.ko` (`drivers/scsc/Kbuild`, `wlan/cm_if.c`, `wlan/reg_info.c`)
-- Added `wlan/cm_if.o` to `scsc_wlan-y` in `drivers/scsc/Kbuild`.
+### 3.3 `scsc_wlan.ko` (`socs/exynos850/drivers/scsc/Kbuild`, `wlan/cm_if.c`, `wlan/reg_info.c`)
+- Added `wlan/cm_if.o` to `scsc_wlan-y` in `socs/exynos850/drivers/scsc/Kbuild`.
 - Disabled `MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver)` in `wlan/cm_if.c`.
 - Updated `reg_file_t` in `wlan/reg_info.c` to `"wifi/slsi_reg_database.bin"`.
 
-### 3.4 `scsc_bt.ko` (`drivers/scsc/bt/`)
+### 3.4 `scsc_bt.ko` (`socs/exynos850/drivers/scsc/bt/`)
 Imported from `src/exynos850-vendor-kernel/drivers/misc/samsung/scsc_bt/` and enabled with `-DCONFIG_SCSC_BT=1 -DCONFIG_SCSC_BT_BLUEZ=1`:
 - **`scsc_bluez.c`**:
   - Replaced `linux/wakelock.h` and `../../../bluetooth/h4_recv.h` with `<net/bluetooth/hci_h4.h>` and `h4_recv_skb(hdev, NULL, NULL, ...)`.
@@ -112,8 +112,8 @@ Imported from `src/exynos850-vendor-kernel/drivers/misc/samsung/scsc_bt/` and en
 
 ```bash
 make -C build/linux ARCH=arm64 LLVM=1 M=$PWD/drivers/scsc -j$(nproc) modules
-zstd -f -q drivers/scsc/scsc_platform_mif.ko drivers/scsc/scsc_mx.ko drivers/scsc/scsc_wlan.ko drivers/scsc/scsc_bt.ko
-scp drivers/scsc/*.ko.zst root@172.16.42.1:/lib/modules/7.3.0-g14a425b3a7dc/updates/
+zstd -f -q socs/exynos850/drivers/scsc/scsc_platform_mif.ko socs/exynos850/drivers/scsc/scsc_mx.ko socs/exynos850/drivers/scsc/scsc_wlan.ko socs/exynos850/drivers/scsc/scsc_bt.ko
+scp socs/exynos850/drivers/scsc/*.ko.zst root@172.16.42.1:/lib/modules/7.3.0-g14a425b3a7dc/updates/
 ssh root@172.16.42.1 "depmod -a && sync"
 ```
 

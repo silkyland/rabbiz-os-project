@@ -8,7 +8,7 @@ import Qt.labs.folderlistmodel
 //
 // The A21s modem is an Exynos CP behind the `cpif` driver (Samsung IPC,
 // /dev/umts_ipc0 — not a USB/AT modem) and is NOT ported yet (Phase 4/M6 —
-// docs/a21s-power-battery-modem-plan.md), so demoMode stays true until a
+// devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md), so demoMode stays true until a
 // modem node appears under /dev AND a real `backend` is plugged in.
 //
 // PURE QtQuick ONLY — this singleton is also imported by standalone qml6

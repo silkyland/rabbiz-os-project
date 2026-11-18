@@ -1,0 +1,6 @@
+# Default owner. Add the maintainer of each device directory when one joins.
+*                              @silkyland
+/devices/samsung/a21s/         @silkyland
+/devices/xiaomi/muyu/          @silkyland
+/socs/                         @silkyland
+/tools/rabbiz-de/crates/de-api/ @silkyland

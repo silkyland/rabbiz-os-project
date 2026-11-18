@@ -14,7 +14,7 @@
 - **Research Questions:**
   - `RQ1`: How does Exynos 850 (`SM-A217F`) boot Native Linux without Android? — **Answered:** Unlocked Samsung S-Boot loads `samsungexynos850/uniLoader` (`configs/a21s_defconfig`) packed in `boot.img`, which boots mainline `Image` + `exynos850-a217f.dtb` + initramfs. (`VERIFIED` via `samsungexynos850/uniLoader` README & `configs/a21s_defconfig`).
   - `RQ2`: Which peripherals work in `samsungexynos850/linux` (`staging` branch) for `SM-A217F`? — **Answered:** `exynos850-a217f.dts` enables `&decon`, `&dsi` (`syna,td4150-panel`), `&spi_1` (`ovt,td4150` touchscreen), `&gpu` (Mali-G52), `&mmc_0` (eMMC), `&usbdrd` (USB-C), `s2mpu12-pmic`, and `gpio-keys`. Wi-Fi/BT/Modem are not enabled in DTS yet (use USB-C RNDIS/Ethernet). (`VERIFIED` via `exynos850-a217f.dts` in `samsungexynos850/linux` `staging`).
-  - `RQ3`: What are the physical specs of the user's A21s? — **Answered:** `SM-A217F`, `exynos850`, `MemTotal: 2767544 kB` (~2.64 GB / 3GB SKU), `ro.boot.flash.locked = 1`. (`VERIFIED` in `docs/device-a21s-profile.txt`).
+  - `RQ3`: What are the physical specs of the user's A21s? — **Answered:** `SM-A217F`, `exynos850`, `MemTotal: 2767544 kB` (~2.64 GB / 3GB SKU), `ro.boot.flash.locked = 1`. (`VERIFIED` in `devices/samsung/a21s/docs/device-a21s-profile.txt`).
 - **Assumptions:**
   - Owner explicitly chose Native Linux / bootloader replacement (`R1`), approving unlocking the Galaxy A21s bootloader (trips Samsung Knox e-fuse, factory resets Android).
 - **Open questions:**
@@ -24,8 +24,8 @@
 
 | Component | Status | Evidence | Tag |
 |-----------|--------|----------|-----|
-| `scripts/probe_device.sh` & `docs/device-a21s-profile.txt` | works | Executed against `R58NB2Z4CHR`; confirmed `SM-A217F`, `exynos850`, 3GB RAM, locked BL | VERIFIED |
-| `scripts/prep_android_host.sh`, `setup_panvk_test.sh`, `termux_panvk_run.sh`, `docs/a21s-access-decision.md` | obsolete (`R1`) | Android/Termux track superseded by Native Linux (`R1`) | VERIFIED |
+| `scripts/probe_device.sh` & `devices/samsung/a21s/docs/device-a21s-profile.txt` | works | Executed against `R58NB2Z4CHR`; confirmed `SM-A217F`, `exynos850`, 3GB RAM, locked BL | VERIFIED |
+| `scripts/prep_android_host.sh`, `setup_panvk_test.sh`, `termux_panvk_run.sh`, `devices/samsung/a21s/docs/a21s-access-decision.md` | obsolete (`R1`) | Android/Termux track superseded by Native Linux (`R1`) | VERIFIED |
 
 ## 3. Findings: framework ground truth
 
@@ -83,8 +83,8 @@
 - **Tasks:**
   - [x] `M0-R1-T1`: Install host dependencies (`gcc-aarch64-linux-gnu`, `heimdall-flash`, `android-sdk-libsparse-utils`, `mkbootimg`, `bc`, `bison`, `flex`, `libssl-dev`) and verify `heimdall version`.
   - [x] `M0-R1-T2`: Unlock A21s bootloader: Enable `OEM Unlocking` in Developer Options -> boot to Download Mode (`Vol Up + Vol Down` + plug USB-C) -> Long-press `Vol Up` to unlock bootloader (factory resets device).
-  - [x] `M0-R1-T3`: Verify `heimdall print-pit` in Download Mode and save partition table to `docs/a21s-pit.txt` (identifies exact `BOOT`, `VBMETA`, `SUPER`, `USERDATA` partition names).
-- **Exit criteria:** `docs/a21s-pit.txt` saved via `heimdall print-pit` and device bootloader is unlocked.
+  - [x] `M0-R1-T3`: Verify `heimdall print-pit` in Download Mode and save partition table to `devices/samsung/a21s/docs/a21s-pit.txt` (identifies exact `BOOT`, `VBMETA`, `SUPER`, `USERDATA` partition names).
+- **Exit criteria:** `devices/samsung/a21s/docs/a21s-pit.txt` saved via `heimdall print-pit` and device bootloader is unlocked.
 
 *(Note: Previous Android/Termux tasks `M0-T2`, `M0-T3`, `M1-T1..T3`, `M2-T1..T3` are `dropped (R1)`.)*
 
@@ -95,16 +95,16 @@
   - [x] `M1-R1-T1`: Clone `https://github.com/samsungexynos850/linux` (`staging` branch) and `https://github.com/samsungexynos850/uniLoader` into `src/`.
   - [x] `M1-R1-T2`: Build mainline Linux `Image` + `exynos850-a217f.dtb` (with `CONFIG_DRM_PANFROST=y`, `CONFIG_USB_ETH=y` / `CONFIG_USB_CONFIGFS_RNDIS=y`, `CONFIG_ZRAM=y`) and a BusyBox + `dropbear` SSH initramfs (`build/ramdisk.cpio.gz`).
   - [x] `M1-R1-T3`: Copy `Image`, `exynos850-a217f.dtb`, and `ramdisk.cpio.gz` into `src/uniLoader/blob/`, build `uniLoader` with `a21s_defconfig`, pack `build/boot-linux.img` (`mkbootimg`), and flash `BOOT` + empty `VBMETA` via `heimdall flash`.
-  - [x] `M1-R1-T4`: Spike: verify USB-C RNDIS interface appears on host (`ip link`), configure host NAT, and `ssh root@172.16.42.1` into Native Linux on A21s; capture `uname -a`, `dmesg`, and `/dev/dri/*` in `docs/a21s-mainline-boot.md`.
+  - [x] `M1-R1-T4`: Spike: verify USB-C RNDIS interface appears on host (`ip link`), configure host NAT, and `ssh root@172.16.42.1` into Native Linux on A21s; capture `uname -a`, `dmesg`, and `/dev/dri/*` in `devices/samsung/a21s/docs/a21s-mainline-boot.md`.
 - **Exit criteria:** `ssh root@172.16.42.1` succeeds and `uname -a` reports Mainline Linux `aarch64` on `SM-A217F` (zero Android).
 
 ### M2 (R1): Native Rootfs, `decon`/`dsi` Display & `Panfrost`/`PanVK` Verification (effort: L)
 - **Objective:** Boot full ARM64 Linux rootfs from eMMC (`&mmc_0`) with working display, touch (`ovt,td4150`), and Mesa `Panfrost`/`PanVK`.
 - **Depends on:** M1 (R1)
 - **Tasks:**
-  - [x] `M2-R1-T1`: Build/flash an ARM64 Linux rootfs (postmarketOS / Arch Linux ARM64) onto `USERDATA` (`mmcblk0p...` from `docs/a21s-pit.txt`) and enable 3GB ZRAM + 4GB eMMC swapfile.
+  - [x] `M2-R1-T1`: Build/flash an ARM64 Linux rootfs (postmarketOS / Arch Linux ARM64) onto `USERDATA` (`mmcblk0p...` from `devices/samsung/a21s/docs/a21s-pit.txt`) and enable 3GB ZRAM + 4GB eMMC swapfile.
   - [x] `M2-R1-T2`: Verify DRM/KMS display (`decon` + `dsi` `syna,td4150-panel`), touchscreen (`ovt,td4150`), and `/dev/dri/renderD128` (`panfrost`).
-  - [x] `M2-R1-T3`: Run `kmscube` and `vulkaninfo --summary` (Mesa `panvk`) natively on DRM/KMS; log results in `docs/a21s-native-gpu.md`.
+  - [x] `M2-R1-T3`: Run `kmscube` and `vulkaninfo --summary` (Mesa `panvk`) natively on DRM/KMS; log results in `devices/samsung/a21s/docs/a21s-native-gpu.md`.
 - **Exit criteria:** `kmscube` / `vkcube` renders directly on the A21s screen via DRM/KMS + Panfrost/PanVK.
 
 ### M3 (R1): Native SteamOS ARM64 (`Gamescope` + `Steam` + `FEX-Emu`) on A21s (effort: L)

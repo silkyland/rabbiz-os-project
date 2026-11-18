@@ -3,9 +3,9 @@
 # NOTE: exynos-drm cannot import non-contiguous dmabufs; Chromes GBM/dmabuf
 # path is fatal on wlroots (compositor kills the client). With the stock Mesa that still holds, so the
 # stock fallback keeps --disable-gpu. Through a21s-qt-gpu (scanout-patched Mesa + primary-node shim,
-# docs/a21s-qt-gpu-scanout.md) Chrome renders on Panfrost (ANGLE GLES) -- verified 2026-11-16 -- but
+# devices/samsung/a21s/docs/a21s-qt-gpu-scanout.md) Chrome renders on Panfrost (ANGLE GLES) -- verified 2026-11-16 -- but
 # Chrome's GPU path drained CMA from 197 MiB to 16 MiB within 15 s of start and exited clients leak CMA
-# (docs/FINDINGS-hw-render.md F2/F3), so GPU is OPT-IN: A21S_BROWSER_GPU=1 a21s-browser.
+# (devices/samsung/a21s/docs/FINDINGS-hw-render.md F2/F3), so GPU is OPT-IN: A21S_BROWSER_GPU=1 a21s-browser.
 # --disable-component-update: stop Chrome pulling 100-300MB of on-device ML
 # components (OptimizationGuide TFLite, WasmTtsEngine) onto the nearly-full /.
 export MOZ_ENABLE_WAYLAND=1

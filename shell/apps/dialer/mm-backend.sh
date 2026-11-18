@@ -6,7 +6,7 @@
 #
 # The A21s modem is an Exynos CP reached through the `cpif` kernel driver
 # (Samsung IPC — /dev/umts_ipc0, NOT a USB/AT/QMI modem). Kernel-side port is
-# Phase 4/M6 of docs/a21s-power-battery-modem-plan.md. Once cpif lands and a
+# Phase 4/M6 of devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md. Once cpif lands and a
 # userspace telephony stack can drive it, a privileged helper can exec this
 # script (or speak org.freedesktop.ModemManager1 over D-Bus directly) and
 # bridge A21s.Services.Telephony via its `backend` hook:

@@ -56,8 +56,8 @@ Last updated: 2026-11-16 (Session-switch works and returns to the phone shell, b
 ### Open problems (Round 1 — resolved in §0.3 unless noted)
 
 1. ~~**DSP data-aborts on playback ~1 s after trigger**~~ — **Resolved in §0.3**: `ABOX SPUS ASRC3 0` (plus updated `/var/lib/alsa/asound.state`), idempotent `scripts/abox_speaker.sh`, `api.alsa.disable-mmap = true` + `SNDRV_PCM_INFO_SYNC_APPLPTR`.
-2. ~~**768 KiB DSP ceiling is real and is exceeded by ALSA's own maximum**~~ — **Resolved in §0.3**: `BUFFER_BYTES_MAX = SZ_256K` (`drivers/abox/abox.h:41`) + `api.acp.disable-pro-audio = true` in `50-a21s-abox.conf`.
-3. ~~**Calliope boot flake persists**~~ — **Root-caused & fixed in §0.3**: `dma_get_sgtable()` + `abox_iommu_map_sg()` in `drivers/abox/abox.c`.
+2. ~~**768 KiB DSP ceiling is real and is exceeded by ALSA's own maximum**~~ — **Resolved in §0.3**: `BUFFER_BYTES_MAX = SZ_256K` (`socs/exynos850/drivers/abox/abox.h:41`) + `api.acp.disable-pro-audio = true` in `50-a21s-abox.conf`.
+3. ~~**Calliope boot flake persists**~~ — **Root-caused & fixed in §0.3**: `dma_get_sgtable()` + `abox_iommu_map_sg()` in `socs/exynos850/drivers/abox/abox.c`.
 4. ~~**Slow mixer enumeration**~~ — **Mitigated in §0.3**: `api.alsa.soft-mixer = true` in `50-a21s-abox.conf` eliminates the 60–90 s startup delay (soft volume control only).
 5. Pre-existing cosmetic: `abox_rdma close timeout`.
 
@@ -77,7 +77,7 @@ abox-vdma .103    : Playback:Total=1048576 PrdSz=1024(32768) #Prds=32 rate=48000
 
 `1048576` is exactly the number in the firmware refusal `Not enough memory: 1048576 of 786432`. The mismatch is in the source, not the DSP:
 
-- `BUFFER_BYTES_MAX = SZ_1M` (`drivers/abox/abox.h:41`; applied at `abox_dma.c:43`, `abox_rdma.c:1199`, `abox_wdma.c:59`) — ALSA will accept a 1 MiB buffer.
+- `BUFFER_BYTES_MAX = SZ_1M` (`socs/exynos850/drivers/abox/abox.h:41`; applied at `abox_dma.c:43`, `abox_rdma.c:1199`, `abox_wdma.c:59`) — ALSA will accept a 1 MiB buffer.
 - Firmware buffer heap = 768 KiB (`786432`). A legal request is therefore rejected *inside* the DSP instead of failing in `hw_params`.
 - `CONFIG_SND_SOC_SAMSUNG_ABOX_DRAM_SIZE=0x1200000` (18 MiB, `Kbuild:3` → `DRAM_FIRMWARE_SIZE`) is the **host-side DRAM window**, **not** the 768 KiB heap. Do not conflate the two.
 
@@ -104,7 +104,7 @@ After that abort the DSP stops serving PCM IPC: a second attempt with `ASRC3=0` 
 
 Before any playback on that boot: `abox_msg_send: timeout: 1, 193, 43788, 262/268/275/284, 0, …` (4×). Mixer IPC was healthy afterwards (`amixer -c 1 cset name='ABOX SPUS ASRC3' 0` → exit 0), so it is a boot-window race, not a dead mailbox.
 
-`scripts/abox_speaker.sh` runs under `set -e` and `audio-up.sh` swallows its output (`>/dev/null 2>&1`): one timed-out `cset` at boot silently skips the remainder of the routing. It also sets `ABOX SPUS ASRC3 1`, while the documented working recipe (`docs/a21s-audio-abox-plan.md` §0) uses `ASRC3 0`. **Unresolved contradiction.**
+`scripts/abox_speaker.sh` runs under `set -e` and `audio-up.sh` swallows its output (`>/dev/null 2>&1`): one timed-out `cset` at boot silently skips the remainder of the routing. It also sets `ABOX SPUS ASRC3 1`, while the documented working recipe (`devices/samsung/a21s/docs/a21s-audio-abox-plan.md` §0) uses `ASRC3 0`. **Unresolved contradiction.**
 
 **Boot reliability got worse.** 3 good boots in a row (0 retries) at 16:03/16:06/16:12; afterwards every boot failed `BOOT_DONE` (8/8 retries). A software `reboot` left the host unreachable on `usb0` **and** `wlan0` twice in a row — recovery needs a **manual power cycle**, not a reboot.
 
@@ -119,7 +119,7 @@ When recovering from the 16:18 hang, the phone screen continuously scrolled text
    - `debug_shell` reconfigures the USB gadget to `acm.usb0` (dropping `172.16.42.1`), prevents switching root to Arch Linux ARM (`wlan0` never starts), and loops `/sbin/getty` on `tty1`.
    - **Rule:** Release **Volume Down** immediately as soon as the screen turns black / the Samsung logo appears.
 2. **Trap 2 — `exynos-drm` (`DSI-1`) bind failure (`-19`) → `simpledrm` (`Unknown-1`) fallback + `console_loglevel=7` spam:**
-   - The currently flashed kernel (`#8 SMP PREEMPT_DYNAMIC Sun Nov 15 11:07:28 +07 2026`) was built with `CONFIG_EXYNOS_IOMMU=y` (required for ABOX), **but without `patches/linux/0004-exynos-drm-dma-iommu-optional.patch` applied to `src/linux/drivers/gpu/drm/exynos/exynos_drm_dma.c`** (`git -C src/linux status` confirms `exynos_drm_dma.c` is unpatched in `src/linux`).
+   - The currently flashed kernel (`#8 SMP PREEMPT_DYNAMIC Sun Nov 15 11:07:28 +07 2026`) was built with `CONFIG_EXYNOS_IOMMU=y` (required for ABOX), **but without `devices/samsung/a21s/kernel/patches/0004-exynos-drm-dma-iommu-optional.patch` applied to `src/linux/drivers/gpu/drm/exynos/exynos_drm_dma.c`** (`git -C src/linux status` confirms `exynos_drm_dma.c` is unpatched in `src/linux`).
    - Consequently, `exynos_drm_register_dma()` calls `iommu_get_domain_for_dev()` on `13060000.display-controller` (which has no IOMMU in DT), gets `NULL`, and returns `-ENODEV` (`-19`):
      ```
      exynos-drm exynos-drm: failed to bind 13060000.display-controller (ops decon850_component_ops): -19
@@ -139,16 +139,16 @@ All 5 underlying bugs behind the open problems in §0 / §0.1 were isolated and 
 1. **`ABOX SPUS ASRC3 = 0` & idempotent routing (`scripts/abox_speaker.sh`, `/var/lib/alsa/asound.state`):**
    - `scripts/abox_speaker.sh` previously had `set -e` and set `ABOX SPUS ASRC3 1` (causing Calliope `0x8000bd24` data aborts ~1 s after playback trigger), plus it temporarily reset `ABOX SPUS OUT3` and `ABOX UAIF1 SPK` to `RESERVED` mid-script (which tore down active playback paths if re-run while PipeWire was streaming).
    - Removed `set -e`, set `ABOX SPUS ASRC3 0` in both places, kept `ABOX SPUS OUT3` and `ABOX UAIF1 SPK` at `SIFS0`, and updated `/var/lib/alsa/asound.state` (`'ABOX SPUS ASRC3' = false`) so `alsa-restore.service` never flips `ASRC3` back to `true`.
-2. **Prevent >768 KiB Calliope heap OOM at ALSA level (`drivers/abox/abox.h:41`):**
+2. **Prevent >768 KiB Calliope heap OOM at ALSA level (`socs/exynos850/drivers/abox/abox.h:41`):**
    - Capped `BUFFER_BYTES_MAX` from `SZ_1M` to `SZ_256K` so ALSA `hw_params` rejects oversized buffers before reaching Calliope's 768 KiB (`786432` B) workspace.
 3. **WirePlumber / SPA-ALSA config (`rootfs-overlay/home/gamer/.config/wireplumber/wireplumber.conf.d/50-a21s-abox.conf`):**
    - Unmasked all 5 PipeWire/WirePlumber user units in `/home/gamer/.config/systemd/user/`.
    - Added `50-a21s-abox.conf` setting `api.acp.disable-pro-audio = true`, `api.acp.auto-profile = false`, `api.acp.auto-port = false`, `api.alsa.use-ucm = true`, and `api.alsa.soft-mixer = true` on `Exynos3830-Madera` (stopping ACP's `add_pro_profile` probe of `WDMA0` at `1048576` B that previously caused `0xdead0001` at `0x8000b538`, and eliminating the 60–90 s mixer timeout).
    - Disabled `abox_vdma` and `abox_dump` cards (`device.disabled = true`) in WirePlumber.
    - Forced `audio.format = "S16LE"`, `audio.rate = 48000`, `audio.channels = 2`, `api.alsa.period-size = 960`, `api.alsa.period-num = 4`, `api.alsa.disable-mmap = true`, `api.alsa.disable-tsched = true` on `alsa_output.platform-sound.*` / `alsa_input.platform-sound.*`.
-4. **`abox_vdma` mmap appl_ptr sync (`drivers/abox/abox_vdma.c`):**
+4. **`abox_vdma` mmap appl_ptr sync (`socs/exynos850/drivers/abox/abox_vdma.c`):**
    - Added `SNDRV_PCM_INFO_SYNC_APPLPTR` to `abox_vdma_register()` and `abox_vdma_register_component()` so ALSA always invokes `abox_vdma_ack()` (`PCM_PLTDAI_ACK` IPC + shared-memory `appl_ptr` update) even if a client mmaps the PCM buffer.
-5. **Calliope `BOOT_DONE` boot-flake root cause (`drivers/abox/abox.c` `samsung_abox_probe`):**
+5. **Calliope `BOOT_DONE` boot-flake root cause (`socs/exynos850/drivers/abox/abox.c` `samsung_abox_probe`):**
    - On an IOMMU-attached device (`14a50000.abox`), `dmam_alloc_coherent()` allocates 18 MiB (`DRAM_FIRMWARE_SIZE`) via `__iommu_dma_alloc_noncontiguous` as multiple physical page chunks (`vmap`ped at `data->dram_base`). The previous `page_to_phys(vmalloc_to_page(data->dram_base))` + single `abox_iommu_map()` only mapped the first physical chunk continuously, mapping wrong RAM pages for later segments when buddy chunks weren't 18 MiB contiguous.
    - Replaced both `IOVA_DRAM_FIRMWARE` and fake `IOVA_VSS_FIRMWARE` mappings with `dma_get_sgtable()` + `abox_iommu_map_sg()`, logging `nents=%u`.
 
@@ -162,7 +162,7 @@ All 5 underlying bugs behind the open problems in §0 / §0.1 were isolated and 
 Rebuilt and flashed kernel `#5 SMP PREEMPT_DYNAMIC Sun Nov 15 11:08:03 UTC 2026` (`boot-avb.img`, `37,748,736` bytes, rollback index `12`) to `/dev/mmcblk0p18` with `/root/p18-backup-before-drm.img` saved on the device:
 
 1. **Synced `src/linux` patches & DTB parity:**
-   - Applied `patches/linux/0003-a21s-abox-audio-dts.patch` (`abox_tplg:` + `samsung,aux`), `0004-exynos-drm-dma-iommu-optional.patch`, `0005-a21s-power-modem-dts.patch`, and `0006-s2mu106-fuelgauge-compatible.patch`, and captured the `&i2c_3` (`i2c@13860000`, `clock-frequency = <400000>`, `sma1303@1e`) node in `patches/linux/0007-a21s-sma1303-amp-dts.patch`.
+   - Applied `devices/samsung/a21s/kernel/patches/0003-a21s-abox-audio-dts.patch` (`abox_tplg:` + `samsung,aux`), `0004-exynos-drm-dma-iommu-optional.patch`, `0005-a21s-power-modem-dts.patch`, and `0006-s2mu106-fuelgauge-compatible.patch`, and captured the `&i2c_3` (`i2c@13860000`, `clock-frequency = <400000>`, `sma1303@1e`) node in `devices/samsung/a21s/kernel/patches/0007-a21s-sma1303-amp-dts.patch`.
    - Decompiled `exynos850-a217f.dtb` matched live `/sys/firmware/fdt` node-for-node (differing only in `uniLoader`-injected `chosen/linux,initrd-*`).
 2. **`uniLoader` partition-size pitfall (`ld.lld` `.stack` zero-fill):**
    - Building `uniLoader` with `LLVM=1` (`ld.lld`) marks `.stack` as `PROGBITS` and zero-fills the `500 KiB` `.bss` (`CONFIG_FDT_BUF_SIZE=500000`), growing `uniLoader` to `36,360,192` B and overflowing `/dev/mmcblk0p18` (`37,748,736` B).
@@ -192,7 +192,7 @@ Replaced the single-app `steamos-session.service` with `a21s-phone-session.servi
 
 ### Still remaining (M5 / M6)
 
-1. **M5 / M6:** `schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend (`docs/a21s-power-battery-modem-plan.md`), then M6.
+1. **M5 / M6:** `schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend (`devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md`), then M6.
 
 ### Resume recipe
 
@@ -210,7 +210,7 @@ runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 \
 #   update-props { audio.format=S16LE audio.rate=48000 api.alsa.period-size=960 api.alsa.period-num=4 }
 ```
 
-Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend per `docs/a21s-power-battery-modem-plan.md`), then M6.
+Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend per `devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md`), then M6.
 
 ### 0.6 Round 7 — Speaker silent again after kernel #12 flash: I2C renumbering, not IOMMU (2026-11-17 07:15)
 
@@ -228,11 +228,11 @@ Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/
 
 **Symptom:** battery discharges while USB cable attached; `s2mu005-fuel-gauge` is the only power_supply. Verified fixed on device — gauge reads positive charge current, `status=Charging`, `power_supply/s2mu106-charger` online.
 
-**Root cause:** the S2MU106 MFD (`i2c-0` @ `0x3d`, charger+MUIC; `0x3c` = USB-PDIC) has **no driver** — `patches/linux/0005` intentionally omits it. The charger block boots into `REG_MODE=BUCK` (charge switch off), so VBUS reaching CHGIN (`STATUS0 CHGIN_STATUS=3/5`, verified live) is never used. `CTRL0[3:0]=0x3` (`CHG`) starts charge immediately.
+**Root cause:** the S2MU106 MFD (`i2c-0` @ `0x3d`, charger+MUIC; `0x3c` = USB-PDIC) has **no driver** — `devices/samsung/a21s/kernel/patches/0005` intentionally omits it. The charger block boots into `REG_MODE=BUCK` (charge switch off), so VBUS reaching CHGIN (`STATUS0 CHGIN_STATUS=3/5`, verified live) is never used. `CTRL0[3:0]=0x3` (`CHG`) starts charge immediately.
 
 **Debug trap — never probe `0x3d` via userspace SMBus ioctl:** `I2C_SMBUS` byte reads returned garbage/unstable values (every register flipped between reads), while plain `write(reg)+read` on `/dev/i2c-0` gives stable correct data. Kernel-side `i2c_smbus_read_byte_data` is unaffected (the module probes fine). Chasing the noise cost false leads (VBUS "absent", PDIC LPM theories) — always cross-check with the plain-transfer path first.
 
-**Shipped:** `drivers/s2mu106/s2mu106-charger.c` (out-of-tree `extra/`): CHG mode, CV 4.35 V, input limit 1.5 A, fast-charge 1.4 A, top-off 150/100 mA, FC timer 16 h, 100 s hardware WDT kicked from a 40 s `delayed_work` (also re-asserts CHG mode if the chip loses it). Exposes `power_supply/s2mu106-charger` (ONLINE/STATUS/HEALTH/limits). Instantiated via `i2c-0/new_device` by `scripts/charger-up.sh` + `s2mu106-charger.service` (enabled) — **no DT node yet**, no reflash needed.
+**Shipped:** `socs/exynos850/drivers/s2mu106/s2mu106-charger.c` (out-of-tree `extra/`): CHG mode, CV 4.35 V, input limit 1.5 A, fast-charge 1.4 A, top-off 150/100 mA, FC timer 16 h, 100 s hardware WDT kicked from a 40 s `delayed_work` (also re-asserts CHG mode if the chip loses it). Exposes `power_supply/s2mu106-charger` (ONLINE/STATUS/HEALTH/limits). Instantiated via `i2c-0/new_device` by `scripts/charger-up.sh` + `s2mu106-charger.service` (enabled) — **no DT node yet**, no reflash needed.
 
 **Still open:** real S2MU106 MFD + MUIC + PDIC port (cable-type detection, AFC/PD 9 V fast charge, OTG, haptic); CC/Rd assertion for USB-C sources that hold VBUS off until Rd; DT node replacing `new_device` instantiation; charger IRQ wiring; sustained-charge validation across a full cycle (gauge current was seen swinging negative briefly under load — cross-check units/calibration).
 
@@ -242,7 +242,7 @@ Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/
 
 ## 1. Current Verified Device State
 
-- **Kernel:** Mainline Linux `7.3.0-g14a425b3a7dc-dirty` (`#5`, Clang 19 + GNU ld) with `exynos850-a217f.dtb` (`patches/linux/0001`..`0007` applied).
+- **Kernel:** Mainline Linux `7.3.0-g14a425b3a7dc-dirty` (`#5`, Clang 19 + GNU ld) with `exynos850-a217f.dtb` (`devices/samsung/a21s/kernel/patches/0001`..`0007` applied).
   - `CONFIG_EXYNOS_IOMMU=y` **must** be in the flashed kernel — a stale `src/uniLoader/blob/Image` without it silently breaks the whole ABOX path (`iommu_paging_domain_alloc` → `Unable to alloc iommu domain`). Always refresh `blob/Image` + `blob/dtb` before repacking `boot-avb.img`.
 - **Boot & Display:** `uniLoader` (`06a1bba`) + `exynos-drm` (`card0-DSI-1`, `720x1600`) + `decon850` + `dsi` (`td4150` + `/sys/class/backlight/13070000.dsi.0`) + `weston` (`--drm-device=card0`) + `panfrost`/`panvk` + `steamos-session.service`.
 - **Networking:** `usb0` (`172.16.42.1/24`, systemd-networkd, unmanaged in NM) + `wlan0` (`scsc_wlan`, NetworkManager, `<wifi-ip>`).
@@ -251,8 +251,8 @@ Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/
   - Main speaker `UAIF1 → SMA1303` plays clean music; earpiece `UAIF0 → aud3004x → EP` also verified. `calliope_version=nEB0`.
   - **Playback recipe** (after `/root/audio-up.sh`): `amixer -c 1 cset name='ABOX SPUS ASRC3' 0` → `echo 1536000 > /sys/bus/i2c/devices/0-001e/playback_init` → `aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 song.wav` (small buffers required — DSP RDMA buffer is tiny).
   - Card 1 `Exynos3830-Madera` registers only after **`aud3004x-codec` module is loaded** (machine driver links the codec into UAIF links).
-  - Full bug table in `docs/a21s-audio-abox-plan.md` §0 — headline fix: `abox_ion.c` sg_table needed `dma_get_sgtable()` (was mapping random RAM → cicada noise).
-  - **PMIC `s2mpu12-regulator` DONE** — `drivers/abox/s2mpu12-regulator.c` registers 29 rails via ACPM regmap; `vdd_aldo1`=1.8 V, `vdd_aldo2`=2.9 V enabled (audio codec/amp rails).
+  - Full bug table in `devices/samsung/a21s/docs/a21s-audio-abox-plan.md` §0 — headline fix: `abox_ion.c` sg_table needed `dma_get_sgtable()` (was mapping random RAM → cicada noise).
+  - **PMIC `s2mpu12-regulator` DONE** — `socs/exynos850/drivers/abox/s2mpu12-regulator.c` registers 29 rails via ACPM regmap; `vdd_aldo1`=1.8 V, `vdd_aldo2`=2.9 V enabled (audio codec/amp rails).
   - **`sma1303` smart amp POWERED + responding** — `0-001e` reads `chip version 0x11`, `playback_init` sysfs configures I2S-slave + PLL-from-BCLK + power-on + mono + unmute out-of-band (no codec_dai link needed — avoids bind crash).
   - **Still missing: real audio out the speaker.** DSP→UAIF1→sma1303 chain is configured but produces no sound — either (a) DSP isn't emitting real audio on UAIF1 (its render graph needs the codec/effects path), (b) the speaker actually routes through `aud3004x` codec (DAC→SPKDRV→analog) not sma1303-direct, or (c) amp I2S format/PLL mismatch. **`aud3004x` codec still not in card 1's ASoC path** (dummy links; ACPM/SPEEDY bus node `acpm_mfd_bus@11A50000`/`aud3004x@07` not yet added to DT).
 
@@ -295,7 +295,7 @@ Firmware-instrumented debugging (patched exception vectors + milestone markers +
 
 The CPU-visible `virt_to_phys(dram_base)` gives the real PA (observed `0x8aad00000` / `0xb8400000` / `0xb9600000` across boots — dynamic each time).
 
-**Fix** (`drivers/abox/abox.c`, `samsung_abox_probe`): compute `dram_pa = virt_to_phys(dram_base)` (with `vmalloc_to_page` fallback) and map *that*:
+**Fix** (`socs/exynos850/drivers/abox/abox.c`, `samsung_abox_probe`): compute `dram_pa = virt_to_phys(dram_base)` (with `vmalloc_to_page` fallback) and map *that*:
 
 ```c
 if (is_vmalloc_addr(data->dram_base))
@@ -318,17 +318,17 @@ A marker-instrumented `calliope_sram.bin` (48 304 B vs stock 47 964 B) was left 
 
 ### Root cause #4 — missing `samsung,aux` → topology never loaded
 
-The `sound` node in `patches/linux/0003-a21s-abox-audio-dts.patch` lacked `samsung,aux = <&abox_tplg>` (the vendor dts binds it via overlay). With zero aux_devs the `0.abox-tplg` ASoC component registered but its `.probe` never ran → `abox_tplg.bin` never loaded → no FE PCMs (RDMA DAIs are BE-only). Also note the machine-driver `Failed to parse cpu DAI for rdma0: -517` defer is *normal* — it retries after `14a51xxx.abox-rdma` probes.
+The `sound` node in `devices/samsung/a21s/kernel/patches/0003-a21s-abox-audio-dts.patch` lacked `samsung,aux = <&abox_tplg>` (the vendor dts binds it via overlay). With zero aux_devs the `0.abox-tplg` ASoC component registered but its `.probe` never ran → `abox_tplg.bin` never loaded → no FE PCMs (RDMA DAIs are BE-only). Also note the machine-driver `Failed to parse cpu DAI for rdma0: -517` defer is *normal* — it retries after `14a51xxx.abox-rdma` probes.
 
 **Fix:** label the node `abox_tplg: abox-tplg@0` and add `samsung,aux = <&abox_tplg>;` to `sound`. Result: `loaded abox_tplg.bin` + `calliope_0..9` playback + `calliope_10..29` capture PCMs.
 
 ### Root cause #5 — dump-card NULL deref
 
-`abox_dump_register_card_work_func` built dummy `dai_link`s with `cpus`/`codecs` but no `platforms`; mainline `snd_soc_add_pcm_runtimes` dereferenced it → oops. **Fix:** allocate a `snd-soc-dummy-platform` platform component (`drivers/abox/abox_dump.c`).
+`abox_dump_register_card_work_func` built dummy `dai_link`s with `cpus`/`codecs` but no `platforms`; mainline `snd_soc_add_pcm_runtimes` dereferenced it → oops. **Fix:** allocate a `snd-soc-dummy-platform` platform component (`socs/exynos850/drivers/abox/abox_dump.c`).
 
 ### Root cause #6 — NULL drvdata in `abox_dma_hw_params_set`
 
-Topology links whose cpu DAI resolves to `snd-soc-dummy` call `abox_dma_hw_params_set(dai->dev, …)` → `dev_get_drvdata` NULL → deref at `+0xd4`. **Fix:** NULL guard with an identifying `dev_err` (`drivers/abox/abox_dma.c`). Benign `no dma data on snd-soc-dummy` warnings remain — cosmetic for now.
+Topology links whose cpu DAI resolves to `snd-soc-dummy` call `abox_dma_hw_params_set(dai->dev, …)` → `dev_get_drvdata` NULL → deref at `+0xd4`. **Fix:** NULL guard with an identifying `dev_err` (`socs/exynos850/drivers/abox/abox_dma.c`). Benign `no dma data on snd-soc-dummy` warnings remain — cosmetic for now.
 
 ### Root cause #7 — kernel regression via stale blob Image
 
@@ -336,11 +336,11 @@ Topology links whose cpu DAI resolves to `snd-soc-dummy` call `abox_dma_hw_param
 
 ### Root cause #8 — `BUG_ON` kills the DSP IPC workqueue
 
-`abox_process_ipc` (`drivers/abox/abox.c`) counted consecutive `__abox_process_ipc` failures and hit `BUG_ON(error++ > 128)` → oops → `abox_ipc` workqueue dead → **every subsequent mixer/PCM IPC hangs in `D` state forever** (device "alive" but audio wedged). Triggered whenever the DSP stopped answering IPC (e.g. after a stream error). **Fix:** replaced `BUG_ON` with `dev_err_ratelimited` — workqueue survives error storms; `abox_failsafe_report` still runs.
+`abox_process_ipc` (`socs/exynos850/drivers/abox/abox.c`) counted consecutive `__abox_process_ipc` failures and hit `BUG_ON(error++ > 128)` → oops → `abox_ipc` workqueue dead → **every subsequent mixer/PCM IPC hangs in `D` state forever** (device "alive" but audio wedged). Triggered whenever the DSP stopped answering IPC (e.g. after a stream error). **Fix:** replaced `BUG_ON` with `dev_err_ratelimited` — workqueue survives error storms; `abox_failsafe_report` still runs.
 
 ### Root cause #9 — `samsung-abox-dump` re-binds the card → `snd_soc_dapm_free` NULL deref
 
-Every DSP buffer registers a `samsung-abox-dump` platform device; its probe called `devm_snd_soc_register_component` + `abox_dump_add_dai_link`, which re-triggers `snd_soc_bind_card` on the **already-instantiated** card → `soc_cleanup_card_resources` → `snd_soc_dapm_free` NULL deref (`pc : snd_soc_dapm_free+0x24`) → kworker dies holding a corrupted DAPM mutex → **all `amixer`/`aplay` hang in `D`**. This is why the whole card wedged after module load. **Fix:** in `samsung_abox_dump_probe` (`drivers/abox/abox_dump.c`), skip `devm_snd_soc_register_component`/`abox_dump_add_dai_link` for `id>=0` — dump debugfs files are created in `abox_dump_register` anyway; the ASoC component/dai_link is optional debug plumbing. Result: **zero oops, card stable**.
+Every DSP buffer registers a `samsung-abox-dump` platform device; its probe called `devm_snd_soc_register_component` + `abox_dump_add_dai_link`, which re-triggers `snd_soc_bind_card` on the **already-instantiated** card → `soc_cleanup_card_resources` → `snd_soc_dapm_free` NULL deref (`pc : snd_soc_dapm_free+0x24`) → kworker dies holding a corrupted DAPM mutex → **all `amixer`/`aplay` hang in `D`**. This is why the whole card wedged after module load. **Fix:** in `samsung_abox_dump_probe` (`socs/exynos850/drivers/abox/abox_dump.c`), skip `devm_snd_soc_register_component`/`abox_dump_add_dai_link` for `id>=0` — dump debugfs files are created in `abox_dump_register` anyway; the ASoC component/dai_link is optional debug plumbing. Result: **zero oops, card stable**.
 
 ### Root cause #10 — sma1303 as codec_dai destabilizes card bind
 
@@ -348,27 +348,27 @@ Adding `sma1303` as `.codecs` on the `UAIF1` BE link made its DAI ops fire (good
 
 ### Root cause #11 — `s2mpu12` regulator had no driver → amp unpowered
 
-`sma1303` I2C returned `-ENXIO`/version `0x00` because the PMIC audio rails were off. `sec-pmic-acpm` enumerated `S2MPU12` but had no regulator child. **Fix:** `drivers/abox/s2mpu12-regulator.c` registers 29 LDO/buck rails over the ACPM regmap; DT `regulators/ldo33`(vdd_aldo1)/`ldo34`(vdd_aldo2) apply via `.of_match`+`.regulators_node="regulators"`+`device_set_of_node_from_dev`. Result: `vdd_aldo1`=1.8 V, `vdd_aldo2`=2.9 V enabled → **sma1303 reads `chip version 0x11`**.
+`sma1303` I2C returned `-ENXIO`/version `0x00` because the PMIC audio rails were off. `sec-pmic-acpm` enumerated `S2MPU12` but had no regulator child. **Fix:** `socs/exynos850/drivers/abox/s2mpu12-regulator.c` registers 29 LDO/buck rails over the ACPM regmap; DT `regulators/ldo33`(vdd_aldo1)/`ldo34`(vdd_aldo2) apply via `.of_match`+`.regulators_node="regulators"`+`device_set_of_node_from_dev`. Result: `vdd_aldo1`=1.8 V, `vdd_aldo2`=2.9 V enabled → **sma1303 reads `chip version 0x11`**.
 
 ---
 
 ## 3. Files Changed
 
-- `drivers/abox/abox.c` — real-PA DRAM mapping via `dma_get_sgtable()` + `abox_iommu_map_sg()` (both `IOVA_DRAM_FIRMWARE` and fake `IOVA_VSS_FIRMWARE`) + hold-cores-in-reset + DIAG seeds + **`BUG_ON`→ratelimit in `abox_process_ipc` (RC#8)** + **`boot_retry_work` DSP boot retry (RC#10/boot flakiness)**.
-- `drivers/abox/abox.h` — `boot_retry_work` + `boot_retry_count` fields; **`BUFFER_BYTES_MAX` capped at `SZ_256K`**.
-- `drivers/abox/abox_vdma.c` — **`SNDRV_PCM_INFO_SYNC_APPLPTR`** added in `abox_vdma_register()` and `abox_vdma_register_component()`.
+- `socs/exynos850/drivers/abox/abox.c` — real-PA DRAM mapping via `dma_get_sgtable()` + `abox_iommu_map_sg()` (both `IOVA_DRAM_FIRMWARE` and fake `IOVA_VSS_FIRMWARE`) + hold-cores-in-reset + DIAG seeds + **`BUG_ON`→ratelimit in `abox_process_ipc` (RC#8)** + **`boot_retry_work` DSP boot retry (RC#10/boot flakiness)**.
+- `socs/exynos850/drivers/abox/abox.h` — `boot_retry_work` + `boot_retry_count` fields; **`BUFFER_BYTES_MAX` capped at `SZ_256K`**.
+- `socs/exynos850/drivers/abox/abox_vdma.c` — **`SNDRV_PCM_INFO_SYNC_APPLPTR`** added in `abox_vdma_register()` and `abox_vdma_register_component()`.
 - `scripts/abox_speaker.sh` — removed `set -e`, set `ABOX SPUS ASRC3 0`, removed transient `RESERVED` reset on `ABOX SPUS OUT3` / `ABOX UAIF1 SPK`.
 - `rootfs-overlay/home/gamer/.config/wireplumber/wireplumber.conf.d/50-a21s-abox.conf` — **NEW**: disables ACP Pro Audio probe, disables `abox_vdma`/`abox_dump`, forces soft-mixer + `S16LE` 48 kHz + non-mmap `writei` on `platform-sound`.
-- `drivers/abox/abox_dma.c` — NULL guard in `abox_dma_hw_params_set`.
-- `drivers/abox/abox_dump.c` — dummy platform for dump-card links + **skip dump ASoC component/dai_link (RC#9)**.
-- `drivers/abox/s2mpu12-regulator.c` — **NEW**: 29-rail PMIC regulator via ACPM regmap (RC#11).
-- `drivers/abox/sma1303.c` — vendor 4.19→7.3 port + `playback_init` sysfs + sysfs_remove_group fix.
-- `drivers/abox/abox_ion.c` — **`dma_get_sgtable()` for PCM sg_table (RC#12 — the cicada-noise fix)**.
-- `drivers/abox/abox_if.c` — `abox_if_select_pinctrl()` → `aud-i2s1-pins` during playback.
-- `drivers/abox/aud3004x.c` — codec probe/register (+217 lines).
-- `drivers/abox/exynos3830_aud3004x.c` — cpu_dai-by-name BE binding (`d8315e1`); `.dai_fmt` on UAIF0..2 + aud3004x codec link on UAIF0.
-- `patches/linux/0003-a21s-abox-audio-dts.patch` — `abox_tplg:` label + `samsung,aux`.
-- `patches/linux/0007-a21s-sma1303-amp-dts.patch` — **NEW**: `i2c_3` (`400 kHz`) + `sma1303@1e` node in `arch/arm64/boot/dts/exynos/exynos850-a217f.dts`.
+- `socs/exynos850/drivers/abox/abox_dma.c` — NULL guard in `abox_dma_hw_params_set`.
+- `socs/exynos850/drivers/abox/abox_dump.c` — dummy platform for dump-card links + **skip dump ASoC component/dai_link (RC#9)**.
+- `socs/exynos850/drivers/abox/s2mpu12-regulator.c` — **NEW**: 29-rail PMIC regulator via ACPM regmap (RC#11).
+- `socs/exynos850/drivers/abox/sma1303.c` — vendor 4.19→7.3 port + `playback_init` sysfs + sysfs_remove_group fix.
+- `socs/exynos850/drivers/abox/abox_ion.c` — **`dma_get_sgtable()` for PCM sg_table (RC#12 — the cicada-noise fix)**.
+- `socs/exynos850/drivers/abox/abox_if.c` — `abox_if_select_pinctrl()` → `aud-i2s1-pins` during playback.
+- `socs/exynos850/drivers/abox/aud3004x.c` — codec probe/register (+217 lines).
+- `socs/exynos850/drivers/abox/exynos3830_aud3004x.c` — cpu_dai-by-name BE binding (`d8315e1`); `.dai_fmt` on UAIF0..2 + aud3004x codec link on UAIF0.
+- `devices/samsung/a21s/kernel/patches/0003-a21s-abox-audio-dts.patch` — `abox_tplg:` label + `samsung,aux`.
+- `devices/samsung/a21s/kernel/patches/0007-a21s-sma1303-amp-dts.patch` — **NEW**: `i2c_3` (`400 kHz`) + `sma1303@1e` node in `arch/arm64/boot/dts/exynos/exynos850-a217f.dts`.
 
 ---
 
@@ -393,7 +393,7 @@ Adding `sma1303` as `.codecs` on the `UAIF1` BE link made its DAI ops fire (good
    - `s2mpu12-regulator.ko` keeps boot-on rails `always_on` (`a21s-mainline-boot.md`).
    - Do **not** run `abox_speaker.sh` with `RESERVED` resets while an active audio stream is running (fixed in `scripts/abox_speaker.sh`).
    - RDMA close prints `close timeout` during WirePlumber probe teardown — cosmetic; stream still works.
-5. **M5 / M6:** `schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend (`docs/a21s-power-battery-modem-plan.md`), then M6.
+5. **M5 / M6:** `schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/backlight/suspend (`devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md`), then M6.
 
 ---
 
@@ -405,7 +405,7 @@ make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) Image dtbs
 # ABOX modules
 make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/drivers/abox modules
 # Deploy module (never overwrite /lib!)
-scp drivers/abox/abox-snd.ko root@172.16.42.1:/usr/lib/modules/$(uname -r)/extra/
+scp socs/exynos850/drivers/abox/abox-snd.ko root@172.16.42.1:/usr/lib/modules/$(uname -r)/extra/
 
 # Repack + flash boot-avb.img (ALWAYS refresh blob Image+dtb first; clean + CROSS_COMPILE avoids ld.lld .stack zero-fill overflow)
 cp build/linux/arch/arm64/boot/Image src/uniLoader/blob/Image

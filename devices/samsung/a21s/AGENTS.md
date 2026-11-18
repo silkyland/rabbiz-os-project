@@ -6,6 +6,6 @@ the repository root [AGENTS.md](../../../AGENTS.md) and are being split out into
 each rule gets a `verified` finding. Until then, treat every rule in the root file marked with an
 A21s path or doc as applying to this device only.
 
-- Boot/recovery: [docs/a21s-boot-recovery.md](../../../docs/a21s-boot-recovery.md)
+- Boot/recovery: [devices/samsung/a21s/docs/a21s-boot-recovery.md](docs/a21s-boot-recovery.md)
 - Device queue (shared hardware): [docs/DEVICE-QUEUE.md](../../../docs/DEVICE-QUEUE.md)
 - Hardware status: [device.toml](device.toml)

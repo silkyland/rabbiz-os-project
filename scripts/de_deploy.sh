@@ -54,7 +54,7 @@ es=$(systemctl cat a21s-phone-session.service | awk '/^ExecStart=/{print $1}')
 
 # Probe sanity check — skipped when DE_DEPLOY_SKIP_PROBE=1 (expanded on the
 # host before this script is sent): stopping the running session then
-# committing can hit the Exynos cold-enable DSI wedge (docs/HANDOFF.md §0);
+# committing can hit the Exynos cold-enable DSI wedge (devices/samsung/a21s/docs/HANDOFF.md §0);
 # probe is proven separately by de_probe.sh.
 if [ "__SKIP_PROBE__" != "1" ]; then
   unit=a21s-phone-session.service

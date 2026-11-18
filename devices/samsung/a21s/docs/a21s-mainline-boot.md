@@ -19,5 +19,5 @@
   [   31.714188] vdd_grip_3p3: disabling
   [   31.714441] vdd_ldo28: disabling        <- ldo28 = lcd_vddi
   ```
-- **Fix:** `drivers/abox/s2mpu12-regulator.c` marks every `regulator-boot-on` rail as `always_on` at probe (`"<rail>: boot-on rail kept enabled"` in dmesg). Re-enabling the rail at runtime does not restore the panel because it needs uniLoader's init sequence, so a reboot is required.
+- **Fix:** `socs/exynos850/drivers/abox/s2mpu12-regulator.c` marks every `regulator-boot-on` rail as `always_on` at probe (`"<rail>: boot-on rail kept enabled"` in dmesg). Re-enabling the rail at runtime does not restore the panel because it needs uniLoader's init sequence, so a reboot is required.
 - **Proper fix later:** wire `vio-supply = <&vdd_ldo28>` (plus LM36274 `vsn/vsp` + backlight) in the DTS, then drop the blanket `always_on`.

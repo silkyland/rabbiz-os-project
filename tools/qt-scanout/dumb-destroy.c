@@ -1,4 +1,4 @@
-/* Root cause of the CMA leak (docs/FINDINGS-hw-render.md F2): Mesa's renderonly layer (kmsro, used by
+/* Root cause of the CMA leak (devices/samsung/a21s/docs/FINDINGS-hw-render.md F2): Mesa's renderonly layer (kmsro, used by
  * labwc's GLES2 renderer) imports client dma-bufs into exynos-drm through the RENDER node and later
  * releases them with DRM_IOCTL_MODE_DESTROY_DUMB. The DRM core does not allow that ioctl on render nodes
  * (no DRM_RENDER_ALLOW) so it returns EACCES, the GEM handle is never closed, and the 4.6 MiB CMA buffer

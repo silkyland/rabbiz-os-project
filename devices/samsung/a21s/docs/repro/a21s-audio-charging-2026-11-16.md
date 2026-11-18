@@ -45,11 +45,11 @@ FAIL: no non-battery power supply exposed (not proof of zero physical charge cur
 
 ## Traced mechanisms and competing explanations
 
-VERIFIED audio blocker: drivers/abox/abox.c:3235 allocates an IOMMU paging
+VERIFIED audio blocker: socs/exynos850/drivers/abox/abox.c:3235 allocates an IOMMU paging
 domain and aborts probe on failure. In the checked-out kernel,
 src/linux/drivers/iommu/iommu.c:2086 returns -ENODEV when dev_has_iommu is
 false. CONFIG_EXYNOS_IOMMU is disabled on the running device. The local
-configs/a21s_linux_defconfig also lacks an explicit enable. A missing sound
+devices/samsung/a21s/kernel/a21s_linux_defconfig also lacks an explicit enable. A missing sound
 card precedes routing, mute and PipeWire: those cannot explain this probe
 failure. Restoring SysMMU support requires a rebuilt kernel, with display
 compatibility checked too. Recovery has NOT been tested.
@@ -59,7 +59,7 @@ I2C adapter number. Correct amp binding disproves an absent/dead amp as the
 explanation for that path error. This defect alone cannot explain ABOX's
 earlier IOMMU failure. Service success is not an audio health check.
 
-VERIFIED charger support gap: patches/linux/0005-a21s-power-modem-dts.patch:38
+VERIFIED charger support gap: devices/samsung/a21s/kernel/patches/0005-a21s-power-modem-dts.patch:38
 explicitly omits s2mu106-mfd@3d (charger/MUIC) pending a driver. Patch 0006
 only adds fuel-gauge compatibility. No charger supply is registered live.
 The fuel gauge's STATUS is inferred from current signs in

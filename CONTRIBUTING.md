@@ -75,7 +75,7 @@ evidence earns `verified`. Refuted findings are kept (marked `refuted`) so nobod
 
 - Original RabbizOS code: Apache-2.0 (see [LICENSE](LICENSE)).
 - `drivers/` and kernel patches keep their upstream licence (GPL-2.0 / their SPDX headers);
-  see [drivers/LICENSING.md](drivers/LICENSING.md).
+  see [socs/exynos850/drivers/LICENSING.md](socs/exynos850/drivers/LICENSING.md).
 - Bundled fonts and assets keep their own licences (see the `SOURCE.txt` next to them).
 - By contributing you confirm you have the right to submit the work under these terms.
   Do not submit code copied from sources with an incompatible licence or vendor firmware blobs.

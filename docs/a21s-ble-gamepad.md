@@ -2,7 +2,7 @@
 
 Why `steam -gamepadui` could not pair Bluetooth devices, what was fixed in userspace, why an interim `uinput` bridge exists, and the kernel config set needed to remove it.
 
-Related: [a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md) §6–7, `scripts/xbox-ble-uinput.{py,service}`.
+Related: [a21s-wifi-bluetooth.md](../devices/samsung/a21s/docs/a21s-wifi-bluetooth.md) §6–7, `scripts/xbox-ble-uinput.{py,service}`.
 
 ---
 
@@ -33,7 +33,7 @@ Related: [a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md) §6–7, `scripts/xbox
 ## 3. Stopgap: `scripts/xbox-ble-uinput.py` (running as `xbox-ble-uinput.service`)
 
 - `input-hog` needs `CONFIG_UHID`, which is absent; but `CONFIG_INPUT_UINPUT=y` provides `/dev/uinput`. Bridge reads Report-ID-1 notifications via BlueZ D-Bus (`StartNotify` on `char001d`) and re-emits through uinput as `BUS_BLUETOOTH 045E:0B13 "Xbox Wireless Controller"` → `/dev/input/event3`. Live axis values confirmed end-to-end; 15 s `Connect()` tick auto-reconnects the trusted pad.
-- Limitations: one hardcoded MAC; Xbox layout only; no rumble/LED/battery node; per-report D-Bus+Python overhead. **Must be removed** once `input-hog` works, or the pad registers twice. Cleanup commands in [a21s-wifi-bluetooth.md §7](a21s-wifi-bluetooth.md).
+- Limitations: one hardcoded MAC; Xbox layout only; no rumble/LED/battery node; per-report D-Bus+Python overhead. **Must be removed** once `input-hog` works, or the pad registers twice. Cleanup commands in [a21s-wifi-bluetooth.md §7](../devices/samsung/a21s/docs/a21s-wifi-bluetooth.md).
 - Note: `fuzz=16` on stick axes + input-core duplicate suppression → an idle pad produces zero evdev events (normal; verify with `evdev absinfo`, not an event listener).
 
 ## 4. Kernel fix — pending on the **other build machine** (`src/`+`build/` are empty on this Mac)

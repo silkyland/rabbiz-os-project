@@ -2,7 +2,7 @@
 
 Why there is no sound today and what the built-in-speaker path requires.
 
-Related: [a21s-ble-gamepad.md](a21s-ble-gamepad.md) §5 (BT audio userspace), `scripts/volume-keys.{py,service}`.
+Related: [a21s-ble-gamepad.md](../../../../docs/a21s-ble-gamepad.md) §5 (BT audio userspace), `scripts/volume-keys.{py,service}`.
 
 ---
 
@@ -26,7 +26,7 @@ aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 song.wav
 | 2 | Clicking ("ติ๊กๆ") | `UAIF1`/`UAIF2` in `exynos3830_dai[]` had no `.dai_fmt`. `exynos3830_audio_probe()` only rewrites DT-listed links (`[0..13]`), so `abox_uaif_hw_params()` hit `default:` → `ABOX_UAIF1_CTRL1 (0x0514)` got `VALID_STR=VALID_END=15`, keeping 1 of 16 bits | `exynos3830_aud3004x.c`: `.dai_fmt = I2S \| NB_NF \| CBC_CFC` on `UAIF0..2`. Check: `0514` reads `00800000` |
 | 3 | `ABOX RDMA3 Width` = 8 | Default kcontrol value | `scripts/abox_speaker.sh` sets it to `16` |
 | 4 | **Cicada/mosquito noise on *both* speakers** (the real bug) | `abox_ion.c` mainline shim (replaces ION) built its `sg_table` with `sg_alloc_table()` + `sg_dma_address()` only, leaving **no `struct page`**. `abox_iommu_map_sg()` → `iommu_map_sg()` uses `sg_phys()` = `page_to_phys(NULL)`, so the Calliope IOVA for the PCM buffer pointed at **random RAM**. The DSP pipeline timing was perfect (log-00 clean), but the samples were garbage | Build the table with `dma_get_sgtable(dev, &sgt, vaddr, dma_addr, size)` |
-| 5 | **Playback returns `EIO` ~1 s after trigger; DSP dumps registers** (`data abort(0x1, 0xab0cab0c, 0x8000bd24, 0x805)`, `r01: dead0002`, `pc : 0000b454`) | **OPEN.** Reproduces on a clean boot with PipeWire/WirePlumber masked (zero probe lines), `calliope_version=nEB0`, 0 boot retries, and a 15 KiB S16 buffer at the documented params above. So it is *not* the 768 KiB DSP ceiling, not S32 width, not capture probing. After the abort the DSP never recovers (later plays get `EIO` with no new abort) | Not fixed. See `docs/HANDOFF.md` §0.1 for the full evidence |
+| 5 | **Playback returns `EIO` ~1 s after trigger; DSP dumps registers** (`data abort(0x1, 0xab0cab0c, 0x8000bd24, 0x805)`, `r01: dead0002`, `pc : 0000b454`) | **OPEN.** Reproduces on a clean boot with PipeWire/WirePlumber masked (zero probe lines), `calliope_version=nEB0`, 0 boot retries, and a 15 KiB S16 buffer at the documented params above. So it is *not* the 768 KiB DSP ceiling, not S32 width, not capture probing. After the abort the DSP never recovers (later plays get `EIO` with no new abort) | Not fixed. See `devices/samsung/a21s/docs/HANDOFF.md` §0.1 for the full evidence |
 
 > [!NOTE]
 > Debug lesson: if `log-00` shows `PCMOUT0 → BD_SRCCOM0 → BD_MIXER → RDMA3` running cleanly, the registers look right, and **both** codecs make the same kind of noise, suspect the shared DMA/IOMMU buffer mapping before the codec or I2S format.
@@ -86,13 +86,13 @@ This is the same class of task as the SCSC WLBT port: extract the vendor driver,
 
 ## Port progress (in-flight, not yet runtime-verified)
 
-**Status:** `drivers/abox/` (76 files, ported from
+**Status:** `socs/exynos850/drivers/abox/` (76 files, ported from
 `src/exynos850-vendor-kernel/sound/soc/samsung/abox/`) compiles as
 out-of-tree `abox-snd.ko` against mainline 7.3 — all 23 vendor objects
 + `smc_compat.c` link cleanly. `modpost` still pending on the first
 full in-tree `modules` build (Module.symvers).
 
-**Build:** `drivers/abox/Kbuild` — single module with merged
+**Build:** `socs/exynos850/drivers/abox/Kbuild` — single module with merged
 `module_init` registering all 14 platform drivers (vendor built them
 as separate built-in initcalls). Config defines:
 `SND_SOC_SAMSUNG_ABOX_VERSION=0x23000`, `ABOX_V3`,
@@ -116,7 +116,7 @@ as separate built-in initcalls). Config defines:
 - `dai->rate/channels/sample_width` → `abox_if_data` fields
 - `devm_pinctrl_get`/`linux/compat.h`/`linux/memblock.h`/`linux/vmalloc.h` includes
 
-**Vendor-only deps resolved via `drivers/vendor-include/` + stubs:**
+**Vendor-only deps resolved via `socs/exynos850/drivers/vendor-include/` + stubs:**
 - `exynos_smc`/`exynos_smc_readsfr` implemented in `smc_compat.c`
   (inline `smc #0`, mirrors vendor .S)
 - `PM_QOS_*` / `pm_qos` → tracking-only `abox_qos` (real DVFS hints
@@ -129,7 +129,7 @@ as separate built-in initcalls). Config defines:
   in abox_ion.c
 - `IRQF_GIC_MULTI_TARGET` define in exynos_smc.h (0x10000000)
 
-**Kernel-side changes needed:** `patches/linux/0002-...` makes
+**Kernel-side changes needed:** `devices/samsung/a21s/kernel/patches/0002-...` makes
 `SND_SOC_TOPOLOGY` user-visible (select-only upstream) + config:
 `SND_SOC_TOPOLOGY=y`, `SND_SOC_COMPRESS`, `SND_SOC_SAMSUNG`.
 
@@ -155,7 +155,7 @@ obsolete DPCM trigger constants dropped, `of_gpio.h` → gpiod compat,
 `snd_soc_of_get_dai_name` 3-arg, `.remove` int→void,
 `snd-soc-dummy` codec fallback kept (codec-less links still bind).
 
-**DTS fragment done** (`patches/linux/0003-a21s-abox-audio-dts.patch`):
+**DTS fragment done** (`devices/samsung/a21s/kernel/patches/0003-a21s-abox-audio-dts.patch`):
 `abox-gic` (GIC_SPI 64), `abox@14a50000` full vendor subtree — 2×
 abox-core w/ firmware descriptors, 12× rdma, 5× wdma, 5× dual,
 6× ddma, 3× uaif, spdy, debug/tplg/vss, 9× ext-bin. Vendor clock
@@ -196,7 +196,7 @@ aud3004x (i2c_driver)
           → SPEEDY serial → aud3004x codec
 ```
 
-Vendor source (already in repo `drivers/acpm/`):
+Vendor source (already in repo `socs/exynos850/drivers/acpm/`):
 - `acpm.c` (449 ln) — loads APM "plugin" firmware blobs into APM SRAM
   (plugins table at `initdata-base 0x7000`, firmware names read from
   SRAM after base fw boot)

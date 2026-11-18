@@ -1,10 +1,10 @@
 #!/bin/sh
 # a21s-qt-render — run a Qt Quick program on the GPU (Panfrost) when the pinned scanout path is
 # healthy, otherwise on the software backend. Every in-house QML app wrapper goes through here so
-# "GPU or software" is decided in ONE place (docs/a21s-qt-gpu-scanout.md, docs/FINDINGS-hw-render.md).
+# "GPU or software" is decided in ONE place (devices/samsung/a21s/docs/a21s-qt-gpu-scanout.md, devices/samsung/a21s/docs/FINDINGS-hw-render.md).
 # Fail-closed: a Mesa upgrade makes `a21s-qt-gpu --check` fail and apps silently keep working in software.
 # CMA guard: every GPU window buffer is carved from the 256 MiB CMA pool and exited GPU apps currently
-# LEAK their swapchain there (~14 MiB per launch, docs/FINDINGS-hw-render.md F2). Below the floor we run
+# LEAK their swapchain there (~14 MiB per launch, devices/samsung/a21s/docs/FINDINGS-hw-render.md F2). Below the floor we run
 # software instead of exhausting CMA, which segfaults the shell. Remove the guard once F2 is fixed.
 floor_kb=${A21S_CMA_FLOOR_KB:-98304}
 free_kb=$(awk '/^CmaFree:/{print $2}' /proc/meminfo)

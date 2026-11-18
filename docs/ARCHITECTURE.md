@@ -22,12 +22,12 @@ Samsung S-Boot (BL1/BL2, locked by e-fuse)
 
 | Component | Responsibility | Status | Evidence |
 |---|---|---|---|
-| `src/uniLoader` (`a21s_defconfig`) | Intermediate bootloader bypassing Samsung Android boot quirks | works | [PLAN.md](PLAN.md#L34), [a21s-mainline-boot.md](a21s-mainline-boot.md) |
-| `src/linux` (`exynos850-a217f.dts`) | Mainline 7.3.0 kernel + Exynos 850 DTS (`decon`, `dsi`, `gpu`, `usbdrd`, `s2mpu12-pmic`, `wifibt_if`) | works | [PLAN.md](PLAN.md#L35), [a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md) |
-| `drivers/scsc/misc/` & `drivers/scsc/Kbuild` | SCSC Maxwell (`scsc_mx.ko`) + Exynos 850 platform MIF (`scsc_platform_mif.ko`) | works | [drivers/scsc/Kbuild](../drivers/scsc/Kbuild), [mxman.c](../drivers/scsc/misc/mxman.c) |
-| `drivers/scsc/wlan/` | SCSC Wi-Fi driver (`scsc_wlan.ko`) exposing `wlan0` / `p2p0` | works | [drivers/scsc/Kbuild](../drivers/scsc/Kbuild), [a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md) |
-| `drivers/scsc/bt/` | SCSC BlueZ H4 Bluetooth driver (`scsc_bt.ko`) exposing `hci0` + `rfkill` | works | [scsc_bluez.c](../drivers/scsc/bt/scsc_bluez.c), [scsc_shm.c](../drivers/scsc/bt/scsc_shm.c), [scsc_bt_module.c](../drivers/scsc/bt/scsc_bt_module.c) |
-| `scripts/probe_device.sh` | ADB device inspection script (produced `device-a21s-profile.txt`) | works (setup) | [scripts/probe_device.sh](../scripts/probe_device.sh), [device-a21s-profile.txt](device-a21s-profile.txt) |
+| `src/uniLoader` (`a21s_defconfig`) | Intermediate bootloader bypassing Samsung Android boot quirks | works | [PLAN.md](PLAN.md#L34), [a21s-mainline-boot.md](../devices/samsung/a21s/docs/a21s-mainline-boot.md) |
+| `src/linux` (`exynos850-a217f.dts`) | Mainline 7.3.0 kernel + Exynos 850 DTS (`decon`, `dsi`, `gpu`, `usbdrd`, `s2mpu12-pmic`, `wifibt_if`) | works | [PLAN.md](PLAN.md#L35), [a21s-wifi-bluetooth.md](../devices/samsung/a21s/docs/a21s-wifi-bluetooth.md) |
+| `socs/exynos850/drivers/scsc/misc/` & `socs/exynos850/drivers/scsc/Kbuild` | SCSC Maxwell (`scsc_mx.ko`) + Exynos 850 platform MIF (`scsc_platform_mif.ko`) | works | [socs/exynos850/drivers/scsc/Kbuild](../socs/exynos850/drivers/scsc/Kbuild), [mxman.c](../socs/exynos850/drivers/scsc/misc/mxman.c) |
+| `socs/exynos850/drivers/scsc/wlan/` | SCSC Wi-Fi driver (`scsc_wlan.ko`) exposing `wlan0` / `p2p0` | works | [socs/exynos850/drivers/scsc/Kbuild](../socs/exynos850/drivers/scsc/Kbuild), [a21s-wifi-bluetooth.md](../devices/samsung/a21s/docs/a21s-wifi-bluetooth.md) |
+| `socs/exynos850/drivers/scsc/bt/` | SCSC BlueZ H4 Bluetooth driver (`scsc_bt.ko`) exposing `hci0` + `rfkill` | works | [scsc_bluez.c](../socs/exynos850/drivers/scsc/bt/scsc_bluez.c), [scsc_shm.c](../socs/exynos850/drivers/scsc/bt/scsc_shm.c), [scsc_bt_module.c](../socs/exynos850/drivers/scsc/bt/scsc_bt_module.c) |
+| `scripts/probe_device.sh` | ADB device inspection script (produced `device-a21s-profile.txt`) | works (setup) | [scripts/probe_device.sh](../scripts/probe_device.sh), [device-a21s-profile.txt](../devices/samsung/a21s/docs/device-a21s-profile.txt) |
 | `scripts/prep_android_host.sh`, `setup_panvk_test.sh`, `termux_panvk_run.sh` | Legacy Android/Termux track scripts | obsolete (`R1`) | [PLAN.md](PLAN.md#L28) |
 
 ## Data flow
@@ -43,16 +43,16 @@ Samsung S-Boot (BL1/BL2, locked by e-fuse)
 2. `scsc_platform_mif` maps `wifibt_if` shared memory at `0xb0000000` (`0xc00000`), and `scsc_mx` boots WLBT firmware (`mx140`).
 3. `scsc_wlan` registers `wlan0` (`cfg80211`); `NetworkManager` connects `wlan0` (`wifi.scan-rand-mac-address=no`) and exposes `org.freedesktop.NetworkManager` over D-Bus to Steam.
 4. `usb0` (`172.16.42.1/24`) stays `unmanaged` in NetworkManager and is served by `systemd-networkd` for USB-C SSH.
-5. `scsc_bt` exchanges H4 packets over shared memory ([scsc_shm.c](../drivers/scsc/bt/scsc_shm.c)) and delivers frames to BlueZ via `h4_recv_skb()` ([scsc_bluez.c](../drivers/scsc/bt/scsc_bluez.c)).
+5. `scsc_bt` exchanges H4 packets over shared memory ([scsc_shm.c](../socs/exynos850/drivers/scsc/bt/scsc_shm.c)) and delivers frames to BlueZ via `h4_recv_skb()` ([scsc_bluez.c](../socs/exynos850/drivers/scsc/bt/scsc_bluez.c)).
 
 ## Framework mechanisms in use
 
 | Mechanism | How this project uses it | Source |
 |---|---|---|
 | `samsungexynos850/uniLoader` | Intermediate bootloader (`a21s_defconfig`) loading `Image` + `dtb` | [PLAN.md](PLAN.md#L34) |
-| Linux `cfg80211` + `NetworkManager` D-Bus | Steam `-gamepadui` queries `org.freedesktop.NetworkManager` for Wi-Fi | [a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md) |
-| BlueZ `hci_h4` (`h4_recv_skb`) | Mainline 7.3 H4 RX path replacing vendor `hci_recv_frame` wrapper | [drivers/scsc/bt/scsc_bluez.c](../drivers/scsc/bt/scsc_bluez.c) |
-| `systemd-networkd` | Dedicated management of `usb0` (`172.16.42.1/24`) | [a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md) |
+| Linux `cfg80211` + `NetworkManager` D-Bus | Steam `-gamepadui` queries `org.freedesktop.NetworkManager` for Wi-Fi | [a21s-wifi-bluetooth.md](../devices/samsung/a21s/docs/a21s-wifi-bluetooth.md) |
+| BlueZ `hci_h4` (`h4_recv_skb`) | Mainline 7.3 H4 RX path replacing vendor `hci_recv_frame` wrapper | [socs/exynos850/drivers/scsc/bt/scsc_bluez.c](../socs/exynos850/drivers/scsc/bt/scsc_bluez.c) |
+| `systemd-networkd` | Dedicated management of `usb0` (`172.16.42.1/24`) | [a21s-wifi-bluetooth.md](../devices/samsung/a21s/docs/a21s-wifi-bluetooth.md) |
 
 ## Shell seams (`shell/`, M7 v2 — plan in [DESKTOP-SHELL.md](DESKTOP-SHELL.md))
 
@@ -111,7 +111,7 @@ Invariants:
 
 ### 4. WLBT `clk_ignore_unused` + `0xb0000000` Reserved Memory (2026-11-14)
 - **Decision:** Add `clk_ignore_unused` to `chosen/bootargs` and move `wifibt_if` to `0xb0000000` (`0xc00000`).
-- **Why:** Prevents `clk_disable_unused()` from gating a WLBT/APM clock that triggers SoC reset on `SM_MSG_START_REQ` ([a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md)).
+- **Why:** Prevents `clk_disable_unused()` from gating a WLBT/APM clock that triggers SoC reset on `SM_MSG_START_REQ` ([a21s-wifi-bluetooth.md](../devices/samsung/a21s/docs/a21s-wifi-bluetooth.md)).
 
 ### 5. NetworkManager for `wlan0` with `wifi.scan-rand-mac-address=no` (2026-11-14)
 - **Decision:** Use `NetworkManager` on `wlan0` instead of `wpa_supplicant@wlan0` + `systemd-networkd`.
@@ -162,5 +162,5 @@ Invariants:
 
 - **3 GB RAM ceiling (`2767544 kB`)**: Requires ZRAM + swapfile ([PLAN.md](PLAN.md#L46)).
 - **`/lib -> usr/lib` symlink on Arch ARM**: Never copy directories to `/lib/` on target; always use `/usr/lib/modules/...`.
-- **`src/linux/arch/arm64/boot/dts/exynos/exynos850-a217f.dts`** lives inside gitignored `src/`; keep DTS changes documented in `docs/a21s-wifi-bluetooth.md`.
-- **Empty `/sys/class/power_supply/` and `/sys/class/thermal/`**: Battery (`s2mu106`) and Exynos TMU thermal drivers are not ported yet ([a21s-power-battery-modem-plan.md](a21s-power-battery-modem-plan.md)).
+- **`src/linux/arch/arm64/boot/dts/exynos/exynos850-a217f.dts`** lives inside gitignored `src/`; keep DTS changes documented in `devices/samsung/a21s/docs/a21s-wifi-bluetooth.md`.
+- **Empty `/sys/class/power_supply/` and `/sys/class/thermal/`**: Battery (`s2mu106`) and Exynos TMU thermal drivers are not ported yet ([a21s-power-battery-modem-plan.md](../devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md)).

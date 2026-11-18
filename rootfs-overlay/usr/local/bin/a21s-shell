@@ -6,7 +6,7 @@ export QT_QPA_PLATFORMTHEME="" QT_QUICK_CONTROLS_STYLE=Basic
 # SHM upload, avoiding its separate, unpatched GBM dmabuf allocation path.
 export QS_DISABLE_DMABUF=1
 # A complete GPU shell restart needs fresh contiguous swapchains. Exited GPU
-# clients currently retain CMA (docs/a21s-qt-gpu-scanout.md); do not crash-loop.
+# clients currently retain CMA (devices/samsung/a21s/docs/a21s-qt-gpu-scanout.md); do not crash-loop.
 free_kb=0
 if [[ -r /proc/meminfo ]]; then
     free_kb=$(awk '/^CmaFree:/{print $2}' /proc/meminfo)

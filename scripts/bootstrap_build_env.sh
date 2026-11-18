@@ -29,7 +29,7 @@ else
   echo "[*] src/linux already exists ($(git -C "$ROOT_DIR/src/linux" rev-parse --short HEAD))."
 fi
 
-for patch in "$ROOT_DIR"/patches/linux/*.patch; do
+for patch in "$ROOT_DIR"/devices/samsung/a21s/kernel/patches/*.patch; do
   [[ -e "$patch" ]] || continue
   if git -C "$ROOT_DIR/src/linux" apply --reverse --check "$patch" >/dev/null 2>&1; then
     echo "[*] Patch already applied: $(basename "$patch")"
@@ -49,8 +49,8 @@ else
 fi
 
 if [[ ! -f "$ROOT_DIR/build/linux/.config" ]]; then
-  echo "[*] Installing configs/a21s_linux_defconfig -> build/linux/.config"
-  cp "$ROOT_DIR/configs/a21s_linux_defconfig" "$ROOT_DIR/build/linux/.config"
+  echo "[*] Installing devices/samsung/a21s/kernel/a21s_linux_defconfig -> build/linux/.config"
+  cp "$ROOT_DIR/devices/samsung/a21s/kernel/a21s_linux_defconfig" "$ROOT_DIR/build/linux/.config"
   make -C "$ROOT_DIR/src/linux" O=../../build/linux "${MAKE_TOOLCHAIN[@]}" olddefconfig
 else
   echo "[*] build/linux/.config already exists (leaving untouched)."

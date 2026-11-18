@@ -1,0 +1,32 @@
+vendor   = "xiaomi"
+codename = "muyu"
+models   = ["Xiaomi Pad 7 Pro"]
+maintainers = ["silkyland"]
+
+[soc]
+name = "sm8635"                 # no socs/sm8635/ directory yet
+
+[display]
+width_px  = 0
+height_px = 0
+form_factor = "tablet"          # sizes unknown until measured on the device
+
+[boot]
+method   = "unknown"
+recovery = "devices/xiaomi/muyu/docs/muyu-stock-backup-and-plan.md"
+
+[kernel]
+version = "unknown"
+defconfig = "unknown"
+dts = "unknown"
+
+[status]                        # planned only: nothing is booted on this device yet
+display = "planned"
+touch = "planned"
+gpu = "planned"
+usb = "planned"
+wifi = "planned"
+bluetooth = "planned"
+audio = "planned"
+battery = "planned"
+modem = "unknown"

@@ -42,7 +42,7 @@ This will dump device-unique calibration/EFS partitions (`persist`, `modemst1`, 
 
 ## 3. Phase 2 Porting Plan (`M4 (R1)`)
 
-References: [ROADMAP.md](../ROADMAP.md#L34-L39), [docs/PLAN.md](PLAN.md#L119-L125).
+References: [ROADMAP.md](../../../../ROADMAP.md#L34-L39), [docs/PLAN.md](../../../../docs/PLAN.md#L119-L125).
 
 1. **Step 0 — Stock ROM & Device Metadata Backup (Done)**
    - Captured `getprop` / `by-name` metadata and verified official `OS3.0.303.0.WOYMIXM` Fastboot `.tgz` locally.

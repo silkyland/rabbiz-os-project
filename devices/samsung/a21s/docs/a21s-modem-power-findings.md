@@ -1,6 +1,6 @@
 # Findings — Modem (`cpif`), Power/Battery, Thermal, Suspend & Peripherals (`SM-A217F` / Exynos 850)
 
-เอกสารรวบรวม findings จากการสำรวจ vendor kernel (`src/exynos850-vendor-kernel`, branch `lineage-24.0`, Linux 4.19.325) เทียบกับ Mainline 7.3 (`src/linux`) — **ยังไม่มีการแก้ kernel**; เป็น groundwork สำหรับ M5/M6 ใน [ROADMAP.md](../ROADMAP.md) และขยาย [a21s-power-battery-modem-plan.md](a21s-power-battery-modem-plan.md)
+เอกสารรวบรวม findings จากการสำรวจ vendor kernel (`src/exynos850-vendor-kernel`, branch `lineage-24.0`, Linux 4.19.325) เทียบกับ Mainline 7.3 (`src/linux`) — **ยังไม่มีการแก้ kernel**; เป็น groundwork สำหรับ M5/M6 ใน [ROADMAP.md](../../../../ROADMAP.md) และขยาย [a21s-power-battery-modem-plan.md](a21s-power-battery-modem-plan.md)
 
 Vendor repo: `github.com/samsungexynos850/android_kernel_samsung_exynos850` (`b8c71b7`) — checkout แบบ sparse, เพิ่ม path ได้ด้วย `git -C src/exynos850-vendor-kernel sparse-checkout` หรืออ่านไฟล์เดี่ยวผ่าน `git show origin/lineage-24.0:<path>` (blob:none จะดึงเฉพาะ blob นั้น)
 
@@ -44,7 +44,7 @@ Vendor repo: `github.com/samsungexynos850/android_kernel_samsung_exynos850` (`b8
 ### 1.3 Kernel **ไม่** โหลด `modem.bin` — โหลดโดย bootloader หรือ userspace `cbd` (ดูข้อ 5.4)
 
 - `pmu-cp.c`/`modem_ctrl_s5000ap.c` ไม่มี `request_firmware` ใดๆ — `shm_ipc.c` อ่าน `struct cp_toc` ที่ base ของ CP region แล้วแกะ `cp_mem_map` จากภายใน binary ที่อยู่ใน DRAM อยู่แล้ว (`cp_shmem_check_mem_map_on_cp`, `shm_ipc.c:163`)
-- PIT (`docs/a21s-pit.txt`): `RADIO` → `modem.bin`, `CP_DEBUG` → `modem_debug.bin`; NV data อยู่ใน `EFS` partition
+- PIT (`devices/samsung/a21s/docs/a21s-pit.txt`): `RADIO` → `modem.bin`, `CP_DEBUG` → `modem_debug.bin`; NV data อยู่ใน `EFS` partition
 - **ทางเลือกการโหลด:** (ก) sboot-style preload → `0xd0000000` (uniLoader ต้องทำเอง), หรือ (ข) userspace อัปโหลดผ่าน `/dev/umts_boot0` แบบ daemon `cbd` ของ Android — มี open-source reference แล้ว (ข้อ 5.4) ทำให้อาจไม่ต้องแตะ uniLoader เลย
 
 ### 1.4 CP power control เป็น SMC ล้วน — port ง่าย
@@ -66,7 +66,7 @@ Objects: `modem_main modem_variation modem_io_device net_io_device bootdump_io_d
 
 ### 1.6 Voice call audio path — `abox_vss` พอร์ตไว้แล้ว
 
-- `drivers/abox/abox_vss.c` อยู่ใน tree เราแล้ว (มาพร้อม abox port): ใช้ `ABOX_CPU_GEAR_CALL_KERNEL` + notifier `abox_call_notify_event(ABOX_CALL_EVENT_{ON,OFF})` — เส้นทางเสียงโทรศัพท์ผ่าน ABOX↔CP (VSS) อยู่ในไดรเวอร์เดียวกับที่กำลัง bring-up เสียง
+- `socs/exynos850/drivers/abox/abox_vss.c` อยู่ใน tree เราแล้ว (มาพร้อม abox port): ใช้ `ABOX_CPU_GEAR_CALL_KERNEL` + notifier `abox_call_notify_event(ABOX_CALL_EVENT_{ON,OFF})` — เส้นทางเสียงโทรศัพท์ผ่าน ABOX↔CP (VSS) อยู่ในไดรเวอร์เดียวกับที่กำลัง bring-up เสียง
 - เชื่อมกับ Phase 5 ของ plan doc: control plane = `umts_ipc0` (SIPC), voice path = abox VSS → speaker/headset/BT HFP
 
 ---
@@ -142,7 +142,7 @@ Objects: `modem_main modem_variation modem_io_device net_io_device bootdump_io_d
 | **GNSS/GPS** | `drivers/soc/samsung/gnssif/` (gnss shmem IPC, เหมือน cpif) + `gnss_rmem 0xee000000` + `gnss_mailbox` + `pmucal_gnss_exynos3830.h` | `drivers/gnss/` core framework มี upstream | GPS → `/dev/gnss0` เป็นไปได้; โหลด fw เหมือน modem (bootloader preload) |
 | **NFC** | `drivers/nfc/sec_nfc.c`, node `sec-nfc@27` บน `i2c_2` | ไม่มี | ลำดับความสำคัญต่ำสำหรับ gaming |
 | **Fingerprint** | `drivers/fingerprint/et5xx-spi.c` (ET520, SPI0) | ไม่มี (Android HAL protocol) | ข้าม — ไม่มี userspace บน SteamOS |
-| **Sensor hub (SSP)** | `drivers/sensorhub/` (accel icm42605m/lsm6dsl + gyro) + fw `shub_nacho_a21s.bin` | ไม่มี framework ตรง | ใช้สำหรับ auto-rotate/accelerometer ในอนาคต |
+| **Sensor hub (SSP)** | `socs/exynos850/drivers/sensorhub/` (accel icm42605m/lsm6dsl + gyro) + fw `shub_nacho_a21s.bin` | ไม่มี framework ตรง | ใช้สำหรับ auto-rotate/accelerometer ในอนาคต |
 | **USB OTG host** | dwc3 `dr_mode="otg"` ใน vendor dts | dwc3 ใน mainline | ตอนนี้ `usb0` เป็น gadget — role switch ผูกกับ S2MU106 MUIC (ข้อ 2.2.3) |
 | **Camera** | ion heaps `camera_heap`/`secure_camera_heap` | — | out of scope |
 
@@ -232,15 +232,15 @@ Objects: `modem_main modem_variation modem_io_device net_io_device bootdump_io_d
 
 | Artifact | Path | สถานะ |
 |---|---|---|
-| cpif driver skeleton | `drivers/cpif/` (`a21s-cpif.ko`) | POWER_ON/OFF/RESET + LOAD_CP_IMAGE + GET_CP_STATUS ทำงานในเชิงโค้ด; REQ_SECURITY/START_BOOTLOADER/COMPLETE ยัง `-EOPNOTSUPP` (รอ SMC id + mailbox) |
-| PMU power sequences | `drivers/cpif/cpif_power.c` | แปล `pmucal_cp_exynos3830.h` เป็น regmap ops บน `pmu_system_controller` syscon + VGPIO wait `0x11a50000` |
-| shmem/TOC parser | `drivers/cpif/cpif_shmem.c` | parse `cp_shmem/regions` + dump `cp_toc`/`cp_mem_map` หลังโหลด fw |
-| SIPC stubs | `drivers/cpif/cpif_ipc.c` | `/dev/umts_ipc0`,`umts_ipc1`,`umts_rfs0` มี node แต่ I/O คืน `-EIO` |
+| cpif driver skeleton | `socs/exynos850/drivers/cpif/` (`a21s-cpif.ko`) | POWER_ON/OFF/RESET + LOAD_CP_IMAGE + GET_CP_STATUS ทำงานในเชิงโค้ด; REQ_SECURITY/START_BOOTLOADER/COMPLETE ยัง `-EOPNOTSUPP` (รอ SMC id + mailbox) |
+| PMU power sequences | `socs/exynos850/drivers/cpif/cpif_power.c` | แปล `pmucal_cp_exynos3830.h` เป็น regmap ops บน `pmu_system_controller` syscon + VGPIO wait `0x11a50000` |
+| shmem/TOC parser | `socs/exynos850/drivers/cpif/cpif_shmem.c` | parse `cp_shmem/regions` + dump `cp_toc`/`cp_mem_map` หลังโหลด fw |
+| SIPC stubs | `socs/exynos850/drivers/cpif/cpif_ipc.c` | `/dev/umts_ipc0`,`umts_ipc1`,`umts_rfs0` มี node แต่ I/O คืน `-EIO` |
 | userspace loader | `tools/cbd/a21s-cbd.c` | เปิด `/dev/umts_boot0`, stream modem.bin/RADIO partition, รัน ioctl sequence |
-| TMU skeleton | `drivers/tmu/exynos850-tmu.c` | probe + dump regs 0x10070000; get_temp/thermal-zones ยังไม่ทำ |
-| DTS patch | `patches/linux/0005-a21s-power-modem-dts.patch` | `cp_rmem`@0xd0000000, hsi2c_0+s2mu106_fg@0x3b, hsi2c_1+lm36274@0x11, tmu node, `&cpu0`/`&cpu4` cooling-cells, cpif+cp_mailbox+cp_shmem (thermal-zones comment ไว้) |
-| FG compatible | `patches/linux/0006-s2mu106-fuelgauge-compatible.patch` | เพิ่ม `samsung,s2mu106-fuel-gauge` ใน `s2mu005-battery.c` |
-| defconfig | `configs/a21s_linux_defconfig` | `BATTERY_S2MU005=y`, `MFD_TI_LMU=m`, `LEDS_LM36274=m`, `REGULATOR_LM363X=m`, default governor → `schedutil` |
+| TMU skeleton | `socs/exynos850/drivers/tmu/exynos850-tmu.c` | probe + dump regs 0x10070000; get_temp/thermal-zones ยังไม่ทำ |
+| DTS patch | `devices/samsung/a21s/kernel/patches/0005-a21s-power-modem-dts.patch` | `cp_rmem`@0xd0000000, hsi2c_0+s2mu106_fg@0x3b, hsi2c_1+lm36274@0x11, tmu node, `&cpu0`/`&cpu4` cooling-cells, cpif+cp_mailbox+cp_shmem (thermal-zones comment ไว้) |
+| FG compatible | `devices/samsung/a21s/kernel/patches/0006-s2mu106-fuelgauge-compatible.patch` | เพิ่ม `samsung,s2mu106-fuel-gauge` ใน `s2mu005-battery.c` |
+| defconfig | `devices/samsung/a21s/kernel/a21s_linux_defconfig` | `BATTERY_S2MU005=y`, `MFD_TI_LMU=m`, `LEDS_LM36274=m`, `REGULATOR_LM363X=m`, default governor → `schedutil` |
 
 **ก่อน flash ครั้งแรก:** (1) `i2cdetect` เช็ก bus จริงของ s2mu106/lm36274 (patch เดา hsi2c_0/hsi2c_1 — vendor fragment target resolve ไม่ได้จาก source), (2) เช็ก PMU regs 0x3000+ เข้าถึงได้จาก non-secure world ไหม, (3) หา SMC_ID สำหรับ `REQ_SECURITY`, (4) modem.bin partition offset จริงจาก PIT
 
@@ -315,7 +315,7 @@ Sensor list จาก vendor `a21s_eur_open_w00_r00.dts` `fragment@camera` + `ca
   - wakeup source `MAILBOX_CHUB2AP`, `CHUB_WDT`
   - Firmware: `sensorhub/shub_nacho_a21s.bin` ("nacho" = platform codename ของ hub)
 - มี `contexthub` (`samsung,exynos-nanohub`, fw `os.checked.bin`) อีกตัวสำหรับ context/scontext — คนละตัวกับ SSP
-- Vendor kernel: `drivers/soc/samsung/exynos-ssp.c` (misc dev `/dev/ssp` ioctl shim "CMSSP") + `drivers/sensorhub/` (~40 files: `ssp_dev/comm/platform/sysfs/iio/firmware` + per-chip drivers ใน `accelerometer/gyroscope/magnetic/proximity/`)
+- Vendor kernel: `drivers/soc/samsung/exynos-ssp.c` (misc dev `/dev/ssp` ioctl shim "CMSSP") + `socs/exynos850/drivers/sensorhub/` (~40 files: `ssp_dev/comm/platform/sysfs/iio/firmware` + per-chip drivers ใน `accelerometer/gyroscope/magnetic/proximity/`)
 - DT props `ssp-acc-position`, `ssp-mag-position`, `ssp-prox-thresh*` ฯลฯ ใน a21s dts → `ssp_dev.c` อ่านผ่าน `of_property_read_*` (platform device compatible `"ssp"` — node อยู่ใน base dts ที่ไม่ได้อยู่ใน sparse checkout)
 
 ### 11.3 Mainline status — transport มีแล้ว, sensor drivers ไม่มี

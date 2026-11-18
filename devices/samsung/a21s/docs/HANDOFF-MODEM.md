@@ -2,7 +2,7 @@
 
 Date: 2026-11-16. Goal set by the owner: boot the modem, then SIPC link layer, then read SIM / network state.
 Current state: **CP boots to ONLINE and holds an established IPC session.** No SIM installed — SIM/network validation is still impossible.
-Background and vendor findings: `docs/a21s-modem-power-findings.md` §1, `drivers/cpif/README.md`, `docs/a21s-power-battery-modem-plan.md` Phase 4.
+Background and vendor findings: `devices/samsung/a21s/docs/a21s-modem-power-findings.md` §1, `socs/exynos850/drivers/cpif/README.md`, `devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md` Phase 4.
 
 > ## RESOLUTION (update, same day)
 >
@@ -29,7 +29,7 @@ Background and vendor findings: `docs/a21s-modem-power-findings.md` §1, `driver
 
 ## 1. What was done this session (all uncommitted in the working tree)
 
-Files in `drivers/cpif/`:
+Files in `socs/exynos850/drivers/cpif/`:
 
 | File | Change |
 |---|---|
@@ -39,7 +39,7 @@ Files in `drivers/cpif/`:
 | `cpif_uapi.h` / `cpif_core.c` | `enum cpif_modem_state` now equals vendor `enum modem_state` (OFFLINE, CRASH_RESET, CRASH_EXIT, BOOTING, ONLINE, NV_REBUILDING, LOADER_DONE, SIM_ATTACH, SIM_DETACH, CRASH_WATCHDOG). The old order was wrong for any vendor userspace. |
 | `cpif.h`, `Kbuild` | mailbox fields, `init_cmpl`, `cpif_mbox_*` prototypes, `cpif_mbox.o`. |
 
-Also touched in the working tree but unrelated to the modem: `configs/a21s_linux_defconfig`, `patches/linux/0005-...` (battery on `&i2c_0`), `shell/A21s/Desktop/HomeScreen.qml` (unlock fly-in), `rootfs-overlay/usr/local/bin/volume-keys.py`, `scripts/audio-up.sh`, `docs/repro/`, `scripts/diagnose_audio_charging.sh`. Do not stage them with the modem work.
+Also touched in the working tree but unrelated to the modem: `devices/samsung/a21s/kernel/a21s_linux_defconfig`, `devices/samsung/a21s/kernel/patches/0005-...` (battery on `&i2c_0`), `shell/A21s/Desktop/HomeScreen.qml` (unlock fly-in), `rootfs-overlay/usr/local/bin/volume-keys.py`, `scripts/audio-up.sh`, `devices/samsung/a21s/docs/repro/`, `scripts/diagnose_audio_charging.sh`. Do not stage them with the modem work.
 
 Deployed on the phone: new `a21s-cpif.ko` at `/usr/lib/modules/7.3.0-g14a425b3a7dc-dirty/extra/a21s-cpif.ko` (old one at `/root/a21s-cpif.ko.bak`). A test copy of the loader is `/tmp/a21s-cbd-new`, built on the device (`gcc` there; no aarch64 cross compiler on the host) and gone after reboot. `/usr/local/bin/a21s-cbd` is still the old build.
 
@@ -49,7 +49,7 @@ Deployed on the phone: new `a21s-cpif.ko` at `/usr/lib/modules/7.3.0-g14a425b3a7
 - Verified (earlier boot): reading PMU `0x3014` with plain MMIO gives a synchronous external abort (`regmap_mmio_read32le`, from `cpif_power_on`). The oops killed only the calling task. So `CP_CTRL_S` is secure-only; other PMU regs (`CP_STATUS 0x3004`) read fine.
 - Verified: after switching `CP_CTRL_S` to SMC, running `cbd --boot` made the whole phone hang. dmesg was not preserved. **Which step hung is unknown.**
 - Hypotheses for the hang, none tested (candidates, ranked by my guess):
-  1. A step in `cp_init_seq` (`drivers/cpif/cpif_power.c:90`) blocks the bus, for example the wait on `VGPIO_TX_MONITOR` at `0x11a50000+0x1700` (`vgpio` mapping), or `CP_IN`/`CP_STATUS` waits after `CP_CONFIGURATION`.
+  1. A step in `cp_init_seq` (`socs/exynos850/drivers/cpif/cpif_power.c:90`) blocks the bus, for example the wait on `VGPIO_TX_MONITOR` at `0x11a50000+0x1700` (`vgpio` mapping), or `CP_IN`/`CP_STATUS` waits after `CP_CONFIGURATION`.
   2. The SMC `WRITE_CTRL` value or register-id convention is wrong (`cpif_ctrl_s_update`, `cpif_power.c:57`) and the secure monitor stalls.
   3. The SMC wrapper: `arm_smccc_smc` with these ids might need other registers/clobber handling than vendor `exynos_smc`.
   4. CP started without an authenticated image, since `REQ_SECURITY` runs after `POWER_ON` in the cbd flow.
@@ -60,8 +60,8 @@ Deployed on the phone: new `a21s-cpif.ko` at `/usr/lib/modules/7.3.0-g14a425b3a7
 1. After reboot, collect pstore (above). If empty, make failures visible before they happen: add `dev_info` before each `cpif_seq_run` step and write the step index to something that survives a hang (ramoops via `pstore`, or a spare ISSR register), then re-run. Add a `step` module parameter or a sysfs file so `POWER_ON` can be executed one `cp_init_seq` row at a time, with a long pause so you can power-cycle between tries.
 2. Resolve the hang. Read-only checks first: current `CP_STATUS`, `CP_CONFIGURATION`, `TOP_OUT`, `MIF_CTRL`, `VGPIO_TX_MONITOR`, using plain MMIO except `CP_CTRL_S`. Compare with `src/exynos850-vendor-kernel/drivers/soc/samsung/cal-if/exynos3830/pmucal_cp_exynos3830.h` (sparse checkout already extended to `drivers/soc/samsung`, `include/soc/samsung`, `arch/arm64/configs`).
 3. Then `REQ_SECURITY` -> `START_CP_BOOTLOADER` -> check `cp_status` in ISSR3 -> `COMPLETE_NORMAL_BOOTUP`. The CP's `INIT_START`/`PHONE_START` handling is only logged; the vendor handler is `cmd_init_start_handler` / `cmd_phone_start_handler` in `src/exynos850-vendor-kernel/drivers/soc/samsung/cpif/link_device.c` (~lines 529-690). `PHONE_START` should answer with `INIT_END` after the link is initialised (not implemented).
-4. SIPC link layer (not started): legacy fmt/raw queues from the vendor DT (`a21s_eur_open_w00_r00.dts` lines ~984-999, `legacy_fmt_*`, `legacy_raw_*`, `link_attrs 0x7c9`, magic values `MEM_IPC_MAGIC 0xAA`), `init_legacy_link` in `link_device_memory_legacy.c:131`, SIPC5 framing, `umts_ipc0` read/write in `drivers/cpif/cpif_ipc.c` (currently returns `-EIO`). Data channels (`rmnetN`) use SBD and are a separate, larger job.
-5. Userspace to read SIM/network over the fmt channel: unresolved. `libsamsung-ipc` is claimed in the docs to fit SIPC 5.0, but I did not verify that it supports Shannon s318ap (upstream only targets older modems). Treat it as an assumption and check first, or look at `rebehzat/samsung-s310-cbd-replacement` (cited in `docs/a21s-modem-power-findings.md` §5.4).
+4. SIPC link layer (not started): legacy fmt/raw queues from the vendor DT (`a21s_eur_open_w00_r00.dts` lines ~984-999, `legacy_fmt_*`, `legacy_raw_*`, `link_attrs 0x7c9`, magic values `MEM_IPC_MAGIC 0xAA`), `init_legacy_link` in `link_device_memory_legacy.c:131`, SIPC5 framing, `umts_ipc0` read/write in `socs/exynos850/drivers/cpif/cpif_ipc.c` (currently returns `-EIO`). Data channels (`rmnetN`) use SBD and are a separate, larger job.
+5. Userspace to read SIM/network over the fmt channel: unresolved. `libsamsung-ipc` is claimed in the docs to fit SIPC 5.0, but I did not verify that it supports Shannon s318ap (upstream only targets older modems). Treat it as an assumption and check first, or look at `rebehzat/samsung-s310-cbd-replacement` (cited in `devices/samsung/a21s/docs/a21s-modem-power-findings.md` §5.4).
 
 ## 4. Rules and gotchas for whoever continues
 
@@ -70,8 +70,8 @@ Deployed on the phone: new `a21s-cpif.ko` at `/usr/lib/modules/7.3.0-g14a425b3a7
 - Do not edit `rootfs-overlay` into the device wholesale; other tasks have uncommitted files there.
 - Keep `clk_ignore_unused` and `wifibt_if` at `0xb0000000` (`AGENTS.md`). `cp_rmem` (`0xd0000000`) does not overlap it.
 - Build: `make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/drivers/cpif modules`. Loader: build `tools/cbd/a21s-cbd.c` on the device with `gcc -I.` (needs `cpif_uapi.h` next to it). Do not leave a host x86 `a21s-cbd` binary in `tools/cbd/`.
-- Current kernel on the device is build `#11` with `CONFIG_EXYNOS_IOMMU=y` and `CONFIG_BATTERY_S2MU005=y`; flashing procedure is in `docs/HANDOFF.md` §6 (note: `src/uniLoader/AGENTS.md` was deleted by owner decision, so reading/building `src/uniLoader` is allowed).
-- `src/` and `build/` are gitignored. Only `drivers/cpif/`, `tools/cbd/`, `patches/`, `docs/` are tracked.
+- Current kernel on the device is build `#11` with `CONFIG_EXYNOS_IOMMU=y` and `CONFIG_BATTERY_S2MU005=y`; flashing procedure is in `devices/samsung/a21s/docs/HANDOFF.md` §6 (note: `src/uniLoader/AGENTS.md` was deleted by owner decision, so reading/building `src/uniLoader` is allowed).
+- `src/` and `build/` are gitignored. Only `socs/exynos850/drivers/cpif/`, `tools/cbd/`, `patches/`, `docs/` are tracked.
 
 ## 5. Open questions for the owner
 

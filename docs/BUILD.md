@@ -1,6 +1,6 @@
 # RabbizOS Build & Patch Guide (Galaxy A21s `SM-A217F`)
 
-Because `src/` and `build/` are gitignored, a fresh clone only contains tracked driver sources (`drivers/scsc/`), kernel patches (`patches/linux/`), and the kernel defconfig (`configs/a21s_linux_defconfig`).
+Because `src/` and `build/` are gitignored, a fresh clone only contains tracked driver sources (`socs/exynos850/drivers/scsc/`), kernel patches (`devices/samsung/a21s/kernel/patches/`), and the kernel defconfig (`devices/samsung/a21s/kernel/a21s_linux_defconfig`).
 
 ---
 
@@ -23,12 +23,12 @@ chmod +x scripts/bootstrap_build_env.sh
 
 What this sets up automatically:
 1. Clones `https://github.com/samsungexynos850/linux.git` (`staging` @ `14a425b3a`) into `src/linux`.
-2. Applies **`patches/linux/0001-a21s-wlbt-wifi-bt-dts.patch`** to `arch/arm64/boot/dts/exynos/exynos850-a217f.dts`:
+2. Applies **`devices/samsung/a21s/kernel/patches/0001-a21s-wlbt-wifi-bt-dts.patch`** to `arch/arm64/boot/dts/exynos/exynos850-a217f.dts`:
    - Adds `clk_ignore_unused` to `chosen/bootargs` (prevents `clk_disable_unused()` SoC reset on WLBT `SM_MSG_START_REQ`).
    - Reserves `wifibt_if` at `0xb0000000` (`0xc00000`).
    - Adds `&soc` syscon nodes (`i3c_apm_pmic`, `dbus_baaw`, `pbus_baaw`, `wlbt_remap`, `boot_cfg`) and `scsc_wifibt@119c0000`.
 3. Clones `https://github.com/samsungexynos850/uniLoader.git` (`06a1bba`) into `src/uniLoader`.
-4. Copies `configs/a21s_linux_defconfig` to `build/linux/.config`, runs `olddefconfig`, and runs `modules_prepare`.
+4. Copies `devices/samsung/a21s/kernel/a21s_linux_defconfig` to `build/linux/.config`, runs `olddefconfig`, and runs `modules_prepare`.
 
 ---
 
@@ -45,18 +45,18 @@ src/linux/scripts/config --file build/linux/.config \
 make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 olddefconfig
 ```
 
-*(After testing, refresh `configs/a21s_linux_defconfig` with `make -C src/linux O=../../build/linux ARCH=arm64 savedefconfig && cp build/linux/defconfig configs/a21s_linux_defconfig`.)*
+*(After testing, refresh `devices/samsung/a21s/kernel/a21s_linux_defconfig` with `make -C src/linux O=../../build/linux ARCH=arm64 savedefconfig && cp build/linux/defconfig devices/samsung/a21s/kernel/a21s_linux_defconfig`.)*
 
 ---
 
-## 4. Build Kernel (`Image` + `dtbs`) and SCSC Modules (`drivers/scsc/`)
+## 4. Build Kernel (`Image` + `dtbs`) and SCSC Modules (`socs/exynos850/drivers/scsc/`)
 
 ```bash
 # 1. Build kernel Image, DTBs, and in-tree modules (e.g. HID_*.ko)
 make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) Image dtbs modules
 
 # 2. Build out-of-tree SCSC WLBT modules (scsc_platform_mif, scsc_mx, scsc_wlan, scsc_bt)
-make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/drivers/scsc modules
+make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/socs/exynos850/drivers/scsc modules
 ```
 
 ---
@@ -68,7 +68,7 @@ On Arch Linux ARM, `/lib` is a symlink to `usr/lib`. Always install modules unde
 
 ```bash
 # Out-of-tree SCSC modules
-scp drivers/scsc/*.ko root@<wifi-ip>:/usr/lib/modules/7.3.0-g14a425b3a7dc/extra/
+scp socs/exynos850/drivers/scsc/*.ko root@<wifi-ip>:/usr/lib/modules/7.3.0-g14a425b3a7dc/extra/
 ssh root@<wifi-ip> "depmod -a"
 
 # If you also built new in-tree modules (like hid-microsoft.ko):

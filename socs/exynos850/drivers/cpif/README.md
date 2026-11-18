@@ -57,4 +57,4 @@ partition), then runs the security + boot sequence.
 - Boot protocol: `bootdump_io_device.c`, `link_device.c`
   (`link_load_cp_image`, `shmem_security_request`)
 - TOC/shmem: `shm_ipc.c`
-- Findings: `docs/a21s-modem-power-findings.md`
+- Findings: `devices/samsung/a21s/docs/a21s-modem-power-findings.md`

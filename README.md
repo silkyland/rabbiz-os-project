@@ -42,9 +42,9 @@ The platform combines **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + Ste
 | **Wi-Fi (`wlan0`)** | Working | Out-of-tree SCSC WLBT (`scsc_platform_mif`, `scsc_mx`, `scsc_wlan`) + `NetworkManager` |
 | **Bluetooth (`hci0`)** | Working | Ported `scsc_bt.ko` (`h4_recv_skb` BlueZ H4 + `rfkill`) |
 | **SteamOS UI** | Working | `steamos-session` (Weston landscape + `steam -gamepadui` + Box64/FEX-Emu) |
-| **Battery / Charger** | Planned | `s2mu106` Fuel Gauge & Charger ([Plan](docs/a21s-power-battery-modem-plan.md)) |
-| **Thermal / Suspend** | Planned | Exynos TMU + Sleep/Wake ([Plan](docs/a21s-power-battery-modem-plan.md)) |
-| **Cellular Modem (`cpif`)** | Planned | Exynos `cpif` + `pmu-cp` + `oFono` / Voice Call ([Plan](docs/a21s-power-battery-modem-plan.md)) |
+| **Battery / Charger** | Planned | `s2mu106` Fuel Gauge & Charger ([Plan](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md)) |
+| **Thermal / Suspend** | Planned | Exynos TMU + Sleep/Wake ([Plan](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md)) |
+| **Cellular Modem (`cpif`)** | Planned | Exynos `cpif` + `pmu-cp` + `oFono` / Voice Call ([Plan](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md)) |
 
 ---
 
@@ -53,7 +53,7 @@ The platform combines **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + Ste
 ```text
 .
 ├── assets/branding/       # RabbizOS icon, rabbit mark & 2D mascot
-├── drivers/scsc/          # Out-of-tree SCSC WLBT drivers (MIF, MX, WLAN, BT) for Mainline 7.3
+├── socs/exynos850/drivers/scsc/          # Out-of-tree SCSC WLBT drivers (MIF, MX, WLAN, BT) for Mainline 7.3
 ├── docs/                  # Bring-up logs, reverse-engineering notes, architecture & plans
 │   ├── ARCHITECTURE.md    # System topology, boot/driver/network data flow, ADRs
 │   ├── PLAN.md            # Original deep-plan (R1 Native Linux pivot)
@@ -80,7 +80,7 @@ The platform combines **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + Ste
 ```bash
 ./scripts/bootstrap_build_env.sh
 make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) Image dtbs modules
-make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/drivers/scsc modules
+make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 M=$PWD/socs/exynos850/drivers/scsc modules
 ```
 
 See **[docs/BUILD.md](docs/BUILD.md)** for full details (patches applied, `CONFIG_UHID` BLE gamepad rebuild, `kexec` testing, and `uniLoader` packing).
@@ -107,9 +107,9 @@ Details: **[docs/a21s-mirror.md](docs/a21s-mirror.md)**.
 - **Build & Patch Guide:** [docs/BUILD.md](docs/BUILD.md)
 - **Architecture & System Map:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - **Roadmap & Next Milestones:** [ROADMAP.md](ROADMAP.md)
-- **Wi-Fi & Bluetooth Bring-up Guide:** [docs/a21s-wifi-bluetooth.md](docs/a21s-wifi-bluetooth.md)
-- **Battery, Power & Modem Plan:** [docs/a21s-power-battery-modem-plan.md](docs/a21s-power-battery-modem-plan.md)
-- **Mainline Boot & GPU Results:** [docs/a21s-mainline-boot.md](docs/a21s-mainline-boot.md), [docs/a21s-native-gpu.md](docs/a21s-native-gpu.md)
+- **Wi-Fi & Bluetooth Bring-up Guide:** [devices/samsung/a21s/docs/a21s-wifi-bluetooth.md](devices/samsung/a21s/docs/a21s-wifi-bluetooth.md)
+- **Battery, Power & Modem Plan:** [devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md)
+- **Mainline Boot & GPU Results:** [devices/samsung/a21s/docs/a21s-mainline-boot.md](devices/samsung/a21s/docs/a21s-mainline-boot.md), [devices/samsung/a21s/docs/a21s-native-gpu.md](devices/samsung/a21s/docs/a21s-native-gpu.md)
 - **Mac Screen Mirror (mouse/keyboard control):** [docs/a21s-mirror.md](docs/a21s-mirror.md)
 
 ## Project identity & upstream credits

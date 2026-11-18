@@ -41,6 +41,21 @@ Scope: `rootfs-overlay/`, systemd units, `scripts/`.
 
 Scope: `docs/`, `findings/`, `devices/*/findings/`. No code changes. Same evidence rules as findings.
 
+## Where each lane lives
+
+| Path | Lane | Notes |
+|---|---|---|
+| `tools/rabbiz-de/`, `tools/a21s-osk/`, `tools/a21s-mirror/`, `shell/`, `apps/`, `assets/` | `de` | `shell/` is legacy QML, being replaced by `rabbiz-de` |
+| `socs/<soc>/drivers/` | `kernel` | shared by every device on that SoC |
+| `devices/<vendor>/<codename>/kernel/` | `kernel` | defconfig, DTS patches for one device |
+| `devices/<vendor>/<codename>/docs/`, `findings/` | `docs` | hardware notes and evidence for one device |
+| `rootfs-overlay/`, `scripts/`, `patches/mesa`, `patches/squeekboard` | `userland` | still mixes generic and A21s-specific files |
+| `docs/` | `docs` | shared, device-independent documents |
+
+`rootfs-overlay/` and `scripts/` have **not** been split per device yet: many files there are
+A21s-only (charger, audio, display-pin units, udev rules) but the deploy scripts and systemd
+units reference them by path. Splitting them is a separate, device-verified change.
+
 ## Interfaces between lanes
 
 | From → To | Contract |

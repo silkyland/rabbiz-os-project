@@ -1,6 +1,6 @@
 # RabbizOS Roadmap
 
-> Source of truth for sequencing. Detail lives in [docs/PLAN.md](docs/PLAN.md) and [docs/a21s-power-battery-modem-plan.md](docs/a21s-power-battery-modem-plan.md); architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Last updated: 2026-11-15.
+> Source of truth for sequencing. Detail lives in [docs/PLAN.md](docs/PLAN.md) and [devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md); architecture in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Last updated: 2026-11-15.
 
 ## Status
 
@@ -20,7 +20,7 @@
 ## Milestone details
 
 ### M0 (R1)–M3 (R1): A21s Native Linux + SteamOS Bring-up — done
-- **Evidence:** Commits `0a4c0b5`, `a9d3c96`, `26c2bfc`; `docs/a21s-pit.txt`, `docs/a21s-mainline-boot.md`, `docs/a21s-native-gpu.md`, `docs/a21s-game-results.md`.
+- **Evidence:** Commits `0a4c0b5`, `a9d3c96`, `26c2bfc`; `devices/samsung/a21s/docs/a21s-pit.txt`, `devices/samsung/a21s/docs/a21s-mainline-boot.md`, `devices/samsung/a21s/docs/a21s-native-gpu.md`, `docs/a21s-game-results.md`.
 - **Notes (2026-11-14):** Steam Client runs in Weston landscape mode via `steamos-session.service`.
 
 ### M3.5: SCSC Wi-Fi, Bluetooth & NetworkManager — done
@@ -28,7 +28,7 @@
 - **Exit criteria:** `wlan0` connects via `NetworkManager`, Steam detects Wi-Fi over D-Bus, SSH over Wi-Fi works, `hci0` registers cleanly.
 - **Tasks:**
   - [x] Fix `SM_MSG_START_REQ` SoC reset (`clk_ignore_unused` + `wifibt_if` at `0xb0000000` in `exynos850-a217f.dts`).
-  - [x] Port `drivers/scsc/bt/` (`scsc_bt.ko`) to Mainline 7.3 (`h4_recv_skb`, `scsc_bt_copy_{to,from}_buf`, `mxman_stop` guard) — commit `cc6eb14`.
+  - [x] Port `socs/exynos850/drivers/scsc/bt/` (`scsc_bt.ko`) to Mainline 7.3 (`h4_recv_skb`, `scsc_bt_copy_{to,from}_buf`, `mxman_stop` guard) — commit `cc6eb14`.
   - [x] Configure `NetworkManager` (`unmanaged` `usb0`, `wifi.scan-rand-mac-address=no`) and verify Steam `client_networkmanager.txt` `Activated/Connected`.
   - [x] Enable kernel HID stack (`CONFIG_UHID`, `CONFIG_HIDRAW`, `CONFIG_INPUT_JOYDEV`, `CONFIG_HID_{MICROSOFT,PLAYSTATION,NINTENDO,STEAM}`, `CONFIG_JOYSTICK_XPAD`), rebuild/flash `boot-avb.img`, and remove `xbox-ble-uinput` stopgap — [docs/a21s-ble-gamepad.md](docs/a21s-ble-gamepad.md).
 - **Notes (2026-11-14):** `p2p0` still appears as `disconnected` in `nmcli`; harmless so far, can be marked `unmanaged` if needed. BlueZ `5.88` + PipeWire/WirePlumber userspace installed; Xbox Wireless Controller bonded and works through the `uinput` bridge stopgap.
@@ -36,9 +36,9 @@
 ### M3.6: Internal Speaker Audio — wip
 - **Objective:** Play music/Steam audio through the built-in speaker via the ABOX Calliope DSP, exposed to PipeWire as the default sink.
 - **Exit criteria:** `aplay -D plughw:1,100` and PipeWire/Steam both produce clean audio on a good boot, repeatably, without wedging the DSP.
-- **Detail:** [docs/a21s-audio-abox-plan.md](docs/a21s-audio-abox-plan.md); current handoff in [docs/HANDOFF.md](docs/HANDOFF.md) §0–§0.1.
+- **Detail:** [devices/samsung/a21s/docs/a21s-audio-abox-plan.md](devices/samsung/a21s/docs/a21s-audio-abox-plan.md); current handoff in [devices/samsung/a21s/docs/HANDOFF.md](devices/samsung/a21s/docs/HANDOFF.md) §0–§0.1.
 - **Tasks:**
-  - [x] Port ABOX to Mainline 7.3 (`drivers/abox/`), DT fragment, `calliope_*` firmware, topology (`RC#1–#11`).
+  - [x] Port ABOX to Mainline 7.3 (`socs/exynos850/drivers/abox/`), DT fragment, `calliope_*` firmware, topology (`RC#1–#11`).
   - [x] Speaker + earpiece playback verified once (music heard) — `abox_ion.c` `dma_get_sgtable()` fix.
   - [x] `s2mpu12` PMIC rails → `sma1303` amp powered and responding.
   - [x] UCM2 for `Exynos3830-Madera`, default sink persisted, `abox-audio.service`.
@@ -49,7 +49,7 @@
 
 ### M4 (R1): Xiaomi Pad 7 Pro (`muyu` / `SM8635`) — todo
 - **Objective:** Unlock HyperOS bootloader on `muyu` (`ac9c8ddc`) and port Native SteamOS ARM64 (`Zaviya`).
-- **Detail:** See [docs/muyu-stock-backup-and-plan.md](docs/muyu-stock-backup-and-plan.md).
+- **Detail:** See [devices/xiaomi/muyu/docs/muyu-stock-backup-and-plan.md](devices/xiaomi/muyu/docs/muyu-stock-backup-and-plan.md).
 - **Tasks:**
   - [x] Stock Fastboot ROM (`OS3.0.303.0.WOYMIXM`) + ADB `device-info` backed up locally (`backups/xiaomi-pad-7-pro/`, gitignored).
   - [ ] `M4-R1-T1`: Submit HyperOS bootloader unlock via Xiaomi Community and unlock `muyu` via `fastboot`.
@@ -57,7 +57,7 @@
 
 ### M5: Power, Battery (`s2mu106`), Thermal & Suspend — todo
 - **Objective:** Reduce idle power, expose battery/charging to Steam (`upower`), enable thermal throttling and sleep/wake.
-- **Detail:** See [docs/a21s-power-battery-modem-plan.md](docs/a21s-power-battery-modem-plan.md).
+- **Detail:** See [devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md).
 - **Tasks:**
   - [ ] Switch `CONFIG_CPU_FREQ_DEFAULT_GOV_PERFORMANCE=y` to `schedutil` and verify `cpuidle`.
   - [ ] Port `s2mu106` MFD, Fuel Gauge, and Charger (`power_supply` class) + install `upower`.
@@ -65,7 +65,7 @@
 
 ### M6: Cellular Modem (`cpif`) & Voice Call — todo
 - **Objective:** Enable Exynos 850 Baseband (`CP`) for SIM, 4G Data, SMS, and Voice Calls.
-- **Detail:** See [docs/a21s-power-battery-modem-plan.md](docs/a21s-power-battery-modem-plan.md).
+- **Detail:** See [devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md](devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md).
 - **Tasks:**
   - [ ] Port `drivers/soc/samsung/cpif/` + `pmu-cp.c` + reserve `cp_shmem` without colliding with `0xb0000000`.
   - [ ] Integrate `libsamsung-ipc` / `oFono` + ABOX/Bluetooth HFP voice audio routing.
@@ -104,4 +104,4 @@
 
 ## Deferred
 
-- **Steam / SteamOS support** — fully uninstalled 2026-11-16 (client, nested Weston, gamescope, `steamos-session`, shell card, wrappers; 8 GB freed). Historic docs (`PLAN`, `a21s-game-results`, ARCHITECTURE ADR 8) describe the old setup. Re-add only after the CMA leak (`docs/FINDINGS-hw-render.md` F2) is fixed.
+- **Steam / SteamOS support** — fully uninstalled 2026-11-16 (client, nested Weston, gamescope, `steamos-session`, shell card, wrappers; 8 GB freed). Historic docs (`PLAN`, `a21s-game-results`, ARCHITECTURE ADR 8) describe the old setup. Re-add only after the CMA leak (`devices/samsung/a21s/docs/FINDINGS-hw-render.md` F2) is fixed.

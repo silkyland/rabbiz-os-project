@@ -22,7 +22,7 @@
 #if defined(__has_include) && __has_include("cpif_uapi.h")
 #include "cpif_uapi.h"
 #else
-#include "../../drivers/cpif/cpif_uapi.h"
+#include "../../socs/exynos850/drivers/cpif/cpif_uapi.h"
 #endif
 
 #define DEFAULT_DEV		"/dev/umts_boot0"
