@@ -27,7 +27,7 @@ its finding or doc). Rules that apply OS-wide:
 ## Common wrong assumptions
 
 - **"Use Termux / proot / Android underneath"** is wrong: `R1` pivoted to bootloader replacement via `uniLoader` (`docs/PLAN.md:51`); this is bare-metal Native Linux on every supported device.
-- **Never restyle a third-party app** — RabbizOS names/artwork are for our own apps only. Third-party entries keep the name and icon their package ships (Chrome = "Google Chrome" + Chrome logo, KDE apps keep theirs); wrappers (`rabbiz-browser`, `rabbiz-files`, `rabbiz-calendar`, `rabbiz-contacts`) are fallbacks in `AppCatalog.js`, not replacements.
+- **Never restyle a third-party app** — RabbizOS names/artwork are for our own apps only. Third-party entries keep the name and icon their package ships (Chrome = "Google Chrome" + Chrome logo, KDE apps keep theirs). The one allowed change (owner decision 2026-11-18, `tools/rabbiz-de/crates/de-apps/src/icons.rs`) is a **backdrop**: an icon that is not already a tile is seated, unmodified and scaled to ~64 %, on the shared sand tile so the home screen reads as one family. Wrappers (`rabbiz-browser`, `rabbiz-files`, `rabbiz-calendar`, `rabbiz-contacts`) are fallbacks in `AppCatalog.js`, not replacements.
 - Device-level wrong assumptions (vendor driver ports, ABOX buffer sizes, Wi-Fi stack choice) live in [devices/samsung/a21s/AGENTS.md](devices/samsung/a21s/AGENTS.md).
 
 ## Commands
