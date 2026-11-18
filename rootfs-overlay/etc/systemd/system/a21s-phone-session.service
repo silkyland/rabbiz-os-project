@@ -50,6 +50,11 @@ ExecStart=/usr/local/bin/a21s-session
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=10s
+# pam_systemd (PAMName=login) moves the session into session-*.scope, so the
+# compositor is NOT in this unit's cgroup and a plain stop orphans it while
+# it still owns DRM/the seat. Reap strays on every stop.
+ExecStopPost=-/usr/bin/pkill -x rabbiz-de
+ExecStopPost=-/usr/bin/pkill -x labwc
 
 [Install]
 WantedBy=multi-user.target

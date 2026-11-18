@@ -27,10 +27,34 @@ impl std::error::Error for SessionError {}
 
 /// Activate a libseat session (uses `LIBSEAT_BACKEND`, e.g. `seatd`).
 ///
+/// On a VT-bound seat, seatd grants DRM master only while the seat is
+/// active — and unlike wlroots (which performs the VT dance itself),
+/// smithay leaves the switch to the caller. If the session comes up
+/// inactive, ask seatd to switch to the foreground VT and give it a
+/// moment to enable the client before the caller opens the DRM device.
+/// Best effort only: a `SET_MASTER` ioctl on the vended fd still fails
+/// EACCES because seatd is the fd's opener — that warning is benign.
+///
 /// The notifier should be inserted into the event loop; for headless
 /// probes it can simply be kept alive.
 pub fn activate() -> Result<(LibSeatSession, LibSeatSessionNotifier), SessionError> {
-    LibSeatSession::new().map_err(|e| SessionError::Session(format!("{e:?}")))
+    let (mut session, notifier) =
+        LibSeatSession::new().map_err(|e| SessionError::Session(format!("{e:?}")))?;
+    if !session.is_active() {
+        if let Some(vt) = foreground_vt() {
+            // Best effort — non-VT-bound seats (nested, logind-less setups)
+            // simply ignore the request.
+            let _ = session.change_vt(vt);
+            std::thread::sleep(std::time::Duration::from_millis(400));
+        }
+    }
+    Ok((session, notifier))
+}
+
+/// Foreground VT number from `/sys/class/tty/tty0/active` (`"tty1"` → 1).
+fn foreground_vt() -> Option<i32> {
+    let s = std::fs::read_to_string("/sys/class/tty/tty0/active").ok()?;
+    s.trim().strip_prefix("tty")?.parse().ok()
 }
 
 /// Open a device node through the active session (e.g. `/dev/dri/card0`,

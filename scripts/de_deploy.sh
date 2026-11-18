@@ -68,7 +68,8 @@ if [ "__SKIP_PROBE__" != "1" ]; then
 fi
 REMOTE
 
-sed -i "s/__SKIP_PROBE__/${DE_DEPLOY_SKIP_PROBE:-0}/g" "$REMOTE_SCRIPT"
+sed -i.bak "s/__SKIP_PROBE__/${DE_DEPLOY_SKIP_PROBE:-0}/g" "$REMOTE_SCRIPT"
+rm -f "$REMOTE_SCRIPT.bak"
 "$REPO_ROOT/scripts/device_session.sh" "$HOST" < "$REMOTE_SCRIPT"
 
 echo "de_deploy: installed; DE remains opt-in (a21s-session default = labwc)"
