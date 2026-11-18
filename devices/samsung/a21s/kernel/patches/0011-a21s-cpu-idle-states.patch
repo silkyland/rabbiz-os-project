@@ -18,6 +18,8 @@ CPU_SUSPEND with a *standard* MPIDR to firmware that expects a shifted
 one — outcome untested on this device (likely NOT_SUPPORTED, possibly
 suspending the wrong CPU). Only flash together with the MPIDR-shift
 quirk or after a successful on-device CPU_SUSPEND probe.
+Owner decision 2026-11-18: we RE the quirk ourselves —
+findings/2026-11-18-cpuidle-mpidr-re-plan.md has the plan.
 
 cpuidle-psci requires arm,psci-suspend-param (states without it are
 skipped), so the WFI-only fallback needs no DT change — architectural

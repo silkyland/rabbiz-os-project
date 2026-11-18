@@ -16,6 +16,7 @@ Findings for samsung/a21s. Format: docs/FINDINGS.md
 | [soc-drivers-a21s-assumptions](2026-11-18-soc-drivers-a21s-assumptions.md) | reproduced | ledger of board data inside shared exynos850 drivers |
 | [suspend-blocked-abox](2026-11-18-suspend-blocked-abox.md) | reproduced | `echo mem` aborts: abox runtime suspend -EAGAIN, usage_count 1 |
 | [abox-calliope-root-causes](2026-11-18-abox-calliope-root-causes.md) | verified | the eleven ABOX/Calliope bring-up root causes + methods |
+| [cpuidle-mpidr-re-plan](2026-11-18-cpuidle-mpidr-re-plan.md) | hypothesis | PSCI MPIDR quirk — RE in-house (owner decision); RE plan inside |
 | [flash-thermal-fg-dsi-live](2026-11-18-flash-thermal-fg-dsi-live.md) | verified | boot-avb flash: thermal zones live, FG renamed, kexec theory corrected |
 | [dsi-underrun-link-recovery](2026-11-18-dsi-underrun-link-recovery.md) | hypothesis | DSI link-restart patch 0010 (built, not boot-tested) |
 
