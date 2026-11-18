@@ -41,7 +41,7 @@ ApplicationWindow {
     readonly property string dateText: ClockLogic.formatDate(win.now)
     readonly property string alarmHint: ClockLogic.nextAlarmLine(win.alarms, win.now)
     readonly property int clockFontSize: Math.round(Theme.fontHeadline * 1.75)
-    readonly property string alarmsPath: (Quickshell.env("HOME") || "/home/gamer")
+    readonly property string alarmsPath: (Quickshell.env("HOME") || "/home/rabbiz")
         + "/.local/share/rabbiz-clock/alarms.json"
 
     // ---- notifications -----------------------------------------------------

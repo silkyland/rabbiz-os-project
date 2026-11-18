@@ -3,7 +3,7 @@ Kernel: 7.3.0-g14a425b3a7dc-dirty
 Compositor binary: rabbiz-de release, built in rabbiz-de-build:arm64 from main c9b0fb3 (sha256 cc012cf2df05681f...)
 Keyboard binary after fix: rabbiz-osk release, built from d4c2cfe (sha256 6095f145cddf3ace...)
 Previous compositor binary kept as /usr/local/bin/rabbiz-de.prev (sha256 da714b5f1a87896d...)
-Clean reboot before each build was tested. Test client: zenity --entry (GTK) started as user gamer on wayland-0.
+Clean reboot before each build was tested. Test client: zenity --entry (GTK) started as user rabbiz on wayland-0.
 Taps injected with /root/touch_swipe.py; key positions computed from the osk-preview render of
 en-us base layer (720x380 surface anchored at the bottom of 720x1600): h=(431,1431) i=(538,1364) return=(670,1564).
 

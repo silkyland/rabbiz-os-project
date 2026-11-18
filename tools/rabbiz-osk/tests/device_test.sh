@@ -1,9 +1,9 @@
 #!/bin/bash
 # Device-side test harness for rabbiz-osk (root). Not part of the image; /tmp only.
 set -u
-GAMER_UID=$(id -u gamer)
-AS_GAMER=(runuser -u gamer -- env "XDG_RUNTIME_DIR=/run/user/$GAMER_UID"
-  WAYLAND_DISPLAY=wayland-0 "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$GAMER_UID/bus")
+RABBIZ_UID=$(id -u rabbiz)
+AS_RABBIZ=(runuser -u rabbiz -- env "XDG_RUNTIME_DIR=/run/user/$RABBIZ_UID"
+  WAYLAND_DISPLAY=wayland-0 "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$RABBIZ_UID/bus")
 
 start() {
   local client_script scratch
@@ -15,10 +15,10 @@ start() {
   # Only one input method may own the seat: wait for squeekboard to really be gone.
   for _ in $(seq 1 50); do pgrep -x squeekboard >/dev/null || break; sleep 0.1; done
   if pgrep -x squeekboard >/dev/null; then echo "squeekboard still running"; fi
-  "${AS_GAMER[@]}" python3 "$client_script" >"$scratch/client.log" 2>&1 &
+  "${AS_RABBIZ[@]}" python3 "$client_script" >"$scratch/client.log" 2>&1 &
   echo $! >"$scratch/client.pid"
   sleep 3
-  "${AS_GAMER[@]}" /usr/local/bin/rabbiz-osk >"$scratch/keyboard.log" 2>&1 &
+  "${AS_RABBIZ[@]}" /usr/local/bin/rabbiz-osk >"$scratch/keyboard.log" 2>&1 &
   echo $! >"$scratch/keyboard.pid"
   sleep 3
   echo "--- keyboard log ---"
@@ -28,11 +28,11 @@ start() {
 }
 
 shoot() {
-  "${AS_GAMER[@]}" grim -o DSI-1 "$1" && echo "shot $1"
+  "${AS_RABBIZ[@]}" grim -o DSI-1 "$1" && echo "shot $1"
 }
 
 tap() {
-  "${AS_GAMER[@]}" python3 /root/touch_swipe.py "$1" "$2" >/dev/null 2>&1
+  "${AS_RABBIZ[@]}" python3 /root/touch_swipe.py "$1" "$2" >/dev/null 2>&1
   sleep 0.4
 }
 
@@ -48,7 +48,7 @@ stop() {
   rmdir "$scratch"
   sleep 1
   # restore the shipped keyboard
-  ("${AS_GAMER[@]}" squeekboard >/dev/null 2>&1 &)
+  ("${AS_RABBIZ[@]}" squeekboard >/dev/null 2>&1 &)
   sleep 2
   pgrep -a squeekboard | head -1
 }

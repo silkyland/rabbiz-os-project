@@ -76,7 +76,7 @@ screenshotted in the shell tone. Interaction spot checks:
 
 Notes for the next pass: the OSK changes the vertical layout, so scripted taps must be
 re-coordinated after the keyboard appears; `~/Music` was created by root during testing and had to
-be `chown gamer:gamer` before ffmpeg could write into it.
+be `chown rabbiz:rabbiz` before ffmpeg could write into it.
 
 ### KDE originals removed (same session)
 `pacman -Rns kalk kclock marknote elisa qmlkonsole`, then `koko` and `maui-pix` (the photo

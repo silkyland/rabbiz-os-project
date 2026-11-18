@@ -133,10 +133,10 @@ ssh root@172.16.42.1 "flock --close --timeout 300 /run/lock/a21s-device-test.loc
 scp root@172.16.42.1:/tmp/osk-png/en-us-base-dark.png build/osk-device/
 ```
 
-Screenshot the live session (the shell runs as `gamer`, uid 1001):
+Screenshot the live session (the shell runs as `rabbiz`, uid 1001):
 
 ```bash
-ssh root@172.16.42.1 "runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 \
+ssh root@172.16.42.1 "runuser -u rabbiz -- env XDG_RUNTIME_DIR=/run/user/1001 \
   WAYLAND_DISPLAY=wayland-0 grim -o DSI-1 /tmp/shot.png"
 ```
 
@@ -147,7 +147,7 @@ device (2.6 GB RAM).
 Switch the live keyboard (root on the device):
 
 ```bash
-rabbiz-osk-switch start     # stops squeekboard, runs /usr/local/bin/rabbiz-osk as gamer
+rabbiz-osk-switch start     # stops squeekboard, runs /usr/local/bin/rabbiz-osk as rabbiz
 rabbiz-osk-switch status
 rabbiz-osk-switch stop      # restores squeekboard (the session default)
 ```
@@ -156,7 +156,7 @@ Only one input method may own the seat; `start` waits for squeekboard to disappe
 launches ours. To exercise it without the phone in hand, run the GTK4 client and inject taps:
 
 ```bash
-runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-0 \
+runuser -u rabbiz -- env XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-0 \
   DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus GSK_RENDERER=cairo \
   python3 /tmp/osk_test_client.py &          # tools/rabbiz-osk/tests/osk_test_client.py
 python3 /root/touch_swipe.py 72 1455        # tap the 'a' key (this file lives in scripts/)

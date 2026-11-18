@@ -92,7 +92,7 @@ QtObject {
         Network.setWifiEnabled(!root.airplaneMode)
         Bluetooth.setPowered(!root.airplaneMode)
         // Radios by name, never `rfkill unblock all`: that also silently unblocks every
-        // other rfkill switch on the device, and gamer cannot open /dev/rfkill anyway.
+        // other rfkill switch on the device, and rabbiz cannot open /dev/rfkill anyway.
         Network.setWwanEnabled(!root.airplaneMode)
         root.mobileData = !root.airplaneMode
         syncTelephonyState()

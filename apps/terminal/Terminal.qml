@@ -29,7 +29,7 @@ ApplicationWindow {
     // Theme owns every token but has no monospace family yet; this is the one font
     // literal in the app. Promote to Theme.monoFamily when the lead adds it.
     readonly property string monoFamily: "monospace"
-    readonly property string home: Quickshell.env("HOME") || "/home/gamer"
+    readonly property string home: Quickshell.env("HOME") || "/home/rabbiz"
     // Every command starts in $HOME (Process.workingDirectory), so the prompt is stable.
     readonly property string prompt: Term.formatPrompt(win.home, win.home)
 

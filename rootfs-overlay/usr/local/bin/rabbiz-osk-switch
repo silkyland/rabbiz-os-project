@@ -7,13 +7,13 @@
 # always returns to the known-good keyboard.
 set -eu
 
-GAMER_UID="$(id -u gamer)"
-RUNTIME="/run/user/${GAMER_UID}"
+RABBIZ_UID="$(id -u rabbiz)"
+RUNTIME="/run/user/${RABBIZ_UID}"
 LOG="/tmp/rabbiz-osk.log"
 
 # `setsid` needs a real program, not a shell function, so the env is spelled out where we detach.
-as_gamer() {
-  runuser -u gamer -- env \
+as_rabbiz() {
+  runuser -u rabbiz -- env \
     XDG_RUNTIME_DIR="$RUNTIME" \
     WAYLAND_DISPLAY=wayland-0 \
     DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME}/bus" \
@@ -39,7 +39,7 @@ case "${1:-status}" in
       echo "rabbiz-osk is already running"
       exit 0
     fi
-    setsid runuser -u gamer -- env \
+    setsid runuser -u rabbiz -- env \
       XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY=wayland-0 \
       DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME}/bus" \
       /usr/local/bin/rabbiz-osk >"$LOG" 2>&1 &
@@ -57,7 +57,7 @@ case "${1:-status}" in
     pkill -x rabbiz-osk 2>/dev/null || true
     wait_gone rabbiz-osk || true
     if ! pgrep -x squeekboard >/dev/null 2>&1; then
-      setsid runuser -u gamer -- env \
+      setsid runuser -u rabbiz -- env \
         XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY=wayland-0 \
         DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME}/bus" \
         squeekboard >/dev/null 2>&1 &

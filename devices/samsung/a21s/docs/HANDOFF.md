@@ -10,7 +10,7 @@ Last updated: 2026-11-16 (Session-switch works and returns to the phone shell, b
 
 ### Working & verified on device
 
-- **Session switching itself works.** `rabbiz-session-switch steamos|phone` → `Conflicts=` in the two units makes PID1 stop+start atomically; `steamos-session.service` `ExecStopPost=/usr/local/bin/a21s-return-phone` hands the seat back whenever the steam session ends (marker `/run/user/1001/a21s-in-steam`, polkit rule `50-rabbiz-session.rules` lets `gamer` start both units). Round trip verified end-to-end; services land in the right state every time.
+- **Session switching itself works.** `rabbiz-session-switch steamos|phone` → `Conflicts=` in the two units makes PID1 stop+start atomically; `steamos-session.service` `ExecStopPost=/usr/local/bin/a21s-return-phone` hands the seat back whenever the steam session ends (marker `/run/user/1001/a21s-in-steam`, polkit rule `50-rabbiz-session.rules` lets `rabbiz` start both units). Round trip verified end-to-end; services land in the right state every time.
 - **Marker path must be `/run/user/1001` literally** — a root caller's `XDG_RUNTIME_DIR=/run/user/0` previously scattered markers/args in the wrong runtime dir.
 - **`steamos-session` waits for weston's X socket** (`/tmp/.X11-unix/X0`, 20 s) before launching steam, and waits for weston to exit + `kill -9` fallback before the script itself exits — a dead-but-alive weston keeps DRM master and black-screens the next compositor.
 - **Two mitigations deployed (`a21s-display-pin.service` + `a21s-drm-keeper.service`, both enabled):**
@@ -41,7 +41,7 @@ Last updated: 2026-11-16 (Session-switch works and returns to the phone shell, b
 
 ### Done & verified on device
 
-- **Unmasked PipeWire at both layers.** Mask existed twice: `/etc/systemd/system/pipewire{,-pulse}.service`, `wireplumber.service → /dev/null` *and* `/home/gamer/.config/systemd/user/{pipewire.service,pipewire.socket,pipewire-pulse.service,pipewire-pulse.socket,wireplumber.service} → /dev/null`. Both removed. User-session enable links (`pipewire.socket`, `pipewire-pulse.socket` in `sockets.target.wants`, `wireplumber` in `pipewire.service.wants`) were already in `/etc/systemd/user/` → sockets auto-start in the `gamer` session.
+- **Unmasked PipeWire at both layers.** Mask existed twice: `/etc/systemd/system/pipewire{,-pulse}.service`, `wireplumber.service → /dev/null` *and* `/home/rabbiz/.config/systemd/user/{pipewire.service,pipewire.socket,pipewire-pulse.service,pipewire-pulse.socket,wireplumber.service} → /dev/null`. Both removed. User-session enable links (`pipewire.socket`, `pipewire-pulse.socket` in `sockets.target.wants`, `wireplumber` in `pipewire.service.wants`) were already in `/etc/systemd/user/` → sockets auto-start in the `rabbiz` session.
 - **UCM2 written for `Exynos3830-Madera` — the card now produces a real ACP sink.** Deployed to repo `rootfs-overlay/usr/share/alsa/ucm2/`:
   - `conf.d/Exynos3830-Made/Exynos3830-Madera.conf` — master (`Syntax 3`, `SectionUseCase."HiFi" → File "/Exynos3830-Madera/HiFi.conf"`).
   - `Exynos3830-Madera/HiFi.conf` — verb: `SectionDevice."Speaker"`, `PlaybackPCM "hw:${CardId},100"`, Enable `cset "name='SPK SPK On' on"`.
@@ -83,7 +83,7 @@ abox-vdma .103    : Playback:Total=1048576 PrdSz=1024(32768) #Prds=32 rate=48000
 
 **VERIFIED — probing is not the cause of the playback failure**
 
-A/B test: masked the whole user audio stack (`/home/gamer/.config/systemd/user/{pipewire,pipewire-pulse}.{service,socket}` and `wireplumber.service` → `/dev/null`), rebooted → **zero** `Total=` probe lines at boot, no `pipewire`/`wireplumber` processes, `calliope_version=nEB0`, 0 boot retries. Playback still failed:
+A/B test: masked the whole user audio stack (`/home/rabbiz/.config/systemd/user/{pipewire,pipewire-pulse}.{service,socket}` and `wireplumber.service` → `/dev/null`), rebooted → **zero** `Total=` probe lines at boot, no `pipewire`/`wireplumber` processes, `calliope_version=nEB0`, 0 boot retries. Playback still failed:
 
 ```
 aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 /root/s16-48k.wav
@@ -126,11 +126,11 @@ When recovering from the 16:18 hang, the phone screen continuously scrolled text
      [drm] Initialized simpledrm 1.0.0 for fa000000.framebuffer on minor 0
      ```
    - With `simpledrm` on `/dev/dri/card0` (`Unknown-1`) and `/proc/sys/kernel/printk = 7 4 1 7`, `fbcon` on `/dev/tty1` printed every `KERN_INFO` message (ABOX mixer puts, `wlbt` periodic Wi-Fi scans, `sshd`/`pam` sessions) directly onto the screen.
-   - In addition, `/home/gamer/.config/weston.ini` only matched `[output] name=DSI-1` (`transform=rotate-270`), not `Unknown-1`, and `simpledrm` logs `bo geometry out of bounds` when Weston attempts direct client scanout of XWayland buffers.
+   - In addition, `/home/rabbiz/.config/weston.ini` only matched `[output] name=DSI-1` (`transform=rotate-270`), not `Unknown-1`, and `simpledrm` logs `bo geometry out of bounds` when Weston attempts direct client scanout of XWayland buffers.
    - Note on `seatd`: restarting `steamos-session.service` alone fails with `[seatd/seat.c:201] Could not add client: seat is VT-bound and has an active client` unless `seatd.service` is restarted alongside it (`systemctl stop steamos-session && systemctl restart seatd && systemctl start steamos-session`).
 3. **Mitigations already applied live on device:**
    - Set `dmesg -n 1` and persisted `/etc/sysctl.d/20-quiet-printk.conf` (`kernel.printk = 1 4 1 3`) + cleared `/dev/tty1` so kernel log messages no longer spam the display.
-   - Added `[output] name=Unknown-1` (`transform=rotate-270`) to `/home/gamer/.config/weston.ini`.
+   - Added `[output] name=Unknown-1` (`transform=rotate-270`) to `/home/rabbiz/.config/weston.ini`.
 
 ### 0.3 Round 4 — All Audio / PipeWire / Boot-Flake Root Causes Resolved & Verified (2026-11-15 17:33)
 
@@ -141,8 +141,8 @@ All 5 underlying bugs behind the open problems in §0 / §0.1 were isolated and 
    - Removed `set -e`, set `ABOX SPUS ASRC3 0` in both places, kept `ABOX SPUS OUT3` and `ABOX UAIF1 SPK` at `SIFS0`, and updated `/var/lib/alsa/asound.state` (`'ABOX SPUS ASRC3' = false`) so `alsa-restore.service` never flips `ASRC3` back to `true`.
 2. **Prevent >768 KiB Calliope heap OOM at ALSA level (`socs/exynos850/drivers/abox/abox.h:41`):**
    - Capped `BUFFER_BYTES_MAX` from `SZ_1M` to `SZ_256K` so ALSA `hw_params` rejects oversized buffers before reaching Calliope's 768 KiB (`786432` B) workspace.
-3. **WirePlumber / SPA-ALSA config (`rootfs-overlay/home/gamer/.config/wireplumber/wireplumber.conf.d/50-a21s-abox.conf`):**
-   - Unmasked all 5 PipeWire/WirePlumber user units in `/home/gamer/.config/systemd/user/`.
+3. **WirePlumber / SPA-ALSA config (`rootfs-overlay/home/rabbiz/.config/wireplumber/wireplumber.conf.d/50-a21s-abox.conf`):**
+   - Unmasked all 5 PipeWire/WirePlumber user units in `/home/rabbiz/.config/systemd/user/`.
    - Added `50-a21s-abox.conf` setting `api.acp.disable-pro-audio = true`, `api.acp.auto-profile = false`, `api.acp.auto-port = false`, `api.alsa.use-ucm = true`, and `api.alsa.soft-mixer = true` on `Exynos3830-Madera` (stopping ACP's `add_pro_profile` probe of `WDMA0` at `1048576` B that previously caused `0xdead0001` at `0x8000b538`, and eliminating the 60–90 s mixer timeout).
    - Disabled `abox_vdma` and `abox_dump` cards (`device.disabled = true`) in WirePlumber.
    - Forced `audio.format = "S16LE"`, `audio.rate = 48000`, `audio.channels = 2`, `api.alsa.period-size = 960`, `api.alsa.period-num = 4`, `api.alsa.disable-mmap = true`, `api.alsa.disable-tsched = true` on `alsa_output.platform-sound.*` / `alsa_input.platform-sound.*`.
@@ -155,7 +155,7 @@ All 5 underlying bugs behind the open problems in §0 / §0.1 were isolated and 
 **Verified on clean reboot (rebuilt `abox-snd.ko` deployed to `/usr/lib/modules/7.3.0-g14a425b3a7dc-dirty/extra/`):**
 - First-try Calliope boot: `dram firmware: va=... dma_addr=0x00000000fe000000 nents=1` → `Calliope is ready to sing (version:nEB0)` (0 retries).
 - `wpctl status` lists `alsa_output.platform-sound.HiFi__Speaker__sink` (`Internal speaker (SMA1303)`) as the active default sink.
-- `paplay /tmp/s16-48k.wav` (tested 2× back-to-back as `gamer`) exited cleanly (`rc=0`), `/sys/kernel/debug/abox/log-00` showed continuous `Virtual PCMDAI ACK` and pointer updates, and `dmesg` had **zero** `Not enough memory` or `data abort` messages. (`abox_rdma close timeout` remains a minor cosmetic shutdown message during WirePlumber probe teardown.)
+- `paplay /tmp/s16-48k.wav` (tested 2× back-to-back as `rabbiz`) exited cleanly (`rc=0`), `/sys/kernel/debug/abox/log-00` showed continuous `Virtual PCMDAI ACK` and pointer updates, and `dmesg` had **zero** `Not enough memory` or `data abort` messages. (`abox_rdma close timeout` remains a minor cosmetic shutdown message during WirePlumber probe teardown.)
 
 ### 0.4 Round 5 — `exynos-drm` (`DSI-1`) Restored Alongside `CONFIG_EXYNOS_IOMMU=y` (2026-11-15 18:13)
 
@@ -182,13 +182,13 @@ Replaced the single-app `steamos-session.service` with `rabbiz-session.service` 
    - **DRM output pinning (`WLR_DRM_DEVICES`):** `rabbiz-labwc-session` resolves `/dev/dri/by-path/platform-exynos-drm-card` (`card0`) so `wlroots`/`labwc` ignores `simpledrm` (`card1`).
    - **DRM teardown pitfall:** Stopping an active DRM master (`weston` or `labwc`) live triggers `drm_fbdev_client_restore()` → `exynos850-decon: DECON timeout` / `flip_done timed out`. **Reboot cleanly** after switching between `steamos-session.service` and `rabbiz-session.service`.
    - **Material icons & Steam desktop lookup:** `shell/Rabbiz/Components/AppIcon.qml` now maps built-in `.desktop` ids/icons to `MaterialIconsRound` ligatures (and passes `true` to `Quickshell.iconPath(..., true)` to suppress missing-icon warnings); `HomeScreen.qml` checks both `a21s-steam` and `steam`; `NavBar.qml` duplicate `switchAdjacentApp()` removed.
-   - **Steam launcher (`rootfs-overlay/usr/local/bin/a21s-steam`):** Defaults to `labwc`'s XWayland (`DISPLAY=:0`) using `/home/gamer/.local/share/Steam/steamrtarm64/steam` with `PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1` and `STEAMOS=1` (pass `--gamescope` to opt into nested `gamescope`).
+   - **Steam launcher (`rootfs-overlay/usr/local/bin/a21s-steam`):** Defaults to `labwc`'s XWayland (`DISPLAY=:0`) using `/home/rabbiz/.local/share/Steam/steamrtarm64/steam` with `PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1` and `STEAMOS=1` (pass `--gamescope` to opt into nested `gamescope`).
    - **Hardware ergonomics & deploy hygiene:** Added `rootfs-overlay/etc/udev/rules.d/90-a21s-backlight.rules` (`video` group write access on `/sys/class/backlight/*/brightness`), `rootfs-overlay/etc/systemd/logind.conf.d/10-a21s-powerkey.conf` (`HandlePowerKey=ignore`, `HandlePowerKeyLongPress=poweroff`), `COPYFILE_DISABLE=1` + `._*` cleanup in `scripts/deploy_shell.sh`, and `prefs.json` seeding in `rabbiz-labwc-session`.
    - **`labwc 0.20` `rc.xml` cleanup:** Removed empty `<theme><name></name>` and `<touch><naturalScroll>no</naturalScroll>` (handled under `<libinput><device>`).
 3. **Verified live on device (`root@172.16.42.1`):**
-   - `rabbiz-session.service` enabled (`steamos-session.service` disabled), `labwc`, `squeekboard`, and `quickshell -p /usr/share/rabbiz-shell/shell.qml` running under `gamer` with zero errors or warnings in `log.log` / `log.qslog`.
+   - `rabbiz-session.service` enabled (`steamos-session.service` disabled), `labwc`, `squeekboard`, and `quickshell -p /usr/share/rabbiz-shell/shell.qml` running under `rabbiz` with zero errors or warnings in `log.log` / `log.qslog`.
    - Tested launching `rabbiz-settings`, `rabbiz-dialer`, `rabbiz-sms`, `rabbiz-calculator`, `rabbiz-clock`, `rabbiz-files`, and `rabbiz-notes` on `wayland-0`: all 7 reached `Configuration Loaded` with zero QML errors.
-   - Backlight `/sys/class/backlight/13070000.dsi.0/brightness` (`root:video`, `664`) adjustable via `brightnessctl set 80%` as `gamer`; `upower.service` active; `wpctl status` shows `Built-in Audio Internal speaker (SMA1303)` active alongside `quickshell`.
+   - Backlight `/sys/class/backlight/13070000.dsi.0/brightness` (`root:video`, `664`) adjustable via `brightnessctl set 80%` as `rabbiz`; `upower.service` active; `wpctl status` shows `Built-in Audio Internal speaker (SMA1303)` active alongside `quickshell`.
 
 ### Still remaining (M5 / M6)
 
@@ -202,8 +202,8 @@ ssh root@172.16.42.1 'tr -d "\0" < /sys/devices/platform/soc@0/14a50000.abox/cal
 # isolate the breaking param BEFORE starting PW streams
 aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 song.wav          # known-good (S16)
 aplay -D hw:1,100 s32.wav                                                   # suspect
-# PW session (gamer)
-runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 \
+# PW session (rabbiz)
+runuser -u rabbiz -- env XDG_RUNTIME_DIR=/run/user/1001 \
   DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus wpctl status
 # force S16 in PW if S32 is the breaker — ~/.config/wireplumber/wireplumber.conf.d/
 #   monitor.alsa.rules match on node.name ~alsa_output.platform-sound* :
@@ -358,7 +358,7 @@ Adding `sma1303` as `.codecs` on the `UAIF1` BE link made its DAI ops fire (good
 - `socs/exynos850/drivers/abox/abox.h` — `boot_retry_work` + `boot_retry_count` fields; **`BUFFER_BYTES_MAX` capped at `SZ_256K`**.
 - `socs/exynos850/drivers/abox/abox_vdma.c` — **`SNDRV_PCM_INFO_SYNC_APPLPTR`** added in `abox_vdma_register()` and `abox_vdma_register_component()`.
 - `scripts/abox_speaker.sh` — removed `set -e`, set `ABOX SPUS ASRC3 0`, removed transient `RESERVED` reset on `ABOX SPUS OUT3` / `ABOX UAIF1 SPK`.
-- `rootfs-overlay/home/gamer/.config/wireplumber/wireplumber.conf.d/50-a21s-abox.conf` — **NEW**: disables ACP Pro Audio probe, disables `abox_vdma`/`abox_dump`, forces soft-mixer + `S16LE` 48 kHz + non-mmap `writei` on `platform-sound`.
+- `rootfs-overlay/home/rabbiz/.config/wireplumber/wireplumber.conf.d/50-a21s-abox.conf` — **NEW**: disables ACP Pro Audio probe, disables `abox_vdma`/`abox_dump`, forces soft-mixer + `S16LE` 48 kHz + non-mmap `writei` on `platform-sound`.
 - `socs/exynos850/drivers/abox/abox_dma.c` — NULL guard in `abox_dma_hw_params_set`.
 - `socs/exynos850/drivers/abox/abox_dump.c` — dummy platform for dump-card links + **skip dump ASoC component/dai_link (RC#9)**.
 - `socs/exynos850/drivers/abox/s2mpu12-regulator.c` — **NEW**: 29-rail PMIC regulator via ACPM regmap (RC#11).

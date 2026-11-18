@@ -1,7 +1,7 @@
 # labwc environment file — KEY=VALUE pairs exported into labwc's own
 # environment (and inherited by everything labwc spawns: quickshell,
 # squeekboard, app windows). No shell expansion happens here.
-# Deployed to ~gamer/.config/labwc/environment by scripts/deploy_shell.sh.
+# Deployed to ~rabbiz/.config/labwc/environment by scripts/deploy_shell.sh.
 
 LANG=C.UTF-8
 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus

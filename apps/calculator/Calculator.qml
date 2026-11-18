@@ -73,7 +73,7 @@ ApplicationWindow {
         saveProc.running = true
     }
 
-    readonly property string historyPath: (Quickshell.env("HOME") || "/home/gamer")
+    readonly property string historyPath: (Quickshell.env("HOME") || "/home/rabbiz")
         + "/.local/share/rabbiz-calculator/history.json"
 
     Process { id: saveProc }

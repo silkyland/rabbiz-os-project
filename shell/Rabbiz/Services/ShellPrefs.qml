@@ -135,7 +135,7 @@ QtObject {
     }
 
     readonly property string prefsPath: {
-        var home = Quickshell.env("HOME") || "/home/gamer"
+        var home = Quickshell.env("HOME") || "/home/rabbiz"
         return home + "/.config/rabbiz-shell/prefs.json"
     }
 

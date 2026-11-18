@@ -19,7 +19,7 @@ keyboard is allowed, a full Rust rewrite is allowed.
 | Fact | Evidence |
 |---|---|
 | OSK today is **squeekboard 1.43.1-6** (GTK, Rust core), ~**95 MB RSS** | [V] `pacman -Q squeekboard`, `ps -o rss -C squeekboard` on device |
-| Layouts are our own YAML overrides `us.yaml` (EN+TH+emoji views in one file) and `th.yaml` | [V] `rootfs-overlay/home/gamer/.local/share/squeekboard/keyboards/` |
+| Layouts are our own YAML overrides `us.yaml` (EN+TH+emoji views in one file) and `th.yaml` | [V] `rootfs-overlay/home/rabbiz/.local/share/squeekboard/keyboards/` |
 | squeekboard has **no long-press, no "cycle input source" action, no suggestion bar**; our own file header says so and works around it with views | [V] header of `us.yaml`; [K] upstream feature list |
 | Paste is a patch of ours: key action `paste` shells out to `wl-paste` | [V] `patches/squeekboard/0001-clipboard-paste.patch` |
 | Language switch = `gsettings` reorder + `current=0`; show/hide = D-Bus `sm.puri.OSK0 SetVisible` | [V] `rootfs-overlay/usr/local/bin/rabbiz-osk-ctl` (used by Quick Settings tiles) |
@@ -176,7 +176,7 @@ from the shell theme (§7). Key labels use Noto Sans Thai for Thai; combining ma
 - **Nav bar / apps:** keyboard is a layer-shell surface with an exclusive zone; the shell NavBar (auto-hide) and labwc `<margin>`
   must be checked together — acceptance in K7: focused text field is never hidden behind the keyboard in Chrome, Dolphin, a QML app, and the terminal.
 - **Quick Settings:** Keyboard and Language tiles keep working through the compat D-Bus names; Language cycles inside `rabbiz-osk` (no `gsettings` juggling).
-- **Rootfs:** new files under `rootfs-overlay/` (`/usr/local/bin/rabbiz-osk`, `/usr/share/rabbiz-osk/{layouts,models,emoji}`, labwc `autostart` switch); package dep `noto-fonts-emoji` added to the install script. `deploy_shell.sh`-style deploy script `scripts/deploy_osk.sh` re-chowns `/`, `/home`, `/home/gamer` and uses `--no-same-owner` (AGENTS rule).
+- **Rootfs:** new files under `rootfs-overlay/` (`/usr/local/bin/rabbiz-osk`, `/usr/share/rabbiz-osk/{layouts,models,emoji}`, labwc `autostart` switch); package dep `noto-fonts-emoji` added to the install script. `deploy_shell.sh`-style deploy script `scripts/deploy_osk.sh` re-chowns `/`, `/home`, `/home/rabbiz` and uses `--no-same-owner` (AGENTS rule).
 - **AGENTS.md:** at K7 replace the squeekboard-specific bullets (IM env vars stay) and document the new "never run two IMs", sensitive-field and device-queue rules.
 
 ## 8. Milestones
@@ -197,7 +197,7 @@ Every milestone ends with: host tests green, `scripts/check.sh` still green, dev
 | K9 | Later / optional | T2 tiny neural LM, glide typing, more languages, clipboard images, floating/split layouts |
 
 ### K0 spikes
-- **S1 Protocol census** — as `gamer` on the device list which of `zwp_input_method_manager_v2`, `zwp_virtual_keyboard_manager_v1`, `zwlr_layer_shell_v1`, `ext_data_control_manager_v1`/`zwlr_data_control_manager_v1`, `zwp_text_input_manager_v3` labwc 0.20.2 offers. (Decides clipboard feasibility.)
+- **S1 Protocol census** — as `rabbiz` on the device list which of `zwp_input_method_manager_v2`, `zwp_virtual_keyboard_manager_v1`, `zwlr_layer_shell_v1`, `ext_data_control_manager_v1`/`zwlr_data_control_manager_v1`, `zwp_text_input_manager_v3` labwc 0.20.2 offers. (Decides clipboard feasibility.)
 - **S2 Render path** — Rust hello-world: layer-shell surface + tiny-skia + cosmic-text on the device (cross-compile from the Mac *or* build on the device where Rust is installed — pick one and document it in `docs/BUILD.md`); measure RSS, touch-down→frame latency, 3-finger correctness. Gate for the §4 architecture.
 - **S3 Emoji glyphs** — render Noto Color Emoji through cosmic-text/swash (check CBDT vs COLRv1 in the Arch package).
 - **S4 Thai shaping** — render the full Kedmanee key labels and a sentence with stacked marks; confirm combining marks display on key caps.
@@ -348,7 +348,7 @@ Owner sent Gboard screenshots (Thai + English) and said "follow this design". Ch
 | Backspace hold | repeats every 50 ms and stops at the start of the text |
 | Theme | `~/.config/rabbiz-osk/theme.toml` (`mode`, `accent`) applied live via `org.rabbiz.OSK1.ReloadTheme` |
 | Shell compat | owns `sm.puri.OSK0` (SetVisible + Visible) so `rabbiz-osk-ctl toggle` and the Quick Settings tiles work; `NextLanguage` on `/org/rabbiz/OSK1` drives the language tile |
-| Default | **`rabbiz-osk` is the session keyboard** (`~gamer/.config/labwc/autostart` prefers it, squeekboard is the fallback); `rabbiz-osk-switch` still flips back |
+| Default | **`rabbiz-osk` is the session keyboard** (`~rabbiz/.config/labwc/autostart` prefers it, squeekboard is the fallback); `rabbiz-osk-switch` still flips back |
 
 Verified on the device (screenshots in `build/osk-device/`): Thai panel with Thai digits +
 Arabic hints, English panel, email field with the `@`/`.com` layout, long-press alternates,

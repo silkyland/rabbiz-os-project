@@ -11,7 +11,7 @@ layer-shell + XWayland) + **Quickshell 0.3.2** (shell surfaces) + standalone
 
 ```
 systemd
- └─ rabbiz-session.service        (User=gamer, PAMName=login,
+ └─ rabbiz-session.service        (User=rabbiz, PAMName=login,
     │                                 Conflicts=steamos-session.service,
     │                                 after seatd/dbus/NM/bluetooth)
     └─ /usr/local/bin/rabbiz-labwc-session     (env setup, exec labwc)
@@ -33,7 +33,7 @@ systemd
 
 - `/usr/share/rabbiz-shell/` ← `shell/` (QML modules `Rabbiz.Theme`, `Rabbiz.Services`, `apps/`)
 - `.desktop` files in `/usr/share/applications/` feed Quickshell's `DesktopEntries` → home-screen grid
-- Seat/device access: `seatd` (`LIBSEAT_BACKEND=seatd`), `gamer` must be in `seat` group — the unit also sets `SupplementaryGroups=seat input video render audio` as a safety net
+- Seat/device access: `seatd` (`LIBSEAT_BACKEND=seatd`), `rabbiz` must be in `seat` group — the unit also sets `SupplementaryGroups=seat input video render audio` as a safety net
 - `XDG_RUNTIME_DIR` is provided by `pam_systemd` via `PAMName=login`; the unit also sets it explicitly as a fallback
 
 ## Packages to install on the device
@@ -57,7 +57,7 @@ pacman -Sy --needed labwc quickshell qt6-declarative qt6-svg qt6-wayland \
 | `quickshell` | OK — `extra/quickshell 0.3.2-1` aarch64 | verified on archlinuxarm.org |
 | `upower` | OK | battery backend for `Rabbiz.Services` |
 | `brightnessctl` | OK | brightness keybinds/shade slider |
-| `steam` | **not a package** | native ARM64 client already in `/home/gamer/.local/share/Steam` (see `docs/a21s-game-results.md`); `a21s-steam` assumes `steam` is on `PATH` |
+| `steam` | **not a package** | native ARM64 client already in `/home/rabbiz/.local/share/Steam` (see `docs/a21s-game-results.md`); `a21s-steam` assumes `steam` is on `PATH` |
 
 ## Deploy + switch
 
@@ -66,7 +66,7 @@ pacman -Sy --needed labwc quickshell qt6-declarative qt6-svg qt6-wayland \
 ./scripts/deploy_shell.sh --packages      # just print the pacman line
 
 # on device, one-time:
-usermod -aG seat,input,video,render gamer
+usermod -aG seat,input,video,render rabbiz
 
 # switch to phone session (steamos-session stays installed):
 systemctl disable steamos-session.service
@@ -84,7 +84,7 @@ seat at a time — `enable --now`-ing one stops the other.
 
 ```sh
 journalctl -u rabbiz-session.service -b -f   # session/compositor log
-loginctl                                          # gamer session + seat
+loginctl                                          # rabbiz session + seat
 swaymsg / labwc --version; ls /usr/share/rabbiz-shell
 ```
 
@@ -303,7 +303,7 @@ live services (`Network`, `UPower`, `Media`), not mocks.
   touch-first UI) then falls back to **Dolphin phone UI**
   (`PLASMA_PLATFORM=phone:handset`, `QT_QPA_PLATFORMTHEME=kde`,
   `QT_SCALE_FACTOR=1.5`; first-run wipe done once in the wrapper).
-  `plasma-integration` + `breeze` + seeded `~gamer/.config/kdeglobals`
+  `plasma-integration` + `breeze` + seeded `~rabbiz/.config/kdeglobals`
   (BreezeDark, `SingleClick`, Noto fonts, `breeze-dark` icons).
 - **Raw partition noise hidden**: `99-hide-system-partitions.rules` sets
   `UDISKS_IGNORE=1` on `mmcblk0p*`/`loop0p*` so Android eMMC partitions
@@ -355,7 +355,7 @@ live services (`Network`, `UPower`, `Media`), not mocks.
   `input-method-v1`). Better long-term Thai IM: `fcitx5` +
   `fcitx5-libthai` (real sequence-checking IM), or `stevia` (more
   Gboard-like, conflicts squeekboard).
-- **runuser env trap**: `runuser -u gamer` inherits the *parent's*
+- **runuser env trap**: `runuser -u rabbiz` inherits the *parent's*
   `XDG_RUNTIME_DIR`/`DBUS_SESSION_BUS_ADDRESS` (e.g. `/run/user/0`) —
   gdbus/gsettings calls then hit "Could not connect: Permission denied".
   `rabbiz-osk-ctl` repoints both at the runtime dir owned by the current

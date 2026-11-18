@@ -27,7 +27,7 @@ from a21s_holdmenu import HoldMenu
 
 COMBO_COOLDOWN_SEC = 0.70
 VOLUME_DELAY_SEC = 0.20   # hold a lone volume press this long; a combo cancels it (no volume change / OSD)
-MARKER = "/run/user/%d/a21s-key-combo" % pwd.getpwnam("gamer").pw_uid
+MARKER = "/run/user/%d/a21s-key-combo" % pwd.getpwnam("rabbiz").pw_uid
 
 WATCH_KEYS = {
     ecodes.KEY_VOLUMEUP,

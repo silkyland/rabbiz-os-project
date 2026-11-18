@@ -147,11 +147,11 @@ Invariants:
 - **Rejected:** patching/upstreaming the KDE apps (not our code, slow), a single monolithic "apps" QML file (no ownership).
 
 ### 9. Polkit: the single phone user may control NetworkManager without auth (2026-11-16)
-- **Decision:** `/etc/polkit-1/rules.d/51-rabbiz-shell.rules` returns `YES` for subject `gamer` on every
+- **Decision:** `/etc/polkit-1/rules.d/51-rabbiz-shell.rules` returns `YES` for subject `rabbiz` on every
   `org.freedesktop.NetworkManager.*` action; nothing else is relaxed (seat handover stays in `50-rabbiz-session.rules`,
   systemd/package actions still need auth).
 - **Why:** labwc has no polkit authentication agent, so NM answered "Insufficient privileges" for `nmcli device wifi
-  connect` and `nmcli connection add` (verified on the device); the Wi-Fi panel could not change anything. `gamer` is
+  connect` and `nmcli connection add` (verified on the device); the Wi-Fi panel could not change anything. `rabbiz` is
   the only interactive user on a single-user phone.
 - **Rejected:** a root helper or setuid wrapper (wider blast radius than a scoped polkit rule); running the shell as
   root (defeats the session/seat model).

@@ -76,8 +76,8 @@ if [ "__SKIP_PROBE__" != "1" ]; then
   [ "$was_active" = "active" ] && systemctl stop "$unit"
   trap '[ "$was_active" = "active" ] && systemctl start "$unit" || true' EXIT
   sleep 1
-  runuser -u gamer -- env LIBSEAT_BACKEND=seatd \
-    XDG_RUNTIME_DIR=/run/user/$(id -u gamer) \
+  runuser -u rabbiz -- env LIBSEAT_BACKEND=seatd \
+    XDG_RUNTIME_DIR=/run/user/$(id -u rabbiz) \
     /usr/local/bin/rabbiz-de probe --json
 fi
 REMOTE

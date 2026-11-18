@@ -1,6 +1,6 @@
 # kdeglobals seed for rabbiz-shell — read by KDE apps (Dolphin etc.) when
 # QT_QPA_PLATFORMTHEME=kde (plasma-integration) or XDG_CURRENT_DESKTOP=KDE.
-# Deployed to ~gamer/.config/kdeglobals by scripts/deploy_shell.sh.
+# Deployed to ~rabbiz/.config/kdeglobals by scripts/deploy_shell.sh.
 
 [KDE]
 SingleClick=true

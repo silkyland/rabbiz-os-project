@@ -7,7 +7,7 @@ author: claude-sonnet-5.5 (continuing Codex's uncommitted work)
 ai_assisted: true
 date: 2026-11-18
 evidence:
-  - cmd: 'zenity --entry (as gamer on wayland-0), then touch_swipe.py taps on h, i and return'
+  - cmd: 'zenity --entry (as rabbiz on wayland-0), then touch_swipe.py taps on h, i and return'
   - file: devices/samsung/a21s/findings/logs/2026-11-18-de-osk-typing.txt
 ---
 
@@ -42,6 +42,6 @@ Return key reach the focused client. What is **not** shown:
 
 Build `de-bin` and `osk-wayland` with `--release` in `rabbiz-de-build:arm64`, install them as
 `/usr/local/bin/rabbiz-de` and `/usr/local/bin/rabbiz-osk` under `scripts/device_session.sh`, reboot,
-then as `gamer` start `zenity --entry` and, as root, run `touch_swipe.py` taps at (431,1431),
+then as `rabbiz` start `zenity --entry` and, as root, run `touch_swipe.py` taps at (431,1431),
 (538,1364) and (670,1564). Expect `Hi` on the client's stdout. Remove the test binaries afterwards or
 keep the previous `rabbiz-de` at `/usr/local/bin/rabbiz-de.prev`.

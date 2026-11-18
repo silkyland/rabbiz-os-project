@@ -20,8 +20,8 @@ was_active=\$(systemctl is-active "\$unit" || true)
 trap '[ "\$was_active" = "active" ] && systemctl start "\$unit" || true' EXIT
 sleep 1
 summary=/tmp/rabbiz-de-summary.json
-runuser -u gamer -- env LIBSEAT_BACKEND=seatd \
-  XDG_RUNTIME_DIR=/run/user/\$(id -u gamer) \
+runuser -u rabbiz -- env LIBSEAT_BACKEND=seatd \
+  XDG_RUNTIME_DIR=/run/user/\$(id -u rabbiz) \
   /usr/local/bin/rabbiz-de run $RENDERER --duration $DURATION \
     --scenario $SCENARIO --stats-file /tmp/rabbiz-de-stats.jsonl \
     --stats-summary "\$summary" || rc=\$?

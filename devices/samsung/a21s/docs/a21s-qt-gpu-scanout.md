@@ -147,7 +147,7 @@ XDG_RUNTIME_DIR=/run/user/1001 WAYLAND_DISPLAY=wayland-0 \
 a21s-qt-gpu your-qt-application
 ```
 
-For SSH, run through `runuser -u gamer -- env ...` as in the project's other
+For SSH, run through `runuser -u rabbiz -- env ...` as in the project's other
 device probes. The user must have access to the Exynos primary node (video group).
 Do not launch a second shell over the first or stop labwc to try this path.
 

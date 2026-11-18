@@ -34,8 +34,8 @@ systemctl enable --now fex-guestos.service
 # for compat launches, but no arm64 build of the wrapper ships in any depot.
 # It only manages systemd scopes/journal redirection, so a passthrough shim
 # is sufficient: skip the flags, exec the payload.
-mkdir -p /home/gamer/.steam/sdkarm64
-cat > /home/gamer/.steam/sdkarm64/steam-launch-wrapper <<'SHIM'
+mkdir -p /home/rabbiz/.steam/sdkarm64
+cat > /home/rabbiz/.steam/sdkarm64/steam-launch-wrapper <<'SHIM'
 #!/bin/bash
 # Minimal arm64 shim for steam-launch-wrapper (scope/journal mgmt skipped)
 while [ \$# -gt 0 ]; do
@@ -49,8 +49,8 @@ while [ \$# -gt 0 ]; do
 done
 exec "\$@"
 SHIM
-chmod 755 /home/gamer/.steam/sdkarm64/steam-launch-wrapper
-chown -R gamer:gamer /home/gamer/.steam/sdkarm64
+chmod 755 /home/rabbiz/.steam/sdkarm64/steam-launch-wrapper
+chown -R rabbiz:rabbiz /home/rabbiz/.steam/sdkarm64
 
 echo ">> guestos mounted:"
 ls /usr/share/guestos/fex-mesa/graphics_provider.json

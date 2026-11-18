@@ -93,7 +93,7 @@ function parseFind(raw, homeDir) {
 }
 
 // ffprobe -show_entries format=filename,duration -of default=nw=1 prints
-//   filename=/home/gamer/Music/a.flac
+//   filename=/home/rabbiz/Music/a.flac
 //   duration=214.75
 // Returns { path, duration } with duration 0 when the value is "N/A" or absent.
 function parseProbe(raw) {

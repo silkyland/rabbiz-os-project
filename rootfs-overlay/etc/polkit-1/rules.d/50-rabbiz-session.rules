@@ -3,7 +3,7 @@
 // (a21s-return-phone). All other units still require auth.
 polkit.addRule(function(action, subject) {
     if (action.id === "org.freedesktop.systemd1.manage-units" &&
-        subject.user === "gamer") {
+        subject.user === "rabbiz") {
         var unit = action.lookup("unit");
         if (unit === "steamos-session.service" ||
             unit === "rabbiz-session.service" ||

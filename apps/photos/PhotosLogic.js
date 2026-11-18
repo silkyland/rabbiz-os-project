@@ -154,7 +154,7 @@ function formatCount(count) {
     return Math.floor(n) + " photos";
 }
 
-// Shorten a folder for the viewer caption: "/home/gamer/Pictures/x" -> "~/Pictures/x".
+// Shorten a folder for the viewer caption: "/home/rabbiz/Pictures/x" -> "~/Pictures/x".
 function displayFolder(dir, home) {
     var d = _text(dir);
     var h = _text(home);

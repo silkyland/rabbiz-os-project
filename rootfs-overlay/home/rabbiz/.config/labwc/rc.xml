@@ -7,7 +7,7 @@
   shade, nav bar) is provided by Quickshell layer-shell surfaces. Panel is
   DSI-1, 720x1600 native portrait.
 
-  Deployed to ~gamer/.config/labwc/rc.xml by scripts/deploy_shell.sh.
+  Deployed to ~rabbiz/.config/labwc/rc.xml by scripts/deploy_shell.sh.
 -->
 <labwc_config>
 

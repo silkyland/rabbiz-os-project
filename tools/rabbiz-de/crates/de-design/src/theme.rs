@@ -1,7 +1,7 @@
 //! Theme selection: the light Cream Glass map is the v1 default
 //! (Decision 9), `DARK` is the dark mode. `Display > dark/light` in P15
 //! writes the mode; `~/.config/rabbiz-de/theme` carries `dark|light`
-//! (gamer-owned, same convention as `rabbiz-de/mode`).
+//! (rabbiz-owned, same convention as `rabbiz-de/mode`).
 
 use crate::tokens::{Theme, DARK, DEFAULT, LIGHT};
 

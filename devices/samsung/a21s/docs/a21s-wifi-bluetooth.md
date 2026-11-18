@@ -147,7 +147,7 @@ Steam's gamepad UI pairs devices by talking to `org.bluez` on the **system D-Bus
 
 - Installed `bluez`, `bluez-utils` (`bluetoothctl`), `bluez-deprecated-tools` (`hciconfig`, `btmgmt`) — enabled `bluetooth.service`.
 - Adapter `a21s-steamos` (`F0:00:01:00:A2:17`): `Powered/Discoverable/Pairable: yes`, `hci0` `UP RUNNING PSCAN ISCAN`, LE scan finds game controllers (e.g. Xbox Wireless Controller, HID-over-GATT `0x1812`).
-- BT audio: installed `pipewire-audio` (ships `/usr/lib/spa-0.2/bluez5/` — SBC/AAC/aptX/LDAC/HFP codecs), `pipewire-pulse`, `wireplumber`; started `wireplumber.service` + `pipewire-pulse.socket` in the `gamer` user manager (`systemctl --user -M gamer@`).
+- BT audio: installed `pipewire-audio` (ships `/usr/lib/spa-0.2/bluez5/` — SBC/AAC/aptX/LDAC/HFP codecs), `pipewire-pulse`, `wireplumber`; started `wireplumber.service` + `pipewire-pulse.socket` in the `rabbiz` user manager (`systemctl --user -M rabbiz@`).
 - **usb0 default route:** `10-usb0.network` now uses `[Route] Gateway=172.16.42.2 Metric=700` instead of `Gateway=` (metric 0). The old config made the dead USB host route shadow `wlan0`'s DHCP route (metric 600), killing all internet whenever the host wasn't NATing; now `wlan0` wins and USB NAT is a fallback.
 
 ---

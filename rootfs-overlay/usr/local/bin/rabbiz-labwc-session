@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # rabbiz-labwc-session — session entrypoint for the rabbiz-shell phone DE.
 #
-# Started by rabbiz-session.service as user `gamer`. Sets the Wayland
+# Started by rabbiz-session.service as user `rabbiz`. Sets the Wayland
 # session environment, creates XDG dirs, then exec()s labwc as the session
 # leader (labwc claims DRM + input through seatd — no VT/TTY needed).
 #

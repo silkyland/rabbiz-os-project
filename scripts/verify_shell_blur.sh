@@ -10,7 +10,7 @@ boot=$(cat /proc/sys/kernel/random/boot_id)
 shell_pid=$(pgrep -f '^quickshell -p /usr/share/rabbiz-shell/shell.qml$')
 since=$(date '+%Y-%m-%d %H:%M:%S')
 ipc() {
-    runuser -u gamer -- env LANG=C.UTF-8 XDG_RUNTIME_DIR=/run/user/$(id -u gamer) WAYLAND_DISPLAY=wayland-0 \
+    runuser -u rabbiz -- env LANG=C.UTF-8 XDG_RUNTIME_DIR=/run/user/$(id -u rabbiz) WAYLAND_DISPLAY=wayland-0 \
         quickshell -p /usr/share/rabbiz-shell/shell.qml ipc call "$@"
 }
 cleanup() {
@@ -22,7 +22,7 @@ check_state() {
     python3 -c 'import json,sys; s=json.load(sys.stdin); print(s); assert s["gpu"]; assert s.get("captured", s.get("sceneChildren", 0) == 2); assert s.get("sourceWidth",720) == 720; assert s.get("sourceHeight",1600) == 1600'
 }
 shot() {
-    runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/$(id -u gamer) WAYLAND_DISPLAY=wayland-0 grim "$1"
+    runuser -u rabbiz -- env XDG_RUNTIME_DIR=/run/user/$(id -u rabbiz) WAYLAND_DISPLAY=wayland-0 grim "$1"
 }
 ipc drawer close
 ipc shade close

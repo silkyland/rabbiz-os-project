@@ -16,7 +16,7 @@ QtObject {
     id: root
 
     readonly property string statePath: {
-        var home = Quickshell.env("HOME") || "/home/gamer"
+        var home = Quickshell.env("HOME") || "/home/rabbiz"
         return home + "/.config/rabbiz-shell/desktop.json"
     }
     // What the desktop surface calls itself. The grid + dock are the home page, and the

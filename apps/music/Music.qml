@@ -30,7 +30,7 @@ ApplicationWindow {
 
     Binding { target: Theme; property: "light"; value: ShellPrefs.lightTheme }
 
-    readonly property string home: Quickshell.env("HOME") || "/home/gamer"
+    readonly property string home: Quickshell.env("HOME") || "/home/rabbiz"
 
     // ---- library ----------------------------------------------------------
     property var tracks: []

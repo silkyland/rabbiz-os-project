@@ -27,7 +27,7 @@ ApplicationWindow {
 
     Binding { target: Theme; property: "light"; value: ShellPrefs.lightTheme }
 
-    readonly property string home: Quickshell.env("HOME") || "/home/gamer"
+    readonly property string home: Quickshell.env("HOME") || "/home/rabbiz"
     readonly property var photoRoots: [win.home + "/Pictures", win.home + "/Downloads"]
     // 3 columns on the 720 px handset, still readable on a tablet.
     readonly property int columns: Math.max(2, Math.min(5,

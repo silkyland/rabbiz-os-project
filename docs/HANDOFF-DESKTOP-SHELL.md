@@ -48,9 +48,9 @@ AGENTS.md hard rules still apply).
 - Push shell + restart it + screenshot: `./scripts/shell_reload.sh` -> `/tmp/a21s-shot.png`. Full overlay deploy:
   `./scripts/deploy_shell.sh` (prunes replaced apps; chowns `~/.local`).
 - Drive the UI without touching the phone: `quickshell -p /usr/share/rabbiz-shell/shell.qml ipc call launcher launch <id|name>`,
-  `... launcher state`, `... launcher toplevels` (run as `gamer` with `XDG_RUNTIME_DIR=/run/user/1001`,
+  `... launcher state`, `... launcher toplevels` (run as `rabbiz` with `XDG_RUNTIME_DIR=/run/user/1001`,
   `WAYLAND_DISPLAY=<newest wayland-N socket>`, `QML_IMPORT_PATH=/usr/share/rabbiz-shell`).
-- Wake/unlock the fake lock screen: `runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/1001 a21s-power-key wake` then `fp-unlock`.
+- Wake/unlock the fake lock screen: `runuser -u rabbiz -- env XDG_RUNTIME_DIR=/run/user/1001 a21s-power-key wake` then `fp-unlock`.
   The screen locks after ~2 min idle; do that before every `grim` screenshot (`timeout 10 grim ...`).
 - **Traps found the hard way:** `pkill -f` patterns match your own ssh command line (use `[s]team` style);
   `grep -E '^(...|QT_)='` style env filters silently drop `QT_*` (see `shell_reload.sh`); the labwc Wayland socket is
@@ -64,7 +64,7 @@ AGENTS.md hard rules still apply).
   (metric 700) that wins over Wi-Fi, and it points at the Mac, which does not route. Check with
   `curl https://client-update.akamai.steamstatic.com/`; if Wi-Fi is disconnected, fix the route metric
   (`nmcli connection modify <ssid> ipv4.route-metric 50`) or the network looks "connected" but times out.
-  **Privileges:** the shell runs as `gamer` and labwc has no polkit agent, so without
+  **Privileges:** the shell runs as `rabbiz` and labwc has no polkit agent, so without
   `/etc/polkit-1/rules.d/51-rabbiz-shell.rules` every `nmcli` action fails with "Insufficient privileges" (radio
   toggles only worked because NM's default allows `allow_active`). After adding/editing a rule run
   `systemctl restart polkit`; `nmcli connection load` stays root-only no matter what.
@@ -92,7 +92,7 @@ AGENTS.md hard rules still apply).
   longer scales down (both forced a full-screen bilinear resample every frame); the dim/opacity cues remain.
 - **Disk (investigated 2026-11-16):** the rootfs is a 22.3 GiB ext4 on `/dev/loop0p37`, which ends 5 MB before the
   end of the eMMC — there is **no partition headroom**, `resize2fs` cannot grow it. Free went from 285 MB to 2.2 GB by
-  deleting only stale/unused data: `/home/gamer/.local/share/Steam-arm64` (1.4 GB duplicate Steam install, nothing
+  deleting only stale/unused data: `/home/rabbiz/.local/share/Steam-arm64` (1.4 GB duplicate Steam install, nothing
   points at it: `.steam/steam` → `Steam/`), `/opt/build/box64` (364 MB build tree; the binary is `/usr/local/bin/box64`),
   `Steam/appcache` (150 MB), pacman cache + journal. Big remaining consumers: Steam 7.8 GB, `/usr` 7.2 GB, `/opt` 1 GB,
   Chrome profile 464 MB, opencode ~1 GB.
@@ -119,11 +119,11 @@ AGENTS.md hard rules still apply).
    `Network`/`Bluetooth`/`SystemControl`; telemetry is one `a21s-telemetry` process (bash builtins, no per-value forks)
    and stops while asleep; the rotation tile is honestly labelled "Rotate"; the governor defaults to `schedutil`;
    the Wi-Fi PSK goes over stdin to `rabbiz-wifi-connect` (nmcli pty prompt, echo off) instead of argv.
-   **The blocker behind all of it:** labwc has no polkit agent, so `gamer` got "Insufficient privileges" for every NM
-   action. New `rootfs-overlay/etc/polkit-1/rules.d/51-rabbiz-shell.rules` allows *only* `gamer` and *only*
+   **The blocker behind all of it:** labwc has no polkit agent, so `rabbiz` got "Insufficient privileges" for every NM
+   action. New `rootfs-overlay/etc/polkit-1/rules.d/51-rabbiz-shell.rules` allows *only* `rabbiz` and *only*
    `org.freedesktop.NetworkManager.*` — recorded in `docs/ARCHITECTURE.md` ADR-9. Verified: `nmcli radio wifi off/on`
-   as gamer, joining an unsaved network through `rabbiz-wifi-connect` (connection up, `<wifi-ip>`, HTTP 301),
-   `nmcli connection add` as gamer. Also fixed on the way: activate on `wlan0`, never `p2p0` (NM otherwise fails with
+   as rabbiz, joining an unsaved network through `rabbiz-wifi-connect` (connection up, `<wifi-ip>`, HTTP 301),
+   `nmcli connection add` as rabbiz. Also fixed on the way: activate on `wlan0`, never `p2p0` (NM otherwise fails with
    "association took too long / ssid-not-found"), and `Network.qml` no longer treats `p2p0` as the Wi-Fi device.
    **Open:** updating the PSK of an *existing* profile via `nmcli --ask connection modify` hit the 45 s pty timeout in
    one run (not verified); the Settings UI path (`Network.wifiConnect`) was not exercised end to end.
@@ -189,7 +189,7 @@ Handset only. Edge zones are 24 px (the labwc bottom margin already reserves it)
 ## 5. Rules that were changed or confirmed this session
 
 - `steamos-session` as a parallel session is no longer the Steam UX (ADR-8). Recovery only.
-- **2026-11-16 (security decision):** polkit now lets user `gamer`, and only `gamer`, control
+- **2026-11-16 (security decision):** polkit now lets user `rabbiz`, and only `rabbiz`, control
   `org.freedesktop.NetworkManager.*` without authentication (ADR-9). Reason: no auth agent exists under labwc, so
   Wi-Fi/BT could not be changed from the shell at all. Scope is NM only; systemd/package actions still need auth.
 - "Never overwrite /lib", usb0 unmanaged, secrets, `clk_ignore_unused`, ABOX 768 KiB, `QT_QUICK_BACKEND=software`
@@ -246,7 +246,7 @@ Quickshell has **no** data-control binding (no such strings in the binary), so t
 
 Design:
 - Install `wl-clipboard` + `cliphist` (small). Service `Services/Clipboard.qml` runs
-  `wl-paste --watch cliphist store` (text) and `wl-paste --type image --watch cliphist store` (images) as `gamer`,
+  `wl-paste --watch cliphist store` (text) and `wl-paste --type image --watch cliphist store` (images) as `rabbiz`,
   started from labwc `autostart` (or a user systemd unit) so history survives shell restarts.
 - **Privacy rules (do not skip):** keep the store in `$XDG_RUNTIME_DIR` (tmpfs, wiped on reboot) by default; cap
   history (e.g. 50 items, 1 MB per item); skip items advertising `x-kde-passwordManagerHint=secret`; "Clear" in the UI;

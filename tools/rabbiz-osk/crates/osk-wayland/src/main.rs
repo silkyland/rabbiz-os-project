@@ -868,7 +868,7 @@ fn parse_hex(value: &str) -> Option<(u8, u8, u8)> {
 }
 
 fn theme_path() -> std::path::PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/gamer".into());
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/rabbiz".into());
     std::path::Path::new(&home).join(".config/rabbiz-osk/theme.toml")
 }
 

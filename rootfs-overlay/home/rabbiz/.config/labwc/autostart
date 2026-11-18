@@ -1,7 +1,7 @@
 # labwc autostart for the rabbiz-shell phone session.
 # Each line runs via /bin/sh -c after the Wayland display is up
 # (WAYLAND_DISPLAY is already set for these children).
-# Deployed to ~gamer/.config/labwc/autostart by scripts/deploy_shell.sh.
+# Deployed to ~rabbiz/.config/labwc/autostart by scripts/deploy_shell.sh.
 
 # Export session env into the user systemd/D-Bus activation environment so
 # user services (pipewire, xdg-desktop-portal, notification clients) see

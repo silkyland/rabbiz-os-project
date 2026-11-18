@@ -13,7 +13,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 DEVICE=${DEVICE:-172.16.42.1}
 LISTEN="172.16.42.1 127.0.0.1"
 CACHE="tools/rabbiz-mirror/.cache/pkgs"
-UNIT_PATH="/home/gamer/.config/systemd/user/a21s-wayvnc.service"
+UNIT_PATH="/home/rabbiz/.config/systemd/user/a21s-wayvnc.service"
 HELPER_PATH="/usr/local/bin/rabbiz-mirror"
 
 while [ $# -gt 0 ]; do
@@ -59,10 +59,10 @@ fi
 # A manually started wayvnc (e.g. from an earlier probe) would hold port 5900.
 ssh "root@$DEVICE" 'pkill -x wayvnc 2>/dev/null || true'
 
-# --- 2. user unit in the gamer session -----------------------------------
+# --- 2. user unit in the rabbiz session -----------------------------------
 say "Writing $UNIT_PATH"
-GAMER_UID=$(ssh "root@$DEVICE" 'id -u gamer')
-ssh "root@$DEVICE" "install -d -o gamer -g gamer /home/gamer/.config/systemd/user && cat > $UNIT_PATH" <<UNIT
+RABBIZ_UID=$(ssh "root@$DEVICE" 'id -u rabbiz')
+ssh "root@$DEVICE" "install -d -o rabbiz -g rabbiz /home/rabbiz/.config/systemd/user && cat > $UNIT_PATH" <<UNIT
 [Unit]
 Description=A21s wayvnc screen mirror
 Documentation=man:wayvnc(1)
@@ -70,7 +70,7 @@ StartLimitIntervalSec=0
 StartLimitBurst=0
 
 [Service]
-Environment=XDG_RUNTIME_DIR=/run/user/${GAMER_UID}
+Environment=XDG_RUNTIME_DIR=/run/user/${RABBIZ_UID}
 Environment=WAYLAND_DISPLAY=wayland-0
 ExecStart=/usr/bin/wayvnc -o DSI-1 -f 30 $LISTEN
 Restart=always
@@ -84,13 +84,13 @@ UNIT
 say "Writing $HELPER_PATH"
 ssh "root@$DEVICE" "cat > $HELPER_PATH && chmod 755 $HELPER_PATH" <<'HELPER'
 #!/bin/sh
-# rabbiz-mirror — start/stop/status of the wayvnc mirror in the gamer labwc session.
+# rabbiz-mirror — start/stop/status of the wayvnc mirror in the rabbiz labwc session.
 set -eu
 UNIT=a21s-wayvnc.service
-RUNTIME=/run/user/$(id -u gamer)
+RUNTIME=/run/user/$(id -u rabbiz)
 
-as_gamer() {
-    runuser -u gamer -- env XDG_RUNTIME_DIR="$RUNTIME" \
+as_rabbiz() {
+    runuser -u rabbiz -- env XDG_RUNTIME_DIR="$RUNTIME" \
         DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME/bus" systemctl --user "$@"
 }
 
@@ -109,25 +109,25 @@ wait_listening() {
         i=$((i + 1))
     done
     echo "wayvnc did not open port 5900" >&2
-    as_gamer status "$UNIT" --no-pager >&2 || true
+    as_rabbiz status "$UNIT" --no-pager >&2 || true
     return 1
 }
 
 case "${1:-status}" in
 start)
-    as_gamer start "$UNIT"
+    as_rabbiz start "$UNIT"
     wait_listening
     ;;
 stop)
-    as_gamer stop "$UNIT"
+    as_rabbiz stop "$UNIT"
     echo "wayvnc stopped"
     ;;
 restart)
-    as_gamer restart "$UNIT"
+    as_rabbiz restart "$UNIT"
     wait_listening
     ;;
 status)
-    echo "unit: $(as_gamer is-active "$UNIT" 2>/dev/null || true)"
+    echo "unit: $(as_rabbiz is-active "$UNIT" 2>/dev/null || true)"
     addresses=$(listen_addresses)
     if [ -n "$addresses" ]; then
         echo "listening: $(echo "$addresses" | tr '\n' ' ')"
@@ -136,12 +136,12 @@ status)
     fi
     ;;
 logs)
-    runuser -u gamer -- env XDG_RUNTIME_DIR="$RUNTIME" \
+    runuser -u rabbiz -- env XDG_RUNTIME_DIR="$RUNTIME" \
         journalctl --user-unit "$UNIT" -n "${2:-60}" --no-pager
     ;;
 enable)
-    as_gamer enable "$UNIT"
-    as_gamer restart "$UNIT"
+    as_rabbiz enable "$UNIT"
+    as_rabbiz restart "$UNIT"
     wait_listening
     ;;
 *)
@@ -152,8 +152,8 @@ esac
 HELPER
 
 # --- 4. enable + start in the running session ----------------------------
-say "Enabling and starting a21s-wayvnc in the gamer session"
-ssh "root@$DEVICE" 'u=$(id -u gamer); runuser -u gamer -- env XDG_RUNTIME_DIR=/run/user/$u DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$u/bus systemctl --user daemon-reload && rabbiz-mirror enable'
+say "Enabling and starting a21s-wayvnc in the rabbiz session"
+ssh "root@$DEVICE" 'u=$(id -u rabbiz); runuser -u rabbiz -- env XDG_RUNTIME_DIR=/run/user/$u DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$u/bus systemctl --user daemon-reload && rabbiz-mirror enable'
 
 say "Done. Launch the Mac app with:"
 printf '    open "dist/Rabbiz Mirror.app"     # after ./scripts/build_mac_app.sh\n'

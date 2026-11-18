@@ -18,18 +18,18 @@ vm.runInContext(
 );
 const Music = ctx.Music;
 
-const HOME = "/home/gamer";
+const HOME = "/home/rabbiz";
 
 // Exactly what the app's `find ... -printf '%T@\t%p\n' | sort -rn` produces.
 const FIND_OUTPUT = [
-  "1763500000.25\t/home/gamer/Downloads/Podcast_Episode_12.opus",
-  "1763500000.25\t/home/gamer/Downloads/Podcast_Episode_12.opus",
-  "1763400000.5\t/home/gamer/Music/Albums/Blue/01 Awakening.flac",
-  "1763300000.0\t/home/gamer/Music/มืดมน.mp3",
-  "1763200000.0\t/home/gamer/Downloads/cover.jpg",
-  "1763100000.0\t/home/gamer/Music/Sub/Dir/Deep Track.ogg",
-  "1763000000.0\t/home/gamer/Music/notes.txt",
-  "1762900000.0\t/home/gamer/Music/loop tap.wav",
+  "1763500000.25\t/home/rabbiz/Downloads/Podcast_Episode_12.opus",
+  "1763500000.25\t/home/rabbiz/Downloads/Podcast_Episode_12.opus",
+  "1763400000.5\t/home/rabbiz/Music/Albums/Blue/01 Awakening.flac",
+  "1763300000.0\t/home/rabbiz/Music/มืดมน.mp3",
+  "1763200000.0\t/home/rabbiz/Downloads/cover.jpg",
+  "1763100000.0\t/home/rabbiz/Music/Sub/Dir/Deep Track.ogg",
+  "1763000000.0\t/home/rabbiz/Music/notes.txt",
+  "1762900000.0\t/home/rabbiz/Music/loop tap.wav",
 ].join("\n");
 
 test("find output becomes a newest-first track list", () => {
@@ -38,11 +38,11 @@ test("find output becomes a newest-first track list", () => {
   assert.deepEqual(
     [...tracks.map((t) => t.path)],
     [
-      "/home/gamer/Downloads/Podcast_Episode_12.opus",
-      "/home/gamer/Music/Albums/Blue/01 Awakening.flac",
-      "/home/gamer/Music/มืดมน.mp3",
-      "/home/gamer/Music/Sub/Dir/Deep Track.ogg",
-      "/home/gamer/Music/loop tap.wav",
+      "/home/rabbiz/Downloads/Podcast_Episode_12.opus",
+      "/home/rabbiz/Music/Albums/Blue/01 Awakening.flac",
+      "/home/rabbiz/Music/มืดมน.mp3",
+      "/home/rabbiz/Music/Sub/Dir/Deep Track.ogg",
+      "/home/rabbiz/Music/loop tap.wav",
     ]
   );
 });
@@ -51,21 +51,21 @@ test("titles, folders and captions", () => {
   const tracks = Music.parseFind(FIND_OUTPUT, HOME);
   const byPath = Object.fromEntries(tracks.map((t) => [t.path, t]));
 
-  const podcast = byPath["/home/gamer/Downloads/Podcast_Episode_12.opus"];
+  const podcast = byPath["/home/rabbiz/Downloads/Podcast_Episode_12.opus"];
   assert.equal(podcast.title, "Podcast Episode 12");
   assert.equal(podcast.folder, "Downloads");
   assert.equal(podcast.subfolder, "");
   assert.equal(podcast.caption, "Downloads");
   assert.equal(podcast.ext, "opus");
 
-  const flac = byPath["/home/gamer/Music/Albums/Blue/01 Awakening.flac"];
+  const flac = byPath["/home/rabbiz/Music/Albums/Blue/01 Awakening.flac"];
   assert.equal(flac.title, "01 Awakening");
   assert.equal(flac.folder, "Music");
   assert.equal(flac.subfolder, "Albums/Blue");
   assert.equal(flac.caption, "Music · Albums/Blue");
 
   // Thai filenames survive the round trip.
-  const thai = byPath["/home/gamer/Music/มืดมน.mp3"];
+  const thai = byPath["/home/rabbiz/Music/มืดมน.mp3"];
   assert.equal(thai.title, "มืดมน");
   assert.equal(thai.caption, "Music");
 
@@ -75,7 +75,7 @@ test("titles, folders and captions", () => {
 });
 
 test("parseFind survives junk and a path without a mtime prefix", () => {
-  const tracks = Music.parseFind("\n\nnot-audio.txt\n\t\n/home/gamer/Music/Loose.WAV\n", HOME);
+  const tracks = Music.parseFind("\n\nnot-audio.txt\n\t\n/home/rabbiz/Music/Loose.WAV\n", HOME);
   assert.equal(tracks.length, 1);
   assert.equal(tracks[0].title, "Loose");
   assert.equal(tracks[0].ext, "wav");
@@ -96,9 +96,9 @@ test("extensionOf and titleFromPath", () => {
 
 test("parseProbe reads ffprobe key=value output", () => {
   const ok = Music.parseProbe(
-    "filename=/home/gamer/Music/Albums/Blue/01 Awakening.flac\nduration=214.753333\n"
+    "filename=/home/rabbiz/Music/Albums/Blue/01 Awakening.flac\nduration=214.753333\n"
   );
-  assert.equal(ok.path, "/home/gamer/Music/Albums/Blue/01 Awakening.flac");
+  assert.equal(ok.path, "/home/rabbiz/Music/Albums/Blue/01 Awakening.flac");
   assert.equal(ok.duration, 214.753333);
 
   const unknown = Music.parseProbe("filename=/x/y.mp3\nduration=N/A\n");
@@ -143,8 +143,8 @@ test("explicit transport wraps, auto-advance stops at the end", () => {
 
 test("indexOfPath and folder counts", () => {
   const tracks = Music.parseFind(FIND_OUTPUT, HOME);
-  assert.equal(Music.indexOfPath(tracks, "/home/gamer/Music/มืดมน.mp3"), 2);
-  assert.equal(Music.indexOfPath(tracks, "/home/gamer/Music/gone.mp3"), -1);
+  assert.equal(Music.indexOfPath(tracks, "/home/rabbiz/Music/มืดมน.mp3"), 2);
+  assert.equal(Music.indexOfPath(tracks, "/home/rabbiz/Music/gone.mp3"), -1);
   assert.equal(Music.indexOfPath([], "/x"), -1);
   assert.equal(Music.indexOfPath(null, "/x"), -1);
 

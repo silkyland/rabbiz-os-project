@@ -57,15 +57,15 @@ test("find argv is shell-free and only lists images", () => {
 
 test("find output is sorted newest first and bad lines are skipped", () => {
   const out = [
-    "1763282499.0\t/home/gamer/Pictures/b.jpg",
-    "1763196000.5\t/home/gamer/Pictures/a.png",
-    "1763282499.0\t/home/gamer/Pictures/2024/c.jpeg",
-    "1763282600\t/home/gamer/Downloads/d.WEBP",
-    "1763282499\t/home/gamer/Pictures/skip.gif",
-    "1763282499\t/home/gamer/Pictures/.jpg",
-    "1763282499\t/home/gamer/Pictures/b.jpg",
-    "/home/gamer/Pictures/e.png",
-    "1763282499\t/home/gamer/Pictures/f.png\r",
+    "1763282499.0\t/home/rabbiz/Pictures/b.jpg",
+    "1763196000.5\t/home/rabbiz/Pictures/a.png",
+    "1763282499.0\t/home/rabbiz/Pictures/2024/c.jpeg",
+    "1763282600\t/home/rabbiz/Downloads/d.WEBP",
+    "1763282499\t/home/rabbiz/Pictures/skip.gif",
+    "1763282499\t/home/rabbiz/Pictures/.jpg",
+    "1763282499\t/home/rabbiz/Pictures/b.jpg",
+    "/home/rabbiz/Pictures/e.png",
+    "1763282499\t/home/rabbiz/Pictures/f.png\r",
     "",
   ].join("\n");
 
@@ -73,9 +73,9 @@ test("find output is sorted newest first and bad lines are skipped", () => {
   assert.deepEqual(Array.from(photos, (p) => p.name), [
     "d.WEBP", "c.jpeg", "b.jpg", "f.png", "a.png", "e.png",
   ]);
-  assert.equal(photos[0].path, "/home/gamer/Downloads/d.WEBP");
+  assert.equal(photos[0].path, "/home/rabbiz/Downloads/d.WEBP");
   assert.equal(photos[0].mtime, 1763282600000);
-  assert.equal(photos[1].dir, "/home/gamer/Pictures/2024");
+  assert.equal(photos[1].dir, "/home/rabbiz/Pictures/2024");
   assert.equal(photos[4].mtime, 1763196000500); // unix seconds -> ms
   assert.equal(photos[5].mtime, 0);             // find fallback without %T@
 });
@@ -90,8 +90,8 @@ test("empty and malformed find output yields no photos", () => {
 test("file urls encode spaces and Thai names", () => {
   assert.equal(P.fileUrl("/home/g/Pictures/my photo.png"),
     "file:///home/g/Pictures/my%20photo.png");
-  assert.equal(P.fileUrl("/home/gamer/Pictures/รูป.png"),
-    "file:///home/gamer/Pictures/%E0%B8%A3%E0%B8%B9%E0%B8%9B.png");
+  assert.equal(P.fileUrl("/home/rabbiz/Pictures/รูป.png"),
+    "file:///home/rabbiz/Pictures/%E0%B8%A3%E0%B8%B9%E0%B8%9B.png");
   assert.equal(P.fileUrl("/home/g/a#b%c.png"), "file:///home/g/a%23b%25c.png");
   assert.equal(P.fileUrl("file:///already/encoded.png"), "file:///already/encoded.png");
   assert.equal(P.fileUrl(""), "");
@@ -116,10 +116,10 @@ test("count copy never reads as a raw number", () => {
 });
 
 test("folders are shortened against the home directory", () => {
-  assert.equal(P.displayFolder("/home/gamer/Pictures/2024", "/home/gamer"), "~/Pictures/2024");
-  assert.equal(P.displayFolder("/home/gamer", "/home/gamer"), "~");
-  assert.equal(P.displayFolder("/media/sdcard/DCIM", "/home/gamer"), "/media/sdcard/DCIM");
-  assert.equal(P.displayFolder("/home/gamer/Pictures", ""), "/home/gamer/Pictures");
+  assert.equal(P.displayFolder("/home/rabbiz/Pictures/2024", "/home/rabbiz"), "~/Pictures/2024");
+  assert.equal(P.displayFolder("/home/rabbiz", "/home/rabbiz"), "~");
+  assert.equal(P.displayFolder("/media/sdcard/DCIM", "/home/rabbiz"), "/media/sdcard/DCIM");
+  assert.equal(P.displayFolder("/home/rabbiz/Pictures", ""), "/home/rabbiz/Pictures");
 });
 
 test("index wrap never dead-ends", () => {

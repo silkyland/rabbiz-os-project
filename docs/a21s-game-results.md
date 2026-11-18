@@ -14,7 +14,7 @@
 | Swap Used (`free -m`) | `2921 MiB` | **`251 MiB`** |
 
 - **Key fixes applied on A21s:**
-  - Pulled Valve's native ARM64 client (`steam_client_publicbeta_linuxarm64`, `Nov 13 2026`) into `/home/gamer/.local/share/Steam/steamrtarm64/`.
+  - Pulled Valve's native ARM64 client (`steam_client_publicbeta_linuxarm64`, `Nov 13 2026`) into `/home/rabbiz/.local/share/Steam/steamrtarm64/`.
   - Installed `libibus`, `libnm`, `openal`, `libvdpau`, `ffmpeg`, plus `arm64` `libgtk-x11-2.0.so.0` / `libgdk-x11-2.0.so.0` into `steamrtarm64/libs/`.
   - Launched `/usr/local/bin/steamos-session` with `-gamepadui -no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing` (avoiding black `steamwebhelper` GPU compositing under Xwayland/Panfrost).
 

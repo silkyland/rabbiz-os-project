@@ -136,17 +136,17 @@ test("loadHistory keeps only the newest entries", () => {
 });
 
 test("shortPath collapses the home directory", () => {
-  assert.equal(L.shortPath("/home/gamer", "/home/gamer"), "~");
-  assert.equal(L.shortPath("/home/gamer/", "/home/gamer"), "~");
-  assert.equal(L.shortPath("/home/gamer/Music", "/home/gamer"), "~/Music");
-  assert.equal(L.shortPath("/etc", "/home/gamer"), "/etc");
-  assert.equal(L.shortPath("", "/home/gamer"), "~");
-  assert.equal(L.shortPath("/home/gamer2", "/home/gamer"), "/home/gamer2");
+  assert.equal(L.shortPath("/home/rabbiz", "/home/rabbiz"), "~");
+  assert.equal(L.shortPath("/home/rabbiz/", "/home/rabbiz"), "~");
+  assert.equal(L.shortPath("/home/rabbiz/Music", "/home/rabbiz"), "~/Music");
+  assert.equal(L.shortPath("/etc", "/home/rabbiz"), "/etc");
+  assert.equal(L.shortPath("", "/home/rabbiz"), "~");
+  assert.equal(L.shortPath("/home/rabbiz2", "/home/rabbiz"), "/home/rabbiz2");
 });
 
 test("formatPrompt is compact and stable", () => {
-  assert.equal(L.formatPrompt("/home/gamer", "/home/gamer"), "~ $");
-  assert.equal(L.formatPrompt("/home/gamer/Downloads", "/home/gamer"), "~/Downloads $");
+  assert.equal(L.formatPrompt("/home/rabbiz", "/home/rabbiz"), "~ $");
+  assert.equal(L.formatPrompt("/home/rabbiz/Downloads", "/home/rabbiz"), "~/Downloads $");
 });
 
 test("describeExit explains shell codes", () => {

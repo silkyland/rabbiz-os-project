@@ -50,7 +50,7 @@ aplay -D plughw:1,100 --period-size=960 --buffer-size=3840 song.wav
 - **No sound card**: `/proc/asound` absent, `lsmod` shows no `snd_*`, PipeWire `wpctl status` → 0 Devices/Sinks.
 - Kernel `7.3.0-g14a425b3a7dc-dirty` has `CONFIG_SND=m` + lots of codecs and `CONFIG_SND_SOC_SAMSUNG=m`, `snd-usb-audio.ko` present in modules tree — but **no ABOX driver**.
 - Devicetree carries audio pinctrl only (`aud-i2s0/1-pins`, `aud-codec-mclk-pins`, `aud-fm-pins` under `pinctrl@14a60000`); **no `sound`/ABOX node**.
-- **Userspace is done**: `bluez` 5.88 + `pipewire` + `wireplumber` + `pipewire-pulse` (bluez5 SPA codecs SBC/AAC/aptX/LDAC/HFP); `pipewire.socket`, `pipewire-pulse.socket`, `wireplumber.service` all enabled+active in `gamer` session; Steam already registered as a PipeWire client.
+- **Userspace is done**: `bluez` 5.88 + `pipewire` + `wireplumber` + `pipewire-pulse` (bluez5 SPA codecs SBC/AAC/aptX/LDAC/HFP); `pipewire.socket`, `pipewire-pulse.socket`, `wireplumber.service` all enabled+active in `rabbiz` session; Steam already registered as a PipeWire client.
 
 ## 2. Why the speaker needs an ABOX port
 
@@ -77,7 +77,7 @@ This is the same class of task as the SCSC WLBT port: extract the vendor driver,
 
 ## 5. Volume keys — done today
 
-`volume-keys.service` runs `/usr/local/bin/volume-keys.py` (this repo `scripts/`): listens on every evdev device advertising `KEY_VOLUME*` — currently `gpio-keys` (phone buttons) and `MX Keys Keyboard` — and calls `wpctl` in the `gamer` session (`5%±`, mute toggle, capped at 150%). Verified the `runuser`/`wpctl` path reaches PipeWire (`get-volume` → 1.00); it activates the moment a sink exists — works for BT and USB sinks too, not just the future ABOX card.
+`volume-keys.service` runs `/usr/local/bin/volume-keys.py` (this repo `scripts/`): listens on every evdev device advertising `KEY_VOLUME*` — currently `gpio-keys` (phone buttons) and `MX Keys Keyboard` — and calls `wpctl` in the `rabbiz` session (`5%±`, mute toggle, capped at 150%). Verified the `runuser`/`wpctl` path reaches PipeWire (`get-volume` → 1.00); it activates the moment a sink exists — works for BT and USB sinks too, not just the future ABOX card.
 
 ## 6. Interim real-audio paths (zero extra work)
 

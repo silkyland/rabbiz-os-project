@@ -166,7 +166,7 @@ COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/rootfs-overlay" -cf - . \
 echo ">> Fixing permissions + daemon-reload"
 ssh "${TARGET}" "
   set -e
-  find /usr/share/rabbiz-shell /home/gamer/.config/labwc /home/gamer/.config/wireplumber \
+  find /usr/share/rabbiz-shell /home/rabbiz/.config/labwc /home/rabbiz/.config/wireplumber \
     /usr/share/applications /usr/local/bin /etc/systemd/system \
     /etc/udev/rules.d /etc/modules-load.d /etc/systemd/logind.conf.d -maxdepth 3 -name '._*' -delete 2>/dev/null || true
   chown -R root:root /usr/share/rabbiz-shell
@@ -183,13 +183,13 @@ ssh "${TARGET}" "
   chown root:root /usr/share/applications/rabbiz-*.desktop 2>/dev/null || true
   chmod 644 /usr/share/applications/rabbiz-*.desktop 2>/dev/null || true
   # tar preserves the macOS uids baked into the archive (501/20), which
-  # leaves /, /home and /home/gamer owned by a non-existent uid and breaks
+  # leaves /, /home and /home/rabbiz owned by a non-existent uid and breaks
   # runuser/su + systemd path-transition checks. Restore real owners.
   chown root:root / /home 2>/dev/null || true
-  chown gamer:gamer /home/gamer /home/gamer/.local /home/gamer/.local/share 2>/dev/null || true
-  chown -R gamer:gamer /home/gamer/.config
-  # squeekboard user layouts override the built-ins; keep gamer-owned.
-  chown -R gamer:gamer /home/gamer/.local/share/squeekboard 2>/dev/null || true
+  chown rabbiz:rabbiz /home/rabbiz /home/rabbiz/.local /home/rabbiz/.local/share 2>/dev/null || true
+  chown -R rabbiz:rabbiz /home/rabbiz/.config
+  # squeekboard user layouts override the built-ins; keep rabbiz-owned.
+  chown -R rabbiz:rabbiz /home/rabbiz/.local/share/squeekboard 2>/dev/null || true
   chgrp video /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true
   chmod g+w /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true
   chgrp video /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
@@ -197,7 +197,7 @@ ssh "${TARGET}" "
   chmod 666 /sys/kernel/a21s_fp/trigger_unlock /sys/kernel/a21s_fp/sleep_pin /dev/esfp0 2>/dev/null || true
   chgrp video /dev/umts_* 2>/dev/null || true
   chmod 660 /dev/umts_* 2>/dev/null || true
-  chown gamer:gamer /run/user/\$(id -u gamer)/a21s-power.cmd 2>/dev/null || true
+  chown rabbiz:rabbiz /run/user/\$(id -u rabbiz)/a21s-power.cmd 2>/dev/null || true
   systemctl daemon-reload
   # Unit rename migration: a21s-phone-session.service -> rabbiz-session.service.
   # Disable under the old name first (clears its wants symlink), then drop the
@@ -211,8 +211,8 @@ ssh "${TARGET}" "
   fi
   # User config rename: ~/.config/a21s-shell -> ~/.config/rabbiz-shell
   # (session scripts repeat this; doing it here makes the first boot clean).
-  if [ -d /home/gamer/.config/a21s-shell ] && [ ! -e /home/gamer/.config/rabbiz-shell ]; then
-    mv /home/gamer/.config/a21s-shell /home/gamer/.config/rabbiz-shell
+  if [ -d /home/rabbiz/.config/a21s-shell ] && [ ! -e /home/rabbiz/.config/rabbiz-shell ]; then
+    mv /home/rabbiz/.config/a21s-shell /home/rabbiz/.config/rabbiz-shell
   fi
   systemctl enable a21s-modem-init.service 2>/dev/null || true
   # Boot splash + hardware volume/screenshot keys; no login prompt on the panel (getty@tty1 is a /dev/null symlink in the overlay).
@@ -237,7 +237,7 @@ cat <<'EOF'
          noto-fonts ttf-nerd-fonts-symbols upower brightnessctl
 
   2. Ensure seat access (once):
-       usermod -aG seat,input,video,render gamer
+       usermod -aG seat,input,video,render rabbiz
 
   3. Start the phone session:
        systemctl enable --now rabbiz-session.service

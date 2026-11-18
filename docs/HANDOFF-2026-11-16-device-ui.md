@@ -49,7 +49,7 @@ Next test:
 3. Verify one capsule, one Devices notification, correct percentage,
    dismissal after unplug, and no duplicates while steadily connected.
 4. Check `/tmp/a21s-power-shell.log` for `Power notification posted` or
-   notification errors. D-Bus session address for gamer is
+   notification errors. D-Bus session address for rabbiz is
    `unix:path=/run/user/1001/bus`.
 
 Important uncertainty: the PHY forces VBUS valid without a role switch.

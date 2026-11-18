@@ -50,7 +50,7 @@ CONFIG_XPAD=m            (optional, USB-OTG pads)
 
 ## 5. BT audio prepared alongside
 
-`pipewire-audio` (ships `/usr/lib/spa-0.2/bluez5/`: SBC/AAC/aptX/LDAC/HFP codecs), `pipewire-pulse`, `wireplumber` installed; `wireplumber.service` + `pipewire-pulse.socket` started in the `gamer` user manager (`systemctl --user -M gamer@`). A2DP/HFP sink nodes will appear when an audio device connects.
+`pipewire-audio` (ships `/usr/lib/spa-0.2/bluez5/`: SBC/AAC/aptX/LDAC/HFP codecs), `pipewire-pulse`, `wireplumber` installed; `wireplumber.service` + `pipewire-pulse.socket` started in the `rabbiz` user manager (`systemctl --user -M rabbiz@`). A2DP/HFP sink nodes will appear when an audio device connects.
 
 ## 6. Status / Open items
 

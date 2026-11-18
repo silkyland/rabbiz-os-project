@@ -51,7 +51,7 @@ What it does:
 
 1. Installs `aml`, `neatvnc`, `wayvnc` with `pacman -U` (downloading on the Mac into
    `tools/rabbiz-mirror/.cache/pkgs/`, gitignored).
-2. Writes `~gamer/.config/systemd/user/a21s-wayvnc.service`:
+2. Writes `~rabbiz/.config/systemd/user/a21s-wayvnc.service`:
    `wayvnc -o DSI-1 -f 30 172.16.42.1 127.0.0.1`, `Restart=always` so it comes back
    whenever `labwc` restarts (the session unit and the user manager outlive it).
 3. Writes `/usr/local/bin/rabbiz-mirror` (`start|stop|restart|status|logs|enable`) and
@@ -140,7 +140,7 @@ ssh root@172.16.42.1 rabbiz-mirror restart
 - **Package filenames 404** — the mirror rotates; update the three pinned filenames in
   `scripts/mirror_setup.sh` (they live in `extra/` for `aarch64`).
 - **Wayland socket missing** — the unit retries every 2 s until `labwc` is up; check
-  `systemctl --user status a21s-wayvnc` as `gamer`.
+  `systemctl --user status a21s-wayvnc` as `rabbiz`.
 
 ## Verification
 

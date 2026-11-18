@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # rabbiz-session — session selector for the A21s phone session (M1-T6).
 #
-# Started by rabbiz-session.service (ExecStart) as user `gamer`.
+# Started by rabbiz-session.service (ExecStart) as user `rabbiz`.
 # Picks the compositor by mode precedence:
 #
 #   --labwc > --de > $XDG_CONFIG_HOME/rabbiz-de/mode > /etc/rabbiz-de/enabled > labwc

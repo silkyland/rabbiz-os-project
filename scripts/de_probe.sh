@@ -2,7 +2,7 @@
 # de_probe.sh — run `rabbiz-de probe --json` on the A21s.
 #
 # Holds the device lock, stops rabbiz-labwc-session (KMS master), probes as
-# `gamer` through seatd, restores the unit in a trap. Exactly one JSON
+# `rabbiz` through seatd, restores the unit in a trap. Exactly one JSON
 # object on stdout; logs on stderr.
 #
 #   ./scripts/de_probe.sh [user@host] [--require=gl]
@@ -17,7 +17,7 @@ was_active=\$(systemctl is-active "\$unit" || true)
 [ "\$was_active" = "active" ] && systemctl stop "\$unit"
 trap '[ "\$was_active" = "active" ] && systemctl start "\$unit" || true' EXIT
 sleep 1
-runuser -u gamer -- env LIBSEAT_BACKEND=seatd \
-  XDG_RUNTIME_DIR=/run/user/\$(id -u gamer) \
+runuser -u rabbiz -- env LIBSEAT_BACKEND=seatd \
+  XDG_RUNTIME_DIR=/run/user/\$(id -u rabbiz) \
   /usr/local/bin/rabbiz-de probe --json $EXTRA
 REMOTE

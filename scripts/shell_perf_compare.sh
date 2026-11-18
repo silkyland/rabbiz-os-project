@@ -20,7 +20,7 @@ RAW="$(mktemp -t shell-perf.XXXXXX)"
 set -u
 REPEATS=$REPEATS
 CLK=\$(getconf CLK_TCK)
-GU=\$(id -u gamer)
+GU=\$(id -u rabbiz)
 LW=\$(pgrep -x labwc | head -1)
 WD=\$(ls -t /run/user/\$GU/wayland-[0-9]* 2>/dev/null | grep -v '\.lock\$' | head -1 | xargs -r basename)
 ENVF="XDG_RUNTIME_DIR=/run/user/\$GU WAYLAND_DISPLAY=\${WD:-wayland-0} \$(tr '\0' '\n' < /proc/\$LW/environ | grep -E '^(XDG_|WAYLAND_DISPLAY|DBUS_|QML|LIBSEAT|MOZ_|LANG)' | tr '\n' ' ')"
@@ -33,7 +33,7 @@ start_shell() {  # mode timing
   [ "\$timing" = 1 ] && t="QSG_RENDER_TIMING=1 WAYLAND_DEBUG=client"
   pkill -f "\$PAT" || true
   sleep 2
-  runuser -u gamer -- env \$ENVF QT_QPA_PLATFORMTHEME= QT_QUICK_CONTROLS_STYLE=Basic \$extra \$t \
+  runuser -u rabbiz -- env \$ENVF QT_QPA_PLATFORMTHEME= QT_QUICK_CONTROLS_STYLE=Basic \$extra \$t \
     setsid rabbiz-shell >/tmp/perf-shell.log 2>&1 </dev/null &
   sleep 9
   QS=\$(pgrep -f "\$PAT" | head -1)

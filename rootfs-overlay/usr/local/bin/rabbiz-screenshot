@@ -14,12 +14,12 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-GAMER_USER="gamer"
-GAMER_UID="$(id -u "${GAMER_USER}" 2>/dev/null || echo 1001)"
+RABBIZ_USER="rabbiz"
+RABBIZ_UID="$(id -u "${RABBIZ_USER}" 2>/dev/null || echo 1001)"
 if [ "$(id -u)" -eq 0 ]; then
-    RUNTIME_DIR="/run/user/${GAMER_UID}"
+    RUNTIME_DIR="/run/user/${RABBIZ_UID}"
 else
-    RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${GAMER_UID}}"
+    RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${RABBIZ_UID}}"
 fi
 WAYLAND_SOCK="${WAYLAND_DISPLAY:-wayland-0}"
 if [ ! -S "${RUNTIME_DIR}/${WAYLAND_SOCK}" ]; then
@@ -29,7 +29,7 @@ if [ ! -S "${RUNTIME_DIR}/${WAYLAND_SOCK}" ]; then
     fi
 fi
 
-SCREENSHOT_DIR="/home/${GAMER_USER}/Pictures/Screenshots"
+SCREENSHOT_DIR="/home/${RABBIZ_USER}/Pictures/Screenshots"
 STATE_FILE="${RUNTIME_DIR}/a21s-screenshot.state"
 
 if [ "${DELAY_MS}" -gt 0 ] 2>/dev/null; then
@@ -39,7 +39,7 @@ fi
 
 mkdir -p "${SCREENSHOT_DIR}" "${RUNTIME_DIR}" 2>/dev/null || true
 if [ "$(id -u)" -eq 0 ]; then
-    chown "${GAMER_USER}:${GAMER_USER}" "/home/${GAMER_USER}/Pictures" "${SCREENSHOT_DIR}" 2>/dev/null || true
+    chown "${RABBIZ_USER}:${RABBIZ_USER}" "/home/${RABBIZ_USER}/Pictures" "${SCREENSHOT_DIR}" 2>/dev/null || true
 fi
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
@@ -52,12 +52,12 @@ if [ -e "${OUT_PATH}" ]; then
 fi
 
 if [ "$(id -u)" -eq 0 ]; then
-    runuser -u "${GAMER_USER}" -- env \
+    runuser -u "${RABBIZ_USER}" -- env \
         XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
         WAYLAND_DISPLAY="${WAYLAND_SOCK}" \
-        HOME="/home/${GAMER_USER}" \
+        HOME="/home/${RABBIZ_USER}" \
         grim "${OUT_PATH}"
-    chown "${GAMER_USER}:${GAMER_USER}" "${OUT_PATH}" 2>/dev/null || true
+    chown "${RABBIZ_USER}:${RABBIZ_USER}" "${OUT_PATH}" 2>/dev/null || true
 else
     env \
         XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
@@ -72,7 +72,7 @@ TMP_STATE="${STATE_FILE}.tmp.$$"
 printf '%s|%s|%s\n' "${OUT_PATH}" "${FILENAME}" "${NONCE}" > "${TMP_STATE}"
 mv -f "${TMP_STATE}" "${STATE_FILE}"
 if [ "$(id -u)" -eq 0 ]; then
-    chown "${GAMER_USER}:${GAMER_USER}" "${STATE_FILE}" 2>/dev/null || true
+    chown "${RABBIZ_USER}:${RABBIZ_USER}" "${STATE_FILE}" 2>/dev/null || true
 fi
 chmod 664 "${STATE_FILE}" 2>/dev/null || true
 

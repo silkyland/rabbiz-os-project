@@ -54,7 +54,7 @@ ApplicationWindow {
 
     readonly property var visibleNotes: Notes.searchNotes(win.notes, win.query)
     readonly property var pendingNote: win.findNote(win.deletingId)
-    readonly property string notesDir: (Quickshell.env("HOME") || "/home/gamer")
+    readonly property string notesDir: (Quickshell.env("HOME") || "/home/rabbiz")
                                         + "/.local/share/rabbiz-notes"
 
     readonly property string listSubtitle: {
