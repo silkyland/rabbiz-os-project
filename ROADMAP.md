@@ -36,16 +36,16 @@
 ### M3.6: Internal Speaker Audio — wip
 - **Objective:** Play music/Steam audio through the built-in speaker via the ABOX Calliope DSP, exposed to PipeWire as the default sink.
 - **Exit criteria:** `aplay -D plughw:1,100` and PipeWire/Steam both produce clean audio on a good boot, repeatably, without wedging the DSP.
-- **Detail:** [devices/samsung/a21s/docs/a21s-audio-abox-plan.md](devices/samsung/a21s/docs/a21s-audio-abox-plan.md); current handoff in [devices/samsung/a21s/docs/HANDOFF.md](devices/samsung/a21s/docs/HANDOFF.md) §0–§0.1.
+- **Detail:** [devices/samsung/a21s/docs/a21s-audio-abox-plan.md](devices/samsung/a21s/docs/a21s-audio-abox-plan.md); playback and boot fixes in [devices/samsung/a21s/docs/HANDOFF.md](devices/samsung/a21s/docs/HANDOFF.md) §0.3–§0.4.
 - **Tasks:**
   - [x] Port ABOX to Mainline 7.3 (`socs/exynos850/drivers/abox/`), DT fragment, `calliope_*` firmware, topology (`RC#1–#11`).
   - [x] Speaker + earpiece playback verified once (music heard) — `abox_ion.c` `dma_get_sgtable()` fix.
   - [x] `s2mpu12` PMIC rails → `sma1303` amp powered and responding.
   - [x] UCM2 for `Exynos3830-Madera`, default sink persisted, `abox-audio.service`.
-  - [ ] **Fix bug #5: playback `EIO` ~1 s after trigger, DSP `data abort` on a clean boot** (blocks everything else).
-  - [ ] Resolve `BUFFER_BYTES_MAX` (1 MiB) vs 768 KiB DSP heap mismatch; keep PipeWire from probing calliope PCMs with defaults.
-  - [ ] Resolve `ASRC3` contradiction between `abox_speaker.sh` and the documented recipe; stop `audio-up.sh` hiding `set -e` failures.
-  - [ ] Make Calliope boot reliable (flaky `BOOT_DONE`; software reboot sometimes leaves the host offline → manual power cycle).
+  - [x] Route speaker playback with `ASRC3=0` to avoid the Calliope data abort.
+  - [x] Cap ABOX buffers at 256 KiB and disable WirePlumber's Pro Audio probe for this card.
+  - [x] Map the Calliope firmware scatter-gather table to fix the noncontiguous DMA allocation boot failure.
+  - [ ] Verify repeated cold boots and playback through Steam after Steam is restored.
 
 ### M4 (R1): Xiaomi Pad 7 Pro (`muyu` / `SM8635`) — todo
 - **Objective:** Unlock HyperOS bootloader on `muyu` (`ac9c8ddc`) and port Native SteamOS ARM64 (`Zaviya`).
