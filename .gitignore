@@ -42,3 +42,6 @@ dist/
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# private redaction rules for scripts/release/public_history.sh (hold real MACs, names)
+scripts/release/redact.local.txt
