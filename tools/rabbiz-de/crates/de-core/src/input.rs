@@ -11,7 +11,7 @@
 //! can compute release velocity; the power key spawns `a21s-power-key
 //! toggle` detached on release.
 
-use smithay::reexports::wayland_server::Resource;
+use smithay::reexports::wayland_server::{protocol::wl_surface::WlSurface, Resource};
 use std::process::Command;
 
 use de_ui::gestures::{Gesture, GestureEvent, Zone};
@@ -27,6 +27,19 @@ use smithay::input::touch::{DownEvent, MotionEvent as TouchMotion, UpEvent};
 use smithay::utils::{Logical, Point, Size, SERIAL_COUNTER as SCOUNTER};
 
 use crate::state::De;
+
+pub(crate) struct SurfaceHit {
+    pub surface: WlSurface,
+    pub location: Point<f64, Logical>,
+    pub keyboard_target: Option<WlSurface>,
+    pub above_windows: bool,
+}
+
+impl SurfaceHit {
+    fn into_focus(self) -> (WlSurface, Point<f64, Logical>) {
+        (self.surface, self.location)
+    }
+}
 
 impl De {
     /// Dispatch one libinput event into the seat.
@@ -66,6 +79,14 @@ impl De {
             InputEvent::PointerButton { event } => {
                 let serial = SCOUNTER.next_serial();
                 let ptr = self.pointer.clone();
+                if event.state() == smithay::backend::input::ButtonState::Pressed {
+                    if let Some(target) = self
+                        .surface_under(ptr.current_location())
+                        .and_then(|hit| hit.keyboard_target)
+                    {
+                        self.focus_surface(Some(target), serial);
+                    }
+                }
                 ptr.button(
                     self,
                     &ButtonEvent {
@@ -119,7 +140,7 @@ impl De {
         delta: Point<f64, Logical>,
     ) {
         let serial = SCOUNTER.next_serial();
-        let under = self.surface_under(pos).map(|(s, l)| (s, l.to_f64()));
+        let under = self.surface_under(pos).map(SurfaceHit::into_focus);
         let ptr = self.pointer.clone();
         ptr.motion(
             self,
@@ -179,20 +200,29 @@ impl De {
         // Shell gestures first: a contact starting in a system zone — or any
         // contact while a shell screen is foreground — is claimed by the
         // shell and never reaches the client.
+        let hit = self.surface_under(pos);
         let zone = self.gestures.zone(api_point(pos));
-        self.feed_gesture(
-            i32::from(evt.slot()),
-            de_api::input::TouchPhase::Down,
-            pos,
-            evt.time_msec(),
-        );
-        self.touch_claimed =
-            zone != Zone::Content || matches!(self.foreground, crate::state::Foreground::Shell);
+        // Top layers (including the OSK) own their interactive region.
+        // Retain the nav strip as a way to leave the foreground client.
+        let layer_contact = zone != Zone::NavBar && hit.as_ref().is_some_and(|h| h.above_windows);
+        if !layer_contact {
+            self.feed_gesture(
+                i32::from(evt.slot()),
+                de_api::input::TouchPhase::Down,
+                pos,
+                evt.time_msec(),
+            );
+        }
+        self.touch_claimed = !layer_contact
+            && (zone != Zone::Content || self.foreground == crate::state::Foreground::Shell);
         if self.touch_claimed {
             return;
         }
         let serial = SCOUNTER.next_serial();
-        let under = self.surface_under(pos).map(|(s, l)| (s, l.to_f64()));
+        if let Some(target) = hit.as_ref().and_then(|hit| hit.keyboard_target.clone()) {
+            self.focus_surface(Some(target), serial);
+        }
+        let under = hit.map(SurfaceHit::into_focus);
         if std::env::var_os("DE_INPUT_DEBUG").is_some() {
             let info = under.as_ref().map(|(s, l)| {
                 let alive = self
@@ -207,11 +237,6 @@ impl De {
                 self.space.elements().count(),
                 self.seat.get_keyboard().is_some()
             );
-        }
-        if let Some((surface, _)) = &under {
-            if let Some(kbd) = self.seat.get_keyboard() {
-                kbd.set_focus(self, Some(surface.clone()), serial);
-            }
         }
         let touch = self.touch.clone();
         touch.down(
@@ -241,7 +266,7 @@ impl De {
         if self.touch_claimed {
             return;
         }
-        let under = self.surface_under(pos).map(|(s, l)| (s, l.to_f64()));
+        let under = self.surface_under(pos).map(SurfaceHit::into_focus);
         let touch = self.touch.clone();
         touch.motion(
             self,
@@ -371,6 +396,7 @@ impl De {
         }
         self.launch.cancel();
         self.foreground = Foreground::Shell;
+        self.focus_foreground();
         if self.nav.current != screen {
             self.nav.current = screen;
         }
@@ -449,6 +475,7 @@ impl De {
                 // Tap anywhere → back to the last app.
                 if self.space.elements().next().is_some() {
                     self.foreground = Foreground::App;
+                    self.focus_foreground();
                     self.needs_present = true;
                 }
             }
@@ -490,6 +517,7 @@ impl De {
             Err(e) => {
                 self.launch_error = Some(format!("{desktop_id}: {e}"));
                 self.foreground = crate::state::Foreground::Shell;
+                self.focus_foreground();
                 self.nav.go(de_ui::nav::Screen::Error);
                 self.shell_dirty = true;
                 self.needs_present = true;
@@ -537,19 +565,30 @@ impl De {
             .collect()
     }
 
-    /// Top-most surface under `pos` (toplevel incl. popups/subsurfaces).
-    pub fn surface_under(
-        &self,
-        pos: Point<f64, Logical>,
-    ) -> Option<(
-        smithay::reexports::wayland_server::protocol::wl_surface::WlSurface,
-        Point<i32, Logical>,
-    )> {
-        let (window, loc) = self.space.element_under(pos)?;
-        let rel = pos - loc.to_f64();
-        window
-            .surface_under(rel, WindowSurfaceType::ALL)
-            .map(|(s, l)| (s, l + loc))
+    /// Hit-test in the same order used to compose the output.
+    fn surface_under(&self, pos: Point<f64, Logical>) -> Option<SurfaceHit> {
+        if let Some(hit) = self.layer_under(pos, true) {
+            return Some(hit);
+        }
+        if self.foreground == crate::state::Foreground::Shell {
+            return None;
+        }
+        if self.morph.is_none() {
+            if let Some((window, loc)) = self.space.element_under(pos) {
+                if let Some((surface, offset)) =
+                    window.surface_under(pos - loc.to_f64(), WindowSurfaceType::ALL)
+                {
+                    return Some(SurfaceHit {
+                        surface,
+                        location: (loc + offset).to_f64(),
+                        keyboard_target: window.toplevel().map(|t| t.wl_surface().clone()),
+                        above_windows: false,
+                    });
+                }
+            }
+            return self.layer_under(pos, false);
+        }
+        None
     }
 }
 

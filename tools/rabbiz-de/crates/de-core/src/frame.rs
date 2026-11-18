@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use de_api::{FrameStats, StatsSummary, TimingSummary};
+use de_protocols::layer_shell::{origin, ABOVE_WINDOWS, BELOW_WINDOWS};
 use de_render::DeRenderer;
 use smithay::backend::drm::compositor::{FrameFlags, PrimaryPlaneElement};
 use smithay::backend::renderer::element::render_elements;
@@ -18,11 +19,13 @@ use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::AsRenderElements;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
+use smithay::desktop::{layer_map_for_output, LayerMap};
 use smithay::reexports::calloop::generic::Generic;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 use smithay::reexports::calloop::{EventLoop, Interest, Mode, PostAction};
 use smithay::reexports::wayland_server::Display;
 use smithay::utils::{Physical, Point, Scale};
+use smithay::wayland::shell::wlr_layer::Layer;
 use smithay::wayland::socket::ListeningSocketSource;
 
 use crate::morph::{Phase, WindowMorph};
@@ -245,6 +248,8 @@ where
     }
 
     let mut elements: Vec<DeElement<R>> = Vec::new();
+    let map = layer_map_for_output(de.output_obj);
+    push_layer_elements(&mut elements, renderer, &map, ABOVE_WINDOWS);
     let transitioning = de.morph.is_some();
     let show_app = !transitioning
         && de.foreground == crate::state::Foreground::App
@@ -261,8 +266,7 @@ where
             )));
         }
     } else {
-        // Windows bottom-to-top.
-        for window in de.space.elements() {
+        for window in de.space.elements().rev() {
             let loc = de
                 .space
                 .element_location(window)
@@ -287,6 +291,7 @@ where
             elements.push(bar);
         }
     }
+    push_layer_elements(&mut elements, renderer, &map, BELOW_WINDOWS);
 
     let res = de
         .compositor
@@ -318,12 +323,39 @@ where
     // Frame callbacks for the freshly-committed surfaces.
     let time = de.clock.now();
     let out = de.output_obj.clone();
+    for layer in map.layers() {
+        layer.send_frame(&out, time, Some(Duration::from_millis(16)), |_, _| {
+            Some(out.clone())
+        });
+    }
     for window in de.space.elements() {
         window.send_frame(&out, time, Some(Duration::from_millis(16)), |_, _| {
             Some(out.clone())
         });
     }
     Ok(true)
+}
+
+fn push_layer_elements<R: Renderer + ImportAll + ImportMem>(
+    elements: &mut Vec<DeElement<R>>,
+    renderer: &mut R,
+    map: &LayerMap,
+    levels: [Layer; 2],
+) where
+    R::TextureId: Texture + Clone + 'static,
+{
+    for level in levels {
+        for layer in map.layers_on(level).rev() {
+            if let Some(loc) = origin(map, layer) {
+                elements.extend(layer.render_elements::<DeElement<R>>(
+                    renderer,
+                    loc.to_physical(1),
+                    Scale::from(1.0),
+                    1.0,
+                ));
+            }
+        }
+    }
 }
 
 fn push_morph_elements<R: Renderer + ImportAll + ImportMem>(
@@ -401,6 +433,8 @@ impl Run {
         // this once per event-loop turn.
         self.de.space.refresh();
         self.de.popups.cleanup();
+        layer_map_for_output(&self.de.output_obj).cleanup();
+        self.de.sync_exclusive_layer_focus();
         if self.de.needs_present {
             self.de.needs_present = false;
             let _ = self.present().map_err(|e| eprintln!("present: {e}"));
@@ -624,7 +658,8 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     // Wayland client socket: fixed name `wayland-0` (§7.20).
     let socket = ListeningSocketSource::with_name("wayland-0")
         .map_err(|e| format!("wayland socket: {e:?}"))?;
-    run.de.socket_name = Some(socket.socket_name().to_string_lossy().into_owned());
+    let socket_name = socket.socket_name().to_string_lossy().into_owned();
+    run.de.socket_name = Some(socket_name.clone());
     handle
         .insert_source(socket, |stream, _, run: &mut Run| {
             if let Err(err) = run
@@ -720,6 +755,13 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     let deadline = run.duration.map(|d| Instant::now() + d);
     // Kick off the first frame.
     run.present()?;
+    let _osk = match crate::osk::spawn(&mut run.de.display_handle, &socket_name) {
+        Ok(child) => Some(child),
+        Err(error) => {
+            eprintln!("rabbiz-de: could not start rabbiz-osk: {error}");
+            None
+        }
+    };
 
     loop {
         let wait = [deadline, run.motion_wake_at()]

@@ -43,7 +43,7 @@ impl CompositorHandler for De {
     }
 }
 
-fn has_buffer(surface: &WlSurface) -> bool {
+pub(crate) fn has_buffer(surface: &WlSurface) -> bool {
     with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false)
 }
 
@@ -92,6 +92,7 @@ impl De {
         }
         self.popups.commit(surface);
         ensure_initial_configure(surface, &mut self.space, &mut self.popups);
+        self.commit_layer(surface);
         self.needs_present = true;
     }
 }

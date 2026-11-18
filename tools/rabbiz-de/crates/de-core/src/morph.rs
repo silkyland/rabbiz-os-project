@@ -168,6 +168,7 @@ impl De {
         }
         self.space.raise_element(&window, true);
         self.foreground = Foreground::App;
+        self.focus_foreground();
     }
 
     fn origin_for(&self, window: &Window) -> Option<LaunchOrigin> {
@@ -241,6 +242,7 @@ impl De {
                 Phase::Closing | Phase::Dragging => Foreground::Shell,
             };
             self.morph = None;
+            self.focus_foreground();
         }
     }
 }

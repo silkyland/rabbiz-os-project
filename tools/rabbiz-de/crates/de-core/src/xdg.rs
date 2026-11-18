@@ -78,6 +78,7 @@ impl XdgShellHandler for De {
             self.foreground = crate::state::Foreground::Shell;
             self.shell_dirty = true;
         }
+        self.focus_foreground();
         self.needs_present = true;
     }
 

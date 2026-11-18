@@ -5,6 +5,7 @@ use smithay::input::pointer::CursorImageStatus;
 use smithay::input::{Seat, SeatHandler, SeatState};
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Resource;
+use smithay::utils::{Serial, SERIAL_COUNTER};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::selection::data_device::set_data_device_focus;
 use smithay::wayland::selection::primary_selection::set_primary_focus;
@@ -37,3 +38,34 @@ impl SeatHandler for De {
 }
 
 smithay::delegate_seat!(De);
+
+impl De {
+    pub(crate) fn focus_surface(&mut self, target: Option<WlSurface>, serial: Serial) {
+        if let Some(keyboard) = self.seat.get_keyboard() {
+            keyboard.set_focus(self, self.exclusive_layer_focus.clone().or(target), serial);
+        }
+    }
+
+    pub(crate) fn focus_foreground(&mut self) {
+        let target = match self.foreground {
+            crate::state::Foreground::Shell => None,
+            crate::state::Foreground::App => self
+                .space
+                .elements()
+                .rev()
+                .filter_map(|window| window.toplevel())
+                .map(|surface| surface.wl_surface())
+                .find(|surface| crate::comp::has_buffer(surface))
+                .cloned(),
+        };
+        self.focus_surface(target, SERIAL_COUNTER.next_serial());
+    }
+
+    pub(crate) fn sync_exclusive_layer_focus(&mut self) {
+        let layer = self.exclusive_layer();
+        if self.exclusive_layer_focus != layer {
+            self.exclusive_layer_focus = layer;
+            self.focus_foreground();
+        }
+    }
+}

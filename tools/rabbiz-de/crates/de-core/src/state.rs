@@ -27,15 +27,19 @@ use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Clock, Monotonic};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
+use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState;
+use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
+use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
+use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use smithay::wayland::xdg_activation::XdgActivationState;
 
 /// Free CMA below which `auto` picks the software renderer (plan Decision 2).
@@ -46,6 +50,7 @@ const CMA_FLOOR_KB: u64 = 96 * 1024;
 #[derive(Debug, Default)]
 pub struct DeClientState {
     pub compositor_state: CompositorClientState,
+    pub(crate) session_input_method: bool,
 }
 impl smithay::reexports::wayland_server::backend::ClientData for DeClientState {
     fn initialized(&self, _client_id: smithay::reexports::wayland_server::backend::ClientId) {}
@@ -89,6 +94,9 @@ pub struct De {
     pub compositor_state: CompositorState,
     pub shm_state: ShmState,
     pub xdg_shell_state: XdgShellState,
+    pub(crate) layer_shell_state: WlrLayerShellState,
+    pub(crate) exclusive_layer_focus:
+        Option<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface>,
     pub xdg_decoration_state: XdgDecorationState,
     pub xdg_activation_state: XdgActivationState,
     pub data_device_state: DataDeviceState,
@@ -331,6 +339,10 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let compositor_state = CompositorState::new::<De>(&dh);
     let shm_state = ShmState::new::<De>(&dh, de_protocols::shm_formats());
     let xdg_shell_state = XdgShellState::new::<De>(&dh);
+    let layer_shell_state = WlrLayerShellState::new::<De>(&dh);
+    TextInputManagerState::new::<De>(&dh);
+    InputMethodManagerState::new::<De, _>(&dh, crate::osk::is_session_input_method);
+    VirtualKeyboardManagerState::new::<De, _>(&dh, crate::osk::is_session_input_method);
     let xdg_decoration_state = XdgDecorationState::new::<De>(&dh);
     let xdg_activation_state = XdgActivationState::new::<De>(&dh);
     let data_device_state = DataDeviceState::new::<De>(&dh);
@@ -422,6 +434,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         compositor_state,
         shm_state,
         xdg_shell_state,
+        layer_shell_state,
+        exclusive_layer_focus: None,
         xdg_decoration_state,
         xdg_activation_state,
         data_device_state,
