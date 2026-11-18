@@ -63,7 +63,7 @@
   - [x] Verify `cpuidle` residency — **zero idle states registered**: the DT declares no `idle-states`, CPUs only get WFI ([finding](devices/samsung/a21s/findings/2026-11-18-thermal-cpuidle-cpufreq-state.md)).
   - [x] Fuel Gauge + Charger via `power_supply` + `upower` — both visible in upower, real charge/discharge logged ([interface doc](devices/samsung/a21s/docs/a21s-power-supply-interface.md)). MFD port not done; FG rename patch pending a boot-able kernel.
   - [x] Read Exynos TMU temperatures with per-sensor eFuse trim and cross-check with ACPM on the A21s. [Calibration finding](devices/samsung/a21s/findings/2026-11-18-tmu-efuse-temperature.md).
-  - [ ] Boot-test the new A21s DTB and verify CPU passive cooling. **Blocked:** kexec black-screens foreign-built kernels ([incident](devices/samsung/a21s/findings/2026-11-18-kexec-container-kernel-black.md)); awaiting flash decision. `/sys/class/thermal/` is currently **empty** — no zones at all.
+  - [x] Boot-test the new A21s DTB — flashed 2026-11-18: three zones live with passive 80 °C CPU trips bound to cpufreq cooling devices + 95 °C criticals ([finding](devices/samsung/a21s/findings/2026-11-18-flash-thermal-fg-dsi-live.md)). Passive cooling under load still to be exercised.
   - [x] Verify backlight control — single sysfs node `13070000.dsi.0`, 0–255 DCS `0x51`, [interface doc](devices/samsung/a21s/docs/a21s-backlight-interface.md).
   - [ ] Suspend-to-RAM — untested; queued behind the device lock.
 

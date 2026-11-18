@@ -64,11 +64,13 @@ learned from; treat uncited additions as hypotheses until they earn a finding.
   files are `video`-group writable by udev where the DE needs them
   (`90-a21s-backlight.rules`: backlight + cpufreq governor).
 
-## Power/display state (2026-11-18, kernel #12)
+## Power/display state (2026-11-18, flashed kernel #5)
 
-- Governor is `performance`, cpuidle has zero registered states, and
-  `/sys/class/thermal/` is **empty** — no thermal protection at all until
-  patch 0009 boots ([finding](findings/2026-11-18-thermal-cpuidle-cpufreq-state.md)).
+- Thermal zones live since the 2026-11-18 flash: `little0/little1/gpu-thermal`,
+  passive 80 °C CPU trips + 95 °C criticals; `exynos850-tmu.ko` autoloads
+  via `/etc/modules-load.d/` ([finding](findings/2026-11-18-flash-thermal-fg-dsi-live.md)).
+- Governor is `performance` and cpuidle has zero registered states
+  ([finding](findings/2026-11-18-thermal-cpuidle-cpufreq-state.md)).
 - IIO sensor nodes (`a21s-accel`/`a21s-gyro`/`a21s-light`) return `-ENODATA`
   until a real sample arrives — a failed read means "no data", never 0 lux
   ([finding](findings/2026-11-18-als-zero-chub-scan.md)).
