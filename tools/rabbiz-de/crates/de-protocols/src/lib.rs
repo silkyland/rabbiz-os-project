@@ -5,7 +5,6 @@
 //! pieces: advertised formats, dmabuf feedback construction and the
 //! fullscreen/SSD policies.
 
-use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::allocator::{Format, Fourcc, Modifier};
 use smithay::backend::drm::DrmNode;
 use smithay::reexports::wayland_protocols::xdg::decoration::zv1::server::zxdg_toplevel_decoration_v1;
@@ -60,13 +59,6 @@ pub fn set_ssd(surface: &ToplevelSurface) {
     surface.with_pending_state(|state| {
         state.decoration_mode = Some(zxdg_toplevel_decoration_v1::Mode::ServerSide);
     });
-}
-
-/// Import a dmabuf buffer for damage bookkeeping — placeholder for the
-/// pre-commit blocker path used when dmabuf clients commit (kept tiny for
-/// M1: `on_commit_buffer_handler` handles wl_shm correctly already).
-pub fn dmabuf_needs_import(_buf: &Dmabuf) -> bool {
-    false
 }
 
 pub mod layer_shell;

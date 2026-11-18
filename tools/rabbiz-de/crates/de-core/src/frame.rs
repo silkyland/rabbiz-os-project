@@ -138,12 +138,12 @@ impl Run {
         let minute = minute_of_day();
         if (matches!(self.de.foreground, crate::state::Foreground::Shell)
             || self.de.morph.is_some())
-            && (self.de.shell_dirty || self.de.stub_minute != minute || self.de.shell_px.is_none())
+            && (self.de.shell_dirty || self.de.shell_minute != minute || self.de.shell_px.is_none())
         {
-            self.de.stub_minute = minute;
+            self.de.shell_minute = minute;
             self.de.shell_px = Some(self.de.shell_pixels());
             self.de.shell_dirty = false;
-            self.de.shell_stub = None; // force texture re-upload
+            self.de.shell_tex = None; // force texture re-upload
         }
         // Split `de` into field borrows so `renderer` can be passed
         // mutably alongside the rest of the scene state.
@@ -152,7 +152,7 @@ impl Run {
             renderer,
             compositor,
             space,
-            shell_stub,
+            shell_tex,
             shell_px,
             gesture_bar,
             output,
@@ -167,7 +167,7 @@ impl Run {
         let mut parts = FrameParts {
             compositor,
             space,
-            shell_stub,
+            shell_tex,
             shell_px,
             gesture_bar,
             output,
@@ -215,7 +215,7 @@ impl Run {
 struct FrameParts<'a> {
     compositor: &'a mut de_backend::probe::DeCompositor,
     space: &'a mut smithay::desktop::Space<smithay::desktop::Window>,
-    shell_stub: &'a mut Option<Box<dyn std::any::Any>>,
+    shell_tex: &'a mut Option<Box<dyn std::any::Any>>,
     shell_px: &'a mut Option<de_api::Pixels>,
     gesture_bar: &'a mut Option<Box<dyn std::any::Any>>,
     output: &'a de_backend::drm::OutputSelection,
@@ -239,13 +239,13 @@ where
     // Upload the latest shell frame as a texture (re-rastered upstream in
     // `present_once` on dirty/minute change — the cached texture otherwise
     // produces no damage and the frame is simply EmptyFrame).
-    if de.shell_stub.is_none() {
+    if de.shell_tex.is_none() {
         if let Some(px) = de.shell_px.as_ref() {
-            *de.shell_stub = upload_any(renderer, px);
+            *de.shell_tex = upload_any(renderer, px);
         }
     }
     if de.gesture_bar.is_none() {
-        let px = de_ui::shell_stub::gesture_bar(de_api::Size::new(
+        let px = de_ui::nav_bar::gesture_bar(de_api::Size::new(
             de.output.width as i32,
             de.output.height as i32,
         ));
@@ -264,7 +264,7 @@ where
         push_morph_elements(&mut elements, renderer, morph, output, de.now);
     }
     if !show_app {
-        if let Some(tex) = texture_buffer::<R>(de.shell_stub.as_ref()) {
+        if let Some(tex) = texture_buffer::<R>(de.shell_tex.as_ref()) {
             elements.push(DeElement::from(tex_el::<R>(
                 tex,
                 Point::<f64, Physical>::from((0.0, 0.0)),
@@ -287,7 +287,7 @@ where
         }
     }
     // Gesture bar on top of everything.
-    let bar_y = de.output.height as f64 - de_ui::shell_stub::GESTURE_BAR_H as f64;
+    let bar_y = de.output.height as f64 - de_ui::chrome::NAV_H as f64;
     if let Some(tex) = texture_buffer::<R>(de.gesture_bar.as_ref()) {
         let bar = DeElement::from(tex_el::<R>(tex, Point::<f64, Physical>::from((0.0, bar_y))));
         if transitioning {
@@ -727,12 +727,11 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         })
         .map_err(|e| format!("libinput source: {e}"))?;
 
-    // Clock tick — re-raster the home stub each minute.
+    // Clock tick — re-raster the shell frame each minute.
     let timer = Timer::immediate();
     handle
         .insert_source(timer, |_, _, run: &mut Run| {
-            if run.de.stub_minute != minute_of_day() {
-                run.de.shell_stub_dirty = true;
+            if run.de.shell_minute != minute_of_day() {
                 run.de.needs_present = true;
                 run.pump();
             }
@@ -741,8 +740,9 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         .map_err(|e| format!("timer source: {e}"))?;
 
     // Frame dump trigger: touch `$XDG_RUNTIME_DIR/rabbiz-de.shot` → the next
-    // tick writes the composited shell frame to `rabbiz-de-shot.ppm`. The DE
-    // does not implement screencopy yet; this is the device debug path.
+    // tick writes the composited shell frame to `rabbiz-de-shot.ppm`. Device
+    // debug path — clients use `zwlr_screencopy_manager_v1` (shm only, so
+    // dmabuf/EGL content is not captured there either).
     let shot_timer = Timer::immediate();
     handle
         .insert_source(shot_timer, |_, _, run: &mut Run| {

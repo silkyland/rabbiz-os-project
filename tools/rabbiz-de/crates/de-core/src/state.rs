@@ -116,15 +116,14 @@ pub struct De {
 
     /// A client commit or shell change requested a frame.
     pub needs_present: bool,
-    /// Home stub texture (clock); `None` = not yet uploaded. Stored as
+    /// Shell frame texture; `None` = not yet uploaded. Stored as
     /// `TextureBuffer<R::TextureId>` boxed — the active renderer variant
     /// always matches (re-uploaded on renderer init and on change).
-    pub shell_stub: Option<Box<dyn std::any::Any>>,
-    pub shell_stub_dirty: bool,
+    pub shell_tex: Option<Box<dyn std::any::Any>>,
     /// Gesture-bar overlay texture (static).
     pub gesture_bar: Option<Box<dyn std::any::Any>>,
-    /// Last minute rendered into the stub (re-raster on change).
-    pub stub_minute: u64,
+    /// Last minute rendered into the shell frame (re-raster on change).
+    pub shell_minute: u64,
     /// Last touch position in logical coords (TouchUp carries none).
     pub last_touch_pos: smithay::utils::Point<f64, smithay::utils::Logical>,
 
@@ -466,10 +465,9 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         touch,
 
         needs_present: true,
-        shell_stub: None,
-        shell_stub_dirty: true,
+        shell_tex: None,
         gesture_bar: None,
-        stub_minute: u64::MAX,
+        shell_minute: u64::MAX,
         last_touch_pos: (0.0, 0.0).into(),
         direct_scanout: 0,
         primary_composite: 0,

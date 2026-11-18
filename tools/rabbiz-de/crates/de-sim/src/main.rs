@@ -171,7 +171,7 @@ fn morph_strip(size: Size, strings: &de_ui::i18n::Strings, opening: bool) -> Pix
     let bar_h = de_ui::chrome::NAV_H;
     app.fill_rect(Rect::new(0, size.h - bar_h, size.w, bar_h), theme.bg);
     let app = app.into_pixels();
-    let bar = de_ui::shell_stub::gesture_bar(size);
+    let bar = de_ui::nav_bar::gesture_bar(size);
     let src = de_ui::home::icon_rect(size, HomeHit::Grid(0), 4).expect("grid bounds");
     let dst = Rect::new(0, 0, size.w, size.h);
     let icon = morph_icon(theme, &de_ui::chrome::IconEntry::new("app0", "App 0"), src);

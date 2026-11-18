@@ -45,7 +45,7 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     // Same slot as the submitted element list: the bar sits behind app and
     // shell content (in front only while a morph runs, which the dump does
     // not reproduce).
-    let bar = de_ui::shell_stub::gesture_bar(canvas.size());
+    let bar = de_ui::nav_bar::gesture_bar(canvas.size());
     canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
 
     if matches!(de.foreground, Foreground::App) && de.morph.is_none() {
