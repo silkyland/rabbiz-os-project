@@ -455,7 +455,8 @@ here is accepted by the owner's feel review yet.
 | zwlr-virtual-pointer-v1 | live, device-tested | hand-rolled v2 global (`wayland-protocols-wlr` 0.3.12 bindings; smithay 0.7 has none); `a21s-wayvnc` went from crash loop to `active`, port 5900, RFB click → real capture in `rabbiz-camera` ([finding](../devices/samsung/a21s/findings/2026-11-18-de-wayvnc-needs-virtual-pointer.md), `verified`) |
 | Privileged-protocol policy (default-deny, lock-screen blank captures) | live, device-tested | policy tested once on the A21s; lock-screen blank capture is unit-tested only; focus-stealing and loopback VNC are open ([doc](DE-PRIVILEGED-PROTOCOLS.md)) |
 | Input device registry (keyboard, mouse, touchpad, gamepad) | core only | pure classification + state file, tested on host; no udev collector, not wired into the compositor |
-| Context menus in client apps (xdg popups) | partial | popups are tracked but `grab` is a no-op and popup rendering, hit-testing and capture are unverified ([doc](DE-DESKTOP-MODE.md)) |
+| Context menus in client apps (xdg popups) | built, not device-tested | popup placement, grab, drawing, capture and touch dismissal are in (`0145e8b`) and pass host and container gates; nobody has seen a menu on the A21s yet ([doc](DE-DESKTOP-MODE.md)) |
+| Shell context menu on the empty home screen (right-click, long-press) | built, not device-tested | `de_ui::menu` + `shell_menu.rs` (`261c93c`, `94463c0`): Change wallpaper, Settings, Lock screen; hover, keys, touch; unit-tested layout and navigation |
 | Desktop form factor (windows, panel, desktop menu) | missing | handset only; design in [DE-DESKTOP-MODE.md](DE-DESKTOP-MODE.md) |
 | Native mirror protocol (replaces VNC for the companion app) | missing | design in [DE-MIRROR-PROTOCOL.md](DE-MIRROR-PROTOCOL.md) |
 | XWayland | missing | M5 |

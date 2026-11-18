@@ -29,6 +29,11 @@ docking (external display + pointer + keyboard).
 ## 3. Phases
 
 ### Phase A: context menus that actually work (first, useful on every form factor)
+
+**Status 2026-11-18:** items 1-3 are written and pass the host and container gates (`0145e8b`, `261c93c`, `94463c0`); item 4, the
+acceptance on the device with GTK, Qt and Chrome, has **not** been run because the shared device lock was held by a long
+charger-logging run. Not built: submenus, icons in menus, menus on app icons and notifications (only the empty home screen
+has one), a drop shadow.
 1. **Client menus:** implement xdg popup grabs (pointer and touch), keyboard focus to the popup, dismissal on outside
    click, touch outside and Escape, nested popups, positioner constraint solving against the output, correct stacking over a
    fullscreen window, drawing and hit-testing of popups, inclusion in captures.
