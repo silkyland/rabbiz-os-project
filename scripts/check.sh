@@ -3,6 +3,8 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 node scripts/check_shell_seams.mjs          # real tree
+node scripts/check_findings.mjs             # finding front matter (docs/FINDINGS.md)
+node tests/findings.test.mjs                # the finding linter itself
 node shell/tests/appcatalog.test.mjs        # Preferred base apps and duplicate entries
 node shell/tests/iconlayout.test.mjs        # ~/Desktop + dock icon order/membership (no Qt, no device)
 node shell/tests/seams.test.mjs             # checker still fires on bad fixtures

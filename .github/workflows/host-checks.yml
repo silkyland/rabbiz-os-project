@@ -1,0 +1,21 @@
+name: host-checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Seams, findings and app-logic tests (no Qt, no device)
+        run: |
+          set -e
+          node scripts/check_shell_seams.mjs
+          node scripts/check_findings.mjs
+          for t in tests/findings.test.mjs tests/*.test.mjs shell/tests/*.test.mjs; do node "$t"; done
+          python3 -B -m unittest discover -s tools/qt-scanout/tests
+          python3 -B tests/test_holdmenu.py
+          python3 -B tests/test_volume_keys.py

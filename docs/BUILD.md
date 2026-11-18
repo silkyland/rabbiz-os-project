@@ -68,8 +68,8 @@ On Arch Linux ARM, `/lib` is a symlink to `usr/lib`. Always install modules unde
 
 ```bash
 # Out-of-tree SCSC modules
-scp drivers/scsc/*.ko root@192.168.1.142:/usr/lib/modules/7.3.0-g14a425b3a7dc/extra/
-ssh root@192.168.1.142 "depmod -a"
+scp drivers/scsc/*.ko root@<wifi-ip>:/usr/lib/modules/7.3.0-g14a425b3a7dc/extra/
+ssh root@<wifi-ip> "depmod -a"
 
 # If you also built new in-tree modules (like hid-microsoft.ko):
 make -C src/linux O=../../build/linux ARCH=arm64 INSTALL_MOD_PATH=/tmp/a21s-mods modules_install
@@ -80,9 +80,9 @@ make -C src/linux O=../../build/linux ARCH=arm64 INSTALL_MOD_PATH=/tmp/a21s-mods
 `CONFIG_KEXEC=y` is enabled on the device:
 
 ```bash
-scp build/linux/arch/arm64/boot/Image root@192.168.1.142:/tmp/Image
-scp build/linux/arch/arm64/boot/dts/exynos/exynos850-a217f.dtb root@192.168.1.142:/tmp/exynos850-a217f.dtb
-ssh root@192.168.1.142 "kexec -l /tmp/Image --dtb=/tmp/exynos850-a217f.dtb --reuse-cmdline && systemctl kexec"
+scp build/linux/arch/arm64/boot/Image root@<wifi-ip>:/tmp/Image
+scp build/linux/arch/arm64/boot/dts/exynos/exynos850-a217f.dtb root@<wifi-ip>:/tmp/exynos850-a217f.dtb
+ssh root@<wifi-ip> "kexec -l /tmp/Image --dtb=/tmp/exynos850-a217f.dtb --reuse-cmdline && systemctl kexec"
 ```
 
 ### C. Pack & Flash `boot-avb.img` (`uniLoader`)

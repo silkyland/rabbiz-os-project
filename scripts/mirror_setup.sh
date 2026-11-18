@@ -3,7 +3,7 @@
 #
 #   ./scripts/mirror_setup.sh                 # listen on USB + localhost only
 #   ./scripts/mirror_setup.sh --lan           # also listen on all interfaces (Wi-Fi)
-#   DEVICE=192.168.1.50 ./scripts/mirror_setup.sh
+#   DEVICE=<device-ip> ./scripts/mirror_setup.sh
 #
 # Idempotent. Packages are downloaded on the Mac (the device may have no Wi-Fi)
 # and installed with `pacman -U`; nothing here touches /lib or the kernel.

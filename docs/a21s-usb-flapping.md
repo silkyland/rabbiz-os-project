@@ -7,7 +7,7 @@ Status: **full-speed workaround verified; high-speed root cause unverified**. Ac
 
 Device identity: SSH ED25519
 `SHA256:QcOfF+LZQcizFlUafNNCN3TOIvS+NZiWaxcc2PVDjhY`,
-Wi-Fi `192.168.50.6`. Running kernel reports
+Wi-Fi `<wifi-ip>`. Running kernel reports
 `7.3.0-g14a425b3a7dc-dirty`, built `Mon Nov 16 09:18:46 UTC 2026`.
 Boot ID read at device-local 17:09:08:
 `7fcce380-a01f-472c-8c96-a68aae6e6fbb` (uptime nine minutes).
@@ -142,7 +142,7 @@ Acceptance failed; do not promote the experimental patch as a fix.
 Capture: `build/usb-investigation/lpm-disabled-60s.log`.
 
 The shell booted normally, but office Wi-Fi required the owner to reconnect
-from Settings after reboot. SSH returned at `192.168.50.6` afterward.
+from Settings after reboot. SSH returned at `<wifi-ip>` afterward.
 
 The lock suspension was reverted per the owner's handoff after the USB
 experiment still flapped. `AGENTS.md` and `docs/DEVICE-QUEUE.md` again

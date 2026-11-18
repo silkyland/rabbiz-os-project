@@ -19,7 +19,7 @@ from evdev import AbsInfo, UInput, ecodes
 from gi.repository import GLib
 
 BLUEZ = "org.bluez"
-ADDR = sys.argv[1] if len(sys.argv) > 1 else "A8:8C:3E:74:0A:95"
+ADDR = sys.argv[1] if len(sys.argv) > 1 else "<controller-mac>"
 DEV_PATH = "/org/bluez/hci0/dev_" + ADDR.replace(":", "_")
 HID_SERVICE = "00001812-0000-1000-8000-00805f9b34fb"
 REPORT_CHAR = "00002a4d-0000-1000-8000-00805f9b34fb"

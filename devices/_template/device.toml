@@ -1,0 +1,34 @@
+# Copy this directory to devices/<vendor>/<codename>/ (lowercase). Unknown stays "unknown".
+vendor   = "unknown"
+codename = "unknown"            # directory name; one codename can cover several models
+models   = []                   # e.g. ["SM-A217F"]
+maintainers = []                # GitHub handles
+
+[soc]
+name = "unknown"                # e.g. "exynos850"; shared SoC code goes in socs/<name>/
+
+[display]
+width_px  = 0
+height_px = 0
+form_factor = "unknown"         # handset | tablet | desktop  (the DE reads this)
+
+[boot]
+method   = "unknown"            # e.g. uniLoader+AVB boot image, fastboot, ...
+recovery = "unknown"            # path to the documented recovery procedure. REQUIRED before flashing.
+
+[kernel]
+version = "unknown"
+defconfig = "unknown"
+dts = "unknown"
+
+# status: unknown | planned | partial | working
+[status]
+display = "unknown"
+touch = "unknown"
+gpu = "unknown"
+usb = "unknown"
+wifi = "unknown"
+bluetooth = "unknown"
+audio = "unknown"
+battery = "unknown"
+modem = "unknown"

@@ -13,7 +13,7 @@ system under active development; hardware support and remaining work are listed 
 
 <p align="center"><img src="assets/branding/rabbiz-mascot-flat.svg" width="240" alt="Rabbiz, the plum rabbit mascot, waving"></p>
 
-[Brand & mascot](docs/BRAND.md) · [Desktop shell](docs/DESKTOP-SHELL.md) · [Roadmap](ROADMAP.md)
+[Contributing](CONTRIBUTING.md) · [Lanes](docs/LANES.md) · [Brand & mascot](docs/BRAND.md) · [Desktop shell](docs/DESKTOP-SHELL.md) · [Roadmap](ROADMAP.md)
 
 The platform combines **Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`)** directly on supported phone and tablet hardware (zero Android runtime).
 

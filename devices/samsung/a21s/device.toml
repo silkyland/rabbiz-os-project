@@ -1,0 +1,33 @@
+vendor   = "samsung"
+codename = "a21s"
+models   = ["SM-A217F"]
+maintainers = ["silkyland"]
+
+[soc]
+name = "exynos850"              # S5E3830; shared code is still under drivers/ (moves to socs/exynos850/)
+
+[display]
+width_px  = 720
+height_px = 1600
+form_factor = "handset"
+
+[boot]
+method   = "uniLoader + AVB boot image (boot-avb.img)"
+recovery = "docs/a21s-boot-recovery.md"
+
+[kernel]
+version = "7.3.0"
+defconfig = "configs/a21s_linux_defconfig"
+dts = "exynos850-a217f.dts"
+
+# Source: README.md hardware table (2026-11-18). Not re-verified by this change.
+[status]
+display = "working"
+touch = "working"
+gpu = "working"
+usb = "working"
+wifi = "working"
+bluetooth = "working"
+audio = "partial"
+battery = "partial"
+modem = "planned"

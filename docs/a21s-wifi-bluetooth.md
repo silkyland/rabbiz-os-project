@@ -154,7 +154,7 @@ Steam's gamepad UI pairs devices by talking to `org.bluez` on the **system D-Bus
 
 ## 7. STOPGAP: `xbox-ble-uinput` bridge — remove after kernel rebuild
 
-The current kernel `7.3.0-g14a425b3a7dc` lacks `CONFIG_UHID`/`CONFIG_HIDRAW`, so BlueZ `input-hog` cannot create evdev nodes for BLE HID devices (`src/service.c:service_accept() input-hog profile accept failed` in `bluetoothd` logs). As a stopgap, `xbox-ble-uinput.service` runs `/usr/local/bin/xbox-ble-uinput.py`: it reads the HID-over-GATT input report of the paired Xbox controller (`A8:8C:3E:74:0A:95`, Report ID 1 on `char001d` under HID service `service0016`) via BlueZ D-Bus and re-emits through `/dev/uinput` (`CONFIG_INPUT_UINPUT=y`) as a `BUS_BLUETOOTH` `045E:0B13` "Xbox Wireless Controller" evdev device. Works, but: single hardcoded MAC, Xbox report layout only (no DS4/DS5/Switch), no rumble (output Report ID 3 on `char0021` unused), no battery node.
+The current kernel `7.3.0-g14a425b3a7dc` lacks `CONFIG_UHID`/`CONFIG_HIDRAW`, so BlueZ `input-hog` cannot create evdev nodes for BLE HID devices (`src/service.c:service_accept() input-hog profile accept failed` in `bluetoothd` logs). As a stopgap, `xbox-ble-uinput.service` runs `/usr/local/bin/xbox-ble-uinput.py`: it reads the HID-over-GATT input report of the paired Xbox controller (`<controller-mac>`, Report ID 1 on `char001d` under HID service `service0016`) via BlueZ D-Bus and re-emits through `/dev/uinput` (`CONFIG_INPUT_UINPUT=y`) as a `BUS_BLUETOOTH` `045E:0B13` "Xbox Wireless Controller" evdev device. Works, but: single hardcoded MAC, Xbox report layout only (no DS4/DS5/Switch), no rumble (output Report ID 3 on `char0021` unused), no battery node.
 
 ### Kernel fix (build machine): enable then rebuild `Image` + modules
 ```

@@ -59,6 +59,7 @@ def replay(events):
          patch('time.monotonic', side_effect=lambda: now), \
          patch('select.select', side_effect=select_events), \
          patch('subprocess.Popen', side_effect=lambda argv, **kwargs: actions.append(argv)), \
+         patch('pwd.getpwnam', return_value=SimpleNamespace(pw_uid=1001)), \
          patch('builtins.open', mock_open()), contextlib.redirect_stdout(io.StringIO()):
         try:
             runpy.run_path(str(BIN / 'volume-keys.py'))

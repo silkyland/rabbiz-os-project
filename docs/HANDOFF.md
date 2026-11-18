@@ -245,7 +245,7 @@ Then M5 (`schedutil` + `cpuidle` → `s2mu106` gauge/charger + `upower` → TMU/
 - **Kernel:** Mainline Linux `7.3.0-g14a425b3a7dc-dirty` (`#5`, Clang 19 + GNU ld) with `exynos850-a217f.dtb` (`patches/linux/0001`..`0007` applied).
   - `CONFIG_EXYNOS_IOMMU=y` **must** be in the flashed kernel — a stale `src/uniLoader/blob/Image` without it silently breaks the whole ABOX path (`iommu_paging_domain_alloc` → `Unable to alloc iommu domain`). Always refresh `blob/Image` + `blob/dtb` before repacking `boot-avb.img`.
 - **Boot & Display:** `uniLoader` (`06a1bba`) + `exynos-drm` (`card0-DSI-1`, `720x1600`) + `decon850` + `dsi` (`td4150` + `/sys/class/backlight/13070000.dsi.0`) + `weston` (`--drm-device=card0`) + `panfrost`/`panvk` + `steamos-session.service`.
-- **Networking:** `usb0` (`172.16.42.1/24`, systemd-networkd, unmanaged in NM) + `wlan0` (`scsc_wlan`, NetworkManager, `192.168.1.142`).
+- **Networking:** `usb0` (`172.16.42.1/24`, systemd-networkd, unmanaged in NM) + `wlan0` (`scsc_wlan`, NetworkManager, `<wifi-ip>`).
 - **Bluetooth & Gamepads:** `scsc_bt.ko` (`hci0`) + BlueZ 5.88 + PipeWire + HID/UHID.
 - **Audio (`abox` — ✅ INTERNAL SPEAKER PLAYS MUSIC, verified on device):**
   - Main speaker `UAIF1 → SMA1303` plays clean music; earpiece `UAIF0 → aud3004x → EP` also verified. `calliope_version=nEB0`.

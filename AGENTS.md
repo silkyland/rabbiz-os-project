@@ -4,6 +4,16 @@ Project identity: **RabbizOS**, an Arch Linux ARM–based mobile Linux system by
 
 Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`) port for Samsung Galaxy A21s (`SM-A217F`, Exynos 850) and planned Phase 2 Xiaomi Pad 7 Pro (`muyu`). This is **bare-metal Native Linux**, NOT Android/Termux/proot (`docs/PLAN.md`).
 
+## Contributing, lanes and findings
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before changing anything. Work is split by **lane**
+(`de`, `kernel`, `userland`, `docs` — [docs/LANES.md](docs/LANES.md)) and **device**
+(`devices/<vendor>/<codename>/`). Every PR states its lane, device and evidence level
+(L0 host-tested … L3 reproduced); never claim on-device success without a log. Record learnings as
+one-file **findings** ([docs/FINDINGS.md](docs/FINDINGS.md)), never in a shared log. The ground
+rules below are written from the Samsung A21s (`devices/samsung/a21s/`); on another device treat
+them as hypotheses until that device has its own verified findings.
+
 ## Ground rules
 
 - **Never overwrite `/lib` on the A21s rootfs** — `/lib` is a symlink to `usr/lib` on Arch Linux ARM; `scp -r` or `tar` extracting a `/lib/` directory breaks boot. Always deploy modules to `/usr/lib/modules/$(uname -r)/`.
@@ -50,7 +60,7 @@ Native Mainline Linux (`7.3.0`) + Arch Linux ARM64 + SteamOS (`steam -gamepadui`
 - Build kernel (`Image` + DTBs):
   `make -C src/linux O=../../build/linux ARCH=arm64 LLVM=1 -j$(nproc) Image dtbs`
 - Verify device over USB or Wi-Fi:
-  `ssh root@172.16.42.1 "uname -a && nmcli device status && hciconfig -a"` (or `ssh root@192.168.1.142`)
+  `ssh root@172.16.42.1 "uname -a && nmcli device status && hciconfig -a"` (or the device Wi-Fi IP)
 
 ## Where knowledge lives
 

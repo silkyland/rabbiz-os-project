@@ -1,7 +1,7 @@
 # Prompt for the next agent(s)
 
 Copy everything in the block below into a fresh agent session opened in this repository
-(`/Users/bunditnuntates/Sites/Labs/android-arm-linux`, branch `feat/desktop-shell-rewrite`).
+(`<repo>`, branch `feat/desktop-shell-rewrite`).
 To split work between several agents, replace the last line (`YOUR TASK:`) with one backlog item from
 `docs/HANDOFF-DESKTOP-SHELL.md` §3. Give two agents different files, never the same ones.
 

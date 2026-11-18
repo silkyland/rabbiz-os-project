@@ -25,7 +25,7 @@ FAIL: no non-battery power supply exposed (not proof of zero physical charge cur
 
 ## Evidence ledger
 
-0. USB SSH succeeds; Wi-Fi address 192.168.1.142 returns No route to host.
+0. USB SSH succeeds; Wi-Fi address <wifi-ip> returns No route to host.
    Hardware path can be inspected remotely; local host cannot exercise the DSP.
 1. `/proc/asound/cards` contains only Loopback. All ABOX/codec/amp modules are
    loaded. This rules out simple missing module loading as the full explanation.

@@ -15,7 +15,7 @@ Related: [a21s-wifi-bluetooth.md](a21s-wifi-bluetooth.md) §6–7, `scripts/xbox
 | 3 | `bluetoothctl pair` → `org.bluez.Error.AuthenticationFailed` when no agent is registered | Pair with `agent KeyboardDisplay` + `default-agent` in the same session → `Paired/Bonded/Trusted: yes` |
 | 4 | **`input-hog profile accept failed`** — kernel lacks `CONFIG_UHID` (`/dev/uhid` absent) and `CONFIG_HIDRAW`; BLE gamepads bond but get **no evdev node** | Stopgap `xbox-ble-uinput.py` (below); real fix = kernel rebuild (§4) |
 
-## 2. Xbox Wireless Controller (`A8:8C:3E:74:0A:95`) — verified
+## 2. Xbox Wireless Controller (`<controller-mac>`) — verified
 
 - `modalias usb:v045Ep0B13d0523`, `Icon: input-gaming`, `Appearance: 0x03c4`, `LegacyPairing: no`, Battery service `0x180f` (50%).
 - HID service `0x1812` = `service0016`; chars: `char001b` Report Map `0x2a4b`, `char001d` Report `0x2a4d` + CCCD + Report Ref `[0x01,0x01]` (**input, ID 1**), `char0021` Report Ref `[0x03,0x02]` (**output, ID 3** = rumble/PID, unused so far), `char0019` HID Control Point `0x2a4c`, `char0017` HID Info `0x2a4a`. No `0x2a4e` Protocol Mode.

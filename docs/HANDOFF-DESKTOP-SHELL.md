@@ -75,8 +75,8 @@ AGENTS.md hard rules still apply).
   **Duplicate profiles:** `nmcli device wifi connect <ssid>` creates `<ssid> 1`, `<ssid> 2`... when a profile with
   that name exists; `a21s-wifi-connect` looks profiles up by SSID to avoid that.
   **USB link drops under load**: `en18` lost `172.16.42.2` and `ssh root@172.16.42.1` hung twice in one session
-  (device stayed up, no reboot). The phone also listens on Wi-Fi: `ssh root@192.168.50.6` kept working, `shell_reload.sh
-  root@192.168.50.6` too — use it when USB is flaky.
+  (device stayed up, no reboot). The phone also listens on Wi-Fi: `ssh root@<wifi-ip>` kept working, `shell_reload.sh
+  root@<wifi-ip>` too — use it when USB is flaky.
   **ShellPrefs only reloads on the atomic save**: writing `~/.config/a21s-shell/prefs.json` in place (truncate) is
   not picked up by the shell; `printf > tmp && mv` is (that is what `ShellPrefs.save()` does). To test a pref live,
   change it through the Settings UI, not with a text edit.
@@ -121,7 +121,7 @@ AGENTS.md hard rules still apply).
    **The blocker behind all of it:** labwc has no polkit agent, so `gamer` got "Insufficient privileges" for every NM
    action. New `rootfs-overlay/etc/polkit-1/rules.d/51-a21s-shell.rules` allows *only* `gamer` and *only*
    `org.freedesktop.NetworkManager.*` — recorded in `docs/ARCHITECTURE.md` ADR-9. Verified: `nmcli radio wifi off/on`
-   as gamer, joining an unsaved network through `a21s-wifi-connect` (connection up, `192.168.50.6`, HTTP 301),
+   as gamer, joining an unsaved network through `a21s-wifi-connect` (connection up, `<wifi-ip>`, HTTP 301),
    `nmcli connection add` as gamer. Also fixed on the way: activate on `wlan0`, never `p2p0` (NM otherwise fails with
    "association took too long / ssid-not-found"), and `Network.qml` no longer treats `p2p0` as the Wi-Fi device.
    **Open:** updating the PSK of an *existing* profile via `nmcli --ask connection modify` hit the 45 s pty timeout in

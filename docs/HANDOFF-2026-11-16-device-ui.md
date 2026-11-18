@@ -92,7 +92,7 @@ Never write /lib; only mmcblk0p18 is the boot partition.
 
 Last boot ID after brightness verification:
 `aa605b13-49d9-4b86-8dff-b99f647c64a1`.
-USB SSH: root@172.16.42.1. Office Wi-Fi was 192.168.50.6; it will change at
+USB SSH: root@172.16.42.1. Office Wi-Fi was <wifi-ip>; it will change at
 home. Resolve a21s-steamos.local and verify ED25519 fingerprint
 `SHA256:QcOfF+LZQcizFlUafNNCN3TOIvS+NZiWaxcc2PVDjhY`; use
 `-o HostKeyAlias=172.16.42.1` for Wi-Fi. Never print ~/.credentail.
