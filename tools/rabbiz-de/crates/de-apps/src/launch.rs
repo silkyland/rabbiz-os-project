@@ -67,7 +67,15 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
     }
 
     match cmd.spawn() {
-        Ok(child) => Ok(child.id() as i32),
+        Ok(mut child) => {
+            let pid = child.id() as i32;
+            // A dropped `Child` is never reaped — without this every exited
+            // app would linger as a zombie under the compositor.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            Ok(pid)
+        }
         Err(e) => Err(format!("spawn {}: {e}", argv[0])),
     }
 }
