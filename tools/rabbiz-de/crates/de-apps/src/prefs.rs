@@ -48,6 +48,16 @@ impl AppPrefs {
         now
     }
 
+    /// Choose the wallpaper by id; persists. Returns `false` (and changes nothing) if it is already selected.
+    pub fn set_wallpaper(&mut self, id: &str) -> bool {
+        if self.prefs.wallpaper_id == id {
+            return false;
+        }
+        self.prefs.wallpaper_id = id.to_string();
+        let _ = self.prefs.save();
+        true
+    }
+
     /// Pin to dock (no-op when full); persists.
     pub fn pin(&mut self, desktop_id: &str) {
         self.prefs.pin_dock(desktop_id);

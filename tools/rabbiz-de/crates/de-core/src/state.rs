@@ -139,6 +139,8 @@ pub struct De {
     pub nav: de_ui::nav::Nav,
     /// The active xdg popup grab (an open context menu), if any.
     pub(crate) popup_grab: Option<smithay::desktop::PopupGrab<De>>,
+    /// The shell's open context menu, if any (`shell_menu.rs`).
+    pub(crate) shell_menu: Option<crate::shell_menu::ShellMenu>,
     /// Whether the screen shows a fullscreen app or a shell surface.
     pub foreground: Foreground,
     /// System-gesture recognizer (edge-back / home / recents / shade).
@@ -459,6 +461,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         space,
         popups: PopupManager::default(),
         popup_grab: None,
+        shell_menu: None,
         output_obj,
 
         compositor_state,

@@ -11,6 +11,7 @@ pub mod misc;
 mod morph;
 mod osk;
 mod popups;
+mod shell_menu;
 mod privileged;
 pub mod screencopy;
 pub mod seat;

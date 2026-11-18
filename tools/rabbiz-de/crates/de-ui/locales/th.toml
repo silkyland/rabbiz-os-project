@@ -83,3 +83,8 @@ session = "เซสชัน"
 
 [status]
 charging = "กำลังชาร์จ"
+
+[menu]
+wallpaper = "เปลี่ยนวอลเปเปอร์"
+settings = "การตั้งค่า"
+lock = "ล็อกหน้าจอ"

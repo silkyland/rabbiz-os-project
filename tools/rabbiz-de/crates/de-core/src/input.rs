@@ -124,6 +124,10 @@ impl De {
         button: u32,
         state: smithay::backend::input::ButtonState,
     ) {
+        let pressed = state == smithay::backend::input::ButtonState::Pressed;
+        if self.menu_pointer_button(button, pressed, self.pointer.current_location()) {
+            return;
+        }
         let serial = SCOUNTER.next_serial();
         let ptr = self.pointer.clone();
         if state == smithay::backend::input::ButtonState::Pressed {
@@ -154,6 +158,7 @@ impl De {
     /// Pointer motion + hit-test — shared by libinput and the virtual
     /// pointer protocol.
     pub(crate) fn pointer_motion(&mut self, time: u32, pos: Point<f64, Logical>, delta: Point<f64, Logical>) {
+        self.menu_pointer_moved(pos);
         let serial = SCOUNTER.next_serial();
         let under = self.surface_under(pos).map(SurfaceHit::into_focus);
         let ptr = self.pointer.clone();
@@ -182,6 +187,9 @@ impl De {
         let keycode = evt.key_code();
         let state = evt.state();
         let time = evt.time_msec();
+        if state == KeyState::Pressed && self.menu_key(keycode.raw()) {
+            return;
+        }
         let Some(keyboard) = self.seat.get_keyboard() else {
             return;
         };
@@ -217,7 +225,7 @@ impl De {
         // shell and never reaches the client.
         let hit = self.surface_under(pos);
         // An open context menu is dismissed by a touch outside it, and that touch is consumed.
-        if self.dismiss_popup_for_touch(hit.as_ref()) {
+        if self.dismiss_popup_for_touch(hit.as_ref()) || self.menu_touch_down(pos) {
             self.touch_claimed = true;
             return;
         }
@@ -401,7 +409,9 @@ impl De {
             }
             // Long-press is the icon-context-menu hook (hide/pin) — no-op
             // until the drawer action sheet lands.
-            Gesture::LongPress { .. } => {}
+            Gesture::LongPress { pos } => {
+                self.open_home_menu(pos);
+            }
         }
     }
 

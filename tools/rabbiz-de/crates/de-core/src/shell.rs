@@ -26,7 +26,7 @@ impl De {
         let s = self.strings.clone();
         let t = tokens::DEFAULT;
         let status = Self::status_info();
-        match self.nav.current {
+        let base = match self.nav.current {
             Screen::Recents => {
                 let m = self.recents_model();
                 de_ui::recents::render(size, &s, &t, &status, &m)
@@ -48,7 +48,8 @@ impl De {
                 de_ui::error::render(size, &s, &t, &app)
             }
             _ => self.home_pixels(size, &s, &t, status),
-        }
+        };
+        self.overlay_shell_menu(base)
     }
 
     /// Home screen frame: wallpaper (asset or procedural), catalog icons in

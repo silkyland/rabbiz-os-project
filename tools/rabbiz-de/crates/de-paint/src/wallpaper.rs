@@ -16,6 +16,17 @@ use crate::image::decode_png;
 
 const EMBER: &[u8] = include_bytes!("../../../assets/wallpapers/ember.png");
 
+/// Wallpaper ids the shell can offer, in the order "Change wallpaper" cycles through them.
+pub const IDS: [&str; 6] = ["ember", "dusk", "sand", "aurora", "moon", "oled"];
+
+/// The wallpaper after `current` in [`IDS`]; an unknown or legacy id starts the cycle at the first one.
+#[must_use]
+pub fn next_id(current: &str) -> &'static str {
+    IDS.iter()
+        .position(|id| *id == current)
+        .map_or(IDS[0], |i| IDS[(i + 1) % IDS.len()])
+}
+
 /// The compositor's built-in wallpaper. Sunset is the legacy Ember choice.
 #[must_use]
 pub fn bundled(id: &str, size: Size) -> Pixels {
@@ -242,5 +253,28 @@ mod tests {
         for (x, y) in a.data.iter().zip(orig.iter()) {
             assert!((i32::from(*x) - i32::from(*y)).abs() <= 6);
         }
+    }
+}
+
+#[cfg(test)]
+mod cycle_tests {
+    use super::{next_id, IDS};
+
+    #[test]
+    fn the_cycle_visits_every_id_and_wraps() {
+        let mut id = IDS[0];
+        let mut seen = vec![id];
+        for _ in 0..IDS.len() - 1 {
+            id = next_id(id);
+            seen.push(id);
+        }
+        assert_eq!(seen, IDS);
+        assert_eq!(next_id(IDS[IDS.len() - 1]), IDS[0], "wraps");
+    }
+
+    #[test]
+    fn an_unknown_or_legacy_id_starts_at_the_first() {
+        assert_eq!(next_id("sunset"), IDS[0]);
+        assert_eq!(next_id(""), IDS[0]);
     }
 }

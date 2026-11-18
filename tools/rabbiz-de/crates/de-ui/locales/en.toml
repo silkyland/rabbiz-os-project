@@ -83,3 +83,8 @@ session = "Session"
 
 [status]
 charging = "Charging"
+
+[menu]
+wallpaper = "Change wallpaper"
+settings = "Settings"
+lock = "Lock screen"
