@@ -9,6 +9,7 @@ date: 2026-11-18
 evidence:
   - cmd: 'zenity --entry (as rabbiz on wayland-0), then touch_swipe.py taps on h, i and return'
   - file: devices/samsung/a21s/findings/logs/2026-11-18-de-osk-typing.txt
+  - file: devices/samsung/a21s/findings/logs/2026-11-18-de-osk-acceptance/
 ---
 
 # Typing on the rabbiz-osk keyboard reaches a client under rabbiz-de
@@ -28,15 +29,26 @@ no display timeout was logged. [Raw log](logs/2026-11-18-de-osk-typing.txt)
 ## Interpretation
 
 Input routing works end to end: touches on the layer surface go to the keyboard, its text and its
-Return key reach the focused client. What is **not** shown:
-- Nobody looked at the keyboard on the screen. Screenshots do not work under `rabbiz-de`
-  (no wlr-screencopy) and the frame dump only contains the shell, so the key positions were computed
-  from a host render and the successful typing is the evidence that the surface is where it should be.
-- The cause of the missing `enter` in the first run is **not isolated**. The only variable changed
-  between the runs was the keyboard binary (keymap fix, and the new `rabbiz-osk` name instead of the
-  `a21s-osk` fallback), plus one reboot. A run with the old binary on the same boot would settle it.
-- Only English letters, one text-entry app and one session. Thai, emoji, Chrome and Qt apps, and
-  repeated focus changes are untested.
+Return key reach the focused client. The earlier gaps are now closed:
+
+- **Missing `enter` isolated (same-boot A/B).** With `a21s-osk` swapped in for one run and
+  `rabbiz-osk` restored for the next, **both** delivered `enter` and typed `Hi` — the first run's
+  missing `enter` was the degraded boot (the compositor had lost DRM to an orphan and the session
+  fell back to labwc), not the keyboard binary. [Evidence](logs/2026-11-18-de-osk-acceptance/evidence.txt)
+- **The keyboard is verifiable on screen.** `zwlr_screencopy_manager_v1` is now implemented
+  (shm path) and the frame dump composites layer surfaces, so `grim` captures the real frame:
+  [OSK visible](logs/2026-11-18-de-osk-acceptance/osk-visible.png),
+  [Thai layout](logs/2026-11-18-de-osk-acceptance/osk-thai-on.png).
+- **Untested cases covered:** Thai (`ไพ` committed after the globe switch), a Qt field
+  (`pinentry-qt`: `enter` + `commit_string`, [screenshot](logs/2026-11-18-de-osk-acceptance/osk-qt.png)),
+  Chrome under ozone-wayland ([typed chars](logs/2026-11-18-de-osk-acceptance/osk-chrome-c.png)),
+  focus moving between two clients (`enter`/`leave`/re-`enter` all delivered), and the keyboard
+  hiding when the last text client exits ([home screen, no OSK](logs/2026-11-18-de-osk-acceptance/osk-hidden.png)).
+- **App lifecycle checked along the way:** dead clients' surfaces do unmap
+  (`toplevel_destroyed … matched=true`), but `de-apps::launch` leaked zombies (Child never
+  `wait()`ed) — fixed by a detached waitpid thread.
+- Still unproven: dmabuf/EGL app content is invisible to the CPU screencopy path (documented
+  limitation — those surfaces show the clear colour in `grim` output), and emoji panel typing.
 
 ## Reproduce
 

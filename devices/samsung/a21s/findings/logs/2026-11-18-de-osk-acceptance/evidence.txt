@@ -1,0 +1,44 @@
+OSK acceptance run — 2026-11-18, rabbiz-de compositor (HEAD ~2f61008+instrumented),
+device booted into DE mode, brightness 60%.
+
+== A/B: old a21s-osk vs new rabbiz-osk, SAME boot ==
+Phase A (/usr/local/bin/rabbiz-osk temporarily replaced by the a21s-osk binary;
+compositor respawned it via the new PATH-resolved fallback):
+  zenity WAYLAND_DEBUG: text_input_v3#33.enter
+  commit_string("H") commit_string("i")   -> zenity stdout: "Hi"
+Phase B (rabbiz-osk restored): identical sequence -> "Hi".
+CONCLUSION: the missing `enter` in the first recorded run was NOT caused by the
+old binary — it was the degraded boot (labwc fallback/orphaned compositor).
+Both keyboards type on a healthy boot.
+
+== Thai layout ==
+tap globe (256,1564) -> layout switches to th-kedmanee (see osk-thai-on.png,
+spacebar label "ไทย"); taps commit ไ พ -> zenity stdout "ไพ".
+
+== Qt text field ==
+pinentry-qt (assuan GETPIN): text_input_v3#15.enter, commit_string("ไ").
+osk-qt.png: Qt dialog + OSK composited in one CPU frame.
+
+== Chrome ==
+google-chrome --ozone-platform=wayland --disable-gpu --no-sandbox,
+file:// page with <input autofocus>: OSK raised on text focus, taps commit
+"ไw" into the field (osk-chrome-c.png).
+
+== Focus transitions between two clients ==
+zenity A: enter (focus), pinentry-qt B launched -> A: leave, B: enter;
+B killed -> A: enter again.  enter/leave/re-enter all delivered.
+
+== Hide on defocus ==
+last text client killed -> OSK layer unmaps; osk-hidden.png shows the home
+screen with no keyboard.
+
+== Screencopy ==
+zwlr_screencopy_manager_v1 advertised; grim 1.5.0 captures a 720x1600 PNG.
+(Single buffer offer per spec; the earlier double-offer hung grim — fixed in
+4753c48.)
+
+== App lifecycle ==
+Controlled launch + SIGKILL: 'toplevel_destroyed ... matched=true space=1'
+then 'shot census foreground=Shell space=[]' — dead-client surfaces unmap.
+App zombies were real though: launch() dropped Child unreaped; fixed by a
+detached waitpid thread (cc575c8).
