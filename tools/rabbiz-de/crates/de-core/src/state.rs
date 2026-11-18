@@ -137,6 +137,8 @@ pub struct De {
     pub home_page: usize,
     /// desktop-id → spawn → first toplevel bookkeeping + timeout.
     pub launch: crate::launch::LaunchTracker,
+    pub(crate) morph: Option<crate::morph::WindowMorph>,
+    pub(crate) motion_clock: de_paint::animation::AnimationClock,
     /// Last launch failure (shown by the error screen).
     pub launch_error: Option<String>,
     /// Last shm frame per app for the recents rail (LRU).
@@ -455,6 +457,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         touch_claimed: false,
         home_page: 0,
         launch: crate::launch::LaunchTracker::new(),
+        morph: None,
+        motion_clock: de_paint::animation::AnimationClock::new(),
         launch_error: None,
         snapshots: crate::snapshots::SnapshotCache::default(),
         catalog: de_apps::catalog::Catalog::scan(&shell_locales()),

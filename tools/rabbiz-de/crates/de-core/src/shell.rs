@@ -118,24 +118,24 @@ impl De {
     /// `IconEntry`s for `desktop_ids`, resolving real icons through the
     /// cache (first-party `rabbiz-*`/`a21s-*` get the sand-tile glyph).
     fn app_icons(&mut self, desktop_ids: &[String]) -> Vec<IconEntry> {
-        let mut out = Vec::with_capacity(desktop_ids.len());
-        for id in desktop_ids {
-            let (label, icon_name) = self
-                .catalog
-                .find(id)
-                .map(|e| (e.name.clone(), e.icon.clone()))
-                .unwrap_or_else(|| (id.clone(), String::new()));
-            if !self.icon_cache.contains_key(id.as_str()) {
-                let px = de_apps::icons::rasterize_icon(id, &icon_name, &label, 96);
-                self.icon_cache.insert(id.clone(), px);
-            }
-            out.push(IconEntry {
-                id: id.clone(),
-                label,
-                icon: self.icon_cache.get(id).cloned(),
-            });
+        desktop_ids.iter().map(|id| self.app_icon(id)).collect()
+    }
+
+    pub(crate) fn app_icon(&mut self, id: &str) -> IconEntry {
+        let (label, icon_name) = self
+            .catalog
+            .find(id)
+            .map(|entry| (entry.name.clone(), entry.icon.clone()))
+            .unwrap_or_else(|| (id.to_owned(), String::new()));
+        let icon = self
+            .icon_cache
+            .entry(id.to_owned())
+            .or_insert_with(|| de_apps::icons::rasterize_icon(id, &icon_name, &label, 96));
+        IconEntry {
+            id: id.to_owned(),
+            label,
+            icon: Some(icon.clone()),
         }
-        out
     }
 
     /// Recents rail: snapshot-cache entries (recency order) plus running

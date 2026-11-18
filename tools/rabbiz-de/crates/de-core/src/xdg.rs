@@ -27,13 +27,10 @@ impl XdgShellHandler for De {
             Size::<i32, Logical>::from((self.output.width as i32, self.output.height as i32));
         de_protocols::configure_fullscreen(&surface, size);
         de_protocols::set_ssd(&surface);
-        // A mapped toplevel resolves the pending launch and takes the
-        // screen (launcher morph lands with the transition renderer).
-        self.launch
-            .on_toplevel_mapped(Some(&crate::snapshots::window_app_id(&surface)));
-        self.foreground = crate::state::Foreground::App;
+        // Register for configure/commit bookkeeping. Only the first root
+        // buffer can hand over the launcher to this window.
         let window = Window::new_wayland_window(surface);
-        self.space.map_element(window, (0, 0), true);
+        self.space.map_element(window, (0, 0), false);
         self.needs_present = true;
     }
 
@@ -74,6 +71,7 @@ impl XdgShellHandler for De {
             .cloned();
         if let Some(window) = window {
             self.space.unmap_elem(&window);
+            self.app_disappeared(&window);
         }
         // Last window gone → the shell reappears.
         if self.space.elements().next().is_none() {

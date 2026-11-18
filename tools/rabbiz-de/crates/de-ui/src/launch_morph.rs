@@ -5,7 +5,7 @@
 //!
 //! [`morph_frame`] is the pure renderer at progress `p` (0 = icon rect,
 //! 1 = fullscreen). [`MorphAnimator`] advances with frame deltas and supports
-//! retargeting mid-flight. The compositor does not yet call this driver.
+//! retargeting mid-flight.
 
 use de_api::{Pixels, Point, Rect};
 use de_design::motion::{MotionKind, SpringPreset, Transition, TransitionTiming, DURATION_MAX_MS};
@@ -16,7 +16,51 @@ use de_paint::{
 };
 
 use crate::chrome::{self, style, IconEntry};
-use crate::transitions::{ease_out, fade_in, lerp, lerp_rect, with_opacity};
+use crate::transitions::{fade_in, lerp, lerp_rect, with_opacity};
+
+/// Geometry shared by the compositor and the host renderer.
+#[derive(Debug, Clone, Copy)]
+pub struct MorphPose {
+    pub card: Rect,
+    pub icon: Rect,
+    pub card_alpha: f32,
+    pub icon_alpha: f32,
+    pub app_alpha: f32,
+}
+
+impl MorphPose {
+    /// `content_ready` ramps in after the first committed app buffer.
+    #[must_use]
+    pub fn at(progress: f32, from: Rect, to: Rect, content_ready: f32) -> Self {
+        let card = lerp_rect(from, to, progress);
+        let app_alpha = fade_in(progress, 0.55, 1.0).min(content_ready.clamp(0.0, 1.0));
+        Self {
+            card,
+            icon: Rect::new(
+                card.x + (card.w - from.w) / 2,
+                card.y + (card.h - from.h) / 2,
+                from.w,
+                from.h,
+            ),
+            card_alpha: fade_in(progress, 0.0, 0.12),
+            icon_alpha: 1.0 - fade_in(app_alpha, 0.0, 0.8),
+            app_alpha,
+        }
+    }
+}
+
+/// Rasterize the source tile once so the compositor only moves its texture.
+#[must_use]
+pub fn morph_icon(t: &Theme, entry: &IconEntry, bounds: Rect) -> Pixels {
+    let mut canvas = Canvas::new(bounds.size());
+    chrome::draw_app_icon(
+        &mut canvas,
+        t,
+        entry,
+        Rect::from_origin_size(Point::ZERO, bounds.size()),
+    );
+    canvas.into_pixels()
+}
 
 /// One morph frame over `under` (usually the home screen pixels).
 ///
@@ -38,7 +82,7 @@ pub fn morph_frame(
     let mut c = Canvas::new(under.size);
     c.blit(under, Point::ZERO);
 
-    let r = lerp_rect(src, dst, ease_out(p));
+    let r = MorphPose::at(p, src, dst, 1.0).card;
     let radius = lerp(tokens::ICON_TILE_RADIUS, 0.0, p);
     c.fill_rounded_rect(r, radius, t.surface1);
 
@@ -133,6 +177,16 @@ impl MorphAnimator {
         self.timed_from = self.settled().then_some(self.spring.value);
         self.elapsed_ms = 0.0;
         self.spring.retarget(target);
+    }
+
+    /// Put the container under the user's finger. A later retarget starts
+    /// its interruption spring with the gesture's last sampled velocity.
+    pub fn track(&mut self, progress: f32, velocity: f32) {
+        self.timed_from = None;
+        self.elapsed_ms = 0.0;
+        self.spring.value = progress.clamp(0.0, 1.0);
+        self.spring
+            .retarget_with_velocity(self.spring.value, velocity);
     }
 
     /// Advance by `dt_s`; returns current progress.

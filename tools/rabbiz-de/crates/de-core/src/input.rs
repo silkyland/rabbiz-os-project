@@ -40,6 +40,17 @@ impl De {
             InputEvent::TouchDown { event } => self.on_touch_down::<B>(event),
             InputEvent::TouchMotion { event } => self.on_touch_motion::<B>(event),
             InputEvent::TouchUp { event } => self.on_touch_up::<B>(event),
+            InputEvent::TouchCancel { event } => {
+                self.feed_gesture(
+                    i32::from(event.slot()),
+                    de_api::input::TouchPhase::Cancel,
+                    self.last_touch_pos,
+                    event.time_msec(),
+                );
+                if !std::mem::take(&mut self.touch_claimed) {
+                    self.touch.clone().cancel(self);
+                }
+            }
             InputEvent::PointerMotion { event } => {
                 let pos = self.pointer.current_location() + event.delta();
                 self.pointer_motion::<B>(event.time_msec(), pos, event.delta())
@@ -282,15 +293,28 @@ impl De {
             time_ms: u64::from(time_ms),
         };
         if let Some(g) = self.gestures.feed(&ev) {
-            self.on_gesture_event(g);
+            self.on_gesture_event(g, ev.time_ms);
         }
     }
 
-    fn on_gesture_event(&mut self, ev: GestureEvent) {
+    fn on_gesture_event(&mut self, ev: GestureEvent, time_ms: u64) {
         use crate::state::Foreground;
         use de_ui::nav::Screen;
-        let GestureEvent::Recognized(g) = ev else {
-            return;
+        let g = match ev {
+            GestureEvent::Progress {
+                zone: Zone::NavBar,
+                dy,
+                ..
+            } => {
+                self.follow_home_drag(dy, time_ms);
+                return;
+            }
+            GestureEvent::Cancelled => {
+                self.release_home_drag(false);
+                return;
+            }
+            GestureEvent::Recognized(gesture) => gesture,
+            _ => return,
         };
         match g {
             Gesture::Home => self.show_shell(Screen::Home),
@@ -302,6 +326,8 @@ impl De {
                     // the shell appears when the last window unmaps.
                     self.close_topmost();
                 } else {
+                    self.launch.cancel();
+                    self.morph = None;
                     self.nav.back();
                     self.shell_dirty = true;
                     self.needs_present = true;
@@ -321,7 +347,11 @@ impl De {
                     }
                 }
             }
-            Gesture::Tap { pos } => self.on_shell_tap(pos),
+            Gesture::Tap { pos } => {
+                if !self.release_home_drag(false) {
+                    self.on_shell_tap(pos);
+                }
+            }
             // Long-press is the icon-context-menu hook (hide/pin) — no-op
             // until the drawer action sheet lands.
             Gesture::LongPress { .. } => {}
@@ -336,6 +366,10 @@ impl De {
             // recents card before the shell takes over.
             self.capture_topmost();
         }
+        if screen != de_ui::nav::Screen::Home || !self.release_home_drag(true) {
+            self.morph = None;
+        }
+        self.launch.cancel();
         self.foreground = Foreground::Shell;
         if self.nav.current != screen {
             self.nav.current = screen;
@@ -375,11 +409,21 @@ impl De {
                 match de_ui::home::hit_test(size, pos, on_page, dock.len()) {
                     Some(de_ui::home::HomeHit::Grid(i)) => {
                         let id = ordered[self.home_page * de_ui::home::PAGE_SIZE + i].clone();
-                        self.try_launch(&id);
+                        self.try_launch(
+                            &id,
+                            de_ui::home::icon_rect(size, de_ui::home::HomeHit::Grid(i), dock.len()),
+                        );
                     }
                     Some(de_ui::home::HomeHit::Dock(i)) => {
                         if let Some(id) = dock.get(i).cloned() {
-                            self.try_launch(&id);
+                            self.try_launch(
+                                &id,
+                                de_ui::home::icon_rect(
+                                    size,
+                                    de_ui::home::HomeHit::Dock(i),
+                                    dock.len(),
+                                ),
+                            );
                         }
                     }
                     Some(de_ui::home::HomeHit::Search) => {
@@ -398,7 +442,7 @@ impl De {
                     .collect::<Vec<_>>();
                 let rows = self.search_row_ids(&ids);
                 if let Some(i) = de_ui::search::hit_test(size, &rows, pos) {
-                    self.try_launch(&rows[i].id.clone());
+                    self.try_launch(&rows[i].id, de_ui::search::icon_rect(size, &rows, i));
                 }
             }
             Screen::Recents => {
@@ -431,11 +475,17 @@ impl De {
 
     /// Spawn an app through the launch contract; failures go to the error
     /// screen, the pending launch resolves on `new_toplevel`.
-    pub fn try_launch(&mut self, desktop_id: &str) {
+    pub fn try_launch(&mut self, desktop_id: &str, source: Option<de_api::Rect>) {
+        self.launch.cancel();
+        self.morph = None;
         match self.launch.begin(desktop_id) {
             Ok(pid) => {
                 eprintln!("launch: {desktop_id} pid={pid}");
                 self.launch_error = None;
+                if let Some(rect) = source {
+                    self.begin_launch_morph(desktop_id, rect);
+                }
+                self.needs_present = true;
             }
             Err(e) => {
                 self.launch_error = Some(format!("{desktop_id}: {e}"));

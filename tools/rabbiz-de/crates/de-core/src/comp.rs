@@ -1,6 +1,6 @@
 //! wl_compositor + wl_shm handler impls (M1-T3).
 
-use smithay::backend::renderer::utils::on_commit_buffer_handler;
+use smithay::backend::renderer::utils::{on_commit_buffer_handler, with_renderer_surface_state};
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
 use smithay::reexports::wayland_server::Client;
@@ -32,9 +32,19 @@ impl CompositorHandler for De {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
+        let had_buffer = has_buffer(surface);
         on_commit_buffer_handler::<Self>(surface);
         self.commit_hook(surface);
+        if !had_buffer && has_buffer(surface) {
+            if let Some(window) = self.window_for_surface(surface) {
+                self.first_app_frame(window);
+            }
+        }
     }
+}
+
+fn has_buffer(surface: &WlSurface) -> bool {
+    with_renderer_surface_state(surface, |state| state.buffer().is_some()).unwrap_or(false)
 }
 
 impl ShmHandler for De {

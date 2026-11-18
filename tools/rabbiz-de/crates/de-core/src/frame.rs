@@ -12,6 +12,7 @@ use de_api::{FrameStats, StatsSummary, TimingSummary};
 use de_render::DeRenderer;
 use smithay::backend::drm::compositor::{FrameFlags, PrimaryPlaneElement};
 use smithay::backend::renderer::element::render_elements;
+use smithay::backend::renderer::element::solid::SolidColorRenderElement;
 use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::AsRenderElements;
@@ -24,6 +25,7 @@ use smithay::reexports::wayland_server::Display;
 use smithay::utils::{Physical, Point, Scale};
 use smithay::wayland::socket::ListeningSocketSource;
 
+use crate::morph::{Phase, WindowMorph};
 use crate::state::{cma_free_kb, rss_kb, De, DeClientState};
 
 render_elements! {
@@ -31,6 +33,7 @@ render_elements! {
     pub DeElement<R> where R: ImportAll + ImportMem, R::TextureId: Texture + Clone + 'static;
     Texture = TextureRenderElement<R::TextureId>,
     Surface = WaylandSurfaceRenderElement<R>,
+    Solid = SolidColorRenderElement,
 }
 
 /// Runtime context held across frames.
@@ -51,6 +54,8 @@ pub struct Run {
     cma_min: u64,
     last_vblank: Option<Instant>,
     last_second: Instant,
+    trace_motion: bool,
+    last_morph_frame: Option<(Phase, Instant)>,
 }
 
 impl Run {
@@ -87,6 +92,8 @@ impl Run {
             cma_min: u64::MAX,
             last_vblank: None,
             last_second: Instant::now(),
+            trace_motion: std::env::var_os("RABBIZ_DE_MOTION_TRACE").is_some(),
+            last_morph_frame: None,
         })
     }
 
@@ -117,13 +124,16 @@ impl Run {
         if let Some(id) = self.de.launch.check_timeout() {
             eprintln!("launch: {id} timed out waiting for a toplevel");
             self.de.launch_error = Some(format!("{id}: did not start"));
+            self.de.morph = None;
             self.de.foreground = crate::state::Foreground::Shell;
             self.de.nav.go(de_ui::nav::Screen::Error);
             self.de.shell_dirty = true;
         }
+        self.de.advance_morph(t0);
         // Shell surface: re-raster on dirty or when the clock minute rolls.
         let minute = minute_of_day();
-        if matches!(self.de.foreground, crate::state::Foreground::Shell)
+        if (matches!(self.de.foreground, crate::state::Foreground::Shell)
+            || self.de.morph.is_some())
             && (self.de.shell_dirty || self.de.stub_minute != minute || self.de.shell_px.is_none())
         {
             self.de.stub_minute = minute;
@@ -147,6 +157,7 @@ impl Run {
             primary_composite,
             direct_scanout,
             foreground,
+            morph,
             ..
         } = de;
         let mut parts = FrameParts {
@@ -161,14 +172,32 @@ impl Run {
             primary_composite,
             direct_scanout,
             foreground: *foreground,
+            morph,
+            now: t0,
         };
-        match renderer {
+        let queued = match renderer {
             DeRenderer::Gl(r) => render_with(&mut parts, r)?,
             DeRenderer::Soft(r) => render_with(&mut parts, r)?,
-        }
+        };
         let cpu = t0.elapsed().as_secs_f64() * 1000.0;
         self.cpu_samples.push(cpu);
         self.all_cpu.push(cpu);
+        if self.trace_motion && queued {
+            if let Some(morph) = self.de.morph.as_ref() {
+                let last = self.last_morph_frame.replace((morph.phase, t0));
+                let gap = last
+                    .filter(|(phase, _)| *phase == morph.phase)
+                    .map_or(0.0, |(_, time)| {
+                        t0.duration_since(time).as_secs_f64() * 1000.0
+                    });
+                eprintln!(
+                    "morph-frame phase={:?} cpu_ms={cpu:.3} queue_gap_ms={gap:.3}",
+                    morph.phase
+                );
+            } else if let Some((phase, _)) = self.last_morph_frame.take() {
+                eprintln!("morph-handoff phase={phase:?}");
+            }
+        }
         Ok(())
     }
 }
@@ -187,9 +216,11 @@ struct FrameParts<'a> {
     primary_composite: &'a mut u64,
     direct_scanout: &'a mut u64,
     foreground: crate::state::Foreground,
+    morph: &'a mut Option<WindowMorph>,
+    now: Instant,
 }
 
-fn render_with<R>(de: &mut FrameParts<'_>, renderer: &mut R) -> Result<(), String>
+fn render_with<R>(de: &mut FrameParts<'_>, renderer: &mut R) -> Result<bool, String>
 where
     R: Renderer
         + ImportAll
@@ -214,8 +245,14 @@ where
     }
 
     let mut elements: Vec<DeElement<R>> = Vec::new();
-    let show_app =
-        de.foreground == crate::state::Foreground::App && de.space.elements().next().is_some();
+    let transitioning = de.morph.is_some();
+    let show_app = !transitioning
+        && de.foreground == crate::state::Foreground::App
+        && de.space.elements().next().is_some();
+    if let Some(morph) = de.morph.as_mut() {
+        let output = de_api::Rect::new(0, 0, de.output.width as i32, de.output.height as i32);
+        push_morph_elements(&mut elements, renderer, morph, output, de.now);
+    }
     if !show_app {
         if let Some(tex) = texture_buffer::<R>(de.shell_stub.as_ref()) {
             elements.push(DeElement::from(tex_el::<R>(
@@ -243,10 +280,12 @@ where
     // Gesture bar on top of everything.
     let bar_y = de.output.height as f64 - de_ui::shell_stub::GESTURE_BAR_H as f64;
     if let Some(tex) = texture_buffer::<R>(de.gesture_bar.as_ref()) {
-        elements.push(DeElement::from(tex_el::<R>(
-            tex,
-            Point::<f64, Physical>::from((0.0, bar_y)),
-        )));
+        let bar = DeElement::from(tex_el::<R>(tex, Point::<f64, Physical>::from((0.0, bar_y))));
+        if transitioning {
+            elements.insert(0, bar);
+        } else {
+            elements.push(bar);
+        }
     }
 
     let res = de
@@ -255,7 +294,11 @@ where
             renderer,
             &elements,
             [0.086, 0.063, 0.102, 1.0],
-            FrameFlags::DEFAULT,
+            if transitioning {
+                FrameFlags::empty()
+            } else {
+                FrameFlags::DEFAULT
+            },
         )
         .map_err(|e| format!("render: {e:?}"))?;
 
@@ -263,7 +306,7 @@ where
         if !format!("{e:?}").contains("EmptyFrame") {
             return Err(format!("queue: {e:?}"));
         }
-        return Ok(());
+        return Ok(false);
     }
 
     // M1-T4 counters from the observed result, not a guess.
@@ -280,10 +323,77 @@ where
             Some(out.clone())
         });
     }
-    Ok(())
+    Ok(true)
+}
+
+fn push_morph_elements<R: Renderer + ImportAll + ImportMem>(
+    elements: &mut Vec<DeElement<R>>,
+    renderer: &mut R,
+    morph: &mut WindowMorph,
+    output: de_api::Rect,
+    now: Instant,
+) where
+    R::TextureId: Texture + Clone + 'static,
+{
+    let pose = morph.pose(output, now);
+    // Smithay consumes front-to-back elements. The launcher texture sits
+    // behind the solid backing, the scaled app and the cached icon.
+    if pose.icon_alpha > 0.0 {
+        if morph.icon_texture.is_none() {
+            morph.icon_texture = upload_any(renderer, &morph.origin.icon);
+        }
+        if let Some(icon) = texture_buffer::<R>(morph.icon_texture.as_ref()) {
+            elements.push(DeElement::from(TextureRenderElement::from_texture_buffer(
+                (f64::from(pose.icon.x), f64::from(pose.icon.y)),
+                icon,
+                Some(pose.icon_alpha),
+                None,
+                None,
+                Kind::Unspecified,
+            )));
+        }
+    }
+    let loc = Point::<i32, Physical>::from((pose.card.x, pose.card.y));
+    if let Some(window) = morph.window.as_ref().filter(|_| pose.app_alpha > 0.0) {
+        let scale = Scale::from((
+            f64::from(pose.card.w) / f64::from(output.w),
+            f64::from(pose.card.h) / f64::from(output.h),
+        ));
+        elements.extend(AsRenderElements::<R>::render_elements::<DeElement<R>>(
+            window,
+            renderer,
+            loc,
+            scale,
+            pose.app_alpha,
+        ));
+    }
+    if pose.card_alpha > 0.0 {
+        morph.backing.resize((pose.card.w, pose.card.h));
+        elements.push(DeElement::from(SolidColorRenderElement::from_buffer(
+            &morph.backing,
+            loc,
+            1.0,
+            pose.card_alpha,
+            Kind::Unspecified,
+        )));
+    }
 }
 
 impl Run {
+    fn motion_wake_at(&self) -> Option<Instant> {
+        let interval = Duration::from_secs_f64(1.5 / self.de.output.refresh_hz.max(1.0));
+        [
+            self.de.launch.deadline(),
+            self.de
+                .morph
+                .as_ref()
+                .and_then(|morph| morph.next_frame_at(interval)),
+        ]
+        .into_iter()
+        .flatten()
+        .min()
+    }
+
     /// Called after client/input dispatch — present only when a commit or
     /// shell change marked the scene dirty.
     pub fn pump(&mut self) {
@@ -612,7 +722,11 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     run.present()?;
 
     loop {
-        let wait = deadline.map(|d| d.saturating_duration_since(Instant::now()));
+        let wait = [deadline, run.motion_wake_at()]
+            .into_iter()
+            .flatten()
+            .min()
+            .map(|d| d.saturating_duration_since(Instant::now()));
         event_loop
             .dispatch(wait, &mut run)
             .map_err(|e| format!("dispatch: {e}"))?;
@@ -621,6 +735,10 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         }
         if deadline.is_some_and(|d| Instant::now() >= d) {
             break;
+        }
+        if run.motion_wake_at().is_some_and(|d| Instant::now() >= d) {
+            run.de.needs_present = true;
+            run.pump();
         }
     }
     run.finish(print_stats);

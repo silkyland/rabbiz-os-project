@@ -6,6 +6,7 @@ pub mod frame;
 pub mod input;
 pub mod launch;
 pub mod misc;
+mod morph;
 pub mod seat;
 pub mod selection;
 pub mod shell;

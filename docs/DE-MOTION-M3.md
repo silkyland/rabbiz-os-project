@@ -146,8 +146,8 @@ curve (permanent). Shade or drawer that can be pulled back: ends at rest at the 
 The resulting enter/exit pairs are 160/72 ms, 360/162 ms and 520/234 ms. The host morph driver uses
 the selected pair for committed transitions and hands a mid-flight reversal to the spring.
 Temporary exits currently reuse `BEZIER_ENTER`, which reaches the edge at zero velocity. Permanent
-app closes, recents removals and notification dismissals select `BEZIER_EXIT`. The compositor still
-switches screens directly, so the morph and swipe-dismiss playback need live wiring.
+app closes, recents removals and notification dismissals select `BEZIER_EXIT`. The launcher now
+drives the app morph in `de-core`. Swipe-dismiss playback for recents and notifications is pending.
 
 **P5. Complete the easing set.** Add `standard decelerate` (0,0,0,1) and `standard accelerate` (.3,0,1,1),
 plus a two-segment approximation of **emphasized** for the "begins and ends on screen" case (container

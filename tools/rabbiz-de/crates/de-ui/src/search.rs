@@ -102,7 +102,7 @@ pub fn render(size: Size, s: &Strings, t: &Theme, query: &str, rows: &[SearchRow
                 label: row.title.clone(),
                 icon: row.icon.clone(),
             };
-            chrome::draw_app_icon(&mut c, t, &e, Rect::new(card.x + 12, card.y + 14, 52, 52));
+            chrome::draw_app_icon(&mut c, t, &e, row_icon(card));
             chrome::draw(
                 &mut c,
                 &row.title,
@@ -133,6 +133,17 @@ pub fn render(size: Size, s: &Strings, t: &Theme, query: &str, rows: &[SearchRow
     }
     chrome::nav_pill(&mut c, t);
     c.into_pixels()
+}
+
+fn row_icon(card: Rect) -> Rect {
+    Rect::new(card.x + 12, card.y + 14, 52, 52)
+}
+
+/// Painted icon bounds for a visible search result.
+#[must_use]
+pub fn icon_rect(size: Size, rows: &[SearchRow], index: usize) -> Option<Rect> {
+    let row = *row_rects(size, rows).get(index)?;
+    (!row.is_empty()).then(|| row_icon(row))
 }
 
 /// Row rects in the order `rows` are painted (grouped, headers skipped) —

@@ -93,6 +93,40 @@ pub enum HomeHit {
     Search,
 }
 
+fn grid_cell(size: Size, index: usize) -> Rect {
+    let x = (size.w - CELL_W * 4) / 2 + (index % 4) as i32 * CELL_W;
+    let y = GRID_Y + (index / 4) as i32 * CELL_H;
+    Rect::new(x, y, CELL_W, CELL_H)
+}
+
+fn dock_shelf(size: Size) -> Rect {
+    Rect::new(
+        chrome::MARGIN,
+        DOCK_Y.min(size.h - 240),
+        chrome::content_w(size),
+        120,
+    )
+}
+
+fn grid_icon(cell: Rect) -> Rect {
+    Rect::new(cell.x + (CELL_W - 96) / 2, cell.y + 8, 96, 96)
+}
+
+fn dock_icon(dock: Rect, index: usize, slots: usize) -> Rect {
+    let x = dock.x + 40 + index as i32 * ((dock.w - 80 - 88) / (slots - 1) as i32);
+    Rect::new(x, dock.y + 16, 88, 88)
+}
+
+/// Exact painted icon bounds for a launch from a grid cell or dock slot.
+#[must_use]
+pub fn icon_rect(size: Size, hit: HomeHit, dock_len: usize) -> Option<Rect> {
+    match hit {
+        HomeHit::Grid(i) => Some(grid_icon(grid_cell(size, i))),
+        HomeHit::Dock(i) => Some(dock_icon(dock_shelf(size), i, dock_len.clamp(4, 6))),
+        HomeHit::Search => None,
+    }
+}
+
 /// Hit-test `pos` against the same geometry [`render`] paints: grid cells,
 /// the search pill, dock slots. Pure — `de-core` calls it on
 /// [`crate::gestures::Gesture::Tap`].
@@ -107,25 +141,14 @@ pub fn hit_test(size: Size, pos: Point, apps_on_page: usize, dock_len: usize) ->
     if sp.contains(pos) {
         return Some(HomeHit::Search);
     }
-    let grid_w = CELL_W * 4;
-    let gx = (size.w - grid_w) / 2;
     for i in 0..apps_on_page.min(PAGE_SIZE) {
-        let (col, row) = ((i % 4) as i32, (i / 4) as i32);
-        let r = Rect::new(gx + col * CELL_W, GRID_Y + row * CELL_H, CELL_W, CELL_H);
-        if r.contains(pos) {
+        if grid_cell(size, i).contains(pos) {
             return Some(HomeHit::Grid(i));
         }
     }
-    let dock = Rect::new(
-        chrome::MARGIN,
-        DOCK_Y.min(size.h - 240),
-        chrome::content_w(size),
-        120,
-    );
     let slots = dock_len.clamp(4, 6);
     for i in 0..dock_len.min(slots) {
-        let ix = dock.x + 40 + i as i32 * ((dock.w - 80 - 88) / ((slots.max(2) - 1).max(1) as i32));
-        if Rect::new(ix, dock.y + 16, 88, 88).contains(pos) {
+        if dock_icon(dock_shelf(size), i, slots).contains(pos) {
             return Some(HomeHit::Dock(i));
         }
     }
@@ -179,11 +202,9 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     }
 
     // 4×4 grid for the current page.
-    let grid_w = CELL_W * 4;
-    let gx = (size.w - grid_w) / 2;
     for (i, e) in m.apps.iter().take(PAGE_SIZE).enumerate() {
-        let (col, row) = ((i % 4) as i32, (i / 4) as i32);
-        draw_icon(&mut c, t, e, gx + col * CELL_W, GRID_Y + row * CELL_H);
+        let cell = grid_cell(size, i);
+        draw_icon(&mut c, t, e, cell);
     }
 
     // Page dots between grid and search pill.
@@ -228,17 +249,11 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     );
 
     // Dock: glass shelf, pinned icons (or empty slots up to 4).
-    let dock = Rect::new(
-        chrome::MARGIN,
-        DOCK_Y.min(size.h - 240),
-        chrome::content_w(size),
-        120,
-    );
+    let dock = dock_shelf(size);
     c.fill_rounded_rect(dock, tokens::RADIUS_SHEET, t.glass);
     let slots = m.dock.len().clamp(4, 6);
     for i in 0..slots {
-        let ix = dock.x + 40 + i as i32 * ((dock.w - 80 - 88) / ((slots.max(2) - 1).max(1) as i32));
-        let r = Rect::new(ix, dock.y + 16, 88, 88);
+        let r = dock_icon(dock, i, slots);
         if let Some(e) = m.dock.get(i) {
             chrome::draw_app_icon(&mut c, t, e, r);
         } else {
@@ -250,13 +265,13 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &HomeModel) -> Pixels {
     c.into_pixels()
 }
 
-fn draw_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, x: i32, y: i32) {
-    chrome::draw_app_icon(c, t, e, Rect::new(x + (CELL_W - 96) / 2, y + 8, 96, 96));
+fn draw_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, cell: Rect) {
+    chrome::draw_app_icon(c, t, e, grid_icon(cell));
     if let Some(px) = text::label_clamped(&e.label, style::label(t.text), 150, 2) {
         let (w, h) = (px.width() as i32, px.height() as i32);
         c.blit(
             &Pixels::new(Size::new(w, h), px.data().to_vec()),
-            Point::new(x + (CELL_W - w) / 2, y + 108),
+            Point::new(cell.x + (CELL_W - w) / 2, cell.y + 108),
         );
     }
 }

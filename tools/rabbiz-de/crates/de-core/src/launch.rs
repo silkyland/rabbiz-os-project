@@ -49,8 +49,8 @@ impl LaunchTracker {
         Ok(pid)
     }
 
-    /// Called from `new_toplevel`. A pending launch resolves on the *first*
-    /// toplevel that maps after spawn — app_id correlation is fuzzy (the
+    /// Called after the first buffer commit. A pending launch resolves on
+    /// the first toplevel with content after spawn. App-id correlation is fuzzy (the
     /// Chrome wrapper's app_id is `google-chrome` while the launched id is
     /// `rabbiz-browser`), so an exact match isn't required. Returns the
     /// resolved desktop-id.
@@ -73,7 +73,7 @@ impl LaunchTracker {
         if self
             .pending
             .as_ref()
-            .is_some_and(|p| p.started.elapsed() > self.timeout)
+            .is_some_and(|p| p.started.elapsed() >= self.timeout)
         {
             self.pending.take().map(|p| p.desktop_id)
         } else {
@@ -85,6 +85,10 @@ impl LaunchTracker {
     #[must_use]
     pub fn pending(&self) -> Option<&str> {
         self.pending.as_ref().map(|p| p.desktop_id.as_str())
+    }
+
+    pub(crate) fn deadline(&self) -> Option<Instant> {
+        self.pending.as_ref().map(|p| p.started + self.timeout)
     }
 
     /// Forget the pending launch (user navigated away / app crashed early).

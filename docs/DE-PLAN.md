@@ -296,11 +296,11 @@ return path when the surface can be retrieved. The reduced-motion and safe-mode 
 | Screen off ↔ wake to lock (P17) | Top level | Fade through black at the display handoff. |
 | Charging pill and its status indicator (P20) | Enter and exit | Reveal the pill briefly, then fade it as the persistent indicator updates. |
 
-The navigation enum lists the shell surfaces. The compositor currently switches surfaces and
-foreground state directly. Not tested on device. [Screen list](../tools/rabbiz-de/crates/de-ui/src/nav.rs)
-[Gestures](../tools/rabbiz-de/crates/de-core/src/input.rs) [App mapping](../tools/rabbiz-de/crates/de-core/src/xdg.rs)
-
-The host morph driver exercises the app container transform. [Host morph](../tools/rabbiz-de/crates/de-ui/src/launch_morph.rs)
+The compositor drives the app-window morph for Home, dock and Search launches. It waits for the
+first buffer to crossfade to the client, tracks a Home swipe while the launch tile is available,
+and uses an icon placeholder for a window that has already closed. Other screen changes still use
+their current navigation paths. [App morph](../tools/rabbiz-de/crates/de-core/src/morph.rs)
+[Screen list](../tools/rabbiz-de/crates/de-ui/src/nav.rs)
 
 ### 7.18 Screen contracts (v1)
 
@@ -486,7 +486,7 @@ tests/                     golden list, protocol smoke clients
   - [x] `M3-T6`: gestures: edge-back, home swipe, swipe-up-hold recents, shade pull, dock page switch. Files: `crates/de-ui/src/gestures.rs`, `crates/de-core/src/input.rs`.
   - [x] `M3-T7`: prefs compatibility (read legacy `prefs.json`, own `~/.config/rabbiz-de/prefs.json` with atomic writes/backup, `deAccent`/`deWallpaperId`, no legacy writes) and wallpaper/accent loading. Files: `crates/de-config/src/prefs.rs`, `crates/de-config/tests/prefs.rs`, `crates/de-paint/src/wallpaper.rs`.
 - **Exit criteria:** `scripts/de_bench.sh --scenario launcher` reports p95 ≤ 16.6 ms and 0 missed frames > 2 for home scroll, drawer open, launch morph, back; a 30-app list scrolls without texture thrash; all flows work with touch and keyboard.
-- **Status (device-gated):** all M3 tasks code-complete and host-verified (unit tests + 60/60 goldens, `de-bin` arm64 release build). Exit criteria still need an on-device run — deploy/probe/bench pending device connectivity.
+- **Status (device-gated):** launcher morph playback is wired in `de-core`. The remaining screen transitions in the catalogue and the full launcher benchmark still need verification.
 
 ### M4: System surfaces and services (effort: L)
 - **Objective:** the shell is complete: shade, notifications, quick settings, lock, power, settings, OSK, screenshots.
