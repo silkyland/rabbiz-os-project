@@ -48,6 +48,41 @@ fn seeds_from_legacy_once_and_never_writes_it() {
 }
 
 #[test]
+fn seeds_dock_and_home_order_from_sibling_desktop_json() {
+    let dir = tmpdir("desktop-seed");
+    let shell = dir.join("rabbiz-shell");
+    std::fs::create_dir_all(&shell).unwrap();
+    std::fs::write(shell.join("prefs.json"), r"{}").unwrap();
+    std::fs::write(
+        shell.join("desktop.json"),
+        r#"{"version":1,
+            "desktop":["org.kde.index","a21s-clock","a21s-terminal"],
+            "dock":["a21s-dialer","a21s-sms","a21s-settings","google-chrome"]}"#,
+    )
+    .unwrap();
+
+    let p = Prefs::load_from(
+        &dir.join("rabbiz-de").join("prefs.json"),
+        &shell.join("prefs.json"),
+    );
+    // Legacy ids canonicalize; the retired google-chrome wrapper id maps to
+    // its successor; third-party ids pass through.
+    assert_eq!(
+        p.dock,
+        vec![
+            "rabbiz-dialer",
+            "rabbiz-sms",
+            "rabbiz-settings",
+            "rabbiz-browser"
+        ]
+    );
+    assert_eq!(
+        p.home_order,
+        vec!["org.kde.index", "rabbiz-clock", "rabbiz-terminal"]
+    );
+}
+
+#[test]
 fn unknown_wallpaper_id_passes_through_loader_falls_back() {
     let dir = tmpdir("unknown-wp");
     let legacy = dir.join("prefs.json");

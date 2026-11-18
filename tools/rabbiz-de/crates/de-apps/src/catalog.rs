@@ -163,7 +163,8 @@ fn alt_id(id: &str) -> Option<String> {
     if let Some(rest) = id.strip_prefix("a21s-") {
         Some(format!("rabbiz-{rest}"))
     } else {
-        id.strip_prefix("rabbiz-").map(|rest| format!("a21s-{rest}"))
+        id.strip_prefix("rabbiz-")
+            .map(|rest| format!("a21s-{rest}"))
     }
 }
 
@@ -359,7 +360,7 @@ mod tests {
         assert!(c.find("a21s-calculator").is_some());
         assert!(!c.visible(&p).any(|e| e.id == "rabbiz-calculator"));
         // Dock lookup resolves the legacy id, but is_hidden drops it again.
-        assert!(c.dock(&p).is_empty());
+        assert_eq!(c.dock(&p), Vec::<&AppEntry>::new());
         let _ = std::fs::remove_dir_all(&base);
     }
 }

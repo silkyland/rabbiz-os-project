@@ -2,10 +2,10 @@
 //! hicolor theme, rasterize to the shell's 96 px box, cache the result.
 //!
 //! Rules from plan §7.17:
-//! - Rabbiz apps (`rabbiz-*`, legacy `a21s-*`): 96 px sand tile (#DAC9B3 base, radius 28) with a
-//!   plum glyph — first letter of the app name until per-app glyphs land.
-//! - Third-party apps: original icon in a 96 px box, no recolor (Chrome keeps
-//!   its logo, KDE apps keep theirs).
+//! - Every app: the themed icon file wins (`Icon=` → hicolor/pixmaps);
+//!   first-party `rabbiz-*.svg` ships real per-app glyphs.
+//! - No file resolves: 96 px sand tile (#DAC9B3 base, radius 28) with a
+//!   plum glyph — first letter of the app name.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -80,15 +80,14 @@ pub fn is_rabbiz_app(desktop_id: &str) -> bool {
 }
 
 /// Rasterize the icon for `desktop_id` + `icon_name` + display `label`
-/// (fallback letter) at `size` px. Third-party artwork is passed through
-/// un-recolored; first-party gets the sand tile + plum glyph.
+/// (fallback letter) at `size` px. The themed file wins for every app —
+/// first-party `rabbiz-*.svg` tiles carry the real per-app glyphs; the
+/// sand tile + initial is only the fallback when no file resolves.
 #[must_use]
-pub fn rasterize_icon(desktop_id: &str, icon_name: &str, label: &str, size: i32) -> Pixels {
-    if !is_rabbiz_app(desktop_id) {
-        if let Some(path) = lookup(icon_name) {
-            if let Some(px) = rasterize_file(&path, size) {
-                return px;
-            }
+pub fn rasterize_icon(_desktop_id: &str, icon_name: &str, label: &str, size: i32) -> Pixels {
+    if let Some(path) = lookup(icon_name) {
+        if let Some(px) = rasterize_file(&path, size) {
+            return px;
         }
     }
     tile_icon(label, size)

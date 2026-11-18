@@ -142,6 +142,8 @@ ssh "${TARGET}" "
     /usr/local/bin/a21s-spotify-ctl \
     /usr/local/bin/a21s-{browser,calculator,clock,dialer,gallery,music,notes,photos,settings,sms,terminal,files,calendar} \
     /usr/share/applications/a21s-*.desktop \
+    /usr/share/applications/google-chrome.desktop \
+    /usr/share/applications/com.google.Chrome.desktop \
     /etc/systemd/system/a21s-splash.service \
     /etc/polkit-1/rules.d/50-a21s-session.rules \
     /etc/polkit-1/rules.d/51-a21s-shell.rules

@@ -121,6 +121,30 @@ impl Prefs {
         // `lightTheme` is deliberately not seeded: the legacy default was
         // dark, the DE default is Cream Glass light (Decision 9) — carrying
         // the old default over would silently undo the owner's choice.
+
+        // Sibling `desktop.json` (QML shell layout state) seeds the dock +
+        // home order so the DE opens with the arrangement the user already
+        // had. Ids are canonicalized (`a21s-*` → `rabbiz-*`; our retired
+        // `google-chrome.desktop` wrapper → `rabbiz-browser`).
+        if let Some(dir) = legacy.parent() {
+            if let Ok(text) = std::fs::read_to_string(dir.join("desktop.json")) {
+                if let Ok(d) = serde_json::from_str::<serde_json::Value>(&text) {
+                    let ids = |key: &str| {
+                        d.get(key)
+                            .and_then(|x| x.as_array())
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|x| x.as_str())
+                                    .map(normalize_seed_id)
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default()
+                    };
+                    p.dock = ids("dock");
+                    p.home_order = ids("desktop");
+                }
+            }
+        }
         p
     }
 
@@ -182,6 +206,19 @@ impl Prefs {
     /// Remove `desktop_id` from the dock.
     pub fn unpin_dock(&mut self, desktop_id: &str) {
         self.dock.retain(|d| d != desktop_id);
+    }
+}
+
+/// Canonical desktop-id for a seed read from the legacy shell's
+/// `desktop.json` (a21s-* → rabbiz-*; retired wrapper ids → their
+/// successors).
+fn normalize_seed_id(id: &str) -> String {
+    if let Some(rest) = id.strip_prefix("a21s-") {
+        return format!("rabbiz-{rest}");
+    }
+    match id {
+        "google-chrome" | "com.google.Chrome" => "rabbiz-browser".into(),
+        _ => id.into(),
     }
 }
 
