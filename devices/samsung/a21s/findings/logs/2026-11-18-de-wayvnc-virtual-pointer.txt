@@ -1,0 +1,50 @@
+a21s-wayvnc under rabbiz-de — before/after zwlr_virtual_pointer_v1
+==================================================================
+
+BEFORE (rabbiz-de without zwlr_virtual_pointer_v1, pre-deploy):
+  $ runuser -u rabbiz -- env XDG_RUNTIME_DIR=/run/user/1001 \
+      systemctl --user status a21s-wayvnc
+  Active: activating (auto-restart) (Result: exit-code)
+  Process: 39193 ExecStart=/usr/bin/wayvnc -o DSI-1 -f 30 172.16.42.1 127.0.0.1
+           (code=exited, status=1/FAILURE)
+  $ ss -ltn | grep 5900
+  (nothing)
+  wayvnc log (earlier boot, see 2026-11-18-de-osk-typing.txt):
+  "Virtual Pointer protocol not supported by compositor"
+
+DEPLOY: commit 77c93ea release build via scripts/de_deploy.sh
+  (DE_DEPLOY_SKIP_PROBE=1), then systemctl reboot under device lock.
+
+AFTER (same boot, rabbiz-de PID 1275 as compositor):
+  $ systemctl --user status a21s-wayvnc
+  Active: active (running) since 15:50:23; Main PID: 1311 (wayvnc)
+  NRestarts=6 (boot-time retries before the wayland socket existed;
+  stable >2.5 min afterwards including a client connect/disconnect)
+  $ ss -ltn | grep 5900
+  LISTEN 127.0.0.1:5900
+  LISTEN 172.16.42.1:5900
+
+RFB handshake from the Mac over usb0 (minimal Python RFB 3.8 client):
+  banner: RFB 003.008 / sec types: [1] (None) / sec result: 0
+  ServerInit: fb 720 x 1600, name "WayVNC"
+
+POINTER INPUT end-to-end (the load-bearing check):
+  Sent RFB PointerEvent click (mask 1 then 0) at (160,711) — the
+  rabbiz-camera shutter button on the visible 720x1600 frame.
+  Result: /home/rabbiz/.local/share/rabbiz-camera/demo-06c79a0/captures/
+  Rabbiz-1794991945513.png (104945 B, 360x480 flower frame) appeared
+  at 15:52 — the click reached the app and triggered a capture.
+  Chain proven: RFB PointerEvent -> wayvnc -> zwlr_virtual_pointer_v1
+  -> rabbiz-de pointer focus -> wl_pointer.button -> rabbiz-camera.
+
+NOT verified:
+  - Rabbiz Mirror macOS companion app itself (not installed/run here);
+    only the protocol path it depends on was exercised.
+  - FramebufferUpdateRequest pixel data was not decoded (banner +
+    ServerInit only; grim -o DSI-1 independently proves screencopy shm
+    capture, which is what wayvnc uses).
+  - Virtual keyboard injection (wayvnc bound the now-unfiltered
+    virtual-keyboard global implicitly, but no keys were sent).
+  - Pointer click only tested on an xdg-toplevel app; shell-internal
+    UI (lock/home/recents) is touch-gesture-driven by design — see the
+    finding for the documented mapping.
