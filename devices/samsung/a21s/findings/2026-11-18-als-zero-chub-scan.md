@@ -30,6 +30,12 @@ Accelerometer (1), gyroscope (4), and ambient light (5) are absent from the bitm
 [Vendor bitmap decoding](https://github.com/samsungexynos850/android_kernel_samsung_exynos850/blob/b8c71b7aecece9c67f0e840a6b074573e8041d20/drivers/sensorhub/ssp_data.c#L360-L385)
 [Vendor sensor IDs](https://github.com/samsungexynos850/android_kernel_samsung_exynos850/blob/b8c71b7aecece9c67f0e840a6b074573e8041d20/drivers/sensorhub/ssp_type_define.h#L1-L8)
 
+The stock Android 12 dump for SM-A217F build `A217FXXU8DVF6` shows LSM6DSL
+enabled for both accelerometer and gyroscope in the extracted kernel config.
+This establishes the stock driver configuration for that build.
+[Stock firmware dump](https://github.com/leddaz-dump-stash/samsung_a21s_dump)
+· [Extracted kernel config](https://github.com/leddaz-dump-stash/samsung_a21s_dump/blob/a21snsxx-user-12-SP1A.210812.016-A217FXXU8DVF6-release-keys/ikconfig#L5160-L5169)
+
 ## Interpretation
 
 SensorProxy is passing through the zero already present in Linux IIO. The port allocates
