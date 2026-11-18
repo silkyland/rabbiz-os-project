@@ -76,27 +76,11 @@ impl De {
                 let delta = pos - self.pointer.current_location();
                 self.pointer_motion(event.time_msec(), pos, delta);
             }
-            InputEvent::PointerButton { event } => {
-                let serial = SCOUNTER.next_serial();
-                let ptr = self.pointer.clone();
-                if event.state() == smithay::backend::input::ButtonState::Pressed {
-                    if let Some(target) = self
-                        .surface_under(ptr.current_location())
-                        .and_then(|hit| hit.keyboard_target)
-                    {
-                        self.focus_surface(Some(target), serial);
-                    }
-                }
-                ptr.button(
-                    self,
-                    &ButtonEvent {
-                        button: event.button_code(),
-                        state: event.state(),
-                        serial,
-                        time: event.time_msec(),
-                    },
-                );
-            }
+            InputEvent::PointerButton { event } => self.pointer_button(
+                event.time_msec(),
+                event.button_code(),
+                event.state(),
+            ),
             InputEvent::PointerAxis { event } => {
                 let mut frame = AxisFrame::new(event.time_msec()).source(event.source());
                 let v = event.amount(Axis::Vertical).unwrap_or(0.0);
@@ -126,14 +110,50 @@ impl De {
                 {
                     frame = frame.stop(Axis::Vertical).stop(Axis::Horizontal);
                 }
-                let ptr = self.pointer.clone();
-                ptr.axis(self, frame);
+                self.pointer_axis_frame(frame);
             }
             _ => {}
         }
     }
 
-    fn pointer_motion(&mut self, time: u32, pos: Point<f64, Logical>, delta: Point<f64, Logical>) {
+    /// One pointer button event — shared by libinput and the virtual
+    /// pointer protocol (a21s-wayvnc / Rabbiz Mirror).
+    pub(crate) fn pointer_button(
+        &mut self,
+        time: u32,
+        button: u32,
+        state: smithay::backend::input::ButtonState,
+    ) {
+        let serial = SCOUNTER.next_serial();
+        let ptr = self.pointer.clone();
+        if state == smithay::backend::input::ButtonState::Pressed {
+            if let Some(target) = self
+                .surface_under(ptr.current_location())
+                .and_then(|hit| hit.keyboard_target)
+            {
+                self.focus_surface(Some(target), serial);
+            }
+        }
+        ptr.button(
+            self,
+            &ButtonEvent {
+                button,
+                state,
+                serial,
+                time,
+            },
+        );
+    }
+
+    /// One axis frame — shared by libinput and the virtual pointer protocol.
+    pub(crate) fn pointer_axis_frame(&mut self, frame: AxisFrame) {
+        let ptr = self.pointer.clone();
+        ptr.axis(self, frame);
+    }
+
+    /// Pointer motion + hit-test — shared by libinput and the virtual
+    /// pointer protocol.
+    pub(crate) fn pointer_motion(&mut self, time: u32, pos: Point<f64, Logical>, delta: Point<f64, Logical>) {
         let serial = SCOUNTER.next_serial();
         let under = self.surface_under(pos).map(SurfaceHit::into_focus);
         let ptr = self.pointer.clone();

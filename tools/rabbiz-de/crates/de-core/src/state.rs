@@ -354,7 +354,9 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let layer_shell_state = WlrLayerShellState::new::<De>(&dh);
     TextInputManagerState::new::<De>(&dh);
     InputMethodManagerState::new::<De, _>(&dh, crate::osk::is_session_input_method);
-    VirtualKeyboardManagerState::new::<De, _>(&dh, crate::osk::is_session_input_method);
+    // Any client may create a virtual keyboard (wlroots policy — needed by
+    // a21s-wayvnc for Rabbiz Mirror input, and by the session OSK).
+    VirtualKeyboardManagerState::new::<De, _>(&dh, |_| true);
     let xdg_decoration_state = XdgDecorationState::new::<De>(&dh);
     let xdg_activation_state = XdgActivationState::new::<De>(&dh);
     let data_device_state = DataDeviceState::new::<De>(&dh);
@@ -366,6 +368,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let viewporter_state = ViewporterState::new::<De>(&dh);
     let output_manager_state = OutputManagerState::new_with_xdg_output::<De>(&dh);
     crate::screencopy::init(&dh);
+    crate::virtual_pointer::init(&dh);
     let mut dmabuf_state = DmabufState::new();
     let render_node = setup
         .device

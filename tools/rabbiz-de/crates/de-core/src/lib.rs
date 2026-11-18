@@ -11,6 +11,7 @@ pub mod misc;
 mod morph;
 mod osk;
 pub mod screencopy;
+pub mod virtual_pointer;
 pub mod seat;
 pub mod selection;
 pub mod shell;
