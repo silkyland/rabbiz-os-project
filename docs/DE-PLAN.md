@@ -424,13 +424,13 @@ tests/                     golden list, protocol smoke clients
 - **Depends on:** M1.
 - **Entry criteria:** M1 app path stable on device.
 - **Tasks:**
-  - [ ] `M2-T1`: `de-design` tokens from 7.17, typography metrics, dark/light maps (see the light Cream Glass note in Decision 9), motion presets from 7.17a (`motion.rs`: spring presets + fallback bezier ladder), contrast test. Files: `crates/de-design/src/{tokens,type_scale,motion,theme}.rs`, `tests/contrast.rs`.
-  - [ ] `M2-T2`: text pipeline: fontdb + cosmic-text shaping, bundled Thai fallback, cache, ellipsis/wrap rules. Files: `crates/de-paint/src/text/{mod,layout,shape,cache}.rs`.
-  - [ ] `M2-T3`: icon pipeline: hicolor lookup + resvg raster + cache + third-party passthrough. Files: `crates/de-apps/src/icons.rs`, `crates/de-paint/src/image.rs`.
-  - [ ] `M2-T4`: layer cache + damage + animation clock with the closed-form spring solver, velocity-preserving retarget and the degrade ladder from 7.17a; no per-frame vector raster. Files: `crates/de-paint/src/{layer,cache,damage,animation}.rs`.
-  - [ ] `M2-T5`: screen skeletons P0–P20 with static data and navigation. Files: `crates/de-ui/src/{boot,lock,home,drawer,recents,status,shade,qs,osd,power,search,screenshot,error,first_run}.rs`, `crates/de-ui/src/settings/mod.rs`, `crates/de-ui/src/settings/index.rs`, `crates/de-ui/src/nav.rs`.
-  - [ ] `M2-T6`: golden harness for all screens at 720×1600 and 1080×2400 (tablet seam), plus Thai/English; `--scene all --out-dir`, pixel comparator shared with M0-T7. Files: `crates/de-sim/src/golden.rs`, `tools/rabbiz-de/tests/golden/*.png`, `scripts/de_golden.sh`.
-  - [ ] `M2-T7`: i18n catalogs and `de-ui` string accessor. Files: `crates/de-ui/locales/{en,th}.toml`, `crates/de-ui/src/i18n.rs`.
+  - [x] `M2-T1`: `de-design` tokens from 7.17, typography metrics, dark/light maps (see the light Cream Glass note in Decision 9), motion presets from 7.17a (`motion.rs`: spring presets + fallback bezier ladder), contrast test. Files: `crates/de-design/src/{tokens,type_scale,motion,theme}.rs`, `tests/contrast.rs`.
+  - [x] `M2-T2`: text pipeline: fontdb + cosmic-text shaping, bundled Thai fallback, cache, ellipsis/wrap rules. Files: `crates/de-paint/src/text/{mod,layout,shape,cache}.rs`.
+  - [x] `M2-T3`: icon pipeline: hicolor lookup + resvg raster + cache + third-party passthrough. Files: `crates/de-apps/src/icons.rs`, `crates/de-paint/src/image.rs`.
+  - [x] `M2-T4`: layer cache + damage + animation clock with the closed-form spring solver, velocity-preserving retarget and the degrade ladder from 7.17a; no per-frame vector raster. Files: `crates/de-paint/src/{layer,cache,damage,animation}.rs`.
+  - [x] `M2-T5`: screen skeletons P0–P20 with static data and navigation. Files: `crates/de-ui/src/{boot,lock,home,drawer,recents,status,shade,qs,osd,power,search,screenshot,error,first_run}.rs`, `crates/de-ui/src/settings/mod.rs`, `crates/de-ui/src/settings/index.rs`, `crates/de-ui/src/nav.rs`.
+  - [x] `M2-T6`: golden harness for all screens at 720×1600 and 1080×2400 (tablet seam), plus Thai/English; `--scene all --out-dir`, pixel comparator shared with M0-T7. Files: `crates/de-sim/src/golden.rs`, `tools/rabbiz-de/tests/golden/*.png`, `scripts/de_golden.sh`.
+  - [x] `M2-T7`: i18n catalogs and `de-ui` string accessor. Files: `crates/de-ui/locales/{en,th}.toml`, `crates/de-ui/src/i18n.rs`.
 - **Exit criteria:** `scripts/de_golden.sh --check` passes for 20 screens; contrast test passes; Thai text sample has no tofu and correct mark positioning; static screen render < 4 ms CPU on device.
 
 ### M3: Launcher core (effort: L)

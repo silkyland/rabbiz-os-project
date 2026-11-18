@@ -1,9 +1,15 @@
-//! `de-design` — the Rabbiz design tokens (plan §7.17).
+//! `de-design` — the Rabbiz design tokens (plan §7.17/§7.17a).
 //!
-//! M0 ships only what the boot/golden scenes need (dark base palette). The
-//! complete token set, type scale, motion presets and light map are M2-T1.
+//! M2-T1 surface: full [`tokens`] (dark + Cream Glass light), [`type_scale`],
+//! [`motion`] (spring presets, fallback bezier ladder, degrade ladder) and
+//! [`theme`] (mode selection + persisted mode file). Contrast contract is
+//! enforced by `tests/contrast.rs`.
 
+pub mod motion;
+pub mod theme;
 pub mod tokens;
+pub mod type_scale;
 
+pub use theme::{theme_for, Mode};
 pub use tokens::Theme;
-pub use tokens::{DARK, DEFAULT};
+pub use tokens::{DARK, DEFAULT, LIGHT};

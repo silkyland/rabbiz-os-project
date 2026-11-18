@@ -1,0 +1,80 @@
+# English strings (M2-T7). Keys are flat; sections noted by comment.
+
+[common]
+search = "Search"
+cancel = "Cancel"
+done = "Done"
+back = "Back"
+next = "Next"
+skip = "Skip"
+
+[lock]
+unlock_hint = "Swipe up to unlock"
+charging = "Charging"
+fully_charged = "Fully charged"
+
+[home]
+search_hint = "Search apps and more"
+
+[drawer]
+title = "All apps"
+
+[recents]
+title = "Recent apps"
+empty = "No recent apps"
+
+[shade]
+notifications = "Notifications"
+no_notifications = "No new notifications"
+controls = "Controls"
+
+[qs]
+wifi = "Wi-Fi"
+bluetooth = "Bluetooth"
+dnd = "Do Not Disturb"
+airplane = "Airplane"
+rotate = "Auto-rotate"
+battery_saver = "Battery Saver"
+
+[power]
+title = "Power"
+power_off = "Power off"
+restart = "Restart"
+lock = "Lock"
+safe_mode = "Safe mode"
+screenshot = "Screenshot"
+
+[osd]
+volume = "Volume"
+brightness = "Brightness"
+
+[search]
+hint = "Search"
+
+[error]
+app_not_responding = "App not responding"
+wait = "Wait"
+close_app = "Close"
+
+[first_run]
+title = "Welcome"
+language = "Language"
+finish = "Get started"
+
+[settings]
+title = "Settings"
+network = "Network"
+bluetooth = "Bluetooth"
+display = "Display"
+sound = "Sound"
+notifications = "Notifications"
+gestures = "Gestures & Navigation"
+keyboard = "Keyboard & Language"
+apps = "Apps"
+battery = "Battery"
+storage = "Storage"
+about = "About"
+session = "Session"
+
+[status]
+charging = "Charging"

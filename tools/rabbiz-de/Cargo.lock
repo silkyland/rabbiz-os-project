@@ -448,6 +448,8 @@ version = "0.1.0"
 dependencies = [
  "de-api",
  "de-config",
+ "de-design",
+ "de-paint",
  "de-system",
  "freedesktop-desktop-entry",
  "serde",

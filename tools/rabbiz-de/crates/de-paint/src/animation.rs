@@ -1,0 +1,285 @@
+//! Animation clock + spring solver (M2-T4). Values animate as `f32` channels
+//! driven by a closed-form damped-harmonic-oscillator step derived from each
+//! `SpringPreset`'s duration/bounce; retargeting preserves velocity, which is
+//! what makes gestures interruptible.
+
+use de_design::motion::{self, DegradeLevel, SpringPreset};
+
+/// Clock feeding all animations; `now_s` is seconds since compositor start.
+#[derive(Debug, Default)]
+pub struct AnimationClock {
+    pub now_s: f64,
+}
+
+impl AnimationClock {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn tick(&mut self, dt_s: f64) {
+        self.now_s += dt_s;
+    }
+}
+
+/// Derived oscillator constants for a preset: damping ratio `zeta` and
+/// natural frequency `omega` chosen so the spring settles within ~1 % near
+/// `duration_s` and overshoots by `bounce` on the first crossing.
+#[derive(Debug, Clone, Copy)]
+struct Osc {
+    zeta: f32,
+    omega: f32,
+}
+
+impl Osc {
+    fn of(p: SpringPreset) -> Self {
+        let bounce = p.bounce().max(0.0);
+        // Overshoot = e^(-ζπ/√(1-ζ²)) → ζ = -ln(b)/√(π²+ln²b); bounce 0 → ζ=1.
+        let zeta = if bounce <= 0.0 {
+            1.0
+        } else {
+            let l = bounce.ln();
+            (-l / (std::f32::consts::PI * std::f32::consts::PI + l * l).sqrt()).min(0.999)
+        };
+        // Settle ~4.6/(ζω) for 1 % band → ω = 4.6/(ζ·duration).
+        let omega = 4.6 / (zeta * p.duration_s().max(0.05));
+        Self { zeta, omega }
+    }
+
+    /// Advance (x, v) toward `target` by `dt` using the closed-form solution.
+    fn step(self, x: f32, v: f32, target: f32, dt: f32) -> (f32, f32) {
+        let a = x - target;
+        if self.zeta >= 1.0 {
+            // Critically damped: x(t) = (A + (v0+ωA)t)·e^(-ωt).
+            let w = self.omega;
+            let b = v + w * a;
+            let e = (-w * dt).exp();
+            let nx = (a + b * dt) * e;
+            let nv = (b - w * (a + b * dt)) * e;
+            (nx + target, nv)
+        } else {
+            // Underdamped: x(t) = e^(-ζωt)(A cos ωd t + B sin ωd t).
+            let (z, w) = (self.zeta, self.omega);
+            let wd = w * (1.0 - z * z).sqrt();
+            let b = (v + z * w * a) / wd;
+            let e = (-z * w * dt).exp();
+            let (c, s) = ((wd * dt).cos(), (wd * dt).sin());
+            let nx = e * (a * c + b * s);
+            // dx/dt = e^(-ζωt)[(B·ωd - ζωA)cos + (-A·ωd - ζωB)sin]
+            let nv = e * ((b * wd - z * w * a) * c + (-a * wd - z * w * b) * s);
+            (nx + target, nv)
+        }
+    }
+}
+
+/// One animated scalar channel.
+#[derive(Debug, Clone)]
+pub struct SpringValue {
+    pub value: f32,
+    pub target: f32,
+    pub velocity: f32,
+    pub preset: SpringPreset,
+    /// Settled when within this epsilon of target and velocity is negligible.
+    pub epsilon: f32,
+}
+
+impl SpringValue {
+    #[must_use]
+    pub fn new(initial: f32, preset: SpringPreset) -> Self {
+        Self {
+            value: initial,
+            target: initial,
+            velocity: 0.0,
+            preset,
+            epsilon: 0.001,
+        }
+    }
+
+    /// Retarget keeping current position + velocity (interruptible).
+    pub fn retarget(&mut self, target: f32) {
+        self.target = target;
+    }
+
+    /// Retarget with an incoming gesture velocity.
+    pub fn retarget_with_velocity(&mut self, target: f32, velocity: f32) {
+        self.target = target;
+        self.velocity = velocity;
+    }
+
+    /// Project where a gesture release will land: pos + v·0.25 s (§7.17).
+    #[must_use]
+    pub fn projected_release(&self) -> f32 {
+        self.value + self.velocity * motion::PROJECT_AHEAD_S
+    }
+
+    /// Rubber-band overscroll displacement: 0.55 × drag past the limit.
+    #[must_use]
+    pub fn rubber(drag_past_limit: f32) -> f32 {
+        drag_past_limit * motion::RUBBER_FACTOR
+    }
+
+    /// Advance the spring by `dt_s` (closed-form, no allocation).
+    /// Returns `true` if still animating.
+    pub fn advance(&mut self, dt_s: f32) -> bool {
+        if self.settled() {
+            self.snap();
+            return false;
+        }
+        let (v, vel) = Osc::of(self.preset).step(self.value, self.velocity, self.target, dt_s);
+        self.value = v;
+        self.velocity = vel;
+        if self.settled() {
+            self.snap();
+            return false;
+        }
+        true
+    }
+
+    /// Snap immediately (degrade ≥ crossfade / reduced motion).
+    pub fn snap(&mut self) {
+        self.value = self.target;
+        self.velocity = 0.0;
+    }
+
+    #[must_use]
+    pub fn settled(&self) -> bool {
+        (self.value - self.target).abs() < self.epsilon && self.velocity.abs() < self.epsilon
+    }
+}
+
+/// Frame pacing + degradation ladder driver. `level` rises when frames blow
+/// the budget; recovers after sustained good frames.
+#[derive(Debug)]
+pub struct FrameGovernor {
+    pub level: DegradeLevel,
+    slow_streak: u32,
+    good_streak: u32,
+}
+
+impl Default for FrameGovernor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// One rung up the ladder (toward `Full`).
+fn recovered(l: DegradeLevel) -> DegradeLevel {
+    match l {
+        DegradeLevel::Full => DegradeLevel::Full,
+        DegradeLevel::NoStagger => DegradeLevel::Full,
+        DegradeLevel::NoEffects => DegradeLevel::NoStagger,
+        DegradeLevel::Bezier160 => DegradeLevel::NoEffects,
+        DegradeLevel::Crossfade120 => DegradeLevel::Bezier160,
+    }
+}
+
+impl FrameGovernor {
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            level: DegradeLevel::Full,
+            slow_streak: 0,
+            good_streak: 0,
+        }
+    }
+
+    /// Feed one frame's composite time (ms). Returns current level.
+    pub fn observe(&mut self, frame_ms: f64) -> DegradeLevel {
+        if frame_ms > DegradeLevel::SLOW_FRAME_MS {
+            self.slow_streak += 1;
+            self.good_streak = 0;
+            if self.slow_streak >= DegradeLevel::SLOW_STREAK {
+                self.level = self.level.degraded();
+                self.slow_streak = 0;
+            }
+        } else {
+            self.good_streak += 1;
+            self.slow_streak = 0;
+            // Recover one rung after ~2 s of healthy frames.
+            if self.good_streak >= 120 {
+                self.level = recovered(self.level);
+                self.good_streak = 0;
+            }
+        }
+        self.level
+    }
+
+    /// Whether springs may run at this level (≥ Bezier160 uses fixed
+    /// durations instead).
+    #[must_use]
+    pub fn springs_allowed(&self) -> bool {
+        self.level < DegradeLevel::Bezier160
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spring_converges() {
+        let mut s = SpringValue::new(0.0, SpringPreset::Smooth);
+        s.retarget(100.0);
+        for _ in 0..240 {
+            s.advance(1.0 / 60.0);
+        }
+        assert!((s.value - 100.0).abs() < 0.5, "v={}", s.value);
+    }
+
+    #[test]
+    fn snappy_overshoots() {
+        let mut s = SpringValue::new(0.0, SpringPreset::Snappy);
+        s.retarget(100.0);
+        let mut max_v = 0.0f32;
+        for _ in 0..240 {
+            s.advance(1.0 / 60.0);
+            max_v = max_v.max(s.value);
+        }
+        // 12 % bounce → peak ≥ ~104 past the target.
+        assert!(max_v > 103.0, "peak={max_v}");
+        assert!((s.value - 100.0).abs() < 0.5);
+    }
+
+    #[test]
+    fn retarget_preserves_velocity() {
+        let mut s = SpringValue::new(0.0, SpringPreset::Snappy);
+        s.retarget_with_velocity(50.0, 400.0);
+        let v0 = s.velocity;
+        s.retarget(10.0);
+        assert_eq!(s.velocity, v0, "retarget must preserve velocity");
+    }
+
+    #[test]
+    fn projection_uses_quarter_second() {
+        let mut s = SpringValue::new(100.0, SpringPreset::Smooth);
+        s.velocity = -800.0;
+        assert_eq!(s.projected_release(), -100.0);
+    }
+
+    #[test]
+    fn rubber_is_055x() {
+        assert_eq!(SpringValue::rubber(100.0), 55.0);
+    }
+
+    #[test]
+    fn governor_degrades_on_slow_frames() {
+        let mut g = FrameGovernor::new();
+        for _ in 0..3 {
+            g.observe(40.0);
+        }
+        assert_eq!(g.level, DegradeLevel::NoStagger);
+        for _ in 0..3 {
+            g.observe(40.0);
+        }
+        assert_eq!(g.level, DegradeLevel::NoEffects);
+    }
+
+    #[test]
+    fn governor_recovers() {
+        let mut g = FrameGovernor::new();
+        g.level = DegradeLevel::NoEffects;
+        for _ in 0..120 {
+            g.observe(10.0);
+        }
+        assert_eq!(g.level, DegradeLevel::NoStagger);
+    }
+}
