@@ -294,10 +294,70 @@ pub const BEZIER_EXIT: Bezier = Bezier {
     y2: 0.15,
 };
 
-/// Evaluate a cubic-bezier easing at `t` (0..=1) via Newton–Raphson on x(t).
+/// Standard decelerate — utility entrances that settle into place.
+pub const BEZIER_STANDARD_DECELERATE: Bezier = Bezier {
+    x1: 0.0,
+    y1: 0.0,
+    x2: 0.0,
+    y2: 1.0,
+};
+/// Standard accelerate — utility exits that pick up speed.
+pub const BEZIER_STANDARD_ACCELERATE: Bezier = Bezier {
+    x1: 0.3,
+    y1: 0.0,
+    x2: 1.0,
+    y2: 1.0,
+};
+
+const EMPHASIZED_JOIN_X: f32 = 0.166_666;
+const EMPHASIZED_JOIN_Y: f32 = 0.4;
+// Normalize each reference segment to a unit square for `bezier_eval`.
+const EMPHASIZED_FIRST: Bezier = Bezier {
+    x1: 0.05 / EMPHASIZED_JOIN_X,
+    y1: 0.0,
+    x2: 0.133_333 / EMPHASIZED_JOIN_X,
+    y2: 0.06 / EMPHASIZED_JOIN_Y,
+};
+const EMPHASIZED_SECOND: Bezier = Bezier {
+    x1: (0.208_333 - EMPHASIZED_JOIN_X) / (1.0 - EMPHASIZED_JOIN_X),
+    y1: (0.82 - EMPHASIZED_JOIN_Y) / (1.0 - EMPHASIZED_JOIN_Y),
+    x2: (0.25 - EMPHASIZED_JOIN_X) / (1.0 - EMPHASIZED_JOIN_X),
+    y2: 1.0,
+};
+
+/// Evaluate the two-segment emphasized easing for on-screen movement.
+#[must_use]
+pub fn emphasized_eval(t: f32) -> f32 {
+    if t <= EMPHASIZED_JOIN_X {
+        EMPHASIZED_JOIN_Y * bezier_eval(EMPHASIZED_FIRST, t / EMPHASIZED_JOIN_X)
+    } else {
+        let local_t = (t - EMPHASIZED_JOIN_X) / (1.0 - EMPHASIZED_JOIN_X);
+        EMPHASIZED_JOIN_Y + (1.0 - EMPHASIZED_JOIN_Y) * bezier_eval(EMPHASIZED_SECOND, local_t)
+    }
+}
+
+/// Evaluate a cubic-bezier easing at `t` (0..=1). Invert x(t) with
+/// Newton–Raphson, or with bisection when an endpoint has zero x slope.
 #[must_use]
 pub fn bezier_eval(b: Bezier, t: f32) -> f32 {
     let t = t.clamp(0.0, 1.0);
+    if b.x1 == 0.0 || b.x2 == 1.0 {
+        // At a flat x endpoint Newton's starting derivative can vanish even
+        // for an interior t. Bracketing covers both standard edge curves.
+        if t == 0.0 || t == 1.0 || t.is_nan() {
+            return t;
+        }
+        let (mut low, mut high) = (0.0, 1.0);
+        for _ in 0..24 {
+            let mid = (low + high) * 0.5;
+            if cubic(b.x1, b.x2, mid) < t {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        return cubic(b.y1, b.y2, (low + high) * 0.5);
+    }
     // Solve x(u) = t for u, then return y(u).
     let mut u = t;
     for _ in 0..8 {
@@ -479,6 +539,75 @@ mod tests {
         // standard curve is monotonic and mid-ish at t=0.5.
         let m = bezier_eval(BEZIER_STANDARD, 0.5);
         assert!(m > 0.4 && m < 0.9, "mid {m}");
+    }
+
+    #[test]
+    fn added_easings_match_the_reference_paths() {
+        // Reference coordinates in output space, before segment normalization.
+        let decelerate = [[[0.0, 0.0], [0.0, 0.0], [0.0, 1.0], [1.0, 1.0]]];
+        let accelerate = [[[0.0, 0.0], [0.3, 0.0], [1.0, 1.0], [1.0, 1.0]]];
+        let emphasized = [
+            [[0.0, 0.0], [0.05, 0.0], [0.133333, 0.06], [0.166666, 0.4]],
+            [[0.166666, 0.4], [0.208333, 0.82], [0.25, 1.0], [1.0, 1.0]],
+        ];
+
+        for (name, evaluate, path) in [
+            (
+                "standard decelerate",
+                (|t| bezier_eval(BEZIER_STANDARD_DECELERATE, t)) as fn(f32) -> f32,
+                decelerate.as_slice(),
+            ),
+            (
+                "standard accelerate",
+                |t| bezier_eval(BEZIER_STANDARD_ACCELERATE, t),
+                accelerate.as_slice(),
+            ),
+            ("emphasized", emphasized_eval, emphasized.as_slice()),
+        ] {
+            assert_eq!(evaluate(0.0), 0.0, "{name}");
+            assert_eq!(evaluate(1.0), 1.0, "{name}");
+            let samples = [0.0, 1e-8, 1e-6]
+                .into_iter()
+                .chain((1..4096).map(|step| step as f32 / 4096.0))
+                .chain([0.999_999, 1.0]);
+            let mut previous = 0.0;
+            for t in samples {
+                let actual = evaluate(t);
+                let expected = reference_progress(path, f64::from(t));
+                assert!(actual >= previous, "{name} decreases at {t}");
+                assert!(
+                    (f64::from(actual) - expected).abs() <= 1e-5,
+                    "{name} at {t}: {actual} vs {expected}"
+                );
+                previous = actual;
+            }
+        }
+
+        assert_eq!(emphasized_eval(0.166666), 0.4);
+    }
+
+    // Evaluate the unscaled reference with de Casteljau subdivision in f64.
+    fn reference_progress(path: &[[[f64; 2]; 4]], t: f64) -> f64 {
+        let segment = path.iter().find(|segment| t <= segment[3][0]).unwrap();
+        let coordinate = |axis: usize, u: f64| {
+            let mut points = segment.map(|point| point[axis]);
+            for remaining in (1..4).rev() {
+                for i in 0..remaining {
+                    points[i] += (points[i + 1] - points[i]) * u;
+                }
+            }
+            points[0]
+        };
+        let (mut low, mut high) = (0.0, 1.0);
+        for _ in 0..50 {
+            let mid = (low + high) * 0.5;
+            if coordinate(0, mid) < t {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        coordinate(1, (low + high) * 0.5)
     }
 
     #[test]

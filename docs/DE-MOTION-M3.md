@@ -1,6 +1,6 @@
 # DE motion: what Material 3 teaches us (study + proposals)
 
-Status: **research and proposals**. P1 through P4 have host-side policy. Lane: `de`.
+Status: **research and proposals**. P1 through P5 have host-side policy. Lane: `de`.
 Written 2026-11-18.
 Like every rule here this is a hypothesis: the numbers below are starting points to be tuned by
 feel on the A21s, and any change to `de-design` must check the goldens and record the decision in
@@ -152,6 +152,12 @@ switches screens directly, so the morph and swipe-dismiss playback need live wir
 **P5. Complete the easing set.** Add `standard decelerate` (0,0,0,1) and `standard accelerate` (.3,0,1,1),
 plus a two-segment approximation of **emphasized** for the "begins and ends on screen" case (container
 transform, temporary exits). Keep `bezier_eval` and add endpoint and monotonicity tests.
+
+`motion.rs` now exposes both standard edge curves and `emphasized_eval`. The emphasized
+curve normalizes two cubic segments that join at (0.166666, 0.4). Host tests check all three
+easings against an independent double-precision evaluation of the published coordinates,
+with an absolute progress tolerance of 0.00001. Existing transitions keep their current
+curve assignments. [Reference easing paths](https://github.com/material-components/material-components-android/blob/1.13.0/docs/theming/Motion.md#curves-easing--duration)
 
 **P6. A written transition-pattern catalogue.** Map every DE screen change to one of the six patterns so
 motion stops being decided case by case:
