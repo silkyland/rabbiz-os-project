@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Contacts
+GenericName=Address Book
+Comment=Contacts, synced with the dialer (rabbiz-contacts)
+Exec=rabbiz-contacts
+Icon=rabbiz-contacts
+MimeType=text/x-vcard;text/vcard;
+Categories=Utility;ContactManagement;
+Terminal=false
+StartupNotify=true

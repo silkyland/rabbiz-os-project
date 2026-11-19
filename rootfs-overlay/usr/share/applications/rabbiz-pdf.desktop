@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=PDF
+GenericName=PDF reader
+Comment=In-house A21s PDF reader
+Exec=rabbiz-pdf %f
+MimeType=application/pdf;
+Icon=rabbiz-pdf
+Categories=Utility;
+Terminal=false
+StartupNotify=true

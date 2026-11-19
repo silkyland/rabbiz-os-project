@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Files
+GenericName=File manager
+Comment=In-house A21s Files
+Exec=rabbiz-files %f
+MimeType=inode/directory;application/octet-stream;text/plain;application/pdf;image/png;image/jpeg;image/webp;image/gif;
+Icon=rabbiz-files
+Categories=Utility;FileManager;
+Terminal=false
+StartupNotify=true
