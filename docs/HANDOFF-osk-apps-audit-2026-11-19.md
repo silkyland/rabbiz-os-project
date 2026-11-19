@@ -51,4 +51,6 @@ Evidence level: **L0 (static audit + host tests on `rabbiz-osk`)**. Read-only au
    - Moved `smithay-client-toolkit` under `[target.'cfg(target_os = "linux")'.dependencies]` in `rabbiz-app-kit/Cargo.toml` and added `wayland_stub.rs` for non-Linux hosts.
    - Unlocked full `cargo test --workspace` across all 13 `rabbiz-apps` crates on macOS and Linux, and enabled it unconditionally in `scripts/check.sh`.
    - Removed stray `clippy-report*.txt` files.
-3. **Standardize `rabbiz-apps` app skeleton**: Extract pure `model.rs` + `ui.rs` out of the 2,000+ LOC `main.rs` files (`contacts`, `files`, `clock`, `calculator`, `music`, `pdf`).
+3. **Standardize `rabbiz-apps` app skeleton** — **4/7 large apps split (2026-11-19)**:
+   - Split `rabbiz-contacts` (`main.rs` 2,376 → 769 LOC + `views.rs`, `ui.rs`), `rabbiz-files` (`main.rs` 2,050 → 767 LOC + `interaction.rs`, `ui.rs`), `rabbiz-clock` (`main.rs` 1,866 → 437 LOC + `model.rs`, `ui.rs`, `cli.rs`, `mcp.rs`), and `rabbiz-calculator` (`main.rs` 1,497 → 475 LOC + `model.rs`, `ui.rs`).
+   - Remaining: `rabbiz-dialer/src/app.rs` (1,752), `rabbiz-music/src/main.rs` (1,448), `rabbiz-pdf/src/main.rs` (1,344).
