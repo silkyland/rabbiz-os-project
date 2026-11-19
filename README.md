@@ -48,7 +48,10 @@ system under active development; hardware support and remaining work are listed 
 
 RabbizOS is built in spare time on real hardware. If it is useful to you, you can support it:
 
-[Buy Me a Coffee](https://buymeacoffee.com/silkyland) · [PayPal](https://www.paypal.com/paypalme/nuntates)
+<p align="center">
+  <a href="https://buymeacoffee.com/silkyland"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-silkyland-FFDD00?style=for-the-badge&logo=buymeacoffee&logoColor=black" alt="Buy Me a Coffee"></a>
+  <a href="https://www.paypal.com/paypalme/nuntates"><img src="https://img.shields.io/badge/PayPal-Donate-00457C?style=for-the-badge&logo=paypal&logoColor=white" alt="Donate via PayPal"></a>
+</p>
 
 Donations are optional and do not buy priority on issues or pull requests.
 
