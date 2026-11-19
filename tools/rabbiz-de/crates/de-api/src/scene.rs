@@ -51,6 +51,68 @@ impl DisplayArea {
     }
 }
 
+/// Generic Z-ordered collector keyed by [`DisplayArea`].
+///
+/// Shared by compositing (bottom -> top) and input hit-testing (top -> bottom)
+/// so visual stacking and touch routing can never drift apart, and Keyguard
+/// isolation is enforced by construction.
+#[derive(Debug, Clone)]
+pub struct DisplayStack<T> {
+    entries: Vec<(DisplayArea, T)>,
+}
+
+impl<T> Default for DisplayStack<T> {
+    fn default() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+}
+
+impl<T> DisplayStack<T> {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+        }
+    }
+
+    /// Push an item into `area`. Insertion order is preserved within the same area.
+    pub fn push(&mut self, area: DisplayArea, item: T) {
+        self.entries.push((area, item));
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Consume the stack in **bottom-to-top** compositing order.
+    /// When `locked` is true, every entry below [`DisplayArea::Keyguard`] is dropped.
+    #[must_use]
+    pub fn into_compositing_order(mut self, locked: bool) -> Vec<T> {
+        if locked {
+            self.entries.retain(|(area, _)| area.allowed_while_locked());
+        }
+        self.entries.sort_by_key(|(area, _)| *area);
+        self.entries.into_iter().map(|(_, item)| item).collect()
+    }
+
+    /// Consume the stack in **top-to-bottom** hit-testing order (exact reverse of compositing).
+    /// When `locked` is true, every entry below [`DisplayArea::Keyguard`] is dropped.
+    #[must_use]
+    pub fn into_hit_test_order(self, locked: bool) -> Vec<T> {
+        let mut ordered = self.into_compositing_order(locked);
+        ordered.reverse();
+        ordered
+    }
+}
+
 /// Opaque identifier of a layer inside a [`Scene`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct LayerId(pub u64);
@@ -200,5 +262,34 @@ mod tests {
         assert!(DisplayArea::Keyguard.allowed_while_locked());
         assert!(DisplayArea::KeyguardOverlay.allowed_while_locked());
         assert!(DisplayArea::Critical.allowed_while_locked());
+    }
+
+    #[test]
+    fn display_stack_orders_compositing_and_hit_testing_and_enforces_keyguard() {
+        let mut stack = DisplayStack::new();
+        stack.push(DisplayArea::Shade, "shade");
+        stack.push(DisplayArea::App, "app-bottom");
+        stack.push(DisplayArea::Critical, "cursor");
+        stack.push(DisplayArea::App, "app-top");
+        stack.push(DisplayArea::Keyguard, "lock");
+        stack.push(DisplayArea::Wallpaper, "wall");
+
+        let unlocked_draw = stack.clone().into_compositing_order(false);
+        assert_eq!(
+            unlocked_draw,
+            vec!["wall", "app-bottom", "app-top", "shade", "lock", "cursor"]
+        );
+
+        let unlocked_hit = stack.clone().into_hit_test_order(false);
+        assert_eq!(
+            unlocked_hit,
+            vec!["cursor", "lock", "shade", "app-top", "app-bottom", "wall"]
+        );
+
+        let locked_draw = stack.clone().into_compositing_order(true);
+        assert_eq!(locked_draw, vec!["lock", "cursor"]);
+
+        let locked_hit = stack.into_hit_test_order(true);
+        assert_eq!(locked_hit, vec!["cursor", "lock"]);
     }
 }
