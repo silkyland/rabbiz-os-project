@@ -216,7 +216,14 @@ impl Renderer {
         pixmap
     }
 
-    fn alt_bar(&mut self, pixmap: &mut Pixmap, layout: &Layout, theme: &Theme, scale: f32, bar: &AltBar<'_>) {
+    fn alt_bar(
+        &mut self,
+        pixmap: &mut Pixmap,
+        layout: &Layout,
+        theme: &Theme,
+        scale: f32,
+        bar: &AltBar<'_>,
+    ) {
         let g = &layout.geometry;
         let n = bar.items.len().max(1) as f32;
         let margin = g.margin_px * scale;
@@ -231,8 +238,17 @@ impl Renderer {
                 theme.letter_key
             };
             self.rect(pixmap, x, 4.0 * scale, width, height, fill, 6.0 * scale);
-            let fg = if i == bar.selected { theme.background } else { theme.label };
-            let rect = Rect { x, y: 4.0 * scale, w: width, h: height };
+            let fg = if i == bar.selected {
+                theme.background
+            } else {
+                theme.label
+            };
+            let rect = Rect {
+                x,
+                y: 4.0 * scale,
+                w: width,
+                h: height,
+            };
             self.text_centered(pixmap, item, rect, height * 0.6, fg);
         }
     }
@@ -250,14 +266,28 @@ impl Renderer {
         let h = (layout.height_px() * scale).round() as u32;
         let mut pixmap = Pixmap::new(w, h).expect("pixmap");
         pixmap.fill(color(theme.background));
-        self.rect(&mut pixmap, 0.0, 0.0, w as f32, h as f32, theme.background, 0.0);
+        self.rect(
+            &mut pixmap,
+            0.0,
+            0.0,
+            w as f32,
+            h as f32,
+            theme.background,
+            0.0,
+        );
         let title_rect = Rect {
             x: 16.0 * scale,
             y: 10.0 * scale,
             w: (layout.geometry.width_px - 32.0) * scale,
             h: 40.0 * scale,
         };
-        self.text_centered(&mut pixmap, title, title_rect, 20.0 * scale, theme.label_dim);
+        self.text_centered(
+            &mut pixmap,
+            title,
+            title_rect,
+            20.0 * scale,
+            theme.label_dim,
+        );
         if items.is_empty() {
             let empty = Rect {
                 x: 16.0 * scale,
@@ -265,12 +295,26 @@ impl Renderer {
                 w: (layout.geometry.width_px - 32.0) * scale,
                 h: 60.0 * scale,
             };
-            self.text_centered(&mut pixmap, "clipboard history is empty", empty, 18.0 * scale, theme.label_dim);
+            self.text_centered(
+                &mut pixmap,
+                "clipboard history is empty",
+                empty,
+                18.0 * scale,
+                theme.label_dim,
+            );
             return pixmap;
         }
         for (index, item) in items.iter().take(5).enumerate() {
             let rect = sheet_row_rect(index, layout, scale);
-            self.rect(&mut pixmap, rect.x, rect.y, rect.w, rect.h, theme.letter_key, 8.0 * scale);
+            self.rect(
+                &mut pixmap,
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                theme.letter_key,
+                8.0 * scale,
+            );
             let preview: String = item.chars().take(48).collect();
             let text_rect = Rect {
                 x: rect.x + 12.0 * scale,
@@ -286,7 +330,15 @@ impl Renderer {
     fn toolbar(&mut self, pixmap: &mut Pixmap, layout: &Layout, theme: &Theme, scale: f32) {
         for (index, icon) in TOOLBAR_ICONS.iter().enumerate() {
             let rect = toolbar_button_rect(index, layout, scale);
-            self.rect(pixmap, rect.x, rect.y, rect.w, rect.h, theme.function_key, 6.0 * scale);
+            self.rect(
+                pixmap,
+                rect.x,
+                rect.y,
+                rect.w,
+                rect.h,
+                theme.function_key,
+                6.0 * scale,
+            );
             self.text_in_family(
                 pixmap,
                 icon,
@@ -319,7 +371,15 @@ impl Renderer {
         for i in 0..3 {
             let x = strip_x + i as f32 * slot_w;
             if i > 0 {
-                self.rect(pixmap, x, y + 4.0 * scale, 1.0 * scale, slot_h - 8.0 * scale, theme.label_dim, 0.0);
+                self.rect(
+                    pixmap,
+                    x,
+                    y + 4.0 * scale,
+                    1.0 * scale,
+                    slot_h - 8.0 * scale,
+                    theme.label_dim,
+                    0.0,
+                );
             }
         }
         for (i, suggestion) in suggestions.iter().take(3).enumerate() {
@@ -365,7 +425,14 @@ impl Renderer {
         size: f32,
         rgb: (u8, u8, u8),
     ) {
-        self.text_in_family(pixmap, text, rect, size, rgb, cosmic_text::Family::SansSerif);
+        self.text_in_family(
+            pixmap,
+            text,
+            rect,
+            size,
+            rgb,
+            cosmic_text::Family::SansSerif,
+        );
     }
 
     fn text_in_family(

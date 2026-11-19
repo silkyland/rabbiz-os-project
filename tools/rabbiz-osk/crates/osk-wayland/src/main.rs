@@ -9,18 +9,20 @@
 
 use std::collections::{HashMap, HashSet};
 use std::io::{BufRead, BufReader, Read, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::net::UnixStream;
 use std::process::{Command as ProcessCommand, Stdio};
-use std::sync::Mutex;
-use std::os::fd::AsRawFd;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Instant;
 
 use osk_core::gesture::{GestureDetector, GestureEvent, TouchEvent};
 use osk_core::layout::{KeyAction, KeyPos, Layout};
 use osk_core::state::{Command, InputPurpose, Keyboard};
-use osk_render::{sheet_row_rect, suggestion_rect, toolbar_button_rect, AltBar, Renderer, Theme, TOOLBAR_ICONS};
+use osk_render::{
+    sheet_row_rect, suggestion_rect, toolbar_button_rect, AltBar, Renderer, Theme, TOOLBAR_ICONS,
+};
 
 use smithay_client_toolkit::reexports::client::{
     globals::registry_queue_init,
@@ -56,7 +58,6 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::{
     zwp_virtual_keyboard_manager_v1::ZwpVirtualKeyboardManagerV1,
     zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1,
 };
-
 
 /// Matches `de_design::tokens::GESTURE_BAR_HEIGHT` so the bottom key row sits cleanly above `Zone::NavBar`.
 const NAV_BAR_H: i32 = 32;
@@ -146,6 +147,8 @@ struct App {
     strip_touches: HashSet<i32>,
     shell_im: Option<ShellImClient>,
     conn: Connection,
+    /// `RABBIZ_HW_KEYBOARD` set: keep serving input-method-v3 but never map the window.
+    hw_keyboard: bool,
     start: Instant,
     predictor_saved: Instant,
     /// K5: last selections seen by `wl-paste --watch`; memory only, never written to disk.
@@ -196,9 +199,13 @@ impl App {
             selected: alt.selected,
         });
         if let Some(items) = self.sheet.clone() {
-            let pixmap = self
-                .renderer
-                .render_sheet(self.keyboard.layout(), &self.theme, 1.0, "Clipboard", &items);
+            let pixmap = self.renderer.render_sheet(
+                self.keyboard.layout(),
+                &self.theme,
+                1.0,
+                "Clipboard",
+                &items,
+            );
             self.commit_pixmap(pixmap);
             return;
         }
@@ -240,7 +247,9 @@ impl App {
             return;
         }
         let stride = w * 4;
-        let (buffer, canvas) = match self.pool.create_buffer(w, h, stride, wl_shm::Format::Argb8888)
+        let (buffer, canvas) = match self
+            .pool
+            .create_buffer(w, h, stride, wl_shm::Format::Argb8888)
         {
             Ok(pair) => pair,
             Err(err) => {
@@ -248,7 +257,10 @@ impl App {
                 return;
             }
         };
-        for (dst, src) in canvas.chunks_exact_mut(4).zip(pixmap.data().chunks_exact(4)) {
+        for (dst, src) in canvas
+            .chunks_exact_mut(4)
+            .zip(pixmap.data().chunks_exact(4))
+        {
             dst[0] = src[2];
             dst[1] = src[1];
             dst[2] = src[0];
@@ -265,6 +277,11 @@ impl App {
     }
 
     fn show(&mut self) {
+        // Hardware-keyboard mode: the layer surface keeps its role and protocol objects
+        // (text-input still works) but is never mapped — no margin flip, no buffer.
+        if self.hw_keyboard {
+            return;
+        }
         if !self.visible {
             self.visible = true;
             // Keep the layer surface mapped: unmapping and re-mapping needs a fresh configure
@@ -460,16 +477,23 @@ impl App {
                     if items.is_empty() {
                         continue;
                     }
-                    self.alt = Some(AltState { key: pos, items, selected: 0 });
+                    self.alt = Some(AltState {
+                        key: pos,
+                        items,
+                        selected: 0,
+                    });
                     self.draw();
                 }
                 GestureEvent::Repeat(pos) => {
                     // When surrounding_text is tracked, stop at start so GTK does not assert on
                     // negative positions. When no surrounding_text is available (e.g. terminals or
                     // shell search), allow held Backspace repeat via KEY_BACKSPACE / shell bridge.
-                    let backspace =
-                        matches!(self.keyboard.key(pos).map(|k| &k.action), Some(KeyAction::Backspace));
-                    if backspace && (!self.has_surrounding_text || !self.keyboard.text().is_empty()) {
+                    let backspace = matches!(
+                        self.keyboard.key(pos).map(|k| &k.action),
+                        Some(KeyAction::Backspace)
+                    );
+                    if backspace && (!self.has_surrounding_text || !self.keyboard.text().is_empty())
+                    {
                         let commands = self.keyboard.backspace();
                         self.send_commands(commands);
                         self.draw();
@@ -491,11 +515,39 @@ impl App {
 }
 
 impl CompositorHandler for App {
-    fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {}
-    fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
+    fn scale_factor_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: i32,
+    ) {
+    }
+    fn transform_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: wl_output::Transform,
+    ) {
+    }
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
-    fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
-    fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
+    fn surface_enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
+    fn surface_leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
 }
 
 impl OutputHandler for App {
@@ -539,14 +591,27 @@ impl SeatHandler for App {
         &mut self.seats
     }
     fn new_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
-    fn new_capability(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat, cap: Capability) {
+    fn new_capability(
+        &mut self,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+        seat: wl_seat::WlSeat,
+        cap: Capability,
+    ) {
         if cap == Capability::Touch {
             if let Err(err) = self.seats.get_touch(qh, &seat) {
                 eprintln!("rabbiz-osk: no touch: {err:?}");
             }
         }
     }
-    fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat, _: Capability) {}
+    fn remove_capability(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: wl_seat::WlSeat,
+        _: Capability,
+    ) {
+    }
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
 }
 
@@ -664,8 +729,25 @@ impl TouchHandler for App {
         self.handle_gestures(events);
     }
 
-    fn shape(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64, _: f64) {}
-    fn orientation(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64) {}
+    fn shape(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: i32,
+        _: f64,
+        _: f64,
+    ) {
+    }
+    fn orientation(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: i32,
+        _: f64,
+    ) {
+    }
     fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch) {
         self.touch_pos.clear();
         self.strip_touches.clear();
@@ -765,14 +847,22 @@ impl Dispatch<ZwpInputMethodV2, ()> for App {
                     state.hide();
                 }
             }
-            ImEvent::SurroundingText { text, cursor, anchor } => {
+            ImEvent::SurroundingText {
+                text,
+                cursor,
+                anchor,
+            } => {
                 let _ = anchor;
                 state.has_surrounding_text = true;
-                state.keyboard.set_surrounding_text_at(text, cursor as usize);
+                state
+                    .keyboard
+                    .set_surrounding_text_at(text, cursor as usize);
             }
             ImEvent::ContentType { purpose, .. } => {
                 // Gboard-style adaptation: email/url bottom rows, number pad for numeric fields.
-                state.keyboard.set_purpose(InputPurpose::from_protocol(purpose.into()));
+                state
+                    .keyboard
+                    .set_purpose(InputPurpose::from_protocol(purpose.into()));
                 state.sync_size();
                 state.draw();
             }
@@ -844,32 +934,101 @@ const KEY_ENTER: u32 = 28;
 
 fn ascii_to_evdev(ch: char) -> Option<(u32, bool)> {
     let pair = match ch {
-        'a' => (30, false), 'b' => (48, false), 'c' => (46, false), 'd' => (32, false),
-        'e' => (18, false), 'f' => (33, false), 'g' => (34, false), 'h' => (35, false),
-        'i' => (23, false), 'j' => (36, false), 'k' => (37, false), 'l' => (38, false),
-        'm' => (50, false), 'n' => (49, false), 'o' => (24, false), 'p' => (25, false),
-        'q' => (16, false), 'r' => (19, false), 's' => (31, false), 't' => (20, false),
-        'u' => (22, false), 'v' => (47, false), 'w' => (17, false), 'x' => (45, false),
-        'y' => (21, false), 'z' => (44, false),
-        'A' => (30, true),  'B' => (48, true),  'C' => (46, true),  'D' => (32, true),
-        'E' => (18, true),  'F' => (33, true),  'G' => (34, true),  'H' => (35, true),
-        'I' => (23, true),  'J' => (36, true),  'K' => (37, true),  'L' => (38, true),
-        'M' => (50, true),  'N' => (49, true),  'O' => (24, true),  'P' => (25, true),
-        'Q' => (16, true),  'R' => (19, true),  'S' => (31, true),  'T' => (20, true),
-        'U' => (22, true),  'V' => (47, true),  'W' => (17, true),  'X' => (45, true),
-        'Y' => (21, true),  'Z' => (44, true),
-        '1' => (2, false),  '2' => (3, false),  '3' => (4, false),  '4' => (5, false),
-        '5' => (6, false),  '6' => (7, false),  '7' => (8, false),  '8' => (9, false),
-        '9' => (10, false), '0' => (11, false),
-        '!' => (2, true),   '@' => (3, true),   '#' => (4, true),   '$' => (5, true),
-        '%' => (6, true),   '^' => (7, true),   '&' => (8, true),   '*' => (9, true),
-        '(' => (10, true),  ')' => (11, true),
-        '-' => (12, false), '_' => (12, true),  '=' => (13, false), '+' => (13, true),
-        '[' => (26, false), '{' => (26, true),  ']' => (27, false), '}' => (27, true),
-        ';' => (39, false), ':' => (39, true),  '\'' => (40, false), '"' => (40, true),
-        '`' => (41, false), '~' => (41, true),  '\\' => (43, false), '|' => (43, true),
-        ',' => (51, false), '<' => (51, true),  '.' => (52, false), '>' => (52, true),
-        '/' => (53, false), '?' => (53, true),  ' ' => (57, false),
+        'a' => (30, false),
+        'b' => (48, false),
+        'c' => (46, false),
+        'd' => (32, false),
+        'e' => (18, false),
+        'f' => (33, false),
+        'g' => (34, false),
+        'h' => (35, false),
+        'i' => (23, false),
+        'j' => (36, false),
+        'k' => (37, false),
+        'l' => (38, false),
+        'm' => (50, false),
+        'n' => (49, false),
+        'o' => (24, false),
+        'p' => (25, false),
+        'q' => (16, false),
+        'r' => (19, false),
+        's' => (31, false),
+        't' => (20, false),
+        'u' => (22, false),
+        'v' => (47, false),
+        'w' => (17, false),
+        'x' => (45, false),
+        'y' => (21, false),
+        'z' => (44, false),
+        'A' => (30, true),
+        'B' => (48, true),
+        'C' => (46, true),
+        'D' => (32, true),
+        'E' => (18, true),
+        'F' => (33, true),
+        'G' => (34, true),
+        'H' => (35, true),
+        'I' => (23, true),
+        'J' => (36, true),
+        'K' => (37, true),
+        'L' => (38, true),
+        'M' => (50, true),
+        'N' => (49, true),
+        'O' => (24, true),
+        'P' => (25, true),
+        'Q' => (16, true),
+        'R' => (19, true),
+        'S' => (31, true),
+        'T' => (20, true),
+        'U' => (22, true),
+        'V' => (47, true),
+        'W' => (17, true),
+        'X' => (45, true),
+        'Y' => (21, true),
+        'Z' => (44, true),
+        '1' => (2, false),
+        '2' => (3, false),
+        '3' => (4, false),
+        '4' => (5, false),
+        '5' => (6, false),
+        '6' => (7, false),
+        '7' => (8, false),
+        '8' => (9, false),
+        '9' => (10, false),
+        '0' => (11, false),
+        '!' => (2, true),
+        '@' => (3, true),
+        '#' => (4, true),
+        '$' => (5, true),
+        '%' => (6, true),
+        '^' => (7, true),
+        '&' => (8, true),
+        '*' => (9, true),
+        '(' => (10, true),
+        ')' => (11, true),
+        '-' => (12, false),
+        '_' => (12, true),
+        '=' => (13, false),
+        '+' => (13, true),
+        '[' => (26, false),
+        '{' => (26, true),
+        ']' => (27, false),
+        '}' => (27, true),
+        ';' => (39, false),
+        ':' => (39, true),
+        '\'' => (40, false),
+        '"' => (40, true),
+        '`' => (41, false),
+        '~' => (41, true),
+        '\\' => (43, false),
+        '|' => (43, true),
+        ',' => (51, false),
+        '<' => (51, true),
+        '.' => (52, false),
+        '>' => (52, true),
+        '/' => (53, false),
+        '?' => (53, true),
+        ' ' => (57, false),
         _ => return None,
     };
     Some(pair)
@@ -899,7 +1058,11 @@ fn upload_keymap(keyboard: &ZwpVirtualKeyboardV1) {
         return;
     }
     let fd = std::os::fd::AsFd::as_fd(&file);
-    keyboard.keymap(1 /* wl_keyboard.keymap_format.xkb_v1 */, fd, bytes.len() as u32);
+    keyboard.keymap(
+        1, /* wl_keyboard.keymap_format.xkb_v1 */
+        fd,
+        bytes.len() as u32,
+    );
 }
 
 fn tempfile_memfd() -> std::io::Result<std::fs::File> {
@@ -929,7 +1092,9 @@ fn spawn_clipboard_watch(items: Arc<Mutex<Vec<String>>>, changed: Arc<AtomicBool
                 eprintln!("rabbiz-osk: wl-paste not available; clipboard history disabled");
                 return;
             };
-            let Some(stdout) = child.stdout.take() else { return };
+            let Some(stdout) = child.stdout.take() else {
+                return;
+            };
             for line in BufReader::new(stdout).lines() {
                 let Ok(text) = line else { break };
                 if text.trim().is_empty() {
@@ -962,7 +1127,9 @@ fn spawn_dbus(
                 .and_then(|b| {
                     b.serve_at(
                         "/sm/puri/OSK0",
-                        Osk0Service { visible: visible.clone() },
+                        Osk0Service {
+                            visible: visible.clone(),
+                        },
                     )
                 })
                 .and_then(|b| {
@@ -978,7 +1145,9 @@ fn spawn_dbus(
                 Ok(_conn) => loop {
                     std::thread::park();
                 },
-                Err(err) => eprintln!("rabbiz-osk: D-Bus unavailable ({err}); compat methods disabled"),
+                Err(err) => {
+                    eprintln!("rabbiz-osk: D-Bus unavailable ({err}); compat methods disabled")
+                }
             }
         })
         .ok();
@@ -993,7 +1162,9 @@ fn load_theme(path: &std::path::Path) -> Option<Theme> {
         if line.starts_with('#') || line.is_empty() {
             continue;
         }
-        let Some((key, value)) = line.split_once('=') else { continue };
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
         let key = key.trim();
         let value = value.trim().trim_matches('"');
         match key {
@@ -1041,10 +1212,12 @@ fn main() {
         ("emoji", include_str!("../../../data/layouts/emoji.toml")),
     ]
     .iter()
-    .map(|(_, src)| Layout::parse(src).unwrap_or_else(|err| {
-        eprintln!("rabbiz-osk: bad layout: {err}");
-        std::process::exit(1);
-    }))
+    .map(|(_, src)| {
+        Layout::parse(src).unwrap_or_else(|err| {
+            eprintln!("rabbiz-osk: bad layout: {err}");
+            std::process::exit(1);
+        })
+    })
     .collect::<Vec<_>>();
 
     let mut keyboard = match Keyboard::new(layouts) {
@@ -1057,6 +1230,13 @@ fn main() {
     // K6: predictions learn from the user's own typing; nothing is shipped but the seeds.
     keyboard.predictor = osk_core::predict::Predictor::load(&osk_core::predict::state_path());
     keyboard.load_recents(&emoji_state_path());
+
+    let hw_keyboard = osk_core::hw_keyboard_mode();
+    if hw_keyboard {
+        eprintln!(
+            "rabbiz-osk: hardware keyboard detected — window hidden, input method still active"
+        );
+    }
 
     let connection = Connection::connect_to_env().expect("rabbiz-osk needs a Wayland session");
     let (globals, mut queue) = registry_queue_init(&connection).expect("registry");
@@ -1074,7 +1254,8 @@ fn main() {
         .expect("wl_seat");
 
     let surface = compositor.create_surface(&qh);
-    let layer = layer_shell.create_layer_surface(&qh, surface, Layer::Top, Some("rabbiz-osk"), None);
+    let layer =
+        layer_shell.create_layer_surface(&qh, surface, Layer::Top, Some("rabbiz-osk"), None);
     layer.set_anchor(Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
     let h = keyboard.layout().height_px().round() as u32;
     layer.set_size(0, h);
@@ -1131,6 +1312,7 @@ fn main() {
         strip_touches: HashSet::new(),
         shell_im: ShellImClient::connect_from_env(),
         conn: connection.clone(),
+        hw_keyboard,
         start: Instant::now(),
         predictor_saved: Instant::now(),
         clipboard: clipboard.clone(),
@@ -1190,9 +1372,7 @@ fn main() {
                 }
             }
         }
-        if app.keyboard.predictor.is_dirty()
-            && app.predictor_saved.elapsed().as_secs() >= 2
-        {
+        if app.keyboard.predictor.is_dirty() && app.predictor_saved.elapsed().as_secs() >= 2 {
             let path = osk_core::predict::state_path();
             if let Err(err) = app.keyboard.predictor.save(&path) {
                 eprintln!("rabbiz-osk: predictor save failed: {err}");

@@ -10,24 +10,179 @@ use std::path::{Path, PathBuf};
 
 /// Hand-written seeds: no third-party corpus, so nothing to license or attribute.
 const SEED_EN: &[&str] = &[
-    "the", "and", "for", "you", "that", "with", "this", "have", "from", "not", "are", "but",
-    "what", "all", "when", "can", "there", "use", "your", "how", "will", "about", "out", "who",
-    "get", "which", "go", "me", "like", "time", "just", "know", "take", "people", "into", "year",
-    "good", "some", "could", "them", "see", "other", "than", "then", "now", "look", "only",
-    "come", "over", "think", "also", "back", "after", "use", "two", "how", "our", "work", "first",
-    "well", "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us",
-    "hello", "thanks", "please", "sorry", "yes", "no", "okay", "ok", "good", "morning", "night",
-    "today", "tomorrow", "yesterday", "home", "phone", "message", "email", "name", "help", "need",
-    "make", "made", "said", "say", "going", "got", "let", "put", "keep", "thing", "things",
-    "still", "again", "never", "always", "much", "many", "more", "very", "really", "right",
-    "wrong", "sure", "maybe", "here", "where", "why", "who", "what", "when", "while", "before",
+    "the",
+    "and",
+    "for",
+    "you",
+    "that",
+    "with",
+    "this",
+    "have",
+    "from",
+    "not",
+    "are",
+    "but",
+    "what",
+    "all",
+    "when",
+    "can",
+    "there",
+    "use",
+    "your",
+    "how",
+    "will",
+    "about",
+    "out",
+    "who",
+    "get",
+    "which",
+    "go",
+    "me",
+    "like",
+    "time",
+    "just",
+    "know",
+    "take",
+    "people",
+    "into",
+    "year",
+    "good",
+    "some",
+    "could",
+    "them",
+    "see",
+    "other",
+    "than",
+    "then",
+    "now",
+    "look",
+    "only",
+    "come",
+    "over",
+    "think",
+    "also",
+    "back",
+    "after",
+    "use",
+    "two",
+    "how",
+    "our",
+    "work",
+    "first",
+    "well",
+    "way",
+    "even",
+    "new",
+    "want",
+    "because",
+    "any",
+    "these",
+    "give",
+    "day",
+    "most",
+    "us",
+    "hello",
+    "thanks",
+    "please",
+    "sorry",
+    "yes",
+    "no",
+    "okay",
+    "ok",
+    "good",
+    "morning",
+    "night",
+    "today",
+    "tomorrow",
+    "yesterday",
+    "home",
+    "phone",
+    "message",
+    "email",
+    "name",
+    "help",
+    "need",
+    "make",
+    "made",
+    "said",
+    "say",
+    "going",
+    "got",
+    "let",
+    "put",
+    "keep",
+    "thing",
+    "things",
+    "still",
+    "again",
+    "never",
+    "always",
+    "much",
+    "many",
+    "more",
+    "very",
+    "really",
+    "right",
+    "wrong",
+    "sure",
+    "maybe",
+    "here",
+    "where",
+    "why",
+    "who",
+    "what",
+    "when",
+    "while",
+    "before",
 ];
 
 const SEED_TH: &[&str] = &[
-    "ที่", "และ", "ของ", "ใน", "ได้", "ไม่", "ให้", "มี", "ไป", "มา", "จะ", "ทำ", "อยู่", "คน",
-    "นี้", "นั้น", "กับ", "การ", "ความ", "วัน", "เวลา", "ครับ", "ค่ะ", "นะ", "เลย", "แล้ว",
-    "กำลัง", "ต้อง", "อยาก", "ชอบ", "กิน", "ข้าว", "น้ำ", "บ้าน", "งาน", "เรียน", "หนังสือ",
-    "โทรศัพท์", "ข้อความ", "ขอบคุณ", "ขอโทษ", "สวัสดี", "ราคา", "เงิน", "ร้าน", "อาหาร",
+    "ที่",
+    "และ",
+    "ของ",
+    "ใน",
+    "ได้",
+    "ไม่",
+    "ให้",
+    "มี",
+    "ไป",
+    "มา",
+    "จะ",
+    "ทำ",
+    "อยู่",
+    "คน",
+    "นี้",
+    "นั้น",
+    "กับ",
+    "การ",
+    "ความ",
+    "วัน",
+    "เวลา",
+    "ครับ",
+    "ค่ะ",
+    "นะ",
+    "เลย",
+    "แล้ว",
+    "กำลัง",
+    "ต้อง",
+    "อยาก",
+    "ชอบ",
+    "กิน",
+    "ข้าว",
+    "น้ำ",
+    "บ้าน",
+    "งาน",
+    "เรียน",
+    "หนังสือ",
+    "โทรศัพท์",
+    "ข้อความ",
+    "ขอบคุณ",
+    "ขอโทษ",
+    "สวัสดี",
+    "ราคา",
+    "เงิน",
+    "ร้าน",
+    "อาหาร",
 ];
 
 pub struct Predictor {
@@ -105,11 +260,17 @@ impl Predictor {
             let mut completions: Vec<(&String, u32)> = self
                 .unigrams
                 .iter()
-                .filter(|(word, _)| word.starts_with(&prefix_lower) && word.len() > prefix_lower.len())
+                .filter(|(word, _)| {
+                    word.starts_with(&prefix_lower) && word.len() > prefix_lower.len()
+                })
                 .map(|(word, count)| (word, *count))
                 .collect();
             // Shorter completions are usually the intended word; frequency breaks ties.
-            completions.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.len().cmp(&b.0.len())).then(a.0.cmp(b.0)));
+            completions.sort_by(|a, b| {
+                b.1.cmp(&a.1)
+                    .then(a.0.len().cmp(&b.0.len()))
+                    .then(a.0.cmp(b.0))
+            });
             for (word, _) in completions.into_iter().take(2) {
                 push_unique(&mut out, word.clone(), prefix);
             }
@@ -136,7 +297,9 @@ impl Predictor {
             let mut frequent: Vec<(&String, u32)> = self
                 .unigrams
                 .iter()
-                .filter(|(word, _)| word.starts_with(&prefix_lower) && word.len() > prefix_lower.len())
+                .filter(|(word, _)| {
+                    word.starts_with(&prefix_lower) && word.len() > prefix_lower.len()
+                })
                 .map(|(word, count)| (word, *count))
                 .collect();
             frequent.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.len().cmp(&b.0.len())));
@@ -194,7 +357,9 @@ impl Predictor {
                 }
                 ["b", prev, word, count] => {
                     if let Ok(count) = count.parse() {
-                        predictor.bigrams.insert(((*prev).to_string(), (*word).to_string()), count);
+                        predictor
+                            .bigrams
+                            .insert(((*prev).to_string(), (*word).to_string()), count);
                     }
                 }
                 _ => {}

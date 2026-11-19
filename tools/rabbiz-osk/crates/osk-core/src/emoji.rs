@@ -50,9 +50,7 @@ impl EmojiIndex {
         }
         self.entries
             .iter()
-            .filter(|emoji| {
-                emoji.en.to_lowercase().contains(&needle) || emoji.th.contains(&needle)
-            })
+            .filter(|emoji| emoji.en.to_lowercase().contains(&needle) || emoji.th.contains(&needle))
             .take(30)
             .collect()
     }

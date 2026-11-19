@@ -68,11 +68,9 @@ fn purpose_layouts_switch_language_with_an_icon_not_an_emoji() {
     let layout = en();
     for layer in ["email", "url", "num"] {
         let keys = layout.layer(layer).expect(layer);
-        let has_language = keys
-            .rows
-            .iter()
-            .flat_map(|row| row.iter())
-            .any(|key| key.action == KeyAction::Language && key.icon.as_deref() == Some("language"));
+        let has_language = keys.rows.iter().flat_map(|row| row.iter()).any(|key| {
+            key.action == KeyAction::Language && key.icon.as_deref() == Some("language")
+        });
         assert!(has_language, "{layer} keeps the globe key");
         let commits_globe = keys
             .rows

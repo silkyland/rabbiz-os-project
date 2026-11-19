@@ -234,7 +234,7 @@ fn insert_text_commits_and_tracks_the_buffer() {
 #[test]
 fn alternates_are_reachable_from_the_key() {
     let layout = th();
-    let mut kb = Keyboard::new(vec![layout.clone()]).unwrap();
+    let kb = Keyboard::new(vec![layout.clone()]).unwrap();
     let a = pos_of(&layout, "base", "า");
     assert_eq!(kb.alternates(a), vec!["้", "่", "๊", "๋"]);
     let one = pos_of(&layout, "numbers", "๑");
@@ -281,8 +281,16 @@ fn repeated_content_type_events_do_not_force_the_language_back() {
 
     // …and Chrome keeps re-sending the same content_type on every keystroke.
     kb.set_purpose(InputPurpose::Url);
-    assert_eq!(kb.layout().language, "th", "same purpose must not reset the language");
-    assert_eq!(kb.layer_name(), "base", "and must not jump back to the URL layer");
+    assert_eq!(
+        kb.layout().language,
+        "th",
+        "same purpose must not reset the language"
+    );
+    assert_eq!(
+        kb.layer_name(),
+        "base",
+        "and must not jump back to the URL layer"
+    );
 }
 
 #[test]
@@ -346,10 +354,7 @@ fn predictor_learns_bigrams_and_persists() {
     let path = dir.path().join("predictor.tsv");
     predictor.save(&path).unwrap();
     let loaded = Predictor::load(&path);
-    assert!(loaded
-        .suggestions("hello ")
-        .iter()
-        .any(|w| w == "world"));
+    assert!(loaded.suggestions("hello ").iter().any(|w| w == "world"));
 }
 
 #[test]
@@ -358,29 +363,49 @@ fn emoji_panel_groups_and_search() {
     let mut kb = Keyboard::new(vec![en_layout.clone(), th(), emoji_layout()]).unwrap();
 
     // Open the panel from the English layout.
-    let panel_key = pos_of_action(&en_layout, "base", osk_core::layout::KeyAction::Panel("emoji".into()));
+    let panel_key = pos_of_action(
+        &en_layout,
+        "base",
+        osk_core::layout::KeyAction::Panel("emoji".into()),
+    );
     kb.press(panel_key, 0);
     assert!(kb.is_panel());
     assert_eq!(kb.layout().id, "emoji");
     assert_eq!(kb.layer_name(), "e_smileys");
 
     // Next group.
-    let next = pos_of_action(kb.layout(), "e_smileys", osk_core::layout::KeyAction::EmojiGroupNext);
+    let next = pos_of_action(
+        kb.layout(),
+        "e_smileys",
+        osk_core::layout::KeyAction::EmojiGroupNext,
+    );
     kb.press(next, 10);
     assert_eq!(kb.layer_name(), "e_people");
 
     // Search: "smil" should find smiling faces in English names.
-    let search = pos_of_action(kb.layout(), "e_people", osk_core::layout::KeyAction::EmojiSearch);
+    let search = pos_of_action(
+        kb.layout(),
+        "e_people",
+        osk_core::layout::KeyAction::EmojiSearch,
+    );
     kb.press(search, 20);
     assert_eq!(kb.layer_name(), "s_letters");
     for (i, ch) in ["s", "m", "i", "l"].iter().enumerate() {
         let key = pos_of(kb.layout(), "s_letters", ch);
         kb.press(key, 30 + i as u64);
     }
-    assert_eq!(kb.layer_name(), "s_letters", "letters stay visible while typing");
+    assert_eq!(
+        kb.layer_name(),
+        "s_letters",
+        "letters stay visible while typing"
+    );
     assert_eq!(kb.emoji_query(), Some("smil"));
     // The search key now shows the results grid.
-    let show = pos_of_action(kb.layout(), "s_letters", osk_core::layout::KeyAction::EmojiSearch);
+    let show = pos_of_action(
+        kb.layout(),
+        "s_letters",
+        osk_core::layout::KeyAction::EmojiSearch,
+    );
     kb.press(show, 35);
     assert_eq!(kb.layer_name(), "e_results");
 
@@ -390,11 +415,18 @@ fn emoji_panel_groups_and_search() {
     assert!(!emoji.is_empty());
     let commands = kb.press(first, 40);
     assert_eq!(commands, vec![Command::Commit(emoji.clone())]);
-    assert_eq!(kb.recents().first().map(String::as_str), Some(emoji.as_str()));
+    assert_eq!(
+        kb.recents().first().map(String::as_str),
+        Some(emoji.as_str())
+    );
     assert!(kb.recents_dirty());
 
     // Back to the app layout.
-    let back = pos_of_action(kb.layout(), "e_results", osk_core::layout::KeyAction::PanelBack);
+    let back = pos_of_action(
+        kb.layout(),
+        "e_results",
+        osk_core::layout::KeyAction::PanelBack,
+    );
     kb.press(back, 50);
     assert!(!kb.is_panel());
     assert_eq!(kb.layout().id, "en-us");
@@ -405,7 +437,10 @@ fn emoji_search_matches_thai_names() {
     let index = osk_core::EmojiIndex::parse(include_str!("../../../data/emoji.tsv"));
     assert!(index.len() > 100, "generated catalogue");
     let hits = index.search("ยิ้ม");
-    assert!(!hits.is_empty(), "Thai annotation search finds smiling faces");
+    assert!(
+        !hits.is_empty(),
+        "Thai annotation search finds smiling faces"
+    );
     let english = index.search("smiling");
     assert!(!english.is_empty(), "English names searchable too");
 }
@@ -426,15 +461,26 @@ fn surrounding_text_at_cursor_truncates_after_cursor_for_backspace_and_suggestio
     let thai_bytes = "ก่".len(); // 6 bytes (ก + tone mark = 1 grapheme cluster)
     kb.set_surrounding_text_at(full, thai_bytes);
     assert_eq!(kb.text(), "ก่");
-    assert_eq!(kb.backspace(), vec![Command::Backspace { bytes: thai_bytes }]);
+    assert_eq!(
+        kb.backspace(),
+        vec![Command::Backspace { bytes: thai_bytes }]
+    );
 }
 
 #[test]
 fn emoji_search_space_stays_in_query_and_reset_clears_panel() {
     let mut kb = Keyboard::new(vec![en(), emoji_layout()]).unwrap();
-    let panel = pos_of_action(kb.layout(), "base", osk_core::layout::KeyAction::Panel("emoji".into()));
+    let panel = pos_of_action(
+        kb.layout(),
+        "base",
+        osk_core::layout::KeyAction::Panel("emoji".into()),
+    );
     kb.press(panel, 0);
-    let search = pos_of_action(kb.layout(), kb.layer_name(), osk_core::layout::KeyAction::EmojiSearch);
+    let search = pos_of_action(
+        kb.layout(),
+        kb.layer_name(),
+        osk_core::layout::KeyAction::EmojiSearch,
+    );
     kb.press(search, 10);
     assert_eq!(kb.layer_name(), "s_letters");
     let a = pos_of(kb.layout(), "s_letters", "a");

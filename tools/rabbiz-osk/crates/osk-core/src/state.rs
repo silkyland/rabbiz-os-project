@@ -98,14 +98,24 @@ impl InputPurpose {
     }
 
     fn prose(self) -> bool {
-        matches!(self, InputPurpose::Normal | InputPurpose::Alpha | InputPurpose::Name)
+        matches!(
+            self,
+            InputPurpose::Normal | InputPurpose::Alpha | InputPurpose::Name
+        )
     }
 }
 
 /// Group layers of the generated emoji panel, in tab order.
 pub const EMOJI_GROUPS: [&str; 9] = [
-    "e_smileys", "e_people", "e_nature", "e_food", "e_activity", "e_travel", "e_objects",
-    "e_symbols", "e_flags",
+    "e_smileys",
+    "e_people",
+    "e_nature",
+    "e_food",
+    "e_activity",
+    "e_travel",
+    "e_objects",
+    "e_symbols",
+    "e_flags",
 ];
 
 pub struct Keyboard {
@@ -208,13 +218,20 @@ impl Keyboard {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        std::fs::write(path, self.recents.join("
-"))
+        std::fs::write(
+            path,
+            self.recents.join(
+                "
+",
+            ),
+        )
     }
 
     /// Text shown in the panel while searching for an emoji.
     pub fn strip_text(&self) -> Option<String> {
-        self.emoji_query.as_ref().map(|query| format!("Search: {query}"))
+        self.emoji_query
+            .as_ref()
+            .map(|query| format!("Search: {query}"))
     }
 
     fn pin_recent(&mut self, emoji: &str) {
@@ -248,7 +265,11 @@ impl Keyboard {
             rows.push(row);
         }
         while rows.len() < 3 {
-            rows.push((0..10).map(|_| crate::layout::Layout::text_key("")).collect());
+            rows.push(
+                (0..10)
+                    .map(|_| crate::layout::Layout::text_key(""))
+                    .collect(),
+            );
         }
         rows.push(bottom);
         self.layouts[self.active].replace_layer_rows(layer, rows);
@@ -280,7 +301,10 @@ impl Keyboard {
         if purpose.latin() {
             self.switch_to_language("en");
         }
-        match purpose.layer().and_then(|name| self.layout().layer(name).map(|_| name)) {
+        match purpose
+            .layer()
+            .and_then(|name| self.layout().layer(name).map(|_| name))
+        {
             Some(layer) => self.layer = layer.to_string(),
             None => self.layer = self.layout().base_layer().name.clone(),
         }
@@ -436,7 +460,11 @@ impl Keyboard {
                 if let Some((index, layer)) = self.panel_return.take() {
                     self.active = index;
                     self.layer = layer;
-                } else if let Some(index) = self.layouts.iter().position(|layout| layout.language == "en") {
+                } else if let Some(index) = self
+                    .layouts
+                    .iter()
+                    .position(|layout| layout.language == "en")
+                {
                     self.active = index;
                     self.layer = self.layouts[index].base_layer().name.clone();
                 }
@@ -548,7 +576,9 @@ impl Keyboard {
 
     /// Long-press choices for the key at `pos` (empty when the key has none).
     pub fn alternates(&self, pos: crate::layout::KeyPos) -> Vec<String> {
-        self.key(pos).map(|k| k.alternates.clone()).unwrap_or_default()
+        self.key(pos)
+            .map(|k| k.alternates.clone())
+            .unwrap_or_default()
     }
 
     /// True when `pos` is the space key — used for the swipe-to-move-cursor gesture.
