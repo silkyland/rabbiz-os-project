@@ -15,4 +15,4 @@ exec = "/opt/google/chrome/google-chrome --disable-gpu --ozone-platform=wayland 
 exec = "/opt/google/chrome/google-chrome --disable-gpu --ozone-platform=wayland --no-first-run --no-default-browser-check --touch-events=enabled --enable-pinch --force-device-scale-factor=1.5 --disable-component-update --password-store=basic --enable-wayland-ime"
 
 [overrides."ai.opencode"]
-exec = "/opt/OpenCode/ai.opencode --no-sandbox --disable-gpu --ozone-platform=wayland --force-device-scale-factor=0.85 --enable-wayland-ime"
+exec = "/opt/OpenCode/ai.opencode --no-sandbox --disable-gpu --ozone-platform=wayland --force-device-scale-factor=0.7 --enable-wayland-ime"
