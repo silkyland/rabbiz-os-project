@@ -33,8 +33,7 @@ ALLOWED: dict[str, set[str]] = {
     "de-render": {"de-api", "de-paint"},
     "de-core": {"de-api", "de-apps", "de-backend", "de-config", "de-design",
                 "de-paint", "de-protocols", "de-render", "de-system", "de-ui"},
-    "de-bin": {"de-api", "de-apps", "de-backend", "de-config", "de-core",
-               "de-paint", "de-render", "de-system", "de-ui"},
+    "de-bin": {"de-apps", "de-backend", "de-config", "de-core", "de-system"},
     # Protocol smoke clients: standalone wayland-client binaries, no internal
     # deps (they talk to the compositor over the socket only).
     "de-smoke": set(),
@@ -67,7 +66,7 @@ def main() -> int:
         deps = {
             dep["name"]
             for dep in pkg["dependencies"]
-            if dep["name"] in workspace and dep.get("kind") is None
+            if dep["name"] in workspace and dep["name"] != name
         }
         forbidden = deps - ALLOWED[name]
         if forbidden:

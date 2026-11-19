@@ -103,12 +103,12 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
 ## 4. Prioritized Backlog (Execution Order)
 
 ### Tier 0 — Low-Risk Hygiene (do first, host-verifiable)
-1. **Manifest & Seam Hygiene**:
-   - Remove unused deps from `tools/rabbiz-de/crates/de-bin/Cargo.toml`.
-   - Add `[lints] workspace = true` and `rust-version.workspace = true` to `tools/rabbiz-de/tests/smoke/Cargo.toml`.
-   - Add `-p de-system` to `HOST_CRATES` in `scripts/de_test_host.sh`.
-   - Update `docs/DE-SEAMS.md` to match `check_seams.py` and extend `check_seams.py` to also check `dev-dependencies`/`build-dependencies`.
-   - **Exit criterion**: `./scripts/de_test_host.sh` and `node scripts/check_links.mjs` pass.
+1. **Manifest & Seam Hygiene** — **done (2026-11-19)**:
+   - Removed 5 unused direct deps from `tools/rabbiz-de/crates/de-bin/Cargo.toml` and tightened `de-bin` in `check_seams.py`.
+   - Added `[lints] workspace = true` and `rust-version.workspace = true` to `tools/rabbiz-de/tests/smoke/Cargo.toml`.
+   - Added `-p de-system` to `HOST_CRATES` in `scripts/de_test_host.sh`.
+   - Updated `docs/DE-SEAMS.md` to match `check_seams.py` and extended `check_seams.py` to check `dev-dependencies` and `build-dependencies`.
+   - **Evidence**: L0 (`check_seams.py` → 14 crates one-way; `cargo test` across all 8 host crates including `de-system` passed; `check_links.mjs` → 107 md files ok). Note: `de-sim --check` golden diffs in this working tree are from pre-existing uncommitted `de-ui` edits.
 2. **Fix Ownership Leaks**:
    - Move non-app prefs (`wallpaper`, `do_not_disturb`, `keyboard_*`) out of `de-apps::prefs::AppPrefs` into `de-config`.
    - Decide & clean up legacy `de-ui::{shade, qs}` vs `de-ui::panels`.

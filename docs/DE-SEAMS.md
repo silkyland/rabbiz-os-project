@@ -13,18 +13,19 @@ Crate dependency direction (no cycles, matches `tools/rabbiz-de/Cargo.toml`):
 
 ```
 de-api
- └── de-design
- └── de-config
+ └── de-design (de-api)
+ └── de-config (de-api)
  └── de-paint (de-api, de-design, tiny-skia, cosmic-text, resvg, png)
- └── de-ui (de-design, de-paint, de-config)
- └── de-apps (de-api, de-config, freedesktop-desktop-entry)
- └── de-system (de-api, de-config, zbus)          # Linux + stubs
- └── de-backend (de-api, smithay)                # Linux
- └── de-render (de-api, de-paint, smithay)       # Linux
- └── de-protocols (de-api, smithay)              # Linux
- └── de-core (all of the above)                  # Linux
- └── de-sim (de-api, de-design, de-paint, de-ui, de-config, tiny-skia, minifb)
- └── de-bin (everything; the only binary besides de-sim)
+ └── de-ui (de-api, de-design, de-paint, de-config)
+ └── de-system (de-api, de-config, zbus)                                    # Linux + stubs
+ └── de-apps (de-api, de-config, de-design, de-paint, de-system, freedesktop-desktop-entry)
+ └── de-render (de-api, de-paint, smithay)                                  # Linux
+ └── de-backend (de-api, de-render, smithay)                                # Linux
+ └── de-protocols (de-api, smithay)                                         # Linux
+ └── de-core (all of the above)                                             # Linux
+ └── de-sim (de-api, de-design, de-paint, de-ui, de-config, tiny-skia, png, minifb)
+ └── de-bin (de-apps, de-backend, de-config, de-core, de-system, smithay)   # the only compositor binary
+ └── de-smoke (no internal deps; wayland-client protocol smoke tests)       # Linux
 ```
 
 ## Frozen signatures
