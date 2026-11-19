@@ -18,8 +18,9 @@ use std::time::Instant;
 use de_ui::gestures::{Gesture, GestureEvent, Zone};
 
 use smithay::backend::input::{
-    AbsolutePositionEvent, Axis, AxisSource, Event, InputBackend, InputEvent, KeyState,
-    KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent, TouchEvent as _,
+    AbsolutePositionEvent, Axis, AxisSource, Device as _, DeviceCapability, Event, InputBackend,
+    InputEvent, KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+    PointerMotionEvent, TouchEvent as _,
 };
 use smithay::desktop::WindowSurfaceType;
 use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
@@ -52,6 +53,8 @@ impl De {
         // Any hardware input is activity — undims and restarts the clock.
         self.power_note_activity();
         match event {
+            InputEvent::DeviceAdded { device } => self.input_device::<B>(&device, true),
+            InputEvent::DeviceRemoved { device } => self.input_device::<B>(&device, false),
             InputEvent::Keyboard { event } => self.on_keyboard_key::<B>(&event),
             InputEvent::TouchDown { event } => self.on_touch_down::<B>(&event),
             InputEvent::TouchMotion { event } => self.on_touch_motion::<B>(&event),
@@ -127,25 +130,52 @@ impl De {
 
     /// One pointer button event — shared by libinput and the virtual
     /// pointer protocol (a21s-wayvnc / Rabbiz Mirror).
+    ///
+    /// Click-to-focus: a press that lands on a client surface moves
+    /// keyboard/pointer focus to it (the touch model has no equivalent —
+    /// touch stays "last touched surface" via the down handler). A press on
+    /// a shell-owned surface is consumed by the shell: a nearby release of
+    /// the same button synthesises the tap the touch path would have made,
+    /// and no button event leaks to a client underneath.
     pub(crate) fn pointer_button(
         &mut self,
         time: u32,
         button: u32,
         state: smithay::backend::input::ButtonState,
     ) {
+        self.pointer_active = true;
+        // A click between Super-down and Super-up means Super is a real
+        // modifier, not the launcher key.
+        self.launcher_pending = false;
         let pressed = state == smithay::backend::input::ButtonState::Pressed;
         if self.menu_pointer_button(button, pressed, self.pointer.current_location()) {
             return;
         }
+        if self.sleeping() {
+            // The lock/power screens are touch-only; swallow pointer input
+            // so nothing reaches a client under the lock.
+            return;
+        }
+        let pos = self.pointer.current_location();
         let serial = SCOUNTER.next_serial();
         let ptr = self.pointer.clone();
-        if state == smithay::backend::input::ButtonState::Pressed {
+        if pressed {
+            if self.pointer_shell_owned(pos) {
+                self.pointer_press = Some((pos, button));
+                return;
+            }
             if let Some(target) = self
-                .surface_under(ptr.current_location())
+                .surface_under(pos)
                 .and_then(|hit| hit.keyboard_target)
             {
                 self.focus_surface(Some(target), serial);
             }
+        } else if let Some((down_pos, down_button)) = self.pointer_press.take() {
+            let moved = ((pos.x - down_pos.x).powi(2) + (pos.y - down_pos.y).powi(2)).sqrt();
+            if down_button == button && moved <= 12.0 {
+                self.pointer_tap(down_pos, time);
+            }
+            return;
         }
         ptr.button(
             self,
@@ -160,13 +190,208 @@ impl De {
 
     /// One axis frame — shared by libinput and the virtual pointer protocol.
     pub(crate) fn pointer_axis_frame(&mut self, frame: AxisFrame) {
+        self.pointer_active = true;
+        let pos = self.pointer.current_location();
+        if self.shell_axis_scroll(&frame, pos) {
+            // The shell consumed the scroll (drawer/recents/home pager or a
+            // consume-only surface) — the client must not see it too.
+            return;
+        }
         let ptr = self.pointer.clone();
         ptr.axis(self, frame);
+    }
+
+    /// Track hot-plugged input devices and maintain `hw_keyboard` /
+    /// `hw_pointer` (OSK suppression, cursor policy). libinput reports the
+    /// platform button devices (power/volume keys) with keyboard
+    /// capability too, so "hardware" means a real bus identity: a non-zero
+    /// USB VID:PID, or a `uhid` path (Bluetooth HID — the kernel has no
+    /// native BT HID, everything arrives via uhid). Virtual/test devices
+    /// (`/devices/virtual/` without uhid, e.g. the a21s touch injector or a
+    /// wayvnc uinput node) never count — same rule as
+    /// `de_system::input_devices`, which udev classifies the same way.
+    fn input_device<B: InputBackend>(&mut self, device: &B::Device, added: bool) {
+        let real_bus = device
+            .usb_id()
+            .is_some_and(|(vid, pid)| vid != 0 && pid != 0)
+            || device
+                .syspath()
+                .is_some_and(|p| p.to_string_lossy().contains("/uhid/"));
+        if !real_bus {
+            return;
+        }
+        let id = device.id();
+        if device.has_capability(DeviceCapability::Keyboard) {
+            if added {
+                self.kbd_devices.insert(id.clone());
+            } else {
+                self.kbd_devices.remove(&id);
+            }
+        }
+        if device.has_capability(DeviceCapability::Pointer) {
+            if added {
+                self.ptr_devices.insert(id.clone());
+            } else {
+                self.ptr_devices.remove(&id);
+            }
+        }
+        let was = (self.hw_keyboard, self.hw_pointer);
+        self.hw_keyboard = !self.kbd_devices.is_empty();
+        self.hw_pointer = !self.ptr_devices.is_empty();
+        // A keyboard appearing mid-session re-spawns the OSK with
+        // RABBIZ_HW_KEYBOARD=1 so it can hide itself; one leaving brings
+        // the normal spawn back on the next check_osk tick.
+        if self.hw_keyboard != was.0 {
+            self.osk = None;
+        }
+        if std::env::var_os("DE_INPUT_DEBUG").is_some() {
+            eprintln!(
+                "input: device {} '{}' kbd={} ptr={} (hw_kbd={} hw_ptr={})",
+                if added { "added" } else { "removed" },
+                device.name(),
+                device.has_capability(DeviceCapability::Keyboard),
+                device.has_capability(DeviceCapability::Pointer),
+                self.hw_keyboard,
+                self.hw_pointer,
+            );
+        }
+    }
+
+    /// Is the point owned by the shell rather than a Wayland client?
+    ///
+    /// Mirrors `claim_touch`: while the shell is foreground every point is
+    /// shell-owned except interactive layer surfaces (the OSK); while an
+    /// app is foreground only the system zones (nav bar, top edge, side
+    /// edges) are shell-owned — a click in the content area is the app's.
+    fn pointer_shell_owned(&self, pos: Point<f64, Logical>) -> bool {
+        if self.panels.shown()
+            || self.locked()
+            || self.sleeping()
+            || self.menu_is_open()
+        {
+            return true;
+        }
+        match self.surface_under(pos) {
+            // Interactive layer (OSK) sits above everything, shell included.
+            Some(hit) if hit.above_windows => false,
+            Some(_) => {
+                // A window surface: in an app only system zones belong to
+                // the shell; on shell screens surface_under already
+                // returned None except for layers.
+                self.gestures.zone(api_point(pos)) != Zone::Content
+            }
+            None => true,
+        }
+    }
+
+    /// Synthesize the tap a touch would have produced (`Gesture::Tap` in
+    /// `handle_gesture`): panels and the lock screen first, then the
+    /// shell-screen dispatcher.
+    fn pointer_tap(&mut self, pos: Point<f64, Logical>, _time: u32) {
+        use crate::state::Foreground;
+        let api = api_point(pos);
+        if self.panels.shown() {
+            self.panel_tap(api);
+            return;
+        }
+        if self.locked() {
+            if self.power.menu_over_lock {
+                self.power_menu_tap(api, true);
+            } else {
+                self.lock_tap(api);
+            }
+            return;
+        }
+        if self.menu_is_open() || self.foreground != Foreground::Shell {
+            return;
+        }
+        let size = de_api::Size::new(self.output.width as i32, self.output.height as i32);
+        if self.shot_fx.tap(api, size, std::time::Instant::now()) {
+            self.needs_present = true;
+        } else if !self.release_home_drag(false) {
+            self.on_shell_tap(api);
+        }
+    }
+
+    /// Route a scroll frame to the shell when the pointer is over a
+    /// shell-owned surface. Returns `true` when consumed.
+    ///
+    /// Mapping (the pointer twin of the touch drags in `handle_gesture`):
+    /// - Drawer: vertical scroll moves `drawer_scroll` (same clamp the
+    ///   renderer applies — stored unclamped like the touch path).
+    /// - Recents: horizontal (or vertical) scroll pages the card pager.
+    /// - Home: horizontal scroll pages the icon grid; vertical scroll is
+    ///   consumed (no vertical list on Home).
+    /// - Panels/lock/search/etc.: consumed so nothing leaks to a client
+    ///   underneath.
+    fn shell_axis_scroll(&mut self, frame: &AxisFrame, pos: Point<f64, Logical>) -> bool {
+        if !self.pointer_shell_owned(pos) {
+            return false;
+        }
+        let (dx, dy) = wheel_delta(frame);
+        if dx == 0.0 && dy == 0.0 {
+            // axis-stop / zero frames still count as "consumed" on shell
+            // surfaces so clients never see phantom scroll.
+            return true;
+        }
+        use crate::state::Foreground;
+        use de_ui::nav::Screen;
+        match self.nav.current {
+            Screen::Drawer if self.foreground == Foreground::Shell => {
+                let step = if dy.abs() >= dx.abs() { dy } else { dx };
+                let next = (self.navigation.drawer_scroll + step.round() as i32).max(0);
+                if next != self.navigation.drawer_scroll {
+                    self.navigation.drawer_scroll = next;
+                    self.shell_dirty = true;
+                }
+                self.needs_present = true;
+            }
+            Screen::Recents if self.foreground == Foreground::Shell => {
+                self.recents_wheel(dx + dy);
+            }
+            Screen::Home if self.foreground == Foreground::Shell => {
+                if dx.abs() >= dy.abs() {
+                    self.home_wheel(dx);
+                }
+                // Vertical wheel on Home: nothing scrolls — consumed.
+            }
+            _ => {}
+        }
+        self.needs_present = true;
+        true
+    }
+
+    /// One wheel notch over Recents pages the card carousel (drag + release
+    /// through the same `Pager` the touch path uses, so the settle spring
+    /// animates exactly like a flick).
+    fn recents_wheel(&mut self, delta: f32) {
+        if delta == 0.0 || self.morph.is_some() {
+            return;
+        }
+        let size = de_api::Size::new(self.output.width as i32, self.output.height as i32);
+        let stride = de_ui::recents::card_stride(size) as f32;
+        if stride <= 0.0 {
+            return;
+        }
+        // One notch = one card: drag a full stride opposite the scroll
+        // direction, then release with a matching velocity.
+        let dir = if delta > 0.0 { -1.0 } else { 1.0 };
+        self.navigation.recents_pager.begin();
+        self.navigation.recents_pager.drag(dir * stride, stride);
+        self.navigation.recents_pager.release(dir * 900.0, stride);
+        self.navigation.recents_last_tick = Some(Instant::now());
+        self.navigation.recents_axis = None;
+        self.shell_dirty = true;
+        self.needs_present = true;
     }
 
     /// Pointer motion + hit-test — shared by libinput and the virtual
     /// pointer protocol.
     pub(crate) fn pointer_motion(&mut self, time: u32, pos: Point<f64, Logical>, delta: Point<f64, Logical>) {
+        self.pointer_active = true;
+        // The cursor sprite is a composited element: motion must schedule
+        // a frame or it would only move on unrelated damage.
+        self.needs_present = true;
         self.menu_pointer_moved(pos);
         let serial = SCOUNTER.next_serial();
         let under = self.surface_under(pos).map(SurfaceHit::into_focus);
@@ -208,7 +433,7 @@ impl De {
             state,
             serial,
             time,
-            |de, _mods: &ModifiersState, keysym| {
+            |de, mods: &ModifiersState, keysym| {
                 let raw = keysym.raw_syms().first().copied();
                 // Power button: act on release only, detached so the 300 ms
                 // combo guard in a21s-power-key never stalls the loop. The
@@ -230,6 +455,15 @@ impl De {
                 if de.locked() {
                     return FilterResult::Intercept(());
                 }
+                // Shell keybindings (shortcuts.rs): chords and the bare
+                // Super launcher toggle. Runs before the Search/Drawer
+                // typing block so bindings work on every screen; consumed
+                // events never reach a focused client.
+                if let Some(sym) = raw {
+                    if de.keyboard_shortcut(mods, sym, state, u64::from(time)) {
+                        return FilterResult::Intercept(());
+                    }
+                }
                 if de.foreground == crate::state::Foreground::Shell
                     && matches!(de.nav.current, de_ui::nav::Screen::Search | de_ui::nav::Screen::Drawer)
                 {
@@ -244,6 +478,24 @@ impl De {
                             Some(Keysym::Escape) => {
                                 de.navigation.search_query.clear();
                                 de.show_shell(de_ui::nav::Screen::Home);
+                            }
+                            // Enter opens the top search hit — the
+                            // keyboard twin of tapping the first row (and
+                            // the same path the shell IM's Enter takes).
+                            Some(Keysym::Return) | Some(Keysym::KP_Enter)
+                                if de.nav.current == de_ui::nav::Screen::Search =>
+                            {
+                                let rows = de.search_rows();
+                                if let Some(first) = rows.first() {
+                                    let id = first.id.clone();
+                                    let size = de_api::Size::new(
+                                        de.output.width as i32,
+                                        de.output.height as i32,
+                                    );
+                                    let rect =
+                                        de_ui::search::icon_rect(size, &rows, 0);
+                                    de.try_launch(&id, rect);
+                                }
                             }
                             _ => {
                                 if let Some(ch) = keysym.modified_sym().key_char() {
@@ -270,6 +522,9 @@ impl De {
             self.output.height as i32,
         )));
         self.last_touch_pos = pos;
+        // A touch between Super-down and Super-up means Super is a real
+        // modifier, not the launcher key.
+        self.launcher_pending = false;
         // Sleeping screen: the contact may be a hold-to-peek or the first
         // half of a wake double-tap — never delivered to clients.
         if self.sleeping() {
@@ -729,6 +984,14 @@ impl De {
                     } else {
                         self.show_shell(Screen::Home);
                     }
+                } else if self.nav.current == Screen::Drawer {
+                    self.shell_im.set_visible(false);
+                    self.navigation.drawer_dragging = false;
+                    self.navigation.drawer_closing = true;
+                    self.navigation.drawer_last_tick = Some(std::time::Instant::now());
+                    let h = self.output.height.max(1) as f32;
+                    self.navigation.drawer_slide.retarget_with_velocity(h, 1200.0);
+                    self.needs_present = true;
                 } else if self.nav.current == Screen::Settings && self.navigation.settings_keyboard {
                     self.navigation.settings_keyboard = false;
                     self.shell_dirty = true;
@@ -1166,6 +1429,22 @@ impl De {
 /// (the OSK owns its region even when the shell is up).
 fn claim_touch(zone: Zone, shell_foreground: bool, layer_contact: bool) -> bool {
     !layer_contact && (zone != Zone::Content || shell_foreground)
+}
+
+/// Scroll delta in logical px for shell surfaces, `(dx, dy)` with positive
+/// = scroll down/right. `AxisFrame.axis`/`v120` are `(horizontal,
+/// vertical)`; wheel events arrive in 1/120-notch units → 56 px per notch,
+/// while finger/continuous sources carry their raw values through.
+fn wheel_delta(frame: &AxisFrame) -> (f32, f32) {
+    const NOTCH_PX: f32 = 56.0;
+    if let Some((h120, v120)) = frame.v120 {
+        (
+            h120 as f32 / 120.0 * NOTCH_PX,
+            v120 as f32 / 120.0 * NOTCH_PX,
+        )
+    } else {
+        (frame.axis.0 as f32, frame.axis.1 as f32)
+    }
 }
 
 /// smithay logical point → `de-api` point (physical px, i32).
