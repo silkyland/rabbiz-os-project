@@ -136,9 +136,10 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
 
 ### Tier 2 — Mobile OS Readiness
 7. Retained UI / partial dirty-rect damage in `de-paint`/`de-ui`.
-8. Real Keyguard (PAM/PIN + `ext-session-lock-v1` + lock isolation) + `zwp_idle_inhibit_manager_v1` — **idle inhibit landed (2026-11-19)**:
+8. Real Keyguard (PAM/PIN + `ext-session-lock-v1` + lock isolation) + `zwp_idle_inhibit_manager_v1` — **idle inhibit + `ext-session-lock-v1` landed (2026-11-19)**:
    - Implemented `protocols/idle_inhibit.rs` (`zwp_idle_inhibit_manager_v1`) wired into `runtime/power.rs` so live mapped surfaces (video/games) prevent screen dim/sleep and dead surfaces are auto-pruned.
-   - Remaining: PAM/PIN Keyguard auth + `ext-session-lock-v1`.
+   - Implemented `protocols/session_lock.rs` (`ext-session-lock-v1`, gated by default-deny privileged policy) coordinated with built-in Keyguard (`power_lock` / `lock.unlock_now`).
+   - Remaining: PAM/PIN Keyguard auth UI.
 9. Full Notification pipeline (HUN, actions, MPRIS media card) + reactive D-Bus services.
 10. App lifecycle / systemd scope cgroups / OOM priority policy.
 

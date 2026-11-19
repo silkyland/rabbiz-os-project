@@ -37,6 +37,7 @@ use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
 use smithay::wayland::selection::wlr_data_control::DataControlState;
+use smithay::wayland::session_lock::SessionLockManagerState;
 use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
@@ -124,6 +125,9 @@ pub struct De {
     pub(crate) relative_pointer_state: RelativePointerManagerState,
     #[allow(dead_code)]
     pub(crate) pointer_constraints_state: PointerConstraintsState,
+    pub(crate) session_lock_state: SessionLockManagerState,
+    /// True while an external `ext-session-lock-v1` client holds the lock.
+    pub(crate) session_locked: bool,
     /// Surfaces currently holding a `zwp_idle_inhibitor_v1` (`protocols/idle_inhibit.rs`).
     pub(crate) idle_inhibitors:
         Vec<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface>,
@@ -463,6 +467,9 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let idle_inhibit_state = IdleInhibitManagerState::new::<De>(&dh);
     let relative_pointer_state = RelativePointerManagerState::new::<De>(&dh);
     let pointer_constraints_state = PointerConstraintsState::new::<De>(&dh);
+    let session_lock_state = SessionLockManagerState::new::<De, _>(&dh, |c| {
+        crate::privileged::allowed(c, de_config::Privileged::LayerShell)
+    });
     crate::screencopy::init(&dh);
     crate::virtual_pointer::init(&dh);
     let mut dmabuf_state = DmabufState::new();
@@ -572,6 +579,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         idle_inhibit_state,
         relative_pointer_state,
         pointer_constraints_state,
+        session_lock_state,
+        session_locked: false,
         idle_inhibitors: Vec::new(),
 
         seat,

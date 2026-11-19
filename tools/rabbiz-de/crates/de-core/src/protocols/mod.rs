@@ -10,5 +10,6 @@ pub(crate) mod privileged;
 pub mod screencopy;
 pub mod seat;
 pub mod selection;
+pub(crate) mod session_lock;
 pub mod virtual_pointer;
 pub mod xdg;
