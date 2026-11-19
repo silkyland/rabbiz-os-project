@@ -8,7 +8,7 @@
 
 ## 1. Problem
 
-Today `de-core` models the screen as a binary `Foreground::Shell | Foreground::App` switch ([state.rs](../tools/rabbiz-de/crates/de-core/src/runtime/state.rs)) and assembles compositor layers through hardcoded call order in [frame.rs](../tools/rabbiz-de/crates/de-core/src/runtime/frame.rs) (`push_home_layers`, `push_window_elements`, `push_layer_elements`, `push_panel`, `push_lock`, `push_menu_over`, `push_shot`, `push_fade`). Every `xdg_toplevel` is forced fullscreen at the full output size (`720×1600`), with no awareness of system bars, cutouts, or the on-screen keyboard (OSK).
+Today `de-core` models the screen as a binary `Foreground::Shell | Foreground::App` switch ([state.rs](../tools/rabbiz-de/crates/de-core/src/runtime/state.rs)) and assembles compositor layers through hardcoded call order in [frame.rs](../tools/rabbiz-de/crates/de-core/src/runtime/frame/mod.rs) (`push_home_layers`, `push_window_elements`, `push_layer_elements`, `push_panel`, `push_lock`, `push_menu_over`, `push_shot`, `push_fade`). Every `xdg_toplevel` is forced fullscreen at the full output size (`720×1600`), with no awareness of system bars, cutouts, or the on-screen keyboard (OSK).
 
 This blocks modern mobile shell capabilities:
 - **OSK / IME overlap**: Apps cannot shrink or pan above the keyboard because no inset contract exists.
