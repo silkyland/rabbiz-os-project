@@ -18,6 +18,28 @@ without Android, Termux, or proot. The project was previously named **Android AR
 The current development target is the Samsung Galaxy A21s. This is an experimental
 system under active development; hardware support and remaining work are listed below.
 
+> ## ⚠️ Disclaimer — use entirely at your own risk
+>
+> RabbizOS is experimental software for real phones and tablets. **Everything in this repository —
+> code, scripts, documentation, images and instructions — is provided "as is", without warranty of any
+> kind, and you use it entirely at your own risk.** By flashing, installing, running or following any
+> part of it you accept that:
+>
+> - the device can be **bricked**, data on it **lost**, and hardware (battery, display, storage) damaged;
+> - unlocking a bootloader or installing another system can **void your warranty** and may disable
+>   features of the original system (banking apps, DRM-protected content, updates);
+> - you are responsible for **backing up** your device and for knowing how to **restore** it before you
+>   change anything;
+> - parts of this project are written or assisted by AI and have been tested on only a few devices, so
+>   instructions and code can be wrong or out of date;
+> - the authors and contributors are **not liable** for any damage, data loss or other consequence, and
+>   the project is independent: it is not affiliated with or endorsed by Samsung, Xiaomi, Valve, Google or any
+>   other hardware or software vendor, whose names belong to their owners.
+>
+> If you are not comfortable with these risks, do not use it. See also the warranty and liability terms
+> of the [Apache-2.0 license](LICENSE) (original code) and the licenses of the components listed in
+> [drivers/LICENSING.md](socs/exynos850/drivers/LICENSING.md).
+
 <p align="center"><img src="assets/branding/rabbiz-mascot-flat.svg" width="240" alt="Rabbiz, the plum rabbit mascot, waving"></p>
 
 [Contributing](CONTRIBUTING.md) · [Add a device](docs/NEW-DEVICE.md) · [Lanes](docs/LANES.md) · [Brand & mascot](docs/BRAND.md) · [Desktop shell](docs/DESKTOP-SHELL.md) · [Roadmap](ROADMAP.md)
