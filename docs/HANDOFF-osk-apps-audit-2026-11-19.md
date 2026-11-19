@@ -47,7 +47,8 @@ Evidence level: **L0 (static audit + host tests on `rabbiz-osk`)**. Read-only au
    - Removed duplicate `tiny-skia` dev-dep in `osk-render/Cargo.toml`.
    - Fixed `unused_mut` warning in `osk-core/tests/keyboard_tests.rs` (45/45 host tests pass with 0 warnings).
    - Remaining: split `osk-wayland/src/main.rs` (1,414 LOC).
-2. **`rabbiz-apps` host gate & hygiene** — **partially done (2026-11-19)**:
-   - Added Linux-host `cargo test --workspace` gate for `tools/rabbiz-apps` in `scripts/check.sh` and removed stray `clippy-report*.txt` files.
-   - **Blocker found for macOS host tests**: `rabbiz-app-kit` unconditionally depends on `smithay-client-toolkit` (Linux-only `rustix::pipe_with`), preventing all 12 apps from running unit tests on macOS. Moving Wayland client plumbing behind a `wayland` feature / `cfg(target_os = "linux")` unlocks macOS host testing for all 12 apps.
+2. **`rabbiz-apps` host gate & macOS unlock** — **done (2026-11-19)**:
+   - Moved `smithay-client-toolkit` under `[target.'cfg(target_os = "linux")'.dependencies]` in `rabbiz-app-kit/Cargo.toml` and added `wayland_stub.rs` for non-Linux hosts.
+   - Unlocked full `cargo test --workspace` across all 13 `rabbiz-apps` crates on macOS and Linux, and enabled it unconditionally in `scripts/check.sh`.
+   - Removed stray `clippy-report*.txt` files.
 3. **Standardize `rabbiz-apps` app skeleton**: Extract pure `model.rs` + `ui.rs` out of the 2,000+ LOC `main.rs` files (`contacts`, `files`, `clock`, `calculator`, `music`, `pdf`).
