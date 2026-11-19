@@ -31,6 +31,8 @@ use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
+use smithay::wayland::pointer_constraints::PointerConstraintsState;
+use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
 use smithay::wayland::selection::primary_selection::PrimarySelectionState;
@@ -117,6 +119,11 @@ pub struct De {
     /// Kept alive for the `zwp_idle_inhibit_manager_v1` global's lifetime.
     #[allow(dead_code)]
     pub(crate) idle_inhibit_state: IdleInhibitManagerState,
+    /// Kept alive for `zwp_relative_pointer_manager_v1` / `zwp_pointer_constraints_v1`.
+    #[allow(dead_code)]
+    pub(crate) relative_pointer_state: RelativePointerManagerState,
+    #[allow(dead_code)]
+    pub(crate) pointer_constraints_state: PointerConstraintsState,
     /// Surfaces currently holding a `zwp_idle_inhibitor_v1` (`protocols/idle_inhibit.rs`).
     pub(crate) idle_inhibitors:
         Vec<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface>,
@@ -454,6 +461,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let fractional_scale_state = FractionalScaleManagerState::new::<De>(&dh);
     let output_manager_state = OutputManagerState::new_with_xdg_output::<De>(&dh);
     let idle_inhibit_state = IdleInhibitManagerState::new::<De>(&dh);
+    let relative_pointer_state = RelativePointerManagerState::new::<De>(&dh);
+    let pointer_constraints_state = PointerConstraintsState::new::<De>(&dh);
     crate::screencopy::init(&dh);
     crate::virtual_pointer::init(&dh);
     let mut dmabuf_state = DmabufState::new();
@@ -561,6 +570,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         dmabuf_state,
         dmabuf_global,
         idle_inhibit_state,
+        relative_pointer_state,
+        pointer_constraints_state,
         idle_inhibitors: Vec::new(),
 
         seat,

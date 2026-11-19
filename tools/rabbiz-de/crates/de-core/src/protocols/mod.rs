@@ -4,6 +4,7 @@ pub mod comp;
 pub(crate) mod idle_inhibit;
 pub(crate) mod layer_shell;
 pub mod output_dmabuf;
+pub(crate) mod pointer_constraints;
 pub(crate) mod popups;
 pub(crate) mod privileged;
 pub mod screencopy;

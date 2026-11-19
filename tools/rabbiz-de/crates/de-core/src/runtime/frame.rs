@@ -941,25 +941,9 @@ impl Run {
     }
 }
 
-/// Upload `px` into `renderer` as a `TextureBuffer`, boxed for storage.
-fn upload_any<R: ImportMem>(r: &mut R, px: &de_api::Pixels) -> Option<Box<dyn std::any::Any>>
-where
-    R::TextureId: 'static,
-{
-    use smithay::backend::renderer::element::texture::TextureBuffer;
-    TextureBuffer::from_memory(
-        r,
-        &px.data,
-        smithay::backend::allocator::Fourcc::Abgr8888,
-        smithay::utils::Size::from((px.size.w, px.size.h)),
-        false,
-        1,
-        smithay::utils::Transform::Normal,
-        None,
-    )
-    .ok()
-    .map(|b| Box::new(b) as Box<dyn std::any::Any>)
-}
+use crate::runtime::textures::{
+    sync_drag_textures, sync_home_textures, tex_el, tex_el_sized, texture_buffer, upload_any,
+};
 
 /// Capture and blur the live scene on `GlesRenderer` (1/4-res FBO + 3 Kawase
 /// passes) when a panel pull begins. No-op on `Soft`.
@@ -1286,65 +1270,6 @@ fn push_drag_overlay<R>(
     }
 }
 
-/// Upload the lifted icon (and the shared highlight) once per drag.
-fn sync_drag_textures<R: ImportMem>(r: &mut R, h: &mut crate::home_ui::HomeUi)
-where
-    R::TextureId: 'static,
-{
-    if h.drag_tex.is_none() {
-        if let Some(d) = h.drag.as_ref() {
-            h.drag_tex = upload_any(r, &d.px);
-        }
-    }
-    if h.hl_tex.is_none() {
-        let t = de_design::tokens::DEFAULT;
-        let mut c = de_paint::Canvas::new(de_api::Size::new(112, 112));
-        let mut col = t.accent;
-        col[3] = 70;
-        c.fill_rounded_rect(
-            de_api::Rect::new(0, 0, 112, 112),
-            de_design::tokens::ICON_TILE_RADIUS,
-            col,
-        );
-        h.hl_tex = upload_any(r, &c.into_pixels());
-    }
-}
-
-/// Upload the home layers that have no texture yet (drops stale ones when
-/// the layer set was rebuilt).
-fn sync_home_textures<R: ImportMem>(r: &mut R, h: &mut crate::home_ui::HomeUi)
-where
-    R::TextureId: 'static,
-{
-    let Some(key) = h.layers_key() else { return };
-    if h.tex_key != key || h.base_tex.is_none() {
-        h.tex_key = key;
-        h.base_tex = None;
-        h.page_tex.clear();
-        h.dots_tex.clear();
-    }
-    let Some(layers) = h.layers.as_ref() else {
-        return;
-    };
-    if h.base_tex.is_none() {
-        h.base_tex = upload_any(r, &layers.base);
-    }
-    for (p, px) in &layers.pages {
-        if !h.page_tex.contains_key(p) {
-            if let Some(t) = upload_any(r, px) {
-                h.page_tex.insert(*p, t);
-            }
-        }
-    }
-    for (p, px) in &layers.dots {
-        if !h.dots_tex.contains_key(p) {
-            if let Some(t) = upload_any(r, px) {
-                h.dots_tex.insert(*p, t);
-            }
-        }
-    }
-}
-
 /// Push the home layers front to back: dots, page grids at their slid
 /// positions, then the base. Positions are whole pixels.
 fn push_home_layers<R: ImportAll>(
@@ -1384,48 +1309,6 @@ fn push_home_layers<R: ImportAll>(
             Point::<f64, Physical>::from((0.0, 0.0)),
         )));
     }
-}
-
-fn texture_buffer<R: ImportAll>(
-    tex: Option<&Box<dyn std::any::Any>>,
-) -> Option<&smithay::backend::renderer::element::texture::TextureBuffer<R::TextureId>>
-where
-    R::TextureId: 'static,
-{
-    // The stored texture was uploaded by the active renderer, so the
-    // TextureId type always matches R.
-    tex?.downcast_ref()
-}
-
-fn tex_el<R: ImportAll>(
-    buf: &smithay::backend::renderer::element::texture::TextureBuffer<R::TextureId>,
-    loc: Point<f64, Physical>,
-) -> TextureRenderElement<R::TextureId>
-where
-    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
-{
-    TextureRenderElement::from_texture_buffer(loc, buf, None, None, None, Kind::Unspecified)
-}
-
-/// A texture scaled to fill `rect` (the landing highlight spans icons of
-/// different sizes).
-fn tex_el_sized<R: ImportAll>(
-    buf: &smithay::backend::renderer::element::texture::TextureBuffer<R::TextureId>,
-    rect: de_api::Rect,
-) -> TextureRenderElement<R::TextureId>
-where
-    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
-{
-    TextureRenderElement::from_texture_buffer(
-        Point::<f64, Physical>::from((f64::from(rect.x), f64::from(rect.y))),
-        buf,
-        None,
-        None,
-        Some(smithay::utils::Size::<i32, smithay::utils::Logical>::from(
-            (rect.w, rect.h),
-        )),
-        Kind::Unspecified,
-    )
 }
 
 pub(crate) use crate::runtime::frame_io::minute_of_day;

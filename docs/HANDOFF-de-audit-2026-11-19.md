@@ -145,4 +145,6 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
 ### Tier 3 — Modern Flagship Features
 11. Unified interruptible Transition Coordinator (Predictive Back, gesture scrub).
 12. Display rotation, fractional scale, multi-output, and Split/PiP/Desktop windowing policies.
-13. XWayland + pointer constraints + Polkit/Portal UI + AT-SPI accessibility.
+13. XWayland + pointer constraints + Polkit/Portal UI + AT-SPI accessibility — **relative-pointer + pointer-constraints landed (2026-11-19)**:
+    - Implemented `protocols/pointer_constraints.rs` (`zwp_relative_pointer_manager_v1` + `zwp_pointer_constraints_v1`) wired into `runtime/state.rs` (pairs with existing `ptr.relative_motion` in `runtime/input.rs`).
+    - Remaining: XWayland lifecycle, Polkit/Portal UI, AT-SPI.

@@ -14,3 +14,4 @@ pub(crate) mod power;
 pub(crate) mod shortcuts;
 pub mod snapshots;
 pub mod state;
+pub(crate) mod textures;
