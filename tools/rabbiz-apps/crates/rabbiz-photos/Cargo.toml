@@ -6,3 +6,8 @@ license.workspace = true
 
 [dependencies]
 rabbiz-app-kit.workspace = true
+de-api.workspace = true
+de-design.workspace = true
+de-paint.workspace = true
+libc.workspace = true
+serde_json.workspace = true

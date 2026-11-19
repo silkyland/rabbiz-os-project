@@ -1,6 +1,9 @@
 //! Material Design 3 drawing & layout primitives on `de_paint::Canvas`.
 
+use std::time::Duration;
+
 use de_api::{Point, Rect, Size};
+use de_design::motion::{bezier_eval, Bezier};
 use de_design::tokens::{self, Theme};
 use de_paint::{text, Canvas};
 
@@ -82,7 +85,14 @@ pub fn draw_centered(c: &mut Canvas, s: &str, st: &text::LabelStyle, r: Rect) {
 
 pub fn draw_header(c: &mut Canvas, t: &Theme, heading: &str, subtitle: &str) -> i32 {
     let y = TOP_SAFE + 16;
-    draw_text(c, heading, &title(t.text), MARGIN, y, Some(c.size().w - MARGIN * 2));
+    draw_text(
+        c,
+        heading,
+        &title(t.text),
+        MARGIN,
+        y,
+        Some(c.size().w - MARGIN * 2),
+    );
     if !subtitle.is_empty() {
         draw_text(
             c,
@@ -136,4 +146,80 @@ pub fn draw_switch(c: &mut Canvas, t: &Theme, x: i32, y: i32, on: bool) {
         12.0,
         if on { t.text_on_accent } else { t.text3 },
     );
+}
+
+/// Right-aligned text inside `r` (vertically centered, `pad` inset on the
+/// right). Calculator-style readouts and numeric columns need this; mirror of
+/// [`draw_centered`] on the opposite edge.
+pub fn draw_text_right(c: &mut Canvas, s: &str, st: &text::LabelStyle, r: Rect, pad: i32) {
+    if s.is_empty() {
+        return;
+    }
+    let max_w = (r.w - pad * 2).max(16);
+    let Some(px) = text::label(s, *st, Some(max_w)) else {
+        return;
+    };
+    let w = px.width() as i32;
+    let h = px.height() as i32;
+    c.blit(
+        &de_api::Pixels::new(Size::new(w, h), px.data().to_vec()),
+        Point::new(r.right() - pad - w, r.y + (r.h - h).max(0) / 2),
+    );
+}
+
+/// M3 state-layer tint derived from the theme's text color, for press/drag
+/// overlays drawn with `fill_rounded_rect`. `alpha` is 0.0–1.0 (pressed ≈
+/// 0.10, dragged ≈ 0.16); deriving from `text` keeps it legible on cream and
+/// plum themes alike.
+#[must_use]
+pub fn state_layer(t: &Theme, alpha: f32) -> [u8; 4] {
+    [
+        t.text[0],
+        t.text[1],
+        t.text[2],
+        (alpha.clamp(0.0, 1.0) * 255.0) as u8,
+    ]
+}
+
+/// Bezier-eased scalar tween advanced by `AppEvent::Tick(dt)`.
+/// `Tween::new(from, to, ..)` with `from == to` starts finished so it never
+/// keeps `animating` alive for a no-op.
+pub struct Tween {
+    from: f32,
+    to: f32,
+    t: f32,
+    dur: f32,
+    curve: Bezier,
+}
+
+impl Tween {
+    #[must_use]
+    pub fn new(from: f32, to: f32, dur_s: f32, curve: Bezier) -> Self {
+        let dur = dur_s.max(0.001);
+        let t = if from == to { dur } else { 0.0 };
+        Self {
+            from,
+            to,
+            t,
+            dur,
+            curve,
+        }
+    }
+
+    #[must_use]
+    pub fn value(&self) -> f32 {
+        let k = bezier_eval(self.curve, (self.t / self.dur).min(1.0));
+        self.from + (self.to - self.from) * k
+    }
+
+    /// Advance by `dt`; returns true while still running.
+    pub fn tick(&mut self, dt: Duration) -> bool {
+        self.t += dt.as_secs_f32();
+        self.t < self.dur
+    }
+
+    #[must_use]
+    pub fn done(&self) -> bool {
+        self.t >= self.dur
+    }
 }

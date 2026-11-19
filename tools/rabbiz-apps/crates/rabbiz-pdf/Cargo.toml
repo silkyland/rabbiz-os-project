@@ -1,0 +1,13 @@
+[package]
+name = "rabbiz-pdf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rabbiz-app-kit.workspace = true
+de-api.workspace = true
+de-design.workspace = true
+de-paint.workspace = true
+hayro = "=0.9.0"
+serde_json.workspace = true

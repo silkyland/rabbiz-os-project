@@ -1,0 +1,13 @@
+[package]
+name = "rabbiz-contacts"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+de-api.workspace = true
+de-design.workspace = true
+rabbiz-app-kit.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+wayland-protocols.workspace = true

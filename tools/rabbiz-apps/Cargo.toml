@@ -11,6 +11,9 @@ members = [
     "crates/rabbiz-dialer",
     "crates/rabbiz-sms",
     "crates/rabbiz-settings",
+    "crates/rabbiz-contacts",
+    "crates/rabbiz-pdf",
+    "crates/rabbiz-files",
 ]
 
 [workspace.package]

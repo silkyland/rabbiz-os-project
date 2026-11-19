@@ -2,6 +2,7 @@
 //! `wl_keyboard` + `zwp_text_input_v3`) window runner for `rabbiz-*` apps.
 
 use std::collections::HashMap;
+use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
 use de_api::{Point, Size};
@@ -39,31 +40,56 @@ use wayland_protocols::wp::text_input::zv3::client::{
     zwp_text_input_v3::{ContentHint, ContentPurpose, Event as TiEvent, ZwpTextInputV3},
 };
 
+/// evdev `BTN_LEFT` — the only pointer button routed through Touch* events;
+/// every other button surfaces as `AppEvent::PointerButton`.
+const BTN_LEFT: u32 = 0x110;
+
 #[derive(Debug, Clone)]
 pub enum AppEvent {
-    TouchDown { id: i32, pos: Point },
-    TouchMove { id: i32, pos: Point },
-    TouchUp { id: i32, pos: Point },
-    Key { keysym: u32, utf8: Option<String> },
+    TouchDown {
+        id: i32,
+        pos: Point,
+    },
+    TouchMove {
+        id: i32,
+        pos: Point,
+    },
+    TouchUp {
+        id: i32,
+        pos: Point,
+    },
+    /// Mouse hover motion with no button held (touch never produces this).
+    PointerMove {
+        pos: Point,
+    },
+    /// Mouse wheel / touchpad scroll, in surface pixels (`wl_pointer` axis
+    /// `absolute` values; positive dy scrolls content down).
+    Scroll {
+        dx: f32,
+        dy: f32,
+    },
+    /// Non-primary mouse button edge. `button` is the evdev code
+    /// (0x110 left is routed to Touch* instead; right = 0x111, middle =
+    /// 0x112, others pass through).
+    PointerButton {
+        button: u32,
+        pressed: bool,
+        pos: Point,
+    },
+    Key {
+        keysym: u32,
+        utf8: Option<String>,
+    },
     TextCommit(String),
     TextBackspace(usize),
     Tick(Duration),
 }
 
+#[derive(Default)]
 pub struct AppFrame {
     pub dirty: bool,
     pub animating: bool,
     pub quit: bool,
-}
-
-impl Default for AppFrame {
-    fn default() -> Self {
-        Self {
-            dirty: false,
-            animating: false,
-            quit: false,
-        }
-    }
 }
 
 pub struct TextInputCtl {
@@ -153,8 +179,16 @@ impl<S: AppState> Runner<S> {
         let px = canvas.into_pixels();
 
         let stride = (w * 4) as i32;
-        if let Ok((buf, dst)) = self.pool.create_buffer(w as i32, h as i32, stride, wl_shm::Format::Argb8888) {
-            for (d, s) in dst.chunks_exact_mut(4).zip(px.data.chunks_exact(4)) {
+        if let Ok((buf, dst)) =
+            self.pool
+                .create_buffer(w as i32, h as i32, stride, wl_shm::Format::Argb8888)
+        {
+            for (d, s) in dst
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .zip(px.data.as_chunks::<4>().0.iter())
+            {
                 d[0] = s[2];
                 d[1] = s[1];
                 d[2] = s[0];
@@ -189,7 +223,9 @@ pub fn run_app<S: AppState + 'static>(state: S) {
     let compositor = CompositorState::bind(&globals, &qh).expect("wl_compositor");
     let xdg_shell = XdgShell::bind(&globals, &qh).expect("xdg_wm_base");
     let shm = Shm::bind(&globals, &qh).expect("wl_shm");
-    let ti_mgr = globals.bind::<ZwpTextInputManagerV3, Runner<S>, ()>(&qh, 1..=1, ()).ok();
+    let ti_mgr = globals
+        .bind::<ZwpTextInputManagerV3, Runner<S>, ()>(&qh, 1..=1, ())
+        .ok();
 
     let surface = compositor.create_surface(&qh);
     let window = xdg_shell.create_window(surface, WindowDecorations::ServerDefault, &qh);
@@ -225,8 +261,27 @@ pub fn run_app<S: AppState + 'static>(state: S) {
         last_tick: Instant::now(),
     };
 
+    // While `animating` is set, `blocking_dispatch` would sleep until the next
+    // Wayland event and Tick animations would freeze between touches. Poll the
+    // connection fd with a bounded timeout instead so Tick keeps a steady
+    // cadence; idle apps still block as before.
+    let backend = conn.backend();
     while !runner.quit {
-        let _ = queue.blocking_dispatch(&mut runner);
+        if runner.animating && runner.configured {
+            let mut pfd = libc::pollfd {
+                fd: backend.poll_fd().as_raw_fd(),
+                events: libc::POLLIN,
+                revents: 0,
+            };
+            let _ = unsafe { libc::poll(&mut pfd, 1, 8) };
+            if pfd.revents & libc::POLLIN != 0 {
+                let _ = queue.blocking_dispatch(&mut runner);
+            } else {
+                let _ = queue.dispatch_pending(&mut runner);
+            }
+        } else {
+            let _ = queue.blocking_dispatch(&mut runner);
+        }
         let now = Instant::now();
         let dt = now.saturating_duration_since(runner.last_tick);
         runner.last_tick = now;
@@ -241,15 +296,45 @@ pub fn run_app<S: AppState + 'static>(state: S) {
 }
 
 impl<S: AppState> CompositorHandler for Runner<S> {
-    fn scale_factor_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: i32) {}
-    fn transform_changed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: wl_output::Transform) {}
+    fn scale_factor_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: i32,
+    ) {
+    }
+    fn transform_changed(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: wl_output::Transform,
+    ) {
+    }
     fn frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: u32) {}
-    fn surface_enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
-    fn surface_leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_surface::WlSurface, _: &wl_output::WlOutput) {}
+    fn surface_enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
+    fn surface_leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_surface::WlSurface,
+        _: &wl_output::WlOutput,
+    ) {
+    }
 }
 
 impl<S: AppState> OutputHandler for Runner<S> {
-    fn output_state(&mut self) -> &mut OutputState { &mut self.out }
+    fn output_state(&mut self) -> &mut OutputState {
+        &mut self.out
+    }
     fn new_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
     fn update_output(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
     fn output_destroyed(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_output::WlOutput) {}
@@ -259,7 +344,14 @@ impl<S: AppState> WindowHandler for Runner<S> {
     fn request_close(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window) {
         self.quit = true;
     }
-    fn configure(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &Window, cfg: WindowConfigure, _: u32) {
+    fn configure(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &Window,
+        cfg: WindowConfigure,
+        _: u32,
+    ) {
         if let Some(w) = cfg.new_size.0 {
             self.w = w.get();
         }
@@ -274,16 +366,22 @@ impl<S: AppState> WindowHandler for Runner<S> {
 }
 
 impl<S: AppState> ShmHandler for Runner<S> {
-    fn shm_state(&mut self) -> &mut Shm { &mut self.shm }
+    fn shm_state(&mut self) -> &mut Shm {
+        &mut self.shm
+    }
 }
 
 impl<S: AppState + 'static> ProvidesRegistryState for Runner<S> {
-    fn registry(&mut self) -> &mut RegistryState { &mut self.reg }
+    fn registry(&mut self) -> &mut RegistryState {
+        &mut self.reg
+    }
     registry_handlers![OutputState, SeatState];
 }
 
 impl<S: AppState + 'static> SeatHandler for Runner<S> {
-    fn seat_state(&mut self) -> &mut SeatState { &mut self.seats }
+    fn seat_state(&mut self) -> &mut SeatState {
+        &mut self.seats
+    }
     fn new_seat(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat) {
         if self.ti.ti.is_none() {
             if let Some(mgr) = &self.ti_mgr {
@@ -292,35 +390,97 @@ impl<S: AppState + 'static> SeatHandler for Runner<S> {
             }
         }
     }
-    fn new_capability(&mut self, _: &Connection, qh: &QueueHandle<Self>, seat: wl_seat::WlSeat, cap: Capability) {
+    fn new_capability(
+        &mut self,
+        _: &Connection,
+        qh: &QueueHandle<Self>,
+        seat: wl_seat::WlSeat,
+        cap: Capability,
+    ) {
         match cap {
-            Capability::Touch => { let _ = self.seats.get_touch(qh, &seat); }
-            Capability::Pointer => { let _ = self.seats.get_pointer(qh, &seat); }
-            Capability::Keyboard => { let _ = self.seats.get_keyboard(qh, &seat, None); }
+            Capability::Touch => {
+                let _ = self.seats.get_touch(qh, &seat);
+            }
+            Capability::Pointer => {
+                let _ = self.seats.get_pointer(qh, &seat);
+            }
+            Capability::Keyboard => {
+                let _ = self.seats.get_keyboard(qh, &seat, None);
+            }
             _ => {}
         }
     }
-    fn remove_capability(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat, _: Capability) {}
+    fn remove_capability(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: wl_seat::WlSeat,
+        _: Capability,
+    ) {
+    }
     fn remove_seat(&mut self, _: &Connection, _: &QueueHandle<Self>, _: wl_seat::WlSeat) {}
 }
 
 impl<S: AppState> TouchHandler for Runner<S> {
-    fn down(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: u32, _: wl_surface::WlSurface, id: i32, pos: (f64, f64)) {
+    fn down(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: u32,
+        _: u32,
+        _: wl_surface::WlSurface,
+        id: i32,
+        pos: (f64, f64),
+    ) {
         let p = Point::new(pos.0 as i32, pos.1 as i32);
         self.touches.insert(id, p);
         self.dispatch_app(AppEvent::TouchDown { id, pos: p });
     }
-    fn motion(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, id: i32, pos: (f64, f64)) {
+    fn motion(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: u32,
+        id: i32,
+        pos: (f64, f64),
+    ) {
         let p = Point::new(pos.0 as i32, pos.1 as i32);
         self.touches.insert(id, p);
         self.dispatch_app(AppEvent::TouchMove { id, pos: p });
     }
-    fn up(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: u32, _: u32, id: i32) {
+    fn up(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: u32,
+        _: u32,
+        id: i32,
+    ) {
         let p = self.touches.remove(&id).unwrap_or(Point::ZERO);
         self.dispatch_app(AppEvent::TouchUp { id, pos: p });
     }
-    fn shape(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64, _: f64) {}
-    fn orientation(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64) {}
+    fn shape(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: i32,
+        _: f64,
+        _: f64,
+    ) {
+    }
+    fn orientation(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_touch::WlTouch,
+        _: i32,
+        _: f64,
+    ) {
+    }
     fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch) {
         let ids: Vec<i32> = self.touches.keys().copied().collect();
         for id in ids {
@@ -332,7 +492,13 @@ impl<S: AppState> TouchHandler for Runner<S> {
 }
 
 impl<S: AppState> PointerHandler for Runner<S> {
-    fn pointer_frame(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_pointer::WlPointer, events: &[PointerEvent]) {
+    fn pointer_frame(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_pointer::WlPointer,
+        events: &[PointerEvent],
+    ) {
         for ev in events {
             let p = Point::new(ev.position.0 as i32, ev.position.1 as i32);
             match ev.kind {
@@ -340,17 +506,45 @@ impl<S: AppState> PointerHandler for Runner<S> {
                     self.pointer_pos = p;
                     if self.pointer_down {
                         self.dispatch_app(AppEvent::TouchMove { id: -1, pos: p });
+                    } else {
+                        self.dispatch_app(AppEvent::PointerMove { pos: p });
                     }
                 }
-                PointerEventKind::Press { .. } => {
+                PointerEventKind::Press { button, .. } => {
                     self.pointer_pos = p;
-                    self.pointer_down = true;
-                    self.dispatch_app(AppEvent::TouchDown { id: -1, pos: p });
+                    if button == BTN_LEFT {
+                        self.pointer_down = true;
+                        self.dispatch_app(AppEvent::TouchDown { id: -1, pos: p });
+                    } else {
+                        self.dispatch_app(AppEvent::PointerButton {
+                            button,
+                            pressed: true,
+                            pos: p,
+                        });
+                    }
                 }
-                PointerEventKind::Release { .. } => {
+                PointerEventKind::Release { button, .. } => {
                     self.pointer_pos = p;
-                    self.pointer_down = false;
-                    self.dispatch_app(AppEvent::TouchUp { id: -1, pos: p });
+                    if button == BTN_LEFT {
+                        self.pointer_down = false;
+                        self.dispatch_app(AppEvent::TouchUp { id: -1, pos: p });
+                    } else {
+                        self.dispatch_app(AppEvent::PointerButton {
+                            button,
+                            pressed: false,
+                            pos: p,
+                        });
+                    }
+                }
+                PointerEventKind::Axis {
+                    horizontal,
+                    vertical,
+                    ..
+                } => {
+                    self.dispatch_app(AppEvent::Scroll {
+                        dx: horizontal.absolute as f32,
+                        dy: vertical.absolute as f32,
+                    });
                 }
                 _ => {}
             }
@@ -359,24 +553,81 @@ impl<S: AppState> PointerHandler for Runner<S> {
 }
 
 impl<S: AppState> KeyboardHandler for Runner<S> {
-    fn enter(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &wl_surface::WlSurface, _: u32, _: &[u32], _: &[Keysym]) {}
-    fn leave(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: &wl_surface::WlSurface, _: u32) {}
-    fn press_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, event: KeyEvent) {
+    fn enter(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: &wl_surface::WlSurface,
+        _: u32,
+        _: &[u32],
+        _: &[Keysym],
+    ) {
+    }
+    fn leave(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: &wl_surface::WlSurface,
+        _: u32,
+    ) {
+    }
+    fn press_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        event: KeyEvent,
+    ) {
         self.dispatch_app(AppEvent::Key {
             keysym: event.keysym.raw(),
             utf8: event.utf8,
         });
     }
-    fn release_key(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: KeyEvent) {}
-    fn update_modifiers(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_keyboard::WlKeyboard, _: u32, _: Modifiers, _: u32) {}
+    fn release_key(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        _: KeyEvent,
+    ) {
+    }
+    fn update_modifiers(
+        &mut self,
+        _: &Connection,
+        _: &QueueHandle<Self>,
+        _: &wl_keyboard::WlKeyboard,
+        _: u32,
+        _: Modifiers,
+        _: u32,
+    ) {
+    }
 }
 
 impl<S: AppState> Dispatch<ZwpTextInputManagerV3, ()> for Runner<S> {
-    fn event(_: &mut Self, _: &ZwpTextInputManagerV3, _: wayland_protocols::wp::text_input::zv3::client::zwp_text_input_manager_v3::Event, _: &(), _: &Connection, _: &QueueHandle<Self>) {}
+    fn event(
+        _: &mut Self,
+        _: &ZwpTextInputManagerV3,
+        _: wayland_protocols::wp::text_input::zv3::client::zwp_text_input_manager_v3::Event,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
+    }
 }
 
 impl<S: AppState> Dispatch<ZwpTextInputV3, ()> for Runner<S> {
-    fn event(state: &mut Self, _: &ZwpTextInputV3, event: TiEvent, _: &(), _: &Connection, _: &QueueHandle<Self>) {
+    fn event(
+        state: &mut Self,
+        _: &ZwpTextInputV3,
+        event: TiEvent,
+        _: &(),
+        _: &Connection,
+        _: &QueueHandle<Self>,
+    ) {
         match event {
             TiEvent::Enter { .. } => {
                 state.ti_focused = true;

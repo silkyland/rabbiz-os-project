@@ -1,7 +1,12 @@
 //! Shared Material Design 3 + native Wayland (`wl_shm` + `xdg_toplevel` +
 //! `wl_touch` + `zwp_text_input_v3`) runtime for all `rabbiz-*` Rust apps.
 
+pub mod mcp;
 pub mod ui;
+#[cfg(target_os = "linux")]
+pub mod wayland;
+#[cfg(not(target_os = "linux"))]
+#[path = "wayland_stub.rs"]
 pub mod wayland;
 
 pub use de_api::{Point, Rect, Size};
