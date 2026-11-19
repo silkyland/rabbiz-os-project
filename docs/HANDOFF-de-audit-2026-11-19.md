@@ -28,7 +28,7 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
   - [input.rs](../tools/rabbiz-de/crates/de-core/src/input.rs) (**1,531 LOC**) is a single `impl De` block handling all touch, pointer, and keyboard routing.
   - [panel_ui.rs](../tools/rabbiz-de/crates/de-core/src/panel_ui.rs) (714 LOC), [state.rs](../tools/rabbiz-de/crates/de-core/src/state.rs) (646 LOC), [power.rs](../tools/rabbiz-de/crates/de-core/src/power.rs) (638 LOC), [morph.rs](../tools/rabbiz-de/crates/de-core/src/morph.rs) (635 LOC).
 - **Mixed concerns**: Wayland protocol handlers (`comp.rs`, `xdg.rs`, `layer_shell.rs`, `seat.rs`, `selection.rs`, `screencopy.rs`, `virtual_pointer.rs`, `popups.rs`, `misc.rs`), compositor runtime (`frame.rs`, `composite.rs`, `input.rs`, `power.rs`, `osk.rs`), and shell UI controllers (`home_ui.rs`, `panel_ui.rs`, `lock_ui.rs`, `shot_ui.rs`, `shell.rs`, `shell_menu.rs`, `morph.rs`, `navigation.rs`) sit in one flat directory.
-- **Anti-home filename**: [misc.rs](../tools/rabbiz-de/crates/de-core/src/misc.rs) violates the repo naming rule (*no `misc` — name the concept*); it holds output/viewporter/fractional-scale/dmabuf protocol handlers.
+- **Anti-home filename**: `misc.rs` violated the repo naming rule (*no `misc` — name the concept*); renamed to [output_dmabuf.rs](../tools/rabbiz-de/crates/de-core/src/output_dmabuf.rs) (holds output/viewporter/fractional-scale/dmabuf protocol handlers).
 
 ### P1 — Crate boundary drift (`de-apps` & `de-backend`)
 - **System prefs inside `de-apps`**: `AppPrefs` in [de-apps/src/prefs.rs](../tools/rabbiz-de/crates/de-apps/src/prefs.rs) owns `set_wallpaper`, `set_do_not_disturb`, `set_keyboard`, and `set_allow_third_party_keyboards`. These are OS/shell preferences, not app-catalog state, and belong in `de-config`.
@@ -115,11 +115,11 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
    - **Exit criterion**: `de-apps` owns app catalog/launch/pin/order only; host tests + goldens pass.
 
 ### Tier 1 — Structural Refactor & Foundation (do before adding major features)
-3. **Sub-module `de-core`**:
-   - Group into `protocols/`, `runtime/`, `shell_ui/`; rename `misc.rs` → `protocols/output_dmabuf.rs`.
-   - Split `frame.rs` → `event_loop.rs`, `render_scene.rs`, `textures.rs` (move cursor rasterization out of `frame.rs`).
-   - Split `input.rs` by input domain (`touch.rs`, `pointer.rs`, `keyboard.rs`).
-   - Break `De` god-struct into coherent sub-structs (`WaylandGlobals`, `InputState`, `ShellRuntime`).
+3. **Sub-module `de-core`** — **in progress (2026-11-19, working tree)**:
+   - Renamed anti-home `misc.rs` → `output_dmabuf.rs`.
+   - Extracted pointer cursor sprite rasterization out of `frame.rs` into `cursor.rs` (and fixed cursor Z-order bug: `elements.insert(0, ...)` instead of `elements.push(...)`).
+   - Added `display_stack.rs` (`RenderStack<E>` Smithay front-to-back adapter backed by `de_api::DisplayStack`).
+   - Remaining: group into `protocols/`, `runtime/`, `shell_ui/`; split `frame.rs` & `input.rs`; break `De` god-struct into sub-structs.
    - **Exit criterion**: Behavior-preserving refactor; arm64 container build + `de-smoke` pass.
 4. **Sub-module `de-ui`**:
    - Group into `interaction/` (`gestures`, `nav`, `pager`, `pull`, `transitions`), `chrome/` (`chrome`, `menu`, `nav_bar`), `screens/`.
