@@ -1,0 +1,8 @@
+[package]
+name = "rabbiz-dialer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+rabbiz-app-kit.workspace = true

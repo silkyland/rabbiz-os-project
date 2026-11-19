@@ -29,9 +29,19 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: 56
         radius: Theme.radiusM
-        color: upTap.pressed ? Theme.card : Theme.surfaceHigh
+        color: Theme.surfaceHigh
         border.width: 1
         border.color: Qt.alpha(Theme.text, 0.08)
+        scale: upTap.pressed ? 0.94 : 1.0
+        Behavior on scale { SpringAnimation { spring: 7.0; damping: 0.48 } }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: ShellPrefs.accentColor
+            opacity: upTap.pressed ? 0.14 : 0.0
+            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+        }
 
         MaterialIcon {
             anchors.centerIn: parent
@@ -56,9 +66,19 @@ ColumnLayout {
         Layout.fillWidth: true
         implicitHeight: 56
         radius: Theme.radiusM
-        color: downTap.pressed ? Theme.card : Theme.surfaceHigh
+        color: Theme.surfaceHigh
         border.width: 1
         border.color: Qt.alpha(Theme.text, 0.08)
+        scale: downTap.pressed ? 0.94 : 1.0
+        Behavior on scale { SpringAnimation { spring: 7.0; damping: 0.48 } }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: ShellPrefs.accentColor
+            opacity: downTap.pressed ? 0.14 : 0.0
+            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+        }
 
         MaterialIcon {
             anchors.centerIn: parent

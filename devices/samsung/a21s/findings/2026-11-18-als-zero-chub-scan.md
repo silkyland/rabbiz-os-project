@@ -81,3 +81,17 @@ sensor. Consumers (the DE auto-brightness path) must treat a failed read
 as "no sensor data", not as 0 lux. Status unchanged: the missing scan
 bits are still unexplained; this change only removes the misleading
 zero.
+
+## Update — clock A/B test (`use_ccf_chubclk=1`, 2026-11-19)
+
+Reloaded `a21s-chub.ko` with `use_ccf_chubclk=1` (mode B) on kernel `#5`
+under `scripts/device_session.sh`:
+
+- `boot clock mode=B ccf_hz=180000000 bootargs_original_hz=0 lookup_rc=0`
+- `bootargs_effective_hz=180000000`
+- `rx cmd=4 type=255 sub=27 plen=24 data=00 00 4e 02 18 00 00 00 ...`
+
+The scan bitmap (`0x00000018024e0000`) is identical to mode A (`0`),
+ruling out `bootargs.chubclk` as the cause of the missing accel/gyro/ALS
+bits. Next candidate in `a21s-chub-motion-probe.md`: boot command order
+or sensor power rail (`vdd_sensor_en`).

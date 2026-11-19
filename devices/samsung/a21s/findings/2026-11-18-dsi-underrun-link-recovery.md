@@ -1,5 +1,5 @@
 ---
-status: hypothesis
+status: refuted
 lane: kernel
 device: samsung/a21s
 kernel: 7.3.0-g14a425b3a7dc-dirty
@@ -69,3 +69,25 @@ acceptance test is ten compositor stop/start cycles.
   while `atomic_post_disable` always `pm_runtime_put_sync` — a
   pre-existing imbalance noticed in passing; the boot_on link survives
   anyway, but it is worth a line in the DTB/boot test notes.
+
+## Update — 10x compositor restart test on kernel #5 (2026-11-19, refuted)
+
+Ran 10 consecutive `systemctl stop rabbiz-session.service` / `sleep 1` /
+`systemctl start rabbiz-session.service` / `sleep 2` cycles on flashed
+kernel `#5` under `scripts/device_session.sh`. All 10 cycles returned
+`active`, **but** `dmesg` showed the patch did not prevent the wedge:
+
+```text
+[  686.023447] exynos850-dsi 13070000.dsi: underrun
+[  686.023535] exynos850-dsi 13070000.dsi: underrun: restarting video link
+[  689.051197] [CRTC:50:crtc-0] vblank wait timed out
+[  696.767269] exynos850-decon 13060000.display-controller: DECON timeout
+[  699.668890] exynos-drm exynos-drm: [drm] *ERROR* flip_done timed out
+[  709.903588] exynos-drm exynos-drm: [drm] *ERROR* flip_done timed out
+[  710.927083] [CRTC:50:crtc-0] vblank wait timed out
+```
+
+`dsim850_underrun_recover` ran as intended (`restarting video link`), but
+restarting DSIM alone while DECON is already stalled/desynchronized does
+not restore vblank/frame-done; a DECON-side reset or coordinated CRTC
+restart is needed.

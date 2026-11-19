@@ -22,6 +22,7 @@ Item {
         color: root.checked ? ShellPrefs.accentColor : Theme.surfaceHigh
         border.width: root.checked ? 0 : 1
         border.color: Qt.alpha(Theme.text, 0.14)
+        Behavior on color { ColorAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
 
         Rectangle {
             width: 26
@@ -29,12 +30,16 @@ Item {
             radius: width / 2
             anchors.verticalCenter: parent.verticalCenter
             x: root.checked ? track.width - width - 3 : 3
+            scale: tap.pressed ? 1.12 : 1.0
             color: root.checked ? ShellPrefs.onAccentColor : Theme.textDim
             Behavior on x {
                 NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase }
             }
+            Behavior on scale {
+                SpringAnimation { spring: 7.0; damping: 0.48 }
+            }
         }
     }
 
-    TapHandler { onTapped: root.toggled() }
+    TapHandler { id: tap; onTapped: root.toggled() }
 }

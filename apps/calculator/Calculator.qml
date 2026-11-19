@@ -87,7 +87,13 @@ ApplicationWindow {
     }
 
     ColumnLayout {
-        anchors { fill: parent; margins: Theme.spaceM }
+        anchors {
+            fill: parent
+            topMargin: Theme.spaceM
+            leftMargin: Theme.spaceM
+            rightMargin: Theme.spaceM
+            bottomMargin: Theme.spaceL + Theme.spaceS
+        }
         spacing: Theme.spaceM
 
         AppHeader {
@@ -105,29 +111,48 @@ ApplicationWindow {
         Card {
             Layout.fillWidth: true
             padding: Theme.spaceL
-            implicitHeight: 180
+            implicitHeight: 192
 
             Column {
                 width: parent.width
-                spacing: 6
-                Text {
+                spacing: Theme.spaceS
+                Flickable {
+                    id: exprFlick
                     width: parent.width
-                    horizontalAlignment: Text.AlignRight
-                    text: win.displayExpr
-                    color: Theme.textDim
-                    font.pixelSize: Theme.fontBody
-                    font.family: Theme.fontFamily
-                    elide: Text.ElideLeft
+                    height: exprText.implicitHeight
+                    contentWidth: Math.max(width, exprText.implicitWidth)
+                    contentHeight: height
+                    clip: true
+                    flickableDirection: Flickable.HorizontalFlick
+                    boundsBehavior: Flickable.StopAtBounds
+
+                    function scrollToEnd() {
+                        contentX = Math.max(0, contentWidth - width)
+                    }
+                    onContentWidthChanged: scrollToEnd()
+
+                    Text {
+                        id: exprText
+                        width: Math.max(exprFlick.width, implicitWidth)
+                        horizontalAlignment: Text.AlignRight
+                        text: win.displayExpr
+                        color: Theme.textDim
+                        font.pixelSize: Theme.fontBody
+                        font.family: Theme.fontFamily
+                    }
                 }
                 Text {
                     width: parent.width
                     horizontalAlignment: Text.AlignRight
                     text: win.mainText
                     color: win.mainColor
-                    font.pixelSize: 64
+                    font.pixelSize: 68
+                    fontSizeMode: Text.HorizontalFit
+                    minimumPixelSize: 36
                     font.family: Theme.fontFamily
                     font.weight: Font.Light
                     elide: Text.ElideLeft
+                    Behavior on color { ColorAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
                 }
             }
         }
@@ -149,12 +174,32 @@ ApplicationWindow {
                 RowLayout {
                     Layout.fillWidth: true
                     SectionLabel { Layout.fillWidth: true; text: "HISTORY" }
-                    Text {
-                        text: "Clear"
-                        color: ShellPrefs.accentColor
-                        font.pixelSize: Theme.fontCaption
-                        font.family: Theme.fontFamily
+                    Rectangle {
+                        height: 48
+                        width: clearLabel.implicitWidth + Theme.spaceM * 2
+                        radius: height / 2
+                        color: "transparent"
+                        scale: clearTap.pressed ? 0.94 : 1.0
+                        Behavior on scale { SpringAnimation { spring: 6.5; damping: 0.48 } }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: ShellPrefs.accentColor
+                            opacity: clearTap.pressed ? 0.14 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                        }
+                        Text {
+                            id: clearLabel
+                            anchors.centerIn: parent
+                            text: "Clear"
+                            color: ShellPrefs.accentColor
+                            font.pixelSize: Theme.fontCaption
+                            font.family: Theme.fontFamily
+                            font.weight: Font.Medium
+                        }
                         TapHandler {
+                            id: clearTap
                             onTapped: { win.history = []; win.saveHistory() }
                         }
                     }
@@ -208,15 +253,23 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.preferredHeight: 84
-                    radius: Theme.radiusM
+                    radius: modelData.kind === "equals" ? Theme.radiusL : Theme.radiusM
                     color: modelData.kind === "equals" ? ShellPrefs.accentColor
                          : modelData.kind === "op" ? Qt.alpha(ShellPrefs.accentColor, 0.18)
                          : modelData.kind === "action" ? Theme.surfaceHigh
                          : Theme.card
-                    border.width: 1
+                    border.width: modelData.kind === "equals" ? 0 : 1
                     border.color: Qt.alpha(Theme.text, 0.07)
-                    scale: keyTap.pressed ? 0.94 : 1.0
-                    Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+                    scale: keyTap.pressed ? 0.93 : 1.0
+                    Behavior on scale { SpringAnimation { spring: 7.0; damping: 0.48 } }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: modelData.kind === "equals" ? ShellPrefs.onAccentColor : Theme.text
+                        opacity: keyTap.pressed ? 0.14 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                    }
 
                     Text {
                         anchors.centerIn: parent

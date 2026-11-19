@@ -56,7 +56,7 @@ ApplicationWindow {
     // text-input-v3 app, so gate on focus and fall back to a share of the window.
     readonly property int oskInset: {
         if (!input.activeFocus)
-            return Theme.spaceS
+            return 32 + Theme.spaceS
         var h = Qt.inputMethod.keyboardRectangle.height
         if (h <= 0)
             h = Math.round(win.height * 0.30)
@@ -155,7 +155,16 @@ ApplicationWindow {
     }
 
     function scrollToEnd() {
-        Qt.callLater(function () { logView.positionViewAtEnd() })
+        Qt.callLater(function () {
+            var targetY = Math.max(0, logView.contentHeight - logView.height)
+            if (targetY <= 0) {
+                logView.positionViewAtEnd()
+                return
+            }
+            scrollAnim.stop()
+            scrollAnim.to = targetY
+            scrollAnim.start()
+        })
     }
 
     // -----------------------------------------------------------------------
@@ -248,8 +257,16 @@ ApplicationWindow {
                 border.width: 1
                 border.color: Qt.alpha(Theme.text, 0.10)
                 opacity: log.count === 0 && !win.running ? 0.55 : 1.0
-                scale: clearTap.pressed ? 0.96 : 1.0
-                Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+                scale: clearTap.pressed ? 0.94 : 1.0
+                Behavior on scale { SpringAnimation { spring: 6.5; damping: 0.48 } }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: Theme.text
+                    opacity: clearTap.pressed ? 0.12 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                }
 
                 Row {
                     id: clearRow
@@ -292,7 +309,17 @@ ApplicationWindow {
                 spacing: 0
                 cacheBuffer: 2000
                 boundsBehavior: Flickable.StopAtBounds
+                flickDeceleration: 1800
+                maximumFlickVelocity: 2500
                 onCountChanged: win.scrollToEnd()
+
+                NumberAnimation {
+                    id: scrollAnim
+                    target: logView
+                    property: "contentY"
+                    duration: Theme.animMed
+                    easing.type: Theme.animEase
+                }
 
                 delegate: Rectangle {
                     id: block
@@ -405,8 +432,16 @@ ApplicationWindow {
                         border.width: 1
                         border.color: Qt.alpha(Theme.text, 0.10)
                         opacity: win.running ? 0.45 : 1.0
-                        scale: chipTap.pressed ? 0.96 : 1.0
-                        Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+                        scale: chipTap.pressed ? 0.94 : 1.0
+                        Behavior on scale { SpringAnimation { spring: 7.0; damping: 0.48 } }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: ShellPrefs.accentColor
+                            opacity: chipTap.pressed ? 0.14 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                        }
 
                         Text {
                             id: chipLabel
@@ -419,6 +454,97 @@ ApplicationWindow {
                         TapHandler {
                             id: chipTap
                             onTapped: if (!win.running) win.runCommand(String(modelData))
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- quick-action keybar (Esc / Tab / Ctrl+C / Arrows / symbols) ----
+        Flickable {
+            id: keybarFlick
+            Layout.fillWidth: true
+            Layout.preferredHeight: win.controlH
+            contentWidth: keybarRow.width
+            contentHeight: height
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            flickableDirection: Flickable.HorizontalFlick
+
+            Row {
+                id: keybarRow
+                height: keybarFlick.height
+                spacing: Theme.spaceXS
+
+                Repeater {
+                    model: [
+                        { id: "esc",   label: "Esc" },
+                        { id: "tab",   label: "Tab" },
+                        { id: "ctrlc", label: "Ctrl+C" },
+                        { id: "left",  label: "←" },
+                        { id: "right", label: "→" },
+                        { id: "up",    label: "↑" },
+                        { id: "down",  label: "↓" },
+                        { id: "slash", label: "/" },
+                        { id: "dash",  label: "-" },
+                        { id: "pipe",  label: "|" },
+                        { id: "tilde", label: "~" }
+                    ]
+
+                    delegate: Rectangle {
+                        required property var modelData
+                        height: parent.height
+                        width: Math.max(win.controlH, keyLabel.implicitWidth + Theme.spaceM)
+                        radius: Theme.radiusS
+                        color: modelData.id === "ctrlc" && win.running
+                            ? Qt.alpha(Theme.danger, 0.18) : Theme.surfaceHigh
+                        border.width: 1
+                        border.color: modelData.id === "ctrlc" && win.running
+                            ? Qt.alpha(Theme.danger, 0.45) : Qt.alpha(Theme.text, 0.10)
+                        scale: keyTap.pressed ? 0.92 : 1.0
+                        Behavior on scale { SpringAnimation { spring: 7.0; damping: 0.48 } }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: modelData.id === "ctrlc" ? Theme.danger : Theme.text
+                            opacity: keyTap.pressed ? 0.14 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                        }
+
+                        Text {
+                            id: keyLabel
+                            anchors.centerIn: parent
+                            text: modelData.label
+                            color: modelData.id === "ctrlc" && win.running ? Theme.danger : Theme.text
+                            font.family: win.monoFamily
+                            font.pixelSize: Theme.fontCaption - 2
+                            font.weight: Font.Medium
+                        }
+
+                        TapHandler {
+                            id: keyTap
+                            onTapped: {
+                                var k = modelData.id
+                                if (k === "esc") {
+                                    input.focus = false
+                                } else if (k === "tab") {
+                                    input.insert(input.cursorPosition, "  ")
+                                } else if (k === "ctrlc") {
+                                    if (win.running) win.stopRunning()
+                                    else { input.text = ""; win.historyIndex = -1 }
+                                } else if (k === "left") {
+                                    input.cursorPosition = Math.max(0, input.cursorPosition - 1)
+                                } else if (k === "right") {
+                                    input.cursorPosition = Math.min(input.text.length, input.cursorPosition + 1)
+                                } else if (k === "up") {
+                                    win.historyPrev()
+                                } else if (k === "down") {
+                                    win.historyNext()
+                                } else {
+                                    input.insert(input.cursorPosition, modelData.label)
+                                }
+                            }
                         }
                     }
                 }
@@ -467,8 +593,16 @@ ApplicationWindow {
                 border.width: 1
                 border.color: Qt.alpha(Theme.text, 0.10)
                 opacity: win.commandHistory.length > 0 ? 1.0 : 0.40
-                scale: upTap.pressed ? 0.94 : 1.0
-                Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+                scale: upTap.pressed ? 0.92 : 1.0
+                Behavior on scale { SpringAnimation { spring: 7.0; damping: 0.48 } }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: Theme.text
+                    opacity: upTap.pressed ? 0.12 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                }
 
                 MaterialIcon {
                     anchors.centerIn: parent
@@ -490,8 +624,16 @@ ApplicationWindow {
                 border.width: 1
                 border.color: Qt.alpha(Theme.text, 0.10)
                 opacity: win.historyIndex !== -1 ? 1.0 : 0.40
-                scale: downTap.pressed ? 0.94 : 1.0
-                Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+                scale: downTap.pressed ? 0.92 : 1.0
+                Behavior on scale { SpringAnimation { spring: 7.0; damping: 0.48 } }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: Theme.text
+                    opacity: downTap.pressed ? 0.12 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                }
 
                 MaterialIcon {
                     anchors.centerIn: parent
@@ -514,9 +656,17 @@ ApplicationWindow {
                      : (win.canRun ? ShellPrefs.accentColor : Theme.surfaceHigh)
                 border.width: win.running ? 1 : 0
                 border.color: Qt.alpha(Theme.danger, 0.55)
-                scale: runTap.pressed ? 0.96 : 1.0
-                Behavior on scale { NumberAnimation { duration: Theme.animFast } }
-                Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                scale: runTap.pressed ? 0.94 : 1.0
+                Behavior on scale { SpringAnimation { spring: 6.5; damping: 0.48 } }
+                Behavior on color { ColorAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: win.running ? Theme.danger : ShellPrefs.onAccentColor
+                    opacity: runTap.pressed ? 0.16 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                }
 
                 Row {
                     id: runRow
@@ -562,7 +712,8 @@ ApplicationWindow {
 
         Item {
             Layout.fillWidth: true
-            Layout.preferredHeight: win.oskInset - Theme.spaceS
+            Layout.preferredHeight: Math.max(32, win.oskInset - Theme.spaceS)
+            Behavior on Layout.preferredHeight { NumberAnimation { duration: Theme.animMed; easing.type: Theme.animEase } }
         }
     }
 }

@@ -70,7 +70,7 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             let dock: Vec<de_ui::chrome::IconEntry> = [
                 "rabbiz-calculator",
                 "rabbiz-files",
-                "rabbiz-browser",
+                "google-chrome",
                 "rabbiz-settings",
             ]
             .iter()
@@ -110,7 +110,7 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             let m = de_ui::recents::RecentsModel::new(vec![
                 recent,
                 de_ui::recents::RecentEntry::new("rabbiz-files", "Files"),
-                de_ui::recents::RecentEntry::new("rabbiz-browser", "Browser"),
+                de_ui::recents::RecentEntry::new("google-chrome", "Google Chrome"),
             ]);
             let home = render_scene("home", size, s)?;
             let backdrop = de_paint::glass::blurred_backdrop(&home);

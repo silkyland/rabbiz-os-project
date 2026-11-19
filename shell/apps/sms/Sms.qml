@@ -578,12 +578,13 @@ ApplicationWindow {
                 // App bar.
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Theme.iconL + Theme.spaceM
+                    Layout.preferredHeight: Theme.iconL + Theme.spaceM + Theme.statusBarHeight
                     color: Theme.bg
 
                     RowLayout {
                         anchors {
                             fill: parent
+                            topMargin: Theme.statusBarHeight
                             leftMargin: Theme.spaceM
                             rightMargin: Theme.spaceM
                         }
@@ -630,7 +631,7 @@ ApplicationWindow {
                     clip: true
                     model: threadsModel
                     topMargin: Theme.spaceXS
-                    bottomMargin: Theme.iconApp + Theme.spaceXL
+                    bottomMargin: Theme.iconApp + Theme.navZoneHeight + Theme.spaceM
                     spacing: Theme.spaceS
 
                     delegate: Rectangle {
@@ -646,11 +647,23 @@ ApplicationWindow {
                         width: ListView.view.width
                         height: Theme.iconL + Theme.spaceM * 2
                         radius: Theme.radiusL
-                        color: rowMouse.pressed ? Theme.surfaceHigh : Theme.card
+                        color: Theme.card
                         border.width: 1
                         border.color: threadRow.unread > 0
                                       ? Qt.alpha(ShellPrefs.accentColor, 0.35)
                                       : Qt.alpha(Theme.text, 0.07)
+                        scale: rowMouse.pressed ? 0.985 : 1.0
+                        Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                        Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+
+                        // MD3 state-layer press feedback
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: Theme.text
+                            opacity: rowMouse.pressed ? 0.08 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                        }
 
                         RowLayout {
                             anchors {
@@ -759,14 +772,23 @@ ApplicationWindow {
                 anchors {
                     right: parent.right
                     bottom: parent.bottom
-                    margins: Theme.spaceL
+                    rightMargin: Theme.spaceL
+                    bottomMargin: Theme.navZoneHeight + Theme.spaceM
                 }
                 width: 78
                 height: 78
                 radius: 26
                 color: ShellPrefs.accentColor
-                scale: fabTap.pressed ? 0.92 : 1.0
-                Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                scale: fabTap.pressed ? 0.91 : 1.0
+                Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.44; mass: 0.85 } }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: ShellPrefs.onAccentColor
+                    opacity: fabTap.pressed ? 0.16 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                }
 
                 Components.MaterialIcon {
                     anchors.centerIn: parent
@@ -812,12 +834,13 @@ ApplicationWindow {
                 // App bar.
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: Theme.iconL + Theme.spaceL
+                    Layout.preferredHeight: Theme.iconL + Theme.spaceL + Theme.statusBarHeight
                     color: Theme.bg
 
                     RowLayout {
                         anchors {
                             fill: parent
+                            topMargin: Theme.statusBarHeight
                             leftMargin: Theme.spaceM
                             rightMargin: Theme.spaceM
                         }
@@ -827,13 +850,23 @@ ApplicationWindow {
                         Rectangle {
                             id: backBtn
 
-                            Layout.preferredWidth: Theme.iconM
-                            Layout.preferredHeight: Theme.iconM
+                            Layout.preferredWidth: Math.max(48, Theme.iconM)
+                            Layout.preferredHeight: Math.max(48, Theme.iconM)
                             Layout.alignment: Qt.AlignVCenter
                             radius: Theme.radiusPill
-                            color: backMouse.pressed ? Theme.surfaceHigh : Theme.card
+                            color: Theme.card
                             border.width: 1
                             border.color: Qt.alpha(Theme.text, 0.08)
+                            scale: backMouse.pressed ? 0.92 : 1.0
+                            Behavior on scale { SpringAnimation { spring: 5.5; damping: 0.44; mass: 0.8 } }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: Theme.text
+                                opacity: backMouse.pressed ? 0.10 : 0.0
+                                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                            }
 
                             Components.MaterialIcon {
                                 anchors.centerIn: parent
@@ -969,24 +1002,41 @@ ApplicationWindow {
                 // Composer.
                 Rectangle {
                     Layout.fillWidth: true
-                    Layout.preferredHeight: composer.implicitHeight + Theme.spaceM * 2
+                    Layout.preferredHeight: composer.implicitHeight + Theme.spaceM * 2 + Theme.navZoneHeight
                     color: Theme.surface
+
+                    Rectangle {
+                        anchors {
+                            left: parent.left
+                            right: parent.right
+                            top: parent.top
+                        }
+                        height: 1
+                        color: Theme.separator
+                    }
 
                     RowLayout {
                         anchors {
                             fill: parent
                             leftMargin: Theme.spaceM
                             rightMargin: Theme.spaceM
+                            topMargin: Theme.spaceS
+                            bottomMargin: Theme.navZoneHeight + Theme.spaceS
                         }
-                        spacing: Theme.spaceM
+                        spacing: Theme.spaceS
 
                         Rectangle {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: composer.implicitHeight + Theme.spaceS
+                            Layout.preferredHeight: Math.max(52, composer.implicitHeight + Theme.spaceS)
                             Layout.alignment: Qt.AlignVCenter
                             Layout.maximumHeight: Theme.fontBody * 5
                             radius: Math.min(Theme.radiusPill, height / 2)
                             color: Theme.card
+                            border.width: 1
+                            border.color: composer.activeFocus
+                                          ? Qt.alpha(ShellPrefs.accentColor, 0.50)
+                                          : Qt.alpha(Theme.text, 0.08)
+                            Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
 
                             TextArea {
                                 id: composer
@@ -1022,23 +1072,36 @@ ApplicationWindow {
                         Rectangle {
                             id: sendBtn
 
-                            Layout.preferredWidth: Theme.iconM + Theme.spaceS
-                            Layout.preferredHeight: Theme.iconM + Theme.spaceS
+                            readonly property bool hasText: composer.text.trim().length > 0
+
+                            Layout.preferredWidth: Math.max(56, Theme.iconM + Theme.spaceS)
+                            Layout.preferredHeight: Math.max(56, Theme.iconM + Theme.spaceS)
                             Layout.alignment: Qt.AlignBottom | Qt.AlignRight
-                            Layout.bottomMargin: Theme.spaceXS
                             radius: Theme.radiusPill
-                            color: composer.text.trim().length > 0 ? ShellPrefs.accentColor : Theme.tileOff
+                            color: hasText ? ShellPrefs.accentColor : Theme.tileOff
+                            scale: sendMouse.pressed ? 0.88 : (hasText ? 1.0 : 0.94)
+                            Behavior on scale { SpringAnimation { spring: 5.5; damping: 0.42; mass: 0.8 } }
+                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: ShellPrefs.onAccentColor
+                                opacity: sendMouse.pressed ? 0.18 : 0.0
+                                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                            }
 
                             Components.MaterialIcon {
                                 anchors.centerIn: parent
                                 name: "send"
                                 size: Theme.iconS - 6
-                                color: composer.text.trim().length > 0
+                                color: sendBtn.hasText
                                        ? ShellPrefs.onAccentColor : Theme.tileOffText
                             }
                             MouseArea {
+                                id: sendMouse
                                 anchors.fill: parent
-                                enabled: composer.text.trim().length > 0
+                                enabled: sendBtn.hasText
                                 onClicked: convPage.doSend()
                             }
                         }

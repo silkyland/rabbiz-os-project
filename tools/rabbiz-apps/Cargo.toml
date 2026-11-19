@@ -1,0 +1,32 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rabbiz-app-kit",
+    "crates/rabbiz-calculator",
+    "crates/rabbiz-clock",
+    "crates/rabbiz-notes",
+    "crates/rabbiz-terminal",
+    "crates/rabbiz-music",
+    "crates/rabbiz-photos",
+    "crates/rabbiz-dialer",
+    "crates/rabbiz-sms",
+    "crates/rabbiz-settings",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[workspace.dependencies]
+de-api = { path = "../rabbiz-de/crates/de-api" }
+de-config = { path = "../rabbiz-de/crates/de-config" }
+de-design = { path = "../rabbiz-de/crates/de-design" }
+de-paint = { path = "../rabbiz-de/crates/de-paint" }
+rabbiz-app-kit = { path = "crates/rabbiz-app-kit" }
+smithay-client-toolkit = "0.19"
+wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"

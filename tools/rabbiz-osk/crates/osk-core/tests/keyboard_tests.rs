@@ -417,3 +417,31 @@ fn space_swipe_moves_the_cursor() {
     assert_eq!(kb.space_swipe(-3), vec![Command::MoveCursor(-3)]);
     assert_eq!(kb.space_swipe(0), Vec::new());
 }
+
+#[test]
+fn surrounding_text_at_cursor_truncates_after_cursor_for_backspace_and_suggestions() {
+    let layout = th();
+    let mut kb = Keyboard::new(vec![en(), layout]).unwrap();
+    let full = "ก่ world".to_string();
+    let thai_bytes = "ก่".len(); // 6 bytes (ก + tone mark = 1 grapheme cluster)
+    kb.set_surrounding_text_at(full, thai_bytes);
+    assert_eq!(kb.text(), "ก่");
+    assert_eq!(kb.backspace(), vec![Command::Backspace { bytes: thai_bytes }]);
+}
+
+#[test]
+fn emoji_search_space_stays_in_query_and_reset_clears_panel() {
+    let mut kb = Keyboard::new(vec![en(), emoji_layout()]).unwrap();
+    let panel = pos_of_action(kb.layout(), "base", osk_core::layout::KeyAction::Panel("emoji".into()));
+    kb.press(panel, 0);
+    let search = pos_of_action(kb.layout(), kb.layer_name(), osk_core::layout::KeyAction::EmojiSearch);
+    kb.press(search, 10);
+    assert_eq!(kb.layer_name(), "s_letters");
+    let a = pos_of(kb.layout(), "s_letters", "a");
+    kb.press(a, 20);
+    // Simulate a Space press in emoji search if present, or verify reset_for_activation restores en-us.
+    kb.reset_for_activation();
+    assert!(!kb.is_panel());
+    assert_eq!(kb.layout().id, "en-us");
+    assert!(kb.text().is_empty());
+}

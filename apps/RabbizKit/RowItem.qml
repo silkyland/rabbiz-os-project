@@ -16,7 +16,17 @@ Rectangle {
 
     implicitHeight: 68
     radius: Theme.radiusM
-    color: tap.pressed ? Theme.surfaceHigh : "transparent"
+    color: "transparent"
+    scale: tap.pressed ? 0.985 : 1.0
+    Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+
+    Rectangle {
+        anchors.fill: parent
+        radius: parent.radius
+        color: Theme.text
+        opacity: tap.pressed ? 0.08 : 0.0
+        Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+    }
 
     RowLayout {
         anchors { fill: parent; leftMargin: Theme.spaceS; rightMargin: Theme.spaceS }
@@ -24,9 +34,9 @@ Rectangle {
 
         Rectangle {
             visible: root.icon.length > 0
-            width: visible ? 38 : 0
-            height: 38
-            radius: 12
+            width: visible ? 42 : 0
+            height: 42
+            radius: Theme.radiusS
             color: Qt.alpha(ShellPrefs.accentColor, 0.16)
             MaterialIcon {
                 anchors.centerIn: parent
@@ -43,6 +53,7 @@ Rectangle {
                 color: Theme.text
                 font.pixelSize: Theme.fontBody - 2
                 font.family: Theme.fontFamily
+                font.weight: Font.Medium
                 elide: Text.ElideRight
                 width: parent.width
             }

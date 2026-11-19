@@ -7,7 +7,6 @@
 use std::time::Instant;
 
 use de_api::{Pixels, Point, Size};
-use de_design::tokens;
 use de_ui::nav::Screen;
 use de_ui::panels::{self, NotifHit, Notification, QuickHit, QuickModel, QuickTile};
 use de_ui::pull::Pull;
@@ -48,6 +47,10 @@ pub(crate) struct PanelUi {
     start_x: i32,
     start_y: i32,
     slider_drag: Option<usize>,
+    /// Grace window after a slider drag so stale `Controls` poll snapshots
+    /// never snap the knob back while `brightnessctl`/`wpctl` catches up.
+    slider_lock_until: [Option<Instant>; 2],
+    last_slider_req: Option<Instant>,
     /// Pre-rendered panel image per kind, so a pull never waits on a raster.
     pub(crate) pixels: [Option<Pixels>; 2],
     pub(crate) generation: u64,
@@ -68,11 +71,14 @@ pub(crate) struct PanelUi {
     /// off the frame path entirely.
     render_rx: Option<(usize, u64, std::sync::mpsc::Receiver<Pixels>)>,
     content_gen: u64,
+    /// Wall-clock minute the panel images were last rendered for: their
+    /// header draws the clock, so a new minute makes them stale.
+    clock_minute: u64,
     last_tick: Option<Instant>,
     on: [bool; 12],
     available: [bool; 12],
     controls: de_system::controls::Controls,
-    control_state: de_system::controls::Snapshot,
+    pub(crate) control_state: de_system::controls::Snapshot,
     server: de_system::notifications::Server,
     notification_generation: u64,
     brightness: f32,
@@ -88,6 +94,8 @@ impl PanelUi {
             start_x: 0,
             start_y: 0,
             slider_drag: None,
+            slider_lock_until: [None, None],
+            last_slider_req: None,
             pixels: [None, None],
             generation: 0,
             tex: None,
@@ -103,6 +111,7 @@ impl PanelUi {
             scrim_buf: None,
             render_rx: None,
             content_gen: 0,
+            clock_minute: u64::MAX,
             last_tick: None,
             on: [false; 12],
             available: [false; 12],
@@ -159,8 +168,17 @@ impl De {
         }
         // Auto-rotation, GNSS/location, hotspot, recording and NFC stay
         // unavailable until their own providers expose a working contract.
-        self.panels.brightness = state.brightness.unwrap_or(0.0);
-        self.panels.volume = state.volume.unwrap_or(0.0);
+        let now = Instant::now();
+        let lock_b = self.panels.slider_drag == Some(0)
+            || self.panels.slider_lock_until[0].is_some_and(|t| now < t);
+        let lock_v = self.panels.slider_drag == Some(1)
+            || self.panels.slider_lock_until[1].is_some_and(|t| now < t);
+        if !lock_b {
+            self.panels.brightness = state.brightness.unwrap_or(0.0);
+        }
+        if !lock_v {
+            self.panels.volume = state.volume.unwrap_or(0.0);
+        }
         self.panels.control_state = state;
         self.panels.notification_generation = generation;
         self.panels.notifications = entries.into_iter().map(|e| Notification {
@@ -169,7 +187,9 @@ impl De {
         }).collect();
         self.panels.stale = [true; 2];
         self.panels.content_gen += 1;
-        if self.panels.shown() { self.needs_present = true; }
+        self.meta_cache = None;
+        self.shell_dirty = true;
+        self.needs_present = true;
     }
 
     fn panel_allowed(&self) -> bool {
@@ -211,24 +231,46 @@ impl De {
     pub(crate) fn panel_progress(&mut self, from_top: bool, dx: f32, dy: f32) -> bool {
         if let Some(idx) = self.panels.slider_drag {
             let size = Size::new(self.output.width as i32, self.output.height as i32);
-            let x = self.panels.start_x + dx.round() as i32;
-            let y = self.panels.start_y;
-            if let Some(hit) = panels::quick_hit(size, Point::new(x.clamp(0, size.w - 1), y)) {
-                match (idx, hit) {
-                    (0, QuickHit::Brightness(f)) if self.panels.control_state.brightness.is_some() => {
+            let r = panels::quick_layout(size).sliders[idx];
+            let x = (self.panels.start_x + dx.round() as i32).clamp(r.x, r.x + r.w);
+            let f = ((x - r.x) as f32 / r.w.max(1) as f32).clamp(0.0, 1.0);
+            let now = Instant::now();
+            let send_now = self
+                .panels
+                .last_slider_req
+                .is_none_or(|t| now.duration_since(t).as_millis() >= 60);
+            match idx {
+                0 if self.panels.control_state.brightness.is_some() => {
+                    if (self.panels.brightness - f).abs() >= 0.005 {
                         self.panels.brightness = f;
-                        self.panels.controls.request(de_system::controls::Action::Brightness(f));
                         self.panels.stale = [true; 2];
                         self.panels.content_gen += 1;
                     }
-                    (1, QuickHit::Volume(f)) if self.panels.control_state.volume.is_some() => {
-                        self.panels.volume = f;
-                        self.panels.controls.request(de_system::controls::Action::Volume(f));
-                        self.panels.stale = [true; 2];
-                        self.panels.content_gen += 1;
+                    self.panels.slider_lock_until[0] =
+                        Some(now + std::time::Duration::from_millis(600));
+                    if send_now {
+                        self.panels.last_slider_req = Some(now);
+                        self.panels
+                            .controls
+                            .request(de_system::controls::Action::Brightness(f));
                     }
-                    _ => {}
                 }
+                1 if self.panels.control_state.volume.is_some() => {
+                    if (self.panels.volume - f).abs() >= 0.005 {
+                        self.panels.volume = f;
+                        self.panels.stale = [true; 2];
+                        self.panels.content_gen += 1;
+                    }
+                    self.panels.slider_lock_until[1] =
+                        Some(now + std::time::Duration::from_millis(600));
+                    if send_now {
+                        self.panels.last_slider_req = Some(now);
+                        self.panels
+                            .controls
+                            .request(de_system::controls::Action::Volume(f));
+                    }
+                }
+                _ => {}
             }
             self.panel_touch();
             return true;
@@ -267,7 +309,26 @@ impl De {
     }
 
     pub(crate) fn panel_released(&mut self, vy: f32) {
-        self.panels.slider_drag = None;
+        if let Some(idx) = self.panels.slider_drag.take() {
+            let now = Instant::now();
+            self.panels.slider_lock_until[idx] =
+                Some(now + std::time::Duration::from_millis(600));
+            self.panels.last_slider_req = Some(now);
+            match idx {
+                0 if self.panels.control_state.brightness.is_some() => {
+                    self.panels
+                        .controls
+                        .request(de_system::controls::Action::Brightness(self.panels.brightness));
+                }
+                1 if self.panels.control_state.volume.is_some() => {
+                    self.panels
+                        .controls
+                        .request(de_system::controls::Action::Volume(self.panels.volume));
+                }
+                _ => {}
+            }
+            self.panel_touch();
+        }
         if self.panels.pull.dragging() {
             self.panels.pull.release(vy);
             self.panels.last_tick = None;
@@ -349,7 +410,9 @@ impl De {
                                 self.panels.on[i] = on;
                             }
                             self.panels.stale = [true; 2];
-        self.panels.content_gen += 1;
+                            self.panels.content_gen += 1;
+                            self.meta_cache = None;
+                            self.shell_dirty = true;
                             None
                         },
                         _ => None,
@@ -416,6 +479,15 @@ impl De {
     /// (scene capture + blur) is deferred off the input path: the capture
     /// runs in this call, the blur on a worker thread.
     pub(crate) fn panel_prepare(&mut self) {
+        // The panel header shows the clock: re-render both kinds when the
+        // minute rolls over (and drop the cached status so it is not reused).
+        let minute = crate::frame::minute_of_day();
+        if self.panels.clock_minute != minute {
+            self.panels.clock_minute = minute;
+            self.meta_cache = None;
+            self.panels.stale = [true; 2];
+            self.panels.content_gen += 1;
+        }
         // The blur worker landed: swap in the live-scene backdrop.
         if let Some((id, rx)) = self.panels.blur_rx.take() {
             match rx.try_recv() {
@@ -492,14 +564,15 @@ impl De {
         let notifications = self.panels.notifications.clone();
         let quick = matches!(kind, PanelKind::Quick).then(|| self.quick_model());
         let (tx, rx) = std::sync::mpsc::channel();
+        let theme = self.theme;
         if self.panels.use_gpu_blur {
             std::thread::spawn(move || {
                 let px = match quick {
                     Some(m) => panels::render_quick_controls(
-                        size, &strings, &tokens::DEFAULT, &status.clock, &date, &m,
+                        size, &strings, &theme, &status.clock, &date, &m,
                     ),
                     None => panels::render_notifications_controls(
-                        size, &strings, &tokens::DEFAULT, &status.clock, &date, &notifications,
+                        size, &strings, &theme, &status.clock, &date, &notifications,
                     ),
                 };
                 let _ = tx.send(px);
@@ -517,10 +590,10 @@ impl De {
             std::thread::spawn(move || {
                 let px = match quick {
                     Some(m) => panels::render_quick(
-                        size, &strings, &tokens::DEFAULT, &backdrop, &status.clock, &date, &m,
+                        size, &strings, &theme, &backdrop, &status.clock, &date, &m,
                     ),
                     None => panels::render_notifications(
-                        size, &strings, &tokens::DEFAULT, &backdrop, &status.clock, &date,
+                        size, &strings, &theme, &backdrop, &status.clock, &date,
                         &notifications,
                     ),
                 };

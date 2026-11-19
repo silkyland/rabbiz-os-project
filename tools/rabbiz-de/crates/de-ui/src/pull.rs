@@ -7,10 +7,16 @@
 use de_design::motion::{MotionKind, SpringPreset};
 use de_paint::animation::{AnimationClock, SpringValue};
 
-/// Finger travel (px) that opens the sheet completely.
+/// Finger travel (px) that opens the sheet completely on a 1600 px handset.
 pub const REACH: f32 = 900.0;
 /// Release projection time (s), as for the pager.
 const PROJECT_S: f32 = 0.25;
+
+/// Scale pull travel to the output height (0.5625× height, ≥ 320 px).
+#[must_use]
+pub fn reach_for(output_h: i32) -> f32 {
+    (output_h as f32 * 0.5625).max(320.0)
+}
 
 #[derive(Debug, Clone)]
 pub struct Pull {
@@ -18,6 +24,7 @@ pub struct Pull {
     dragging: bool,
     /// Fraction when the finger touched down (0 for an opening pull, 1 for a closing one).
     origin: f32,
+    reach: f32,
 }
 
 impl Default for Pull {
@@ -29,11 +36,21 @@ impl Default for Pull {
 impl Pull {
     #[must_use]
     pub fn new() -> Self {
+        Self::with_reach(REACH)
+    }
+
+    #[must_use]
+    pub fn with_reach(reach: f32) -> Self {
         Self {
             spring: SpringValue::new(0.0, SpringPreset::Smooth, MotionKind::Spatial),
             dragging: false,
             origin: 0.0,
+            reach: reach.max(1.0),
         }
+    }
+
+    pub fn set_reach(&mut self, reach: f32) {
+        self.reach = reach.max(1.0);
     }
 
     /// 0.0 = closed, 1.0 = fully open.
@@ -83,7 +100,7 @@ impl Pull {
         if !self.dragging {
             return;
         }
-        let f = (self.origin + dy_px / REACH).clamp(0.0, 1.0);
+        let f = (self.origin + dy_px / self.reach).clamp(0.0, 1.0);
         self.spring.value = f;
         self.spring.target = f;
     }
@@ -95,7 +112,7 @@ impl Pull {
             return self.spring.target > 0.5;
         }
         self.dragging = false;
-        let v = vy_px_s / REACH;
+        let v = vy_px_s / self.reach;
         let open = self.spring.value + v * PROJECT_S > 0.5;
         self.spring
             .retarget_with_velocity(if open { 1.0 } else { 0.0 }, v);

@@ -68,7 +68,7 @@ Item {
 
     ColumnLayout {
         anchors.fill: parent
-        spacing: Theme.spaceS
+        spacing: Theme.spaceM
 
         Card {
             Layout.fillWidth: true
@@ -138,6 +138,7 @@ Item {
                 clip: true
                 spacing: 2
                 cacheBuffer: 800
+                boundsBehavior: Flickable.StopAtBounds
                 model: root.laps
 
                 delegate: RowItem {

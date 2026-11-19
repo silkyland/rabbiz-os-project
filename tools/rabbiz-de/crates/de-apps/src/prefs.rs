@@ -67,6 +67,33 @@ impl AppPrefs {
         true
     }
 
+    /// Select active keyboard id; persists.
+    pub fn set_keyboard(&mut self, id: &str) -> bool {
+        if self.prefs.keyboard_id == id {
+            return false;
+        }
+        let mut next = self.prefs.clone();
+        next.keyboard_id = id.to_string();
+        if next.save().is_err() { return false; }
+        self.prefs = next;
+        true
+    }
+
+    /// Toggle whether 3rd-party / market keyboards are allowed; persists.
+    pub fn set_allow_third_party_keyboards(&mut self, allow: bool) -> bool {
+        if self.prefs.allow_third_party_keyboards == allow {
+            return false;
+        }
+        let mut next = self.prefs.clone();
+        next.allow_third_party_keyboards = allow;
+        if !allow {
+            next.keyboard_id = de_config::keyboards::DEFAULT_KEYBOARD_ID.into();
+        }
+        if next.save().is_err() { return false; }
+        self.prefs = next;
+        true
+    }
+
     /// Pin to dock (no-op when full); persists.
     pub fn pin(&mut self, desktop_id: &str) {
         self.prefs.pin_dock(desktop_id);

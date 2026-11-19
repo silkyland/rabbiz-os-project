@@ -60,3 +60,20 @@ echo mem > /sys/power/state     # returns EPERM; dmesg shows the abox veto
    order: decon/dsi (the wedge path), scsc/wlbt, chub.
 3. Ship `td4150_a21s.bin` in `/lib/firmware` before retesting — the
    panel driver wants it on the suspend path.
+
+## Update — `pm_runtime_get` deferred-probe leak fixed (2026-11-19)
+
+Root cause found in `socs/exynos850/drivers/abox/abox.c`:
+`samsung_abox_probe()` called `pm_runtime_get(dev)` unconditionally,
+expecting `samsung_abox_module_init()` to drop it via
+`pm_runtime_put_sync_suspend(p_abox_data->dev)`. When `samsung-abox`
+defers probe (`-EPROBE_DEFER`) and probes after `module_init` has
+already returned, `p_abox_data` was `NULL` during `module_init`, so that
+`pm_runtime_get(dev)` reference was never dropped (`usage_count` stayed
+`1`).
+
+Fixed by guarding the `pm_runtime_get(dev)` / `put` handoff with
+`abox_init_lock` + `abox_module_init_done` / `abox_probe_pm_held`, and
+rebuilt `abox-snd.ko` in `rabbizos-kbuild:usb-investigation`. On-device
+retest is blocked until a kernel with `CONFIG_EXYNOS_IOMMU=y` is flashed
+(kernel `#5` lacks `CONFIG_EXYNOS_IOMMU`).

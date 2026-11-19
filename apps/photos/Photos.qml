@@ -89,6 +89,7 @@ ApplicationWindow {
         win.zoom = PhotosLogic.ZOOM_MIN
         win.panX = 0
         win.panY = 0
+        viewer.chromeVisible = true
     }
 
     function closeViewer() {
@@ -161,6 +162,9 @@ ApplicationWindow {
                 : "~/Pictures and ~/Downloads"
             IconButton {
                 icon: "refresh"
+                width: 48
+                height: 48
+                radius: 24
                 onClicked: win.reload()
             }
         }
@@ -179,6 +183,12 @@ ApplicationWindow {
                 cellWidth: Math.floor(width / Math.max(1, win.columns))
                 cellHeight: cellWidth
                 cacheBuffer: cellHeight * 6
+                add: Transition {
+                    NumberAnimation { properties: "opacity"; from: 0; to: 1; duration: Theme.animFast; easing.type: Theme.animEase }
+                }
+                displaced: Transition {
+                    NumberAnimation { properties: "x,y"; duration: Theme.animMed; easing.type: Theme.animEase }
+                }
 
                 delegate: Item {
                     id: tile
@@ -193,8 +203,8 @@ ApplicationWindow {
                         radius: Theme.radiusS
                         color: Theme.surfaceHigh
                         clip: true
-                        scale: tileTap.pressed ? 0.96 : 1.0
-                        Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+                        scale: tileTap.pressed ? 0.95 : 1.0
+                        Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.38 } }
 
                         // Placeholder under the image: a tile that is still decoding (or is
                         // an unreadable file) shows a picture glyph instead of a blank hole.
@@ -211,6 +221,14 @@ ApplicationWindow {
                             asynchronous: true
                             autoTransform: true
                             sourceSize.width: Math.max(Theme.iconM * 2, Math.round(grid.cellWidth * 1.5))
+                            opacity: status === Image.Ready ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: Theme.animMed; easing.type: Theme.animEase } }
+                        }
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: Qt.alpha(Theme.text, tileTap.pressed ? 0.14 : 0.0)
+                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
                         }
                         TapHandler { id: tileTap; onTapped: win.openViewer(tile.index) }
                     }
@@ -245,9 +263,13 @@ ApplicationWindow {
     Item {
         id: viewer
         anchors.fill: parent
-        visible: win.viewerIndex >= 0
-        focus: visible
+        readonly property bool viewerOpen: win.viewerIndex >= 0
+        property bool chromeVisible: true
+        opacity: viewerOpen ? 1.0 : 0.0
+        visible: opacity > 0
+        focus: viewerOpen
         z: 100
+        Behavior on opacity { NumberAnimation { duration: Theme.animMed; easing.type: Theme.animEase } }
 
         Keys.onPressed: function (event) {
             if (event.key === Qt.Key_Left) {
@@ -276,6 +298,9 @@ ApplicationWindow {
             Item {
                 Layout.fillWidth: true
                 Layout.preferredHeight: closeButton.height
+                opacity: viewer.chromeVisible ? 1.0 : 0.0
+                enabled: viewer.chromeVisible
+                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
 
                 PhotoButton {
                     id: closeButton
@@ -285,7 +310,7 @@ ApplicationWindow {
                 }
                 Text {
                     anchors.centerIn: parent
-                    text: (win.viewerIndex + 1) + " / " + win.photos.length
+                    text: win.viewerIndex >= 0 ? (win.viewerIndex + 1) + " / " + win.photos.length : ""
                     color: ShellPrefs.accentColor
                     font.pixelSize: Theme.fontCaption
                     font.family: Theme.fontFamily
@@ -319,6 +344,14 @@ ApplicationWindow {
                     // Enough pixels for the 2.5x zoom without decoding a full 12 MP frame.
                     sourceSize.width: Math.max(Theme.iconApp, Math.round(stage.width * PhotosLogic.ZOOM_MAX))
                     Behavior on scale {
+                        NumberAnimation { duration: Theme.animMed; easing.type: Theme.animEase }
+                    }
+                    Behavior on x {
+                        enabled: !gestures.pressed
+                        NumberAnimation { duration: Theme.animMed; easing.type: Theme.animEase }
+                    }
+                    Behavior on y {
+                        enabled: !gestures.pressed
                         NumberAnimation { duration: Theme.animMed; easing.type: Theme.animEase }
                     }
                     onStatusChanged: if (photo.status === Image.Ready) win.clampPanNow()
@@ -358,6 +391,7 @@ ApplicationWindow {
                     property real lastTapMs: 0
                     property real lastTapX: 0
                     property real lastTapY: 0
+                    property bool wasDoubleTap: false
 
                     function doublePressed(mouse) {
                         var now = Date.now()
@@ -377,7 +411,8 @@ ApplicationWindow {
                         gestures.baseY = win.panY
                         gestures.dragX = 0
                         gestures.dragY = 0
-                        if (gestures.doublePressed(mouse)) win.toggleZoom()
+                        gestures.wasDoubleTap = gestures.doublePressed(mouse)
+                        if (gestures.wasDoubleTap) win.toggleZoom()
                     }
                     onPositionChanged: function (mouse) {
                         if (!gestures.pressed) return
@@ -389,10 +424,16 @@ ApplicationWindow {
                     }
                     onReleased: function (mouse) {
                         if (win.zoomed) return
-                        if (!PhotosLogic.isSwipe(gestures.dragX, gestures.dragY, win.swipeThreshold))
+                        if (PhotosLogic.isSwipe(gestures.dragX, gestures.dragY, win.swipeThreshold)) {
+                            if (gestures.dragX < 0) win.step(1)
+                            else win.step(-1)
                             return
-                        if (gestures.dragX < 0) win.step(1)
-                        else win.step(-1)
+                        }
+                        if (!gestures.wasDoubleTap
+                            && Math.abs(gestures.dragX) < 12
+                            && Math.abs(gestures.dragY) < 12) {
+                            viewer.chromeVisible = !viewer.chromeVisible
+                        }
                     }
                 }
             }
@@ -404,6 +445,9 @@ ApplicationWindow {
                 color: Theme.card
                 border.width: 1
                 border.color: Qt.alpha(Theme.text, 0.08)
+                opacity: viewer.chromeVisible ? 1.0 : 0.0
+                enabled: viewer.chromeVisible
+                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
 
                 ColumnLayout {
                     id: info

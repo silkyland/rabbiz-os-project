@@ -99,6 +99,7 @@ static int cpif_map_regions(struct cpif_dev *c)
 				c->vgpio = NULL;
 			} else {
 				c->vgpio = v;
+				c->vgpio_size = resource_size(r);
 			}
 		} else {
 			dev_warn(c->dev,

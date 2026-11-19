@@ -23,6 +23,7 @@ use crate::transitions::{fade_in, lerp, lerp_rect, with_opacity};
 pub struct MorphPose {
     pub card: Rect,
     pub icon: Rect,
+    pub radius: f32,
     pub card_alpha: f32,
     pub icon_alpha: f32,
     pub app_alpha: f32,
@@ -33,7 +34,12 @@ impl MorphPose {
     #[must_use]
     pub fn at(progress: f32, from: Rect, to: Rect, content_ready: f32) -> Self {
         let card = lerp_rect(from, to, progress);
-        let app_alpha = fade_in(progress, 0.55, 1.0).min(content_ready.clamp(0.0, 1.0));
+        let ready = content_ready.clamp(0.0, 1.0);
+        // M3 container transform: outgoing icon fades out in the first 35%,
+        // incoming app content fades in over 30%..100% (gated by first buffer),
+        // and corner radius morphs from tile radius to 0.
+        let app_alpha = fade_in(progress, 0.30, 1.0).min(ready);
+        let icon_alpha = (1.0 - fade_in(progress, 0.0, 0.35)).max(1.0 - ready);
         Self {
             card,
             icon: Rect::new(
@@ -42,8 +48,9 @@ impl MorphPose {
                 from.w,
                 from.h,
             ),
+            radius: lerp(de_design::tokens::RADIUS_CARD, 0.0, progress),
             card_alpha: fade_in(progress, 0.0, 0.12),
-            icon_alpha: 1.0 - fade_in(app_alpha, 0.0, 0.8),
+            icon_alpha,
             app_alpha,
         }
     }
@@ -83,7 +90,7 @@ pub fn morph_frame(
 ) -> Pixels {
     let mut c = Canvas::new(under.size);
     c.blit(under, Point::ZERO);
-    c.fill_rect(pose.card, with_opacity(t.surface1, pose.card_alpha));
+    c.fill_rounded_rect(pose.card, pose.radius, with_opacity(t.surface1, pose.card_alpha));
     c.blit_scaled(app, pose.card, pose.app_alpha);
     c.blit_scaled(icon, pose.icon, pose.icon_alpha);
     c.into_pixels()
@@ -134,6 +141,14 @@ impl MorphAnimator {
         self.timed_from = None;
         self.elapsed_ms = 0.0;
         self.spring.retarget(0.5);
+    }
+
+    /// Spring toward `progress` from the current value and velocity, without
+    /// a jump: used to rejoin the finger after the Recents preview.
+    pub fn chase(&mut self, progress: f32) {
+        self.timed_from = None;
+        self.elapsed_ms = 0.0;
+        self.spring.retarget(progress.clamp(0.0, 1.0));
     }
 
     /// Put the container under the user's finger. A later retarget starts

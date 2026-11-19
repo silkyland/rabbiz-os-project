@@ -1,0 +1,13 @@
+[package]
+name = "rabbiz-app-kit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+de-api.workspace = true
+de-config.workspace = true
+de-design.workspace = true
+de-paint.workspace = true
+smithay-client-toolkit.workspace = true
+wayland-protocols.workspace = true

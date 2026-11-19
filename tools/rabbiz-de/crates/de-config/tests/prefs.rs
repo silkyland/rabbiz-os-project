@@ -56,15 +56,15 @@ fn seeds_dock_and_home_order_from_sibling_desktop_json() {
         &dir.path().join("rabbiz-de").join("prefs.json"),
         &shell.join("prefs.json"),
     );
-    // Legacy ids canonicalize; the retired google-chrome wrapper id maps to
-    // its successor; third-party ids pass through.
+    // Legacy ids canonicalize; retired browser wrapper ids map to native
+    // google-chrome; third-party ids pass through.
     assert_eq!(
         p.dock,
         vec![
             "rabbiz-dialer",
             "rabbiz-sms",
             "rabbiz-settings",
-            "rabbiz-browser"
+            "google-chrome"
         ]
     );
     assert_eq!(

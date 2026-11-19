@@ -147,7 +147,7 @@ impl De {
             return;
         }
         let px = de_ui::screenshot::toast(
-            &de_design::tokens::DEFAULT,
+            &self.theme,
             self.shot_fx.thumb.as_ref(),
             &self.shot_fx.name,
             &self.strings,

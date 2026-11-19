@@ -59,3 +59,12 @@ the device.
 ## Not yet verified
 
 - The underrun restart path firing (needs the wedge or a forced fault).
+
+## Update — `CONFIG_EXYNOS_IOMMU` missing on `#5` (2026-11-19)
+
+`/proc/config.gz` on flashed kernel `#5` has `# CONFIG_EXYNOS_IOMMU is not set`
+(even though `devices/samsung/a21s/kernel/a21s_linux_defconfig` sets `=y`).
+As a result `/sys/class/iommu/` is empty and `samsung-abox 14a50000.abox`
+fails probe with `Unable to alloc iommu domain`, leaving only the `Loopback`
+sound card. A new kernel build/flash with `CONFIG_EXYNOS_IOMMU=y` is
+required to restore ABOX audio and test the `abox` suspend/mic fixes.

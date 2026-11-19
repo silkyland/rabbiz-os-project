@@ -407,7 +407,7 @@ impl De {
         }
         if self.power.menu_stale || self.power.menu_px.is_none() {
             let m = self.power_menu_model();
-            let px = de_ui::power::render(size, &self.strings, &de_design::tokens::DEFAULT, &m);
+            let px = de_ui::power::render(size, &self.strings, &self.theme, &m);
             self.power.menu_px = Some(px);
             self.power.menu_tex = None;
             self.power.menu_stale = false;

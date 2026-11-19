@@ -160,49 +160,47 @@ pub fn render(size: Size, s: &Strings, t: &Theme, m: &LockModel) -> Pixels {
 
     // Notification preview: same frosted cards as the shade, capped.
     for (n, r) in m.notifications.iter().zip(card_rects(size, m.notifications.len())) {
-        glass::frost(&mut c, m.backdrop, r, tokens::RADIUS_CARD, [0xFF, 0xF8, 0xF0, 0x60]);
+        glass::frost(&mut c, m.backdrop, r, tokens::RADIUS_CARD, [0xFF, 0xF8, 0xF0, 0xC8]);
         let icon = Rect::new(r.x + 20, r.y + (CARD_H - 56) / 2, 56, 56);
         if let Some(px) = &n.icon {
             c.blit_scaled(px, icon, 1.0);
         } else {
-            c.fill_rounded_rect(icon, 999.0, [0xFF, 0xF8, 0xF0, 0x50]);
+            c.fill_rounded_rect(icon, 999.0, [0x30, 0x21, 0x35, 0x24]);
             chrome::draw_ink_centered(
                 &mut c,
                 &n.app
                     .chars()
                     .next()
                     .map_or_else(String::new, |ch| ch.to_uppercase().collect()),
-                &style::h2([0xFF, 0xF8, 0xF0, 0xFF]),
+                &style::h2(tokens::LIGHT.text),
                 icon,
             );
         }
+        // Card uses light cream frost, so keep dark plum ink in both themes.
+        let ink = tokens::LIGHT;
         let tx = r.x + 96;
-        let when = text::label(&n.when, style::caption([0xFF, 0xF8, 0xF0, 0xB0]), None);
+        let when = text::label(&n.when, style::caption(ink.text3), None);
         let when_w = when.as_ref().map_or(0, |p| p.width() as i32);
-        chrome::draw(
-            &mut c,
-            &n.title,
-            &style::label(t.text),
-            tx,
-            r.y + 16,
-            Some(r.w - 96 - when_w - 48),
-        );
+        if let Some(px) = text::label_clamped(&n.title, style::label(ink.text), r.w - 96 - when_w - 48, 1) {
+            c.blit(
+                &Pixels::new(Size::new(px.width() as i32, px.height() as i32), px.data().to_vec()),
+                Point::new(tx, r.y + 16),
+            );
+        }
         chrome::draw(
             &mut c,
             &n.when,
-            &style::caption(t.text3),
+            &style::caption(ink.text3),
             r.x + r.w - 20 - when_w,
             r.y + 18,
             None,
         );
-        chrome::draw(
-            &mut c,
-            &n.body,
-            &style::caption(t.text2),
-            tx,
-            r.y + 50,
-            Some(r.w - 96 - 24),
-        );
+        if let Some(px) = text::label_clamped(&n.body, style::caption(ink.text2), r.w - 96 - 24, 1) {
+            c.blit(
+                &Pixels::new(Size::new(px.width() as i32, px.height() as i32), px.data().to_vec()),
+                Point::new(tx, r.y + 50),
+            );
+        }
     }
     if m.hidden_notifications > 0 {
         let last_y = card_rects(size, m.notifications.len())

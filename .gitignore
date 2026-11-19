@@ -13,7 +13,12 @@ tools/rabbiz-de/build/
 
 # rabbiz-osk (M7.12): Rust build products (workspace + spike crates)
 tools/rabbiz-osk/**/target/
+tools/rabbiz-osk/target-*/
 tools/rabbiz-osk/spikes/*/Cargo.lock
+
+# rabbiz-apps: pure-Rust Wayland apps build products
+tools/rabbiz-apps/**/target/
+tools/rabbiz-apps/target-*/
 # downloaded Unicode/CLDR sources for the emoji dataset (regenerated, not shipped)
 tools/rabbiz-osk/data/raw/
 

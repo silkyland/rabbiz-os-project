@@ -19,8 +19,15 @@ Rectangle {
     color: Theme.surfaceHigh
     border.width: 1
     border.color: Qt.alpha(Theme.text, 0.10)
-    scale: tap.pressed ? 0.92 : 1.0
-    Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+    scale: tap.pressed ? 0.90 : 1.0
+    Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+
+    Rectangle {
+        anchors.fill: parent
+        radius: parent.radius
+        color: Qt.alpha(Theme.text, tap.pressed ? 0.14 : 0.0)
+        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+    }
 
     MaterialIcon {
         anchors.centerIn: parent

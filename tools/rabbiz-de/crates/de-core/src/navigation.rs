@@ -31,6 +31,25 @@ pub(crate) struct Navigation {
     pub recents_axis: Option<RecentsAxis>,
     pub recents_fade: Option<OverviewFade>,
     pub search_query: String,
+    /// Recents was entered from an app, so Back returns to that app
+    /// (Android) instead of going Home.
+    pub recents_from_app: bool,
+    /// A Recents card being swiped up to close its app.
+    pub card_dismiss: Option<CardDismiss>,
+    /// Whether `Screen::Settings` is currently showing the Keyboard subpage.
+    pub settings_keyboard: bool,
+}
+
+/// Swipe-up-to-close on a Recents card. Tracked by window, not index, so the
+/// list can shrink under it when the app exits.
+pub(crate) struct CardDismiss {
+    pub window: smithay::desktop::Window,
+    /// Vertical offset in px (negative = up), finger-tracked then sprung.
+    pub offset: SpringValue,
+    pub dragging: bool,
+    /// The close request was sent; the card flies off.
+    pub closing: bool,
+    pub last_tick: Option<Instant>,
 }
 impl Navigation {
     pub fn new() -> Self {
@@ -44,7 +63,9 @@ impl Navigation {
             recents_pager: Pager::new(1), recents_last_tick: None,
             recents_axis: None,
             recents_fade: None,
-            search_query: String::new() }
+            search_query: String::new(), recents_from_app: false,
+            card_dismiss: None,
+            settings_keyboard: false }
     }
 }
 
@@ -58,14 +79,15 @@ pub(crate) struct OverviewFade {
     started: Instant,
     from: f32,
     to: f32,
+    motion: de_design::motion::TimedMotion,
     duration: Duration,
 }
 
 impl OverviewFade {
     pub fn mix(&self, now: Instant) -> f32 {
-        let p = (now.saturating_duration_since(self.started).as_secs_f32()
-            / self.duration.as_secs_f32()).clamp(0.0, 1.0);
-        self.to + (self.from - self.to) * (1.0 - p).powi(3)
+        let elapsed_ms = now.saturating_duration_since(self.started).as_secs_f32() * 1000.0;
+        let eased = self.motion.progress_at(elapsed_ms);
+        self.from + (self.to - self.from) * eased
     }
 }
 
@@ -77,11 +99,16 @@ impl De {
             return;
         }
         let from = self.navigation.recents_fade.as_ref().map_or(1.0 - to, |f| f.mix(now));
+        let timing = de_design::motion::Transition::Recents
+            .timing()
+            .for_form_factor(self.motion_clock.form_factor());
+        let motion = if entering { timing.enter() } else { timing.exit() };
         self.navigation.recents_fade = Some(OverviewFade {
             started: now,
             from,
             to,
-            duration: Duration::from_millis(if entering { 240 } else { 180 }),
+            motion,
+            duration: Duration::from_millis(motion.duration_ms.into()),
         });
         self.needs_present = true;
     }
@@ -106,6 +133,100 @@ impl De {
         self.navigation.recents_axis = None;
     }
 
+    /// Finger moved vertically on Recents: lift the card it started on.
+    /// Returns false when the touch did not start on a card.
+    pub(crate) fn card_dismiss_drag(&mut self, dy: f32) -> bool {
+        if self.navigation.card_dismiss.as_ref().is_some_and(|d| d.closing) {
+            return true;
+        }
+        if self.navigation.card_dismiss.is_none() {
+            let size = Size::new(self.output.width as i32, self.output.height as i32);
+            let windows = self.recent_windows();
+            let hit = de_ui::recents::hit_test(
+                size,
+                windows.len(),
+                self.navigation.recents_pager.pos(),
+                self.navigation.start,
+            );
+            let Some(de_ui::recents::RecentsHit::Card(i)) = hit else {
+                return false;
+            };
+            let Some(window) = windows.into_iter().nth(i) else {
+                return false;
+            };
+            self.navigation.card_dismiss = Some(CardDismiss {
+                window,
+                offset: SpringValue::new(0.0, SpringPreset::Smooth, MotionKind::Spatial),
+                dragging: true,
+                closing: false,
+                last_tick: None,
+            });
+        }
+        if let Some(d) = self.navigation.card_dismiss.as_mut() {
+            // Up follows 1:1; down only gives a little (nothing to do there).
+            let y = if dy < 0.0 { dy } else { dy * de_design::motion::RUBBER_FACTOR * 0.5 };
+            d.dragging = true;
+            d.offset.value = y;
+            d.offset.target = y;
+            d.offset.velocity = 0.0;
+        }
+        self.shell_dirty = true;
+        self.needs_present = true;
+        true
+    }
+
+    /// Finger lifted from a lifted card: close the app or put the card back.
+    /// Returns false when no card was being lifted.
+    pub(crate) fn card_dismiss_release(&mut self, dy: f32, vy: f32) -> bool {
+        let size = Size::new(self.output.width as i32, self.output.height as i32);
+        let Some(d) = self.navigation.card_dismiss.as_mut() else {
+            return false;
+        };
+        if d.closing {
+            return true;
+        }
+        d.dragging = false;
+        d.last_tick = Some(Instant::now());
+        if de_ui::recents::dismiss_on_release(size, dy, vy) {
+            d.closing = true;
+            d.offset.retarget_with_velocity(-(size.h as f32), vy.min(0.0));
+            if let Some(toplevel) = d.window.toplevel() {
+                toplevel.send_close();
+            }
+        } else {
+            d.offset.retarget_with_velocity(0.0, vy);
+        }
+        self.needs_present = true;
+        true
+    }
+
+    /// Advance the card spring; drop it once it has flown off or returned.
+    pub(crate) fn advance_card_dismiss(&mut self, now: Instant) {
+        let Some(d) = self.navigation.card_dismiss.as_mut() else {
+            return;
+        };
+        if d.dragging {
+            d.last_tick = None;
+            return;
+        }
+        let dt = d.last_tick.replace(now).map_or(0.0, |last| now.duration_since(last).as_secs_f32());
+        let moving = d.offset.advance(dt, &self.motion_clock);
+        // Off-screen counts as done; the window leaves when the app exits.
+        let gone = d.closing && d.offset.value <= -(self.output.height as f32) * 0.98;
+        if gone || !moving || d.offset.settled() {
+            self.navigation.card_dismiss = None;
+        }
+        self.shell_dirty = true;
+        self.needs_present = true;
+    }
+
+    /// The card lift to paint, if its window is still listed.
+    pub(crate) fn card_lift(&self, windows: &[smithay::desktop::Window]) -> Option<de_ui::recents::CardLift> {
+        let d = self.navigation.card_dismiss.as_ref()?;
+        let index = windows.iter().position(|w| w == &d.window)?;
+        Some(de_ui::recents::CardLift { index, dy: d.offset.value })
+    }
+
     pub(crate) fn release_recents_pager(&mut self, vx: f32) {
         let size = Size::new(self.output.width as i32, self.output.height as i32);
         self.navigation.recents_pager.release(vx, de_ui::recents::card_stride(size) as f32);
@@ -121,14 +242,14 @@ impl De {
         }
         let left = zone == Zone::EdgeLeft;
         let inward = if left { dx } else { -dx };
-        if inward <= 0.0 || inward < dy.abs() * 1.4 {
+        if inward <= 0.0 || inward < dy.abs() * 1.25 {
             self.clear_back_feedback();
             return;
         }
         let size = Size::new(self.output.width as i32, self.output.height as i32);
         let progress = (inward / 96.0).clamp(0.0, 1.0);
         let w = (16.0 + 44.0 * progress).round() as i32;
-        let triggered = inward >= 48.0;
+        let triggered = inward >= de_ui::gestures::BACK_COMMIT_PX;
         let key = (left, w, triggered);
         if self.navigation.back_key == Some(key) {
             if let Some((_, at)) = self.navigation.back.as_mut() {
@@ -139,13 +260,52 @@ impl De {
                 return;
             }
         }
-        let (px, at) = de_ui::gestures::back_feedback(size, left,
-            self.navigation.start.y + dy as i32, inward);
+        let (px, at) = de_ui::gestures::back_feedback_themed(
+            &self.theme,
+            size,
+            left,
+            self.navigation.start.y + dy as i32,
+            inward,
+        );
         self.navigation.back = Some((px, at));
         self.navigation.back_texture = None;
         self.navigation.back_key = Some(key);
         self.needs_present = true;
     }
+    /// Back inside an app, as on Android: the app gets the first say.
+    /// An open menu closes first; a dialog (a toplevel with a parent) gets
+    /// Escape, which every toolkit treats as "close"; anything else gets the
+    /// Back key (evdev `KEY_BACK`, keysym `XF86Back`) that browsers, Qt and
+    /// many GTK apps map to "go back". Leaving the app is the home swipe.
+    pub(crate) fn app_back(&mut self, time_ms: u64) {
+        use smithay::backend::input::KeyState;
+        use smithay::input::keyboard::{FilterResult, Keycode};
+        if let Some(mut grab) = self.popup_grab.take() {
+            if !grab.has_ended() {
+                grab.ungrab(smithay::desktop::PopupUngrabStrategy::All);
+                self.needs_present = true;
+                return;
+            }
+        }
+        let Some(window) = self.recent_windows().into_iter().next() else {
+            return;
+        };
+        let is_dialog = window.toplevel().is_some_and(|t| t.parent().is_some());
+        // xkb keycode = evdev code + 8: KEY_ESC 1, KEY_BACK 158.
+        let keycode = Keycode::new(if is_dialog { 1 + 8 } else { 158 + 8 });
+        self.focus_foreground();
+        let Some(keyboard) = self.seat.get_keyboard() else {
+            return;
+        };
+        let time = time_ms as u32;
+        for state in [KeyState::Pressed, KeyState::Released] {
+            let serial = smithay::utils::SERIAL_COUNTER.next_serial();
+            keyboard.input::<(), _>(self, keycode, state, serial, time, |_, _, _| {
+                FilterResult::Forward
+            });
+        }
+    }
+
     pub(crate) fn clear_back_feedback(&mut self) {
         self.navigation.back_key = None;
         if self.navigation.back.take().is_some() {
@@ -153,7 +313,60 @@ impl De {
             self.needs_present = true;
         }
     }
-    pub(crate) fn open_drawer_animated(&mut self, from_y: Option<f32>) {
+    /// Start 1:1 finger-tracked opening of the Drawer from Home.
+    pub(crate) fn begin_drawer_drag(&mut self) {
+        use de_ui::nav::Screen;
+        if self.nav.current == Screen::Home && !self.shell_dirty {
+            if let Some(px) = self.shell_px.as_ref() {
+                self.navigation.home_underlay_px = Some(px.clone());
+                self.navigation.home_underlay_tex = None;
+            }
+        }
+        if self.navigation.home_underlay_px.is_none() {
+            let prev = self.nav.current;
+            self.nav.current = Screen::Home;
+            self.navigation.home_underlay_px = Some(self.shell_pixels());
+            self.navigation.home_underlay_tex = None;
+            self.nav.current = prev;
+        }
+        let h = self.output.height.max(1) as f32;
+        self.navigation.drawer_scroll = 0;
+        self.navigation.search_query.clear();
+        self.navigation.drawer_pull_y = 0.0;
+        self.navigation.drawer_dragging = true;
+        self.navigation.drawer_closing = false;
+        self.navigation.drawer_slide.value = h;
+        self.navigation.drawer_slide.target = h;
+        self.navigation.drawer_last_tick = None;
+        self.show_shell(Screen::Drawer);
+    }
+
+    /// Update 1:1 drawer position during an upward opening drag (`dy` < 0).
+    pub(crate) fn drag_drawer(&mut self, dy: f32) {
+        let h = self.output.height.max(1) as f32;
+        let y = (h + dy).clamp(0.0, h);
+        self.navigation.drawer_slide.value = y;
+        self.navigation.drawer_slide.target = y;
+        self.needs_present = true;
+    }
+
+    /// Release an opening drawer drag: commit to open (`0.0`) or fall back to Home (`h`).
+    pub(crate) fn release_drawer_drag(&mut self, vy: f32) {
+        let h = self.output.height.max(1) as f32;
+        self.navigation.drawer_dragging = false;
+        self.navigation.drawer_last_tick = Some(Instant::now());
+        let projected = self.navigation.drawer_slide.value + vy * de_design::motion::PROJECT_AHEAD_S;
+        if projected < h * 0.72 || vy <= -350.0 {
+            self.navigation.drawer_closing = false;
+            self.navigation.drawer_slide.retarget_with_velocity(0.0, vy);
+        } else {
+            self.navigation.drawer_closing = true;
+            self.navigation.drawer_slide.retarget_with_velocity(h, vy.max(0.0));
+        }
+        self.needs_present = true;
+    }
+
+    pub(crate) fn open_drawer_animated(&mut self, from_y: Option<f32>, vy: f32) {
         use de_ui::nav::Screen;
         if self.nav.current == Screen::Home && !self.shell_dirty {
             if let Some(px) = self.shell_px.as_ref() {
@@ -171,11 +384,12 @@ impl De {
         let h = self.output.height.max(1) as f32;
         let start = from_y.unwrap_or(h).clamp(0.0, h);
         self.navigation.drawer_scroll = 0;
+        self.navigation.search_query.clear();
         self.navigation.drawer_pull_y = 0.0;
         self.navigation.drawer_dragging = false;
         self.navigation.drawer_closing = false;
         self.navigation.drawer_slide.value = start;
-        self.navigation.drawer_slide.retarget(0.0);
+        self.navigation.drawer_slide.retarget_with_velocity(0.0, vy);
         self.navigation.drawer_last_tick = Some(Instant::now());
         self.show_shell(Screen::Drawer);
     }

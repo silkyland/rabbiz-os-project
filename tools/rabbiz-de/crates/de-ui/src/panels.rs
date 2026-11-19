@@ -5,7 +5,7 @@
 //! `*_hit`, so a tap can never disagree with what is drawn.
 
 use de_api::{Pixels, Point, Rect, Size};
-use de_design::tokens::Theme;
+use de_design::tokens::{self, Theme};
 use de_paint::{glass, text, Canvas};
 
 use crate::chrome::{self, style};
@@ -183,12 +183,15 @@ fn render_notifications_inner(
                 icon,
             );
         }
+        // Notification cards use light cream frost (`CARD_TINT_ON`), so ink
+        // must stay dark plum even when the shell theme is `DARK`.
+        let ink = tokens::LIGHT;
         let tx = r.x + 120;
-        let when = text::label(&n.when, style::caption(t.text3), None);
+        let when = text::label(&n.when, style::caption(ink.text3), None);
         let when_w = when.as_ref().map_or(0, |p| p.width() as i32);
-        chrome::draw(&mut c, &n.title, &style::h2(t.text), tx, r.y + 22, Some(r.w - 120 - when_w - 48));
-        chrome::draw(&mut c, &n.when, &style::caption(t.text3), r.x + r.w - 24 - when_w, r.y + 30, None);
-        chrome::draw(&mut c, &n.body, &style::body(t.text2), tx, r.y + 72, Some(r.w - 120 - 24));
+        chrome::draw(&mut c, &n.title, &style::h2(ink.text), tx, r.y + 22, Some(r.w - 120 - when_w - 48));
+        chrome::draw(&mut c, &n.when, &style::caption(ink.text3), r.x + r.w - 24 - when_w, r.y + 30, None);
+        chrome::draw(&mut c, &n.body, &style::body(ink.text2), tx, r.y + 72, Some(r.w - 120 - 24));
     }
     chrome::nav_pill(&mut c, t);
     c.into_pixels()
@@ -389,8 +392,9 @@ fn render_quick_inner(
         c.fill_rounded_rect(disc, 999.0, if tile.on { t.accent } else { [0xFF, 0xF8, 0xF0, 0x28] });
         let glyph_col = if tile.on { t.text_on_accent } else if tile.available { ON_DIM } else { ON_DIM_MUTED };
         chrome::draw_ink_centered(&mut c, tile.glyph, &text::LabelStyle::icon(42.0, glyph_col), disc);
-        let col = if tile.on { t.text } else if tile.available { ON_DIM } else { ON_DIM_MUTED };
-        let sub_col = if tile.on { t.text2 } else if tile.available { ON_DIM_SUB } else { ON_DIM_MUTED };
+        let ink = tokens::LIGHT;
+        let col = if tile.on { ink.text } else if tile.available { ON_DIM } else { ON_DIM_MUTED };
+        let sub_col = if tile.on { ink.text2 } else if tile.available { ON_DIM_SUB } else { ON_DIM_MUTED };
         chrome::draw(&mut c, &tile.label, &style::body(col), r.x + 112, r.y + 22, Some(r.w - 112 - 16));
         let detail = if tile.available { &tile.detail } else { s.get("qs.unavailable") };
         chrome::draw(&mut c, detail, &style::caption(sub_col), r.x + 112, r.y + 64, Some(r.w - 112 - 16));

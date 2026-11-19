@@ -7,8 +7,9 @@
 //! Compatibility: it also owns the `sm.puri.OSK0` D-Bus name (SetVisible/Visible) so the shell's
 //! Quick Settings tiles and `rabbiz-osk-ctl` keep working, plus `org.rabbiz.OSK1.ReloadTheme`.
 
-use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::collections::{HashMap, HashSet};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::os::unix::net::UnixStream;
 use std::process::{Command as ProcessCommand, Stdio};
 use std::sync::Mutex;
 use std::os::fd::AsRawFd;
@@ -57,10 +58,58 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::{
 };
 
 
+/// Matches `de_design::tokens::GESTURE_BAR_HEIGHT` so the bottom key row sits cleanly above `Zone::NavBar`.
+const NAV_BAR_H: i32 = 32;
+
 struct AltState {
     key: KeyPos,
     items: Vec<String>,
     selected: usize,
+}
+
+/// Optional compositor bridge for shell-owned text inputs (`Screen::Search`, `Screen::Drawer`).
+struct ShellImClient {
+    stream: UnixStream,
+    buf: String,
+}
+
+impl ShellImClient {
+    fn connect_from_env() -> Option<Self> {
+        let path = std::env::var("RABBIZ_OSK_IM_SOCK").ok()?;
+        let stream = UnixStream::connect(path).ok()?;
+        let _ = stream.set_nonblocking(true);
+        Some(Self {
+            stream,
+            buf: String::new(),
+        })
+    }
+
+    fn poll_events(&mut self) -> Vec<String> {
+        let mut tmp = [0u8; 512];
+        loop {
+            match self.stream.read(&mut tmp) {
+                Ok(0) => break,
+                Ok(n) => self.buf.push_str(&String::from_utf8_lossy(&tmp[..n])),
+                Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(_) => break,
+            }
+        }
+        let mut out = Vec::new();
+        while let Some(nl) = self.buf.find('\n') {
+            let line = self.buf[..nl].trim_end_matches('\r').to_string();
+            self.buf.drain(..=nl);
+            if !line.is_empty() {
+                out.push(line);
+            }
+        }
+        out
+    }
+
+    fn send_line(&mut self, line: &str) {
+        let _ = self.stream.write_all(line.as_bytes());
+        let _ = self.stream.write_all(b"\n");
+        let _ = self.stream.flush();
+    }
 }
 
 struct App {
@@ -81,10 +130,12 @@ struct App {
     renderer: Renderer,
     theme: Theme,
     active: bool,
+    shell_active: bool,
+    has_surrounding_text: bool,
     user_visible: bool,
     configured: bool,
     visible: bool,
-    /// Set when we asked the compositor for a fresh configure after being unmapped.
+    /// Set when we asked the compositor for a fresh configure after being unmapped or resized.
     draw_pending: bool,
     w: u32,
     h: u32,
@@ -92,6 +143,8 @@ struct App {
     pressed: Vec<KeyPos>,
     alt: Option<AltState>,
     touch_pos: HashMap<i32, (f32, f32)>,
+    strip_touches: HashSet<i32>,
+    shell_im: Option<ShellImClient>,
     conn: Connection,
     start: Instant,
     predictor_saved: Instant,
@@ -116,15 +169,21 @@ impl App {
         if h != self.h {
             self.h = h;
             self.layer.set_size(0, h);
-            self.layer.set_exclusive_zone(h as i32);
+            if self.visible {
+                self.layer.set_margin(0, 0, NAV_BAR_H, 0);
+                self.layer.set_exclusive_zone(h as i32 + NAV_BAR_H);
+            } else {
+                self.layer.set_margin(0, 0, -(h as i32 + NAV_BAR_H), 0);
+                self.layer.set_exclusive_zone(0);
+            }
             self.layer.commit();
             self.pool.resize((self.w * self.h * 4 * 2) as usize).ok();
-            self.configured = false;
+            self.draw_pending = true;
         }
     }
 
     fn draw(&mut self) {
-        if !self.configured || !self.active || !self.user_visible {
+        if !self.configured || !self.visible {
             return;
         }
         let pressed = self
@@ -168,9 +227,16 @@ impl App {
             self.w = w as u32;
             self.h = h as u32;
             self.layer.set_size(0, self.h);
-            self.layer.set_exclusive_zone(self.h as i32);
+            if self.visible {
+                self.layer.set_margin(0, 0, NAV_BAR_H, 0);
+                self.layer.set_exclusive_zone(self.h as i32 + NAV_BAR_H);
+            } else {
+                self.layer.set_margin(0, 0, -(self.h as i32 + NAV_BAR_H), 0);
+                self.layer.set_exclusive_zone(0);
+            }
             self.layer.commit();
             self.pool.resize((self.w * self.h * 4 * 2) as usize).ok();
+            self.draw_pending = true;
             return;
         }
         let stride = w * 4;
@@ -203,9 +269,10 @@ impl App {
             self.visible = true;
             // Keep the layer surface mapped: unmapping and re-mapping needs a fresh configure
             // and attaching a buffer first is a protocol error. Sliding it back in with the
-            // margin is both simpler and flicker-free.
-            self.layer.set_margin(0, 0, 0, 0);
-            self.layer.set_exclusive_zone(self.h as i32);
+            // margin is both simpler and flicker-free. Sit above the 32 px NavBar so the bottom
+            // key row (Space / Return / ?123) is never swallowed by system gestures.
+            self.layer.set_margin(0, 0, NAV_BAR_H, 0);
+            self.layer.set_exclusive_zone(self.h as i32 + NAV_BAR_H);
             self.layer.commit();
         }
         self.sync_size();
@@ -219,31 +286,53 @@ impl App {
         self.visible = false;
         self.alt = None;
         self.pressed.clear();
+        self.strip_touches.clear();
+        let _ = self.gesture.cancel_all(self.now_ms());
         // Slide the surface below the screen edge and stop reserving space for it.
-        self.layer.set_margin(0, 0, -(self.h as i32), 0);
+        self.layer.set_margin(0, 0, -(self.h as i32 + NAV_BAR_H), 0);
         self.layer.set_exclusive_zone(0);
         self.layer.commit();
     }
 
     fn send_commands(&mut self, commands: Vec<Command>) {
+        let use_shell_bridge = self.shell_active && !self.active;
         for command in commands {
             match command {
                 Command::Commit(text) => {
-                    if self.done_count > 0 {
+                    if use_shell_bridge {
+                        if let Some(bridge) = &mut self.shell_im {
+                            let clean = text.replace('\n', " ");
+                            bridge.send_line(&format!("C {clean}"));
+                        }
+                    } else if self.done_count > 0 {
                         self.im.commit_string(text);
                         self.im.commit(self.done_count);
+                    } else {
+                        self.send_ascii_text(&text);
                     }
                 }
                 Command::Backspace { bytes } => {
-                    if self.done_count > 0 {
+                    if use_shell_bridge {
+                        if let Some(bridge) = &mut self.shell_im {
+                            bridge.send_line(&format!("B {bytes}"));
+                        }
+                    } else if self.done_count > 0 && self.has_surrounding_text {
                         self.im.delete_surrounding_text(bytes as u32, 0);
                         self.im.commit(self.done_count);
+                    } else {
+                        self.send_key(KEY_BACKSPACE);
                     }
                 }
                 Command::Enter => {
-                    // A text commit with "\n" is ignored by single-line fields (Chrome's
-                    // omnibox, search boxes). Send a real Return key press instead.
-                    self.send_key(KEY_ENTER);
+                    if use_shell_bridge {
+                        if let Some(bridge) = &mut self.shell_im {
+                            bridge.send_line("E");
+                        }
+                    } else {
+                        // A text commit with "\n" is ignored by single-line fields (Chrome's
+                        // omnibox, search boxes). Send a real Return key press instead.
+                        self.send_key(KEY_ENTER);
+                    }
                 }
                 // Cursor moves and layout switches need no protocol request.
                 Command::MoveCursor(_) | Command::Layer(_) | Command::Language(_) => {}
@@ -253,11 +342,11 @@ impl App {
     }
 
     /// Toolbar buttons live in the strip, above the keys.
-    fn on_toolbar_tap(&mut self, x: f32) {
+    fn on_toolbar_tap(&mut self, x: f32, y: f32) {
         let mut hit = None;
         for index in 0..TOOLBAR_ICONS.len() {
             let rect = toolbar_button_rect(index, self.keyboard.layout(), 1.0);
-            if x >= rect.x && x < rect.x + rect.w {
+            if rect.contains(x, y) {
                 hit = Some(index);
                 break;
             }
@@ -282,7 +371,7 @@ impl App {
         let picks = self.keyboard.suggestions();
         for (index, pick) in picks.iter().enumerate() {
             let rect = suggestion_rect(index, self.keyboard.layout(), 1.0);
-            if x >= rect.x && x < rect.x + rect.w {
+            if rect.contains(x, y) {
                 let commands = self.keyboard.apply_suggestion(pick);
                 self.send_commands(commands);
                 self.draw();
@@ -291,27 +380,30 @@ impl App {
         }
     }
 
-    /// Clipboard stub until K5 owns the history: paste the current selection via wl-paste.
-    fn paste_clipboard(&mut self) {
-        let output = std::process::Command::new("wl-paste").arg("--no-newline").output();
-        match output {
-            Ok(out) if out.status.success() => {
-                let text = String::from_utf8_lossy(&out.stdout).to_string();
-                if !text.is_empty() {
-                    let commands = self.keyboard.insert_text(&text);
-                    self.send_commands(commands);
-                    self.draw();
-                }
-            }
-            other => eprintln!("rabbiz-osk: clipboard unavailable ({other:?})"),
-        }
-    }
-
     /// Press and release one evdev keycode through the virtual keyboard.
     fn send_key(&mut self, keycode: u32) {
         let time = self.start.elapsed().as_millis() as u32;
         self.virtual_keyboard.key(time, keycode, 1); // wl_keyboard.key_state.pressed
         self.virtual_keyboard.key(time, keycode, 0); // wl_keyboard.key_state.released
+        let _ = self.conn.flush();
+    }
+
+    /// Best-effort fallback for apps without `zwp_text_input_v3`: map ASCII chars to evdev keys.
+    fn send_ascii_text(&mut self, text: &str) {
+        let time = self.start.elapsed().as_millis() as u32;
+        for ch in text.chars() {
+            let Some((code, shift)) = ascii_to_evdev(ch) else {
+                continue;
+            };
+            if shift {
+                self.virtual_keyboard.modifiers(1, 0, 0, 0);
+            }
+            self.virtual_keyboard.key(time, code, 1);
+            self.virtual_keyboard.key(time, code, 0);
+            if shift {
+                self.virtual_keyboard.modifiers(0, 0, 0, 0);
+            }
+        }
         let _ = self.conn.flush();
     }
 
@@ -346,18 +438,20 @@ impl App {
         for event in events {
             match event {
                 GestureEvent::Press(pos) => {
-                    self.pressed = vec![pos];
+                    if !self.pressed.contains(&pos) {
+                        self.pressed.push(pos);
+                    }
                     self.draw();
                 }
-                GestureEvent::Cancel(_) => {
+                GestureEvent::Cancel(pos) => {
                     // A long-press chooser stays open until the finger lifts.
                     if self.alt.is_none() {
-                        self.pressed.clear();
+                        self.pressed.retain(|&p| p != pos);
                         self.draw();
                     }
                 }
                 GestureEvent::Tap(pos) => {
-                    self.pressed.clear();
+                    self.pressed.retain(|&p| p != pos);
                     self.alt = None;
                     self.apply_tap(pos);
                 }
@@ -370,17 +464,19 @@ impl App {
                     self.draw();
                 }
                 GestureEvent::Repeat(pos) => {
-                    // Stop at the start of the text: a held backspace must not spam the app
-                    // with deletes it cannot apply (GTK asserts on negative positions).
+                    // When surrounding_text is tracked, stop at start so GTK does not assert on
+                    // negative positions. When no surrounding_text is available (e.g. terminals or
+                    // shell search), allow held Backspace repeat via KEY_BACKSPACE / shell bridge.
                     let backspace =
                         matches!(self.keyboard.key(pos).map(|k| &k.action), Some(KeyAction::Backspace));
-                    if backspace && !self.keyboard.text().is_empty() {
+                    if backspace && (!self.has_surrounding_text || !self.keyboard.text().is_empty()) {
                         let commands = self.keyboard.backspace();
                         self.send_commands(commands);
+                        self.draw();
                     }
                 }
                 GestureEvent::Swipe { key, dx, .. } => {
-                    self.pressed.clear();
+                    self.pressed.retain(|&p| p != key);
                     if self.keyboard.is_space(key) {
                         let step = self.keyboard.layout().geometry.width_px / 10.0;
                         let steps = (dx / step).round() as i32;
@@ -487,7 +583,8 @@ impl TouchHandler for App {
         }
         let strip_h = self.keyboard.layout().geometry.strip_height_px;
         if (pos.1 as f32) <= strip_h {
-            self.on_toolbar_tap(pos.0 as f32);
+            self.strip_touches.insert(id);
+            self.on_toolbar_tap(pos.0 as f32, pos.1 as f32);
             return;
         }
         let hit = self
@@ -514,6 +611,9 @@ impl TouchHandler for App {
         pos: (f64, f64),
     ) {
         self.touch_pos.insert(id, (pos.0 as f32, pos.1 as f32));
+        if self.strip_touches.contains(&id) {
+            return;
+        }
         if self.alt.is_some() {
             let index = self.alt_index_at(pos.0 as f32);
             if let Some(alt) = &mut self.alt {
@@ -545,6 +645,9 @@ impl TouchHandler for App {
         id: i32,
     ) {
         let pos = self.touch_pos.remove(&id).unwrap_or((0.0, 0.0));
+        if self.strip_touches.remove(&id) {
+            return;
+        }
         if self.alt.is_some() {
             self.commit_alternate();
             self.gesture.cancel_all(self.now_ms());
@@ -565,6 +668,7 @@ impl TouchHandler for App {
     fn orientation(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch, _: i32, _: f64) {}
     fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch) {
         self.touch_pos.clear();
+        self.strip_touches.clear();
         if self.alt.is_some() {
             self.alt = None;
             self.draw();
@@ -647,6 +751,8 @@ impl Dispatch<ZwpInputMethodV2, ()> for App {
     ) {
         match event {
             ImEvent::Activate => {
+                state.keyboard.reset_for_activation();
+                state.has_surrounding_text = false;
                 state.active = true;
                 if state.user_visible {
                     state.show();
@@ -654,11 +760,15 @@ impl Dispatch<ZwpInputMethodV2, ()> for App {
             }
             ImEvent::Deactivate => {
                 state.active = false;
-                state.hide();
+                state.has_surrounding_text = false;
+                if !state.shell_active {
+                    state.hide();
+                }
             }
             ImEvent::SurroundingText { text, cursor, anchor } => {
-                let _ = (cursor, anchor);
-                state.keyboard.set_surrounding_text(text);
+                let _ = anchor;
+                state.has_surrounding_text = true;
+                state.keyboard.set_surrounding_text_at(text, cursor as usize);
             }
             ImEvent::ContentType { purpose, .. } => {
                 // Gboard-style adaptation: email/url bottom rows, number pad for numeric fields.
@@ -666,7 +776,13 @@ impl Dispatch<ZwpInputMethodV2, ()> for App {
                 state.sync_size();
                 state.draw();
             }
-            ImEvent::Done => state.done_count += 1,
+            ImEvent::Done => {
+                state.done_count += 1;
+                if state.active && state.user_visible {
+                    state.sync_size();
+                    state.draw();
+                }
+            }
             ImEvent::Unavailable => {
                 eprintln!("rabbiz-osk: another input method owns the seat (squeekboard?)");
                 std::process::exit(2);
@@ -722,8 +838,42 @@ impl Osk1Service {
 
 /// K5: watch the selection with `wl-paste --watch` (wl-clipboard uses data-control, so this
 /// works without keyboard focus) and keep the last 20 text snippets in memory.
-/// evdev key code for Enter (KEY_ENTER).
+/// evdev key codes for Backspace and Enter.
+const KEY_BACKSPACE: u32 = 14;
 const KEY_ENTER: u32 = 28;
+
+fn ascii_to_evdev(ch: char) -> Option<(u32, bool)> {
+    let pair = match ch {
+        'a' => (30, false), 'b' => (48, false), 'c' => (46, false), 'd' => (32, false),
+        'e' => (18, false), 'f' => (33, false), 'g' => (34, false), 'h' => (35, false),
+        'i' => (23, false), 'j' => (36, false), 'k' => (37, false), 'l' => (38, false),
+        'm' => (50, false), 'n' => (49, false), 'o' => (24, false), 'p' => (25, false),
+        'q' => (16, false), 'r' => (19, false), 's' => (31, false), 't' => (20, false),
+        'u' => (22, false), 'v' => (47, false), 'w' => (17, false), 'x' => (45, false),
+        'y' => (21, false), 'z' => (44, false),
+        'A' => (30, true),  'B' => (48, true),  'C' => (46, true),  'D' => (32, true),
+        'E' => (18, true),  'F' => (33, true),  'G' => (34, true),  'H' => (35, true),
+        'I' => (23, true),  'J' => (36, true),  'K' => (37, true),  'L' => (38, true),
+        'M' => (50, true),  'N' => (49, true),  'O' => (24, true),  'P' => (25, true),
+        'Q' => (16, true),  'R' => (19, true),  'S' => (31, true),  'T' => (20, true),
+        'U' => (22, true),  'V' => (47, true),  'W' => (17, true),  'X' => (45, true),
+        'Y' => (21, true),  'Z' => (44, true),
+        '1' => (2, false),  '2' => (3, false),  '3' => (4, false),  '4' => (5, false),
+        '5' => (6, false),  '6' => (7, false),  '7' => (8, false),  '8' => (9, false),
+        '9' => (10, false), '0' => (11, false),
+        '!' => (2, true),   '@' => (3, true),   '#' => (4, true),   '$' => (5, true),
+        '%' => (6, true),   '^' => (7, true),   '&' => (8, true),   '*' => (9, true),
+        '(' => (10, true),  ')' => (11, true),
+        '-' => (12, false), '_' => (12, true),  '=' => (13, false), '+' => (13, true),
+        '[' => (26, false), '{' => (26, true),  ']' => (27, false), '}' => (27, true),
+        ';' => (39, false), ':' => (39, true),  '\'' => (40, false), '"' => (40, true),
+        '`' => (41, false), '~' => (41, true),  '\\' => (43, false), '|' => (43, true),
+        ',' => (51, false), '<' => (51, true),  '.' => (52, false), '>' => (52, true),
+        '/' => (53, false), '?' => (53, true),  ' ' => (57, false),
+        _ => return None,
+    };
+    Some(pair)
+}
 
 /// Minimal xkb keymap: the compositor needs one before it accepts key events.
 const KEYMAP: &str = r#"xkb_keymap {
@@ -928,7 +1078,9 @@ fn main() {
     layer.set_anchor(Anchor::BOTTOM | Anchor::LEFT | Anchor::RIGHT);
     let h = keyboard.layout().height_px().round() as u32;
     layer.set_size(0, h);
-    layer.set_exclusive_zone(h as i32);
+    // Start hidden below the screen edge without reserving exclusive space.
+    layer.set_margin(0, 0, -(h as i32 + NAV_BAR_H), 0);
+    layer.set_exclusive_zone(0);
     layer.set_keyboard_interactivity(KeyboardInteractivity::None);
     layer.commit();
 
@@ -964,6 +1116,8 @@ fn main() {
         renderer: Renderer::new(),
         theme: load_theme(&theme_path()).unwrap_or_else(Theme::dark),
         active: false,
+        shell_active: false,
+        has_surrounding_text: false,
         user_visible: true,
         draw_pending: false,
         configured: false,
@@ -974,6 +1128,8 @@ fn main() {
         pressed: Vec::new(),
         alt: None,
         touch_pos: HashMap::new(),
+        strip_touches: HashSet::new(),
+        shell_im: ShellImClient::connect_from_env(),
         conn: connection.clone(),
         start: Instant::now(),
         predictor_saved: Instant::now(),
@@ -1000,10 +1156,33 @@ fn main() {
             app.sheet = Some(app.clipboard.lock().map(|g| g.clone()).unwrap_or_default());
             app.draw();
         }
+        if let Some(mut bridge) = app.shell_im.take() {
+            let cmds = bridge.poll_events();
+            app.shell_im = Some(bridge);
+            for cmd in cmds {
+                match cmd.as_str() {
+                    "SHOW" => {
+                        app.keyboard.reset_for_activation();
+                        app.has_surrounding_text = false;
+                        app.shell_active = true;
+                        if app.user_visible {
+                            app.show();
+                        }
+                    }
+                    "HIDE" => {
+                        app.shell_active = false;
+                        if !app.active {
+                            app.hide();
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
         let want = visible.load(Ordering::SeqCst);
         if want != app.user_visible {
             app.user_visible = want;
-            if app.active {
+            if app.active || app.shell_active {
                 if want {
                     app.show();
                 } else {

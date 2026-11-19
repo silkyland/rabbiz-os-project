@@ -376,7 +376,7 @@ ApplicationWindow {
             leftMargin: Theme.spaceM
             rightMargin: Theme.spaceM
             topMargin: Theme.spaceM
-            bottomMargin: Theme.spaceL
+            bottomMargin: Theme.navZoneHeight
         }
         spacing: Theme.spaceM
 
@@ -454,6 +454,17 @@ ApplicationWindow {
                     color: chip.active ? Qt.alpha(ShellPrefs.accentColor, 0.20) : Theme.surfaceHigh
                     border.width: 1
                     border.color: chip.active ? ShellPrefs.accentColor : Qt.alpha(Theme.text, 0.08)
+                    scale: chipTap.pressed ? 0.95 : 1.0
+                    Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+                    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                    Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: Qt.alpha(Theme.text, chipTap.pressed ? 0.10 : 0.0)
+                        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                    }
 
                     Row {
                         anchors.centerIn: parent
@@ -476,7 +487,7 @@ ApplicationWindow {
                         }
                     }
 
-                    TapHandler { onTapped: win.scope = chip.modelData.scope }
+                    TapHandler { id: chipTap; onTapped: win.scope = chip.modelData.scope }
                 }
             }
         }
@@ -528,6 +539,7 @@ ApplicationWindow {
                         radius: Theme.radiusM
                         color: row.modelData.path === win.currentPath
                             ? Qt.alpha(ShellPrefs.accentColor, 0.14) : "transparent"
+                        Behavior on color { ColorAnimation { duration: Theme.animFast } }
                     }
 
                     RowItem {
@@ -566,8 +578,15 @@ ApplicationWindow {
                     height: 48
                     radius: height / 2
                     color: ShellPrefs.accentColor
-                    scale: emptyActionTap.pressed ? 0.96 : 1.0
-                    Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+                    scale: emptyActionTap.pressed ? 0.94 : 1.0
+                    Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: Qt.alpha(ShellPrefs.onAccentColor, emptyActionTap.pressed ? 0.16 : 0.0)
+                        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                    }
 
                     RowLayout {
                         id: emptyActionRow
@@ -671,6 +690,15 @@ ApplicationWindow {
                             color: Theme.surfaceHigh
                             border.width: 1
                             border.color: Qt.alpha(Theme.text, 0.10)
+                            scale: stopTap.pressed ? 0.90 : 1.0
+                            Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: Qt.alpha(Theme.text, stopTap.pressed ? 0.14 : 0.0)
+                                Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                            }
 
                             MaterialIcon {
                                 anchors.centerIn: parent
@@ -678,18 +706,19 @@ ApplicationWindow {
                                 size: 22
                                 color: Theme.text
                             }
-                            TapHandler { onTapped: win.stop() }
+                            TapHandler { id: stopTap; onTapped: win.stop() }
                         }
                     }
                 }
 
-                // Seek bar: 48 px tall touch area, 8 px track.
+                // Seek bar: 48 px tall touch area, 8 px track, smooth fill + scrubber thumb.
                 Item {
                     id: seekArea
                     width: parent.width
                     height: 48
 
                     Rectangle {
+                        id: seekTrack
                         anchors.verticalCenter: parent.verticalCenter
                         width: parent.width
                         height: 8
@@ -697,14 +726,35 @@ ApplicationWindow {
                         color: Theme.surfaceHigh
 
                         Rectangle {
-                            width: parent.width * win.progress
+                            id: seekFill
+                            width: Math.max(0, Math.min(parent.width, parent.width * win.progress))
                             height: parent.height
                             radius: parent.radius
                             color: ShellPrefs.accentColor
+                            Behavior on width {
+                                enabled: !seekTap.pressed
+                                NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase }
+                            }
+                        }
+
+                        Rectangle {
+                            id: seekThumb
+                            visible: win.durationSec > 0
+                            width: 18
+                            height: 18
+                            radius: 9
+                            color: ShellPrefs.accentColor
+                            border.width: 2
+                            border.color: Theme.card
+                            x: Math.max(0, Math.min(seekTrack.width - width, seekFill.width - width / 2))
+                            anchors.verticalCenter: parent.verticalCenter
+                            scale: seekTap.pressed ? 1.25 : 1.0
+                            Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
                         }
                     }
 
                     TapHandler {
+                        id: seekTap
                         onTapped: function (point) {
                             if (win.durationSec > 0)
                                 win.seekTo(point.position.x / seekArea.width)
@@ -742,9 +792,9 @@ ApplicationWindow {
 
                         Repeater {
                             model: [
-                                { act: "prev", icon: "skip_previous", size: 52, primary: false },
+                                { act: "prev", icon: "skip_previous", size: 56, primary: false },
                                 { act: "toggle", icon: "play_arrow", size: 72, primary: true },
-                                { act: "next", icon: "skip_next", size: 52, primary: false }
+                                { act: "next", icon: "skip_next", size: 56, primary: false }
                             ]
 
                             delegate: Rectangle {
@@ -760,13 +810,23 @@ ApplicationWindow {
                                 color: transportButton.primary ? ShellPrefs.accentColor : Theme.surfaceHigh
                                 border.width: transportButton.primary ? 0 : 1
                                 border.color: Qt.alpha(Theme.text, 0.10)
-                                scale: transportTap.pressed ? 0.94 : 1.0
-                                Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+                                scale: transportTap.pressed ? (transportButton.primary ? 0.92 : 0.90) : 1.0
+                                Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    color: Qt.alpha(
+                                        transportButton.primary ? ShellPrefs.onAccentColor : Theme.text,
+                                        transportTap.pressed ? 0.16 : 0.0
+                                    )
+                                    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                                }
 
                                 MaterialIcon {
                                     anchors.centerIn: parent
                                     name: transportButton.glyph
-                                    size: transportButton.primary ? 38 : 26
+                                    size: transportButton.primary ? 38 : 28
                                     color: transportButton.primary ? ShellPrefs.onAccentColor : Theme.text
                                 }
                                 TapHandler {

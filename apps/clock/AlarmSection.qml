@@ -120,12 +120,16 @@ Item {
             delegate: Rectangle {
                 required property var modelData
                 width: ListView.view.width
-                height: 84
+                height: 88
                 radius: Theme.radiusM
                 color: Theme.card
                 border.width: 1
-                border.color: Qt.alpha(Theme.text, 0.08)
+                border.color: modelData.enabled
+                    ? Qt.alpha(ShellPrefs.accentColor, 0.25)
+                    : Qt.alpha(Theme.text, 0.08)
                 opacity: modelData.enabled ? 1.0 : 0.62
+                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                Behavior on border.color { ColorAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
 
                 RowLayout {
                     anchors { fill: parent; leftMargin: Theme.spaceM; rightMargin: Theme.spaceS }

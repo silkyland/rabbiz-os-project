@@ -98,7 +98,16 @@ impl Policy {
     /// The built-in list: only what ships with the image.
     #[must_use]
     pub fn builtin() -> Self {
-        let osk = ["/usr/local/bin/rabbiz-osk", "/usr/local/bin/a21s-osk"];
+        let osk = [
+            "/usr/local/bin/rabbiz-osk",
+            "/usr/local/bin/a21s-osk",
+            "/usr/bin/squeekboard",
+            "/usr/local/bin/squeekboard",
+            "/usr/bin/stevia",
+            "/usr/local/bin/stevia",
+            "/usr/bin/maliit-keyboard",
+            "/usr/bin/fcitx5",
+        ];
         let mut allow: BTreeMap<Privileged, BTreeSet<String>> = BTreeMap::new();
         let mut put = |g: Privileged, paths: &[&str]| {
             allow

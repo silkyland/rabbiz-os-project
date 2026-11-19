@@ -45,7 +45,12 @@ amount and proximity distance are RabbizOS tuning choices, to verify on device.
 5. Home/Recents drags preserve the app process. The app card follows the finger;
    Recents settles to its actual card bounds. The backdrop is Home, never a
    blurred copy of the app being dismissed. Back provides edge feedback and
-   returns Home without sending `xdg_toplevel.close`.
+   never sends `xdg_toplevel.close`. Inside an app, Back goes to the app first,
+   as on Android: an open menu closes, a dialog gets Escape, anything else gets
+   the Back key (`KEY_BACK` / `XF86Back`); leaving the app is the home swipe.
+   In Recents entered from an app, Back returns to that app. (Owner decision
+   2026-11-19, replacing "Back returns Home"; see
+   [AUDIT-UIUX-2026-11-19.md](AUDIT-UIUX-2026-11-19.md) Q1.)
 6. Reduced motion removes optional scale/expansion and retains colour feedback.
    Repeated input can interrupt and reverse a transition without a position jump.
 7. Panels are transparent between controls. Frosted controls sample the actual

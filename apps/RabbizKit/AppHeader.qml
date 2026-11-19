@@ -9,24 +9,34 @@ Item {
     property string subtitle: ""
     default property alias actions: actionsRow.data
 
-    implicitHeight: 66
+    implicitHeight: Math.max(68, titleCol.implicitHeight + Theme.spaceXS)
 
     Column {
-        anchors { left: parent.left; verticalCenter: parent.verticalCenter }
+        id: titleCol
+        anchors {
+            left: parent.left
+            right: actionsRow.left
+            rightMargin: Theme.spaceS
+            verticalCenter: parent.verticalCenter
+        }
         spacing: 2
         Text {
+            width: parent.width
             text: root.title
             color: Theme.text
             font.pixelSize: Theme.fontTitle
             font.family: Theme.fontFamily
             font.weight: Font.DemiBold
+            elide: Text.ElideRight
         }
         Text {
+            width: parent.width
             visible: root.subtitle.length > 0
             text: root.subtitle
             color: Theme.textDim
             font.pixelSize: Theme.fontCaption
             font.family: Theme.fontFamily
+            elide: Text.ElideRight
         }
     }
     Row {

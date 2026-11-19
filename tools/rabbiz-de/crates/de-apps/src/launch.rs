@@ -188,6 +188,8 @@ mod tests {
     #[test]
     fn embedded_toml_parses() {
         let t: LaunchTable = toml::from_str(LAUNCH_TOML).unwrap();
-        assert_eq!(t.overrides["google-chrome"].exec, "rabbiz-browser");
+        assert!(t.overrides["google-chrome"]
+            .exec
+            .starts_with("/opt/google/chrome/google-chrome"));
     }
 }

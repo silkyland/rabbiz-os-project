@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_ACCENT: &str = "copper";
 pub const DEFAULT_WALLPAPER: &str = "ember";
 pub const DEFAULT_THEME: &str = "light";
+pub const DEFAULT_KEYBOARD: &str = "rabbiz-osk";
 
 /// Shell-owned preferences persisted as flat JSON keys (`deAccent`, ...).
 ///
@@ -44,6 +45,12 @@ pub struct Prefs {
     /// never. Default 600 matches the owner's ~10-minute expectation (P17).
     #[serde(rename = "deScreenTimeoutSec")]
     pub screen_timeout_sec: u32,
+    /// Active on-screen keyboard id (`rabbiz-osk` or a 3rd-party keyboard).
+    #[serde(rename = "deKeyboard")]
+    pub keyboard_id: String,
+    /// Whether 3rd-party / market keyboards are permitted in Settings and policy.
+    #[serde(rename = "deAllowThirdPartyKeyboards")]
+    pub allow_third_party_keyboards: bool,
 }
 
 impl Default for Prefs {
@@ -57,6 +64,8 @@ impl Default for Prefs {
             home_order: Vec::new(),
             do_not_disturb: false,
             screen_timeout_sec: 600,
+            keyboard_id: DEFAULT_KEYBOARD.into(),
+            allow_third_party_keyboards: true,
         }
     }
 }
@@ -258,16 +267,17 @@ impl Prefs {
 }
 
 /// Canonical desktop-id for a seed read from the legacy shell's
-/// `desktop.json` (a21s-* → rabbiz-*; retired wrapper ids → their
-/// successors).
+/// `desktop.json` (retired `rabbiz-browser`/`a21s-browser` → `google-chrome`;
+/// other `a21s-*` → `rabbiz-*`).
 fn normalize_seed_id(id: &str) -> String {
+    match id {
+        "rabbiz-browser" | "a21s-browser" | "com.google.Chrome" => return "google-chrome".into(),
+        _ => {}
+    }
     if let Some(rest) = id.strip_prefix("a21s-") {
         return format!("rabbiz-{rest}");
     }
-    match id {
-        "google-chrome" | "com.google.Chrome" => "rabbiz-browser".into(),
-        _ => id.into(),
-    }
+    id.into()
 }
 
 fn config_home() -> PathBuf {

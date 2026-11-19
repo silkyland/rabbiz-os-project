@@ -134,6 +134,12 @@ static int cpif_seq_step_run(struct cpif_dev *c, const struct cpif_seq_step *s,
 		break;
 	case CPIF_OP_WRITE:
 		if (s->vgpio) {
+			if (!c->vgpio || s->offset + sizeof(u32) > c->vgpio_size) {
+				dev_err(c->dev, "%s: step %d vgpio+0x%x out of range (size 0x%pa)\n",
+					name, i, s->offset, &c->vgpio_size);
+				ret = -EINVAL;
+				goto err;
+			}
 			val = readl(c->vgpio + s->offset);
 			val = (val & ~s->mask) | (s->value & s->mask);
 			writel(val, c->vgpio + s->offset);
@@ -149,6 +155,12 @@ static int cpif_seq_step_run(struct cpif_dev *c, const struct cpif_seq_step *s,
 		}
 		break;
 	case CPIF_OP_WAIT:
+		if (s->vgpio && (!c->vgpio || s->offset + sizeof(u32) > c->vgpio_size)) {
+			dev_err(c->dev, "%s: step %d vgpio+0x%x out of range (size 0x%pa)\n",
+				name, i, s->offset, &c->vgpio_size);
+			ret = -EINVAL;
+			goto err;
+		}
 		timeout = jiffies + msecs_to_jiffies(CPIF_WAIT_TIMEOUT_MS);
 		for (;;) {
 			if (s->vgpio)

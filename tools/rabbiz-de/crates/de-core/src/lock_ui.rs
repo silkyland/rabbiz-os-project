@@ -25,6 +25,9 @@ const SHAKE_MS: f32 = 600.0;
 pub(crate) struct LockUi {
     /// The lock owns the screen (covering, mid-drag or mid-unlock).
     locked: bool,
+    /// Unlock committed — sliding off-screen; touches pass through and
+    /// dragging/cancelling can never pull the lock back down.
+    unlocking: bool,
     /// Px the surface has slid up; 0 = fully covering.
     slide: SpringValue,
     dragging: bool,
@@ -51,6 +54,7 @@ impl Default for LockUi {
     fn default() -> Self {
         Self {
             locked: false,
+            unlocking: false,
             slide: SpringValue::new(0.0, SpringPreset::Smooth, MotionKind::Spatial),
             dragging: false,
             drag_origin: 0.0,
@@ -75,6 +79,11 @@ impl LockUi {
     }
 
     #[must_use]
+    pub fn is_unlocking(&self) -> bool {
+        self.locked && self.unlocking
+    }
+
+    #[must_use]
     pub fn animating(&self) -> bool {
         self.dragging || !self.slide.settled() || self.shake_since.is_some()
     }
@@ -93,6 +102,7 @@ impl LockUi {
     /// Show the lock (fresh raster; slide starts covered).
     pub fn open(&mut self) {
         self.locked = true;
+        self.unlocking = false;
         self.dragging = false;
         self.drag_origin = 0.0;
         self.slide.retarget(0.0);
@@ -103,11 +113,15 @@ impl LockUi {
     /// Drop the lock immediately (fingerprint unlock while covered).
     pub fn unlock_now(&mut self) {
         self.locked = false;
+        self.unlocking = false;
         self.slide.retarget(0.0);
         self.slide.snap();
     }
 
     pub fn begin_drag(&mut self) {
+        if self.unlocking {
+            return;
+        }
         self.dragging = true;
         self.drag_origin = self.slide.value.max(0.0);
         self.slide.retarget(self.drag_origin);
@@ -115,6 +129,9 @@ impl LockUi {
 
     /// `dy` is the gesture delta in px (negative = up).
     pub fn drag(&mut self, dy: f32, h: f32) {
+        if self.unlocking {
+            return;
+        }
         if !self.dragging {
             self.begin_drag();
         }
@@ -127,9 +144,13 @@ impl LockUi {
     /// Judge the drag by `target` — during a pull only the target tracks
     /// the finger, so a fast release between frames still counts.
     pub fn release(&mut self, vy: f32, h: f32) {
+        if self.unlocking {
+            return;
+        }
         self.dragging = false;
         let pos = self.slide.value.max(self.slide.target);
         if pos > UNLOCK_PX || vy < FLICK_VY {
+            self.unlocking = true;
             self.slide.retarget_with_velocity(h * 1.1, (-vy).max(0.0));
         } else {
             self.slide.retarget(0.0);
@@ -137,6 +158,9 @@ impl LockUi {
     }
 
     pub fn cancel_drag(&mut self) {
+        if self.unlocking {
+            return;
+        }
         self.dragging = false;
         self.slide.retarget(0.0);
     }
@@ -173,8 +197,11 @@ impl LockUi {
         if self.shake_since.is_some_and(|s| s.elapsed().as_secs_f32() * 1000.0 >= SHAKE_MS) {
             self.shake_since = None;
         }
-        if !self.dragging && self.slide.target > size.h as f32 && self.slide.settled() {
+        if (self.unlocking || (!self.dragging && self.slide.target > size.h as f32))
+            && self.slide.settled()
+        {
             self.locked = false;
+            self.unlocking = false;
             self.slide.retarget(0.0);
             self.slide.snap();
         }
@@ -243,7 +270,7 @@ impl De {
             quick: quick.map(|(_, q)| q),
             backdrop: &backdrop,
         };
-        let px = de_ui::lock::render(size, &self.strings, &de_design::tokens::DEFAULT, &model);
+        let px = de_ui::lock::render(size, &self.strings, &self.theme, &model);
         self.lock.baked_clock = status.clock;
         self.lock.px = Some(px);
         self.lock.generation += 1;
@@ -321,6 +348,26 @@ mod tests {
         l.begin_drag();
         l.drag(-400.0, 1600.0);
         l.release(0.0, 1600.0);
+        for _ in 0..240 {
+            l.advance(0.016, &clock, size);
+        }
+        assert!(!l.shown());
+    }
+
+    #[test]
+    fn committed_unlock_cannot_be_pulled_back_down() {
+        let mut l = LockUi::default();
+        let clock = AnimationClock::new();
+        let size = Size::new(720, 1600);
+        l.open();
+        l.begin_drag();
+        l.drag(-400.0, 1600.0);
+        l.release(-800.0, 1600.0);
+        assert!(l.is_unlocking());
+        // Swiping down or cancelling mid-unlock must not bring the lock back.
+        l.begin_drag();
+        l.drag(500.0, 1600.0);
+        l.cancel_drag();
         for _ in 0..240 {
             l.advance(0.016, &clock, size);
         }

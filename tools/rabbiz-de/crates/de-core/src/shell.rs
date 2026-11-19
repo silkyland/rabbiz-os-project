@@ -21,7 +21,7 @@ impl De {
     pub fn shell_pixels(&mut self) -> Pixels {
         let size = Size::new(self.output.width as i32, self.output.height as i32);
         let s = self.strings.clone();
-        let t = tokens::DEFAULT;
+        let t = self.theme;
         let (status, date) = self.shell_meta();
         let base = match self.nav.current {
             Screen::Recents => {
@@ -31,6 +31,7 @@ impl De {
                 self.navigation.recents_pager.set_pages(count);
                 let moving = self.morph.as_ref().and_then(|m| m.overview_window());
                 let hidden = moving.and_then(|w| windows.iter().position(|entry| entry == w));
+                let lift = self.card_lift(&windows);
                 de_ui::recents::render_at_pos(
                     size,
                     &s,
@@ -40,15 +41,59 @@ impl De {
                     self.navigation.recents_backdrop.as_ref(),
                     self.navigation.recents_pager.pos(),
                     hidden,
+                    lift,
                 )
             }
             Screen::Drawer => {
+                let recent = self.recent_drawer_icons();
                 let ids = self.visible_ids();
                 let apps = self.app_icons(&ids);
-                de_ui::drawer::render(size, &s, &t, &status, &apps, self.navigation.drawer_scroll)
+                let blink = !self.navigation.search_query.is_empty()
+                    && (self.started.elapsed().as_millis() / 530) % 2 == 0;
+                de_ui::drawer::render_with_query(
+                    size,
+                    &s,
+                    &t,
+                    &status,
+                    &recent,
+                    &apps,
+                    &self.navigation.search_query,
+                    blink,
+                    self.navigation.drawer_scroll,
+                )
             }
             Screen::Settings => {
-                de_ui::settings::render_index(size, &s, &t, &status.clock)
+                let prefs = self.app_prefs.prefs();
+                if self.navigation.settings_keyboard {
+                    let active = de_config::keyboards::resolve_active_keyboard(prefs);
+                    let options = de_config::keyboards::discover_keyboards(prefs.allow_third_party_keyboards)
+                        .into_iter()
+                        .map(|k| de_ui::settings::keyboard::KeyboardOption {
+                            active: k.id == active.id,
+                            id: k.id,
+                            name: k.name,
+                            third_party: k.third_party,
+                            installed: k.installed,
+                        })
+                        .collect::<Vec<_>>();
+                    de_ui::settings::keyboard::render(
+                        size,
+                        &s,
+                        &t,
+                        &status.clock,
+                        prefs.allow_third_party_keyboards,
+                        &options,
+                    )
+                } else {
+                    let active = de_config::keyboards::resolve_active_keyboard(prefs);
+                    de_ui::settings::index::render_index_with_keyboard(
+                        size,
+                        &s,
+                        &t,
+                        &status.clock,
+                        &active.name,
+                    )
+                }
             }
             Screen::Search => {
                 let rows = self.search_rows();
@@ -179,12 +224,34 @@ impl De {
                 return (status.clone(), date.clone());
             }
         }
-        let (status, date) = (Self::status_info(), clock_date());
+        let (status, date) = (self.status_info(), clock_date());
         self.meta_cache = Some((now, self.shell_minute, status.clone(), date.clone()));
         (status, date)
     }
 
     /// Visible app ids under current prefs.
+    /// Up to 4 recent/frequent apps for the top row of the Drawer.
+    pub(crate) fn recent_drawer_icons(&mut self) -> Vec<IconEntry> {
+        let mut ids: Vec<String> = self
+            .recent_windows()
+            .into_iter()
+            .filter_map(|w| w.toplevel().map(crate::snapshots::window_app_id))
+            .collect();
+        if ids.len() < 4 {
+            let prefs = self.app_prefs.prefs().clone();
+            for e in self.catalog.dock(&prefs).into_iter().chain(self.catalog.home_order(&prefs)) {
+                if ids.len() >= 4 {
+                    break;
+                }
+                if !ids.iter().any(|x| x == &e.id) {
+                    ids.push(e.id.clone());
+                }
+            }
+        }
+        ids.truncate(4);
+        self.app_icons(&ids)
+    }
+
     pub(crate) fn visible_ids(&self) -> Vec<String> {
         let prefs = self.app_prefs.prefs();
         self.catalog.visible(prefs).map(|e| e.id.clone()).collect()
@@ -245,7 +312,7 @@ impl De {
 
     /// Search rows: every visible app (the query field is static until the
     /// on-screen keyboard/search input lands in M4 — tapping a row launches).
-    fn search_rows(&mut self) -> Vec<SearchRow> {
+    pub(crate) fn search_rows(&mut self) -> Vec<SearchRow> {
         let q = self.navigation.search_query.trim().to_lowercase();
         let ids = self.visible_ids();
         self.app_icons(&ids)
@@ -265,16 +332,21 @@ impl De {
             .collect()
     }
 
-    /// Status bar data from the live sysfs/procfs pollers (Wi-Fi/BT arrive
-    /// with the M4 D-Bus services — `Unknown`/`false` paints no icon).
-    fn status_info() -> StatusInfo {
+    /// Status bar data from the live sysfs/procfs pollers + `panels.control_state`
+    /// (Wi-Fi / Bluetooth / Airplane / DND).
+    fn status_info(&self) -> StatusInfo {
         let b = de_system::upower::poll_battery();
         let p = de_system::privacy::poll_privacy();
+        let cs = &self.panels.control_state;
         StatusInfo {
             clock: clock_hhmm(),
             battery_pct: b.percent,
             charging: b.charging,
             battery_full: b.full,
+            wifi: cs.wifi,
+            bluetooth: cs.bluetooth.unwrap_or(false),
+            airplane: cs.airplane.unwrap_or(false),
+            dnd: self.app_prefs.prefs().do_not_disturb,
             privacy_cam: p.camera,
             privacy_mic: p.mic,
             ..StatusInfo::default()

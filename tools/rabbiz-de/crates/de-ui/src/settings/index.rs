@@ -48,6 +48,17 @@ pub fn section_key(index: usize) -> Option<&'static str> {
 
 #[must_use]
 pub fn render_index(size: Size, s: &Strings, t: &Theme, clock: &str) -> de_api::Pixels {
+    render_index_with_keyboard(size, s, t, clock, "")
+}
+
+#[must_use]
+pub fn render_index_with_keyboard(
+    size: Size,
+    s: &Strings,
+    t: &Theme,
+    clock: &str,
+    keyboard_name: &str,
+) -> de_api::Pixels {
     let mut c = Canvas::filled(size, t.bg);
     chrome::status_bar(&mut c, t, &chrome::StatusInfo::new(clock, ""));
     chrome::draw(
@@ -64,8 +75,16 @@ pub fn render_index(size: Size, s: &Strings, t: &Theme, clock: &str) -> de_api::
             break;
         }
         let last = i + 1 == SECTIONS.len() || y + 88 * 2 > size.h - chrome::NAV_H - 16;
-        chrome::settings_row(&mut c, t, y, s.get(key), "", i == 0, last);
+        let val = if *key == "settings.keyboard" {
+            keyboard_name
+        } else {
+            ""
+        };
+        chrome::settings_row(&mut c, t, y, s.get(key), val, i == 0, last);
         y += 88;
+        if i == 3 || i == 7 {
+            y += 20;
+        }
     }
     let _ = Rect::new(0, 0, 0, 0);
     let _ = tokens::RADIUS_CARD;

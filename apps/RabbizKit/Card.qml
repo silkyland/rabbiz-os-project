@@ -17,6 +17,7 @@ Rectangle {
     color: Theme.card
     border.width: 1
     border.color: Qt.alpha(Theme.text, 0.08)
+    Behavior on color { ColorAnimation { duration: Theme.animMed; easing.type: Theme.animEase } }
 
     Item {
         id: inner

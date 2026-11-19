@@ -16,12 +16,21 @@ Rectangle {
     signal clicked()
 
     implicitWidth: label.implicitWidth + (materialIcon.length > 0 ? 54 : 40)
-    implicitHeight: 48
+    implicitHeight: 52
     radius: height / 2
     opacity: enabled2 ? 1.0 : 0.45
     color: ShellPrefs.accentColor
-    scale: tap.pressed ? 0.96 : 1.0
-    Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+    scale: (tap.pressed && enabled2) ? 0.96 : 1.0
+    Behavior on scale { SpringAnimation { spring: 6.5; damping: 0.48 } }
+    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+
+    Rectangle {
+        anchors.fill: parent
+        radius: parent.radius
+        color: ShellPrefs.onAccentColor
+        opacity: (tap.pressed && root.enabled2) ? 0.16 : 0.0
+        Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+    }
 
     Row {
         anchors.centerIn: parent

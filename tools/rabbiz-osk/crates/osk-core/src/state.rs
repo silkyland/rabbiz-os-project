@@ -297,9 +297,35 @@ impl Keyboard {
 
     /// The app's surrounding text, when the compositor tells us (used for auto-capitalise).
     pub fn set_surrounding_text(&mut self, text: String) {
+        let len = text.len();
+        self.set_surrounding_text_at(text, len);
+    }
+
+    /// Update surrounding text using the `zwp_input_method_v2.surrounding_text` byte `cursor`
+    /// offset so only text *before* the cursor drives auto-capitalise, suggestions, and backspace.
+    pub fn set_surrounding_text_at(&mut self, mut text: String, cursor: usize) {
+        let mut end = cursor.min(text.len());
+        while end > 0 && !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
         self.text = text;
         if self.autocapitalise() && Self::at_sentence_start(&self.text) {
             self.shift = ShiftState::OneShot;
+        }
+    }
+
+    /// Reset per-field transient state on a fresh `activate` before `surrounding_text` arrives.
+    pub fn reset_for_activation(&mut self) {
+        self.text.clear();
+        self.shift = ShiftState::Off;
+        self.last_shift_tap_ms = None;
+        self.emoji_query = None;
+        if self.is_panel() {
+            if let Some((index, layer)) = self.panel_return.take() {
+                self.active = index;
+                self.layer = layer;
+            }
         }
     }
 
@@ -352,6 +378,13 @@ impl Keyboard {
             }
             KeyAction::Space => {
                 self.last_shift_tap_ms = None;
+                if self.is_panel() && self.layer == "s_letters" {
+                    let mut query = self.emoji_query.clone().unwrap_or_default();
+                    query.push(' ');
+                    self.emoji_query = Some(query);
+                    self.patch_results();
+                    return vec![Command::Layer("s_letters".into())];
+                }
                 self.commit_text(" ".into())
             }
             KeyAction::Backspace => {

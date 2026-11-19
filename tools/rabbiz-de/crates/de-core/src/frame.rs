@@ -159,15 +159,37 @@ impl Run {
                 .navigation
                 .drawer_slide
                 .advance(dt, &self.de.motion_clock);
-            self.de.needs_present = true;
-            if self.de.navigation.drawer_closing && self.de.navigation.drawer_slide.settled() {
-                self.de.navigation.drawer_closing = false;
-                self.de.navigation.drawer_slide.value = 0.0;
-                self.de.navigation.drawer_slide.target = 0.0;
-                self.de.show_shell(de_ui::nav::Screen::Home);
+            // Pixel-scale settle snap (0..1600 px travel) so a 0.001 epsilon
+            // never burns frames in a sub-pixel tail.
+            let h = self.de.output.height.max(1) as f32;
+            if self.de.navigation.drawer_closing && self.de.navigation.drawer_slide.value >= h - 1.0
+            {
+                self.de.navigation.drawer_slide.snap();
             }
+            if (self.de.navigation.drawer_slide.target - self.de.navigation.drawer_slide.value).abs()
+                < 1.0
+                && self.de.navigation.drawer_slide.velocity.abs() < 2.0
+            {
+                self.de.navigation.drawer_slide.snap();
+            }
+            self.de.needs_present = true;
         } else if !self.de.navigation.drawer_dragging {
             self.de.navigation.drawer_last_tick = None;
+        }
+        if self.de.foreground == crate::state::Foreground::Shell
+            && self.de.nav.current == de_ui::nav::Screen::Drawer
+            && self.de.navigation.drawer_closing
+            && !self.de.navigation.drawer_dragging
+            && self.de.navigation.drawer_slide.settled()
+        {
+            self.de.navigation.drawer_closing = false;
+            self.de.navigation.drawer_pull_y = 0.0;
+            self.de.navigation.drawer_slide.value = 0.0;
+            self.de.navigation.drawer_slide.target = 0.0;
+            self.de.navigation.drawer_slide.velocity = 0.0;
+            self.de.navigation.home_underlay_px = None;
+            self.de.navigation.home_underlay_tex = None;
+            self.de.show_shell(de_ui::nav::Screen::Home);
         }
         if self.de.foreground == crate::state::Foreground::Shell
             && self.de.nav.current == de_ui::nav::Screen::Recents
@@ -190,6 +212,7 @@ impl Run {
         } else {
             self.de.navigation.recents_last_tick = None;
         }
+        self.de.advance_card_dismiss(t0);
         self.de.advance_panel(t0);
         self.de.power.advance(t0);
         self.de.advance_lock(t0);
@@ -656,7 +679,9 @@ impl Run {
         let interval = Duration::from_secs_f64(0.95 / self.de.output.refresh_hz.max(1.0));
         let now = Instant::now();
         let search_blink = (self.de.foreground == crate::state::Foreground::Shell
-            && self.de.nav.current == de_ui::nav::Screen::Search)
+            && (self.de.nav.current == de_ui::nav::Screen::Search
+                || (self.de.nav.current == de_ui::nav::Screen::Drawer
+                    && !self.de.navigation.search_query.is_empty())))
             .then_some(now + Duration::from_millis(530));
         let recents_wake = (self.de.foreground == crate::state::Foreground::Shell
             && self.de.nav.current == de_ui::nav::Screen::Recents
@@ -669,7 +694,9 @@ impl Run {
             && !self.de.navigation.drawer_dragging
             && !self.de.navigation.drawer_slide.settled())
         .then_some(now + interval);
+        let shell_im_wake = run_de_shell_im_wake(self).then_some(now + Duration::from_millis(16));
         [
+            shell_im_wake,
             self.de.launch.deadline(),
             self.de
                 .morph
@@ -683,6 +710,12 @@ impl Run {
             search_blink,
             recents_wake,
             self.de.navigation.recents_fade.as_ref().map(|_| now + interval),
+            self.de
+                .navigation
+                .card_dismiss
+                .as_ref()
+                .filter(|d| !d.dragging)
+                .map(|_| now + interval),
             drawer_wake,
         ]
         .into_iter()
@@ -1359,7 +1392,7 @@ fn dump_frame_if_triggered(de: &crate::state::De) {
     }
 }
 
-fn minute_of_day() -> u64 {
+pub(crate) fn minute_of_day() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0, |d| d.as_secs() / 60)
@@ -1458,6 +1491,7 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         .insert_source(shot_timer, |_, (), run: &mut Run| {
             dump_frame_if_triggered(&run.de);
             run.de.check_osk();
+            poll_shell_im_bridge(&mut run.de);
             run.de.poll_panels();
             run.de.poll_power();
             run.de.poll_recents_backdrop();
@@ -1484,7 +1518,9 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     let deadline = run.duration.map(|d| Instant::now() + d);
     // Kick off the first frame.
     run.present()?;
-    match crate::osk::spawn(&mut run.de.display_handle, &socket_name) {
+    let sock = run.de.shell_im.sock_path().cloned();
+    let kb_exec = de_config::keyboards::resolve_active_keyboard(run.de.app_prefs.prefs()).exec;
+    match crate::osk::spawn(&mut run.de.display_handle, &socket_name, &kb_exec, sock.as_deref()) {
         Ok(child) => {
             run.de.osk_spawned_at = Some(Instant::now());
             run.de.osk = Some(child);
@@ -1504,6 +1540,10 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         event_loop
             .dispatch(wait, &mut run)
             .map_err(|e| format!("dispatch: {e}"))?;
+        poll_shell_im_bridge(&mut run.de);
+        if run.de.needs_present {
+            run.pump();
+        }
         if !run.de.running.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
@@ -1526,3 +1566,53 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
 
 #[inline]
 fn profiling_scope_display_dispatch() {}
+
+fn run_de_shell_im_wake(run: &Run) -> bool {
+    run.de.shell_im.is_shown()
+}
+
+fn poll_shell_im_bridge(de: &mut De) {
+    let want_visible = de.foreground == crate::state::Foreground::Shell
+        && !de.locked()
+        && !de.sleeping()
+        && matches!(
+            de.nav.current,
+            de_ui::nav::Screen::Search | de_ui::nav::Screen::Drawer
+        );
+    if !want_visible && de.shell_im.is_shown() {
+        de.shell_im.set_visible(false);
+    }
+    let events = de.shell_im.poll();
+    for event in events {
+        if !want_visible {
+            continue;
+        }
+        match event {
+            crate::osk::ShellImEvent::Commit(text) => {
+                de.navigation.search_query.push_str(&text);
+                de.navigation.drawer_scroll = 0;
+                de.shell_dirty = true;
+                de.needs_present = true;
+            }
+            crate::osk::ShellImEvent::Backspace => {
+                de.navigation.search_query.pop();
+                de.navigation.drawer_scroll = 0;
+                de.shell_dirty = true;
+                de.needs_present = true;
+            }
+            crate::osk::ShellImEvent::Enter => {
+                de.shell_im.set_visible(false);
+                if de.nav.current == de_ui::nav::Screen::Search {
+                    let rows = de.search_rows();
+                    if let Some(first) = rows.first() {
+                        let id = first.id.clone();
+                        let size = de_api::Size::new(de.output.width as i32, de.output.height as i32);
+                        let rect = de_ui::search::icon_rect(size, &rows, 0);
+                        de.try_launch(&id, rect);
+                    }
+                }
+                de.needs_present = true;
+            }
+        }
+    }
+}

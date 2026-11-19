@@ -1,0 +1,50 @@
+From: Antigravity kernel lane <kernel@rabbizos>
+Date: Thu, 19 Nov 2026
+Subject: [PATCH] [DO NOT FLASH - TZPC HANG] arm64: dts: exynos850-a217f: enable SPI0 (0x13940000) for ET520 fingerprint probe
+
+!!! DO NOT FLASH !!!
+Tested 2026-11-19: enabling usi_spi_0 / spi_0 (0x13940000) hangs at
+"booting kernel" (likely TZPC Secure World lock on SPI0 for TEE
+fingerprint). Keep for reference only; do not include in boot-avb.img.
+
+Enables usi_spi_0 and spi_0 at 0x13940000 with a spidev child node
+(rohm,dh2228fv) at 12.5 MHz and keeps vdd_ldo26 (vdd_btp_3p3) on so
+userspace can run et520-id-probe against the EgisTech ET520 sensor.
+
+Lane: kernel. Device: samsung/a21s.
+---
+ arch/arm64/boot/dts/exynos/exynos850-a217f.dts | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
+index 111111111..222222222 100644
+--- a/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
++++ b/arch/arm64/boot/dts/exynos/exynos850-a217f.dts
+@@ -300,6 +300,7 @@
+ 				regulator-min-microvolt = <3300000>;
+ 				regulator-max-microvolt = <3375000>;
+ 				regulator-ramp-delay = <12000>;
++				regulator-always-on;
+ 			};
+ 
+ 			vdd_ldo27: ldo27 {
+@@ -1480,3 +1481,19 @@
+ 		#sound-dai-cells = <0>;
+ 	};
+ };
++
++/* ---- EgisTech ET520 fingerprint sensor on spi_0 (0x13940000) ------- */
++&usi_spi_0 {
++	status = "okay";
++};
++
++&spi_0 {
++	status = "okay";
++
++	spidev@0 {
++		compatible = "rohm,dh2228fv";
++		reg = <0>;
++		spi-max-frequency = <12500000>;
++	};
++};
++

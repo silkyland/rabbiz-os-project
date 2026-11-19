@@ -37,14 +37,20 @@ ApplicationWindow {
         Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             x: sw.checked ? parent.width - width - Theme.spaceXS : Theme.spaceXS
-            width: parent.height - 2 * Theme.spaceXS
-            height: width
+            width: swArea.pressed ? parent.height - Theme.spaceXS : parent.height - 2 * Theme.spaceXS
+            height: parent.height - 2 * Theme.spaceXS
             radius: Theme.radiusPill
             color: Theme.primaryContent
-            Behavior on x { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+            scale: swArea.pressed ? 0.94 : 1.0
+            Behavior on x { SpringAnimation { spring: 6.0; damping: 0.48; mass: 0.7 } }
+            Behavior on width { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+            Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
         }
         MouseArea {
-            anchors.fill: parent
+            id: swArea
+            anchors.centerIn: parent
+            width: Math.max(48, parent.width + Theme.spaceS)
+            height: Math.max(48, parent.height + Theme.spaceS)
             onClicked: { sw.checked = !sw.checked; sw.toggled(sw.checked) }
         }
     }
@@ -55,16 +61,28 @@ ApplicationWindow {
         property bool accent: true
         signal clicked()
         implicitWidth: btnLabel.implicitWidth + Theme.spaceL * 2
-        implicitHeight: Theme.iconM
+        implicitHeight: Math.max(52, Theme.iconM)
         radius: Theme.radiusPill
         color: btn.accent ? ShellPrefs.accentColor : Theme.tileOff
-        opacity: btnArea.pressed ? 0.7 : 1.0
+        scale: btnArea.pressed ? 0.95 : 1.0
+        Behavior on scale { SpringAnimation { spring: 5.5; damping: 0.45; mass: 0.8 } }
+        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: btn.accent ? Theme.primaryContent : Theme.text
+            opacity: btnArea.pressed ? 0.14 : 0.0
+            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+        }
+
         Text {
             id: btnLabel
             anchors.centerIn: parent
             text: btn.text
             color: btn.accent ? Theme.primaryContent : Theme.tileOffText
             font.pixelSize: Theme.fontBody
+            font.weight: Font.Medium
         }
         MouseArea {
             id: btnArea
@@ -94,7 +112,15 @@ ApplicationWindow {
 
         Layout.fillWidth: true
         implicitHeight: Theme.iconL + Theme.spaceM + 10
-        color: rowArea.pressed ? Qt.alpha(Theme.text, 0.06) : "transparent"
+        color: "transparent"
+
+        // MD3 state-layer press feedback
+        Rectangle {
+            anchors.fill: parent
+            color: Theme.text
+            opacity: rowArea.pressed ? 0.07 : 0.0
+            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+        }
 
         RowLayout {
             anchors {
@@ -108,14 +134,14 @@ ApplicationWindow {
                 Layout.preferredWidth: Theme.iconM + 4
                 Layout.preferredHeight: Theme.iconM + 4
                 radius: (Theme.iconM + 4) / 2
-                color: Theme.surfaceHigh
+                color: Qt.alpha(srow.badgeColor, 0.14)
                 border.width: 1
-                border.color: Theme.separator
+                border.color: Qt.alpha(srow.badgeColor, 0.28)
 
                 Components.MaterialIcon {
                     anchors.centerIn: parent
                     name: srow.glyph
-                    color: Theme.text
+                    color: srow.badgeColor
                     size: Theme.fontTitle - 4
                 }
             }
@@ -179,22 +205,46 @@ ApplicationWindow {
     // Header
     // ------------------------------------------------------------------
     header: Rectangle {
-        height: Theme.iconL + Theme.spaceS
+        height: Theme.iconL + Theme.spaceS + Theme.statusBarHeight
         color: Theme.surface
         RowLayout {
             anchors {
                 fill: parent
+                topMargin: Theme.statusBarHeight
                 leftMargin: Theme.spaceM
                 rightMargin: Theme.spaceM
             }
             spacing: Theme.spaceM
-            Text {
+            Rectangle {
                 visible: stack.depth > 1
-                text: "‹"
-                color: Theme.primary
-                font.pixelSize: Theme.fontHeadline
-                Layout.preferredWidth: Theme.iconS
-                MouseArea { anchors.fill: parent; onClicked: stack.pop() }
+                Layout.preferredWidth: 48
+                Layout.preferredHeight: 48
+                radius: 24
+                color: Theme.card
+                border.width: 1
+                border.color: Qt.alpha(Theme.text, 0.08)
+                scale: hdrBackArea.pressed ? 0.92 : 1.0
+                Behavior on scale { SpringAnimation { spring: 5.5; damping: 0.44; mass: 0.8 } }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: Theme.text
+                    opacity: hdrBackArea.pressed ? 0.10 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                }
+
+                Components.MaterialIcon {
+                    anchors.centerIn: parent
+                    name: "arrow_back"
+                    color: Theme.text
+                    size: Theme.iconS - 4
+                }
+                MouseArea {
+                    id: hdrBackArea
+                    anchors.fill: parent
+                    onClicked: stack.pop()
+                }
             }
             Text {
                 Layout.fillWidth: true
@@ -202,6 +252,7 @@ ApplicationWindow {
                       ? stack.currentItem.pageTitle : "Settings"
                 color: Theme.text
                 font.pixelSize: Theme.fontTitle
+                font.weight: Font.DemiBold
                 elide: Text.ElideRight
             }
         }
@@ -241,7 +292,7 @@ ApplicationWindow {
         Flickable {
             property string pageTitle: "Settings"
             contentWidth: width
-            contentHeight: mainCol.implicitHeight + Theme.spaceXL
+            contentHeight: mainCol.implicitHeight + Theme.spaceXL + Theme.navZoneHeight
             clip: true
 
             ColumnLayout {
@@ -436,7 +487,7 @@ ApplicationWindow {
         Flickable {
             property string pageTitle: "Appearance & Launcher"
             contentWidth: width
-            contentHeight: appCol.implicitHeight + Theme.spaceXL
+            contentHeight: appCol.implicitHeight + Theme.spaceXL + Theme.navZoneHeight
             clip: true
 
             ColumnLayout {
@@ -666,22 +717,25 @@ ApplicationWindow {
                         ]
                         delegate: Rectangle {
                             required property var modelData
+                            readonly property bool selected: ShellPrefs.clockStyle === modelData.id
                             Layout.fillWidth: true
-                            height: Theme.iconM
+                            height: Math.max(48, Theme.iconM)
                             radius: Theme.radiusPill
-                            color: ShellPrefs.clockStyle === modelData.id
-                                   ? ShellPrefs.accentColor : Theme.card
+                            color: selected ? ShellPrefs.accentColor : Theme.card
                             border.width: 1
-                            border.color: Qt.alpha(Theme.text, 0.08)
+                            border.color: selected ? ShellPrefs.accentColor : Qt.alpha(Theme.text, 0.08)
+                            scale: clkArea.pressed ? 0.95 : 1.0
+                            Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
                             Text {
                                 anchors.centerIn: parent
                                 text: modelData.label
-                                color: ShellPrefs.clockStyle === modelData.id
-                                       ? ShellPrefs.onAccentColor : Theme.text
+                                color: selected ? ShellPrefs.onAccentColor : Theme.text
                                 font.pixelSize: Theme.fontCaption
                                 font.weight: Font.Medium
                             }
                             MouseArea {
+                                id: clkArea
                                 anchors.fill: parent
                                 onClicked: {
                                     ShellPrefs.clockStyle = modelData.id
@@ -705,22 +759,25 @@ ApplicationWindow {
                         ]
                         delegate: Rectangle {
                             required property var modelData
+                            readonly property bool selected: ShellPrefs.iconStyle === modelData.id
                             Layout.fillWidth: true
-                            height: Theme.iconM
+                            height: Math.max(48, Theme.iconM)
                             radius: Theme.radiusPill
-                            color: ShellPrefs.iconStyle === modelData.id
-                                   ? ShellPrefs.accentColor : Theme.card
+                            color: selected ? ShellPrefs.accentColor : Theme.card
                             border.width: 1
-                            border.color: Qt.alpha(Theme.text, 0.08)
+                            border.color: selected ? ShellPrefs.accentColor : Qt.alpha(Theme.text, 0.08)
+                            scale: icoArea.pressed ? 0.95 : 1.0
+                            Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
                             Text {
                                 anchors.centerIn: parent
                                 text: modelData.label
-                                color: ShellPrefs.iconStyle === modelData.id
-                                       ? ShellPrefs.onAccentColor : Theme.text
+                                color: selected ? ShellPrefs.onAccentColor : Theme.text
                                 font.pixelSize: Theme.fontCaption
                                 font.weight: Font.Medium
                             }
                             MouseArea {
+                                id: icoArea
                                 anchors.fill: parent
                                 onClicked: {
                                     ShellPrefs.iconStyle = modelData.id
@@ -821,13 +878,29 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     clip: true
                     spacing: Theme.spaceXS
+                    bottomMargin: Theme.navZoneHeight + Theme.spaceM
                     model: Network.networks
                     delegate: Rectangle {
                         required property var modelData
                         width: ListView.view.width
-                        implicitHeight: netCol.implicitHeight + Theme.spaceM
-                        radius: Theme.radiusS
+                        implicitHeight: Math.max(68, netCol.implicitHeight + Theme.spaceM)
+                        radius: Theme.radiusM
                         color: Theme.card
+                        border.width: 1
+                        border.color: modelData.inUse
+                                      ? Qt.alpha(ShellPrefs.accentColor, 0.35)
+                                      : Qt.alpha(Theme.text, 0.06)
+                        scale: wifiRowArea.pressed ? 0.985 : 1.0
+                        Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: Theme.text
+                            opacity: wifiRowArea.pressed ? 0.07 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                        }
+
                         RowLayout {
                             anchors {
                                 fill: parent
@@ -861,6 +934,7 @@ ApplicationWindow {
                             }
                         }
                         MouseArea {
+                            id: wifiRowArea
                             anchors.fill: parent
                             onClicked: {
                                 // A saved network already has its PSK in NetworkManager: connect straight
@@ -1132,26 +1206,25 @@ ApplicationWindow {
                         ]
                         delegate: Rectangle {
                             required property var modelData
+                            readonly property bool selected: ShellPrefs.sleepTimeoutSec === modelData.sec
                             Layout.fillWidth: true
-                            height: 46
+                            height: 48
                             radius: Theme.radiusPill
-                            color: ShellPrefs.sleepTimeoutSec === modelData.sec
-                                ? ShellPrefs.accentColor
-                                : Theme.card
+                            color: selected ? ShellPrefs.accentColor : Theme.card
                             border.width: 1
-                            border.color: ShellPrefs.sleepTimeoutSec === modelData.sec
-                                ? ShellPrefs.accentColor
-                                : Theme.separator
+                            border.color: selected ? ShellPrefs.accentColor : Theme.separator
+                            scale: sleepArea.pressed ? 0.94 : 1.0
+                            Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
                             Text {
                                 anchors.centerIn: parent
                                 text: modelData.label
-                                color: ShellPrefs.sleepTimeoutSec === modelData.sec
-                                    ? ShellPrefs.onAccentColor
-                                    : Theme.text
+                                color: selected ? ShellPrefs.onAccentColor : Theme.text
                                 font.pixelSize: Theme.fontCaption
                                 font.weight: Font.Medium
                             }
                             MouseArea {
+                                id: sleepArea
                                 anchors.fill: parent
                                 onClicked: {
                                     ShellPrefs.sleepTimeoutSec = modelData.sec

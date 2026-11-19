@@ -27,7 +27,18 @@ Item {
         border.color: Qt.alpha(Theme.text, 0.08)
         implicitWidth: Math.min(msg.implicitWidth + Theme.spaceM * 2,
                                 bubble.maxBubbleWidth)
-        implicitHeight: msg.implicitHeight + Theme.spaceM
+        implicitHeight: msg.implicitHeight + Theme.spaceM + 4
+        scale: bubbleMouse.pressed ? 0.975 : 1.0
+        Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+
+        // MD3 state-layer press feedback
+        Rectangle {
+            anchors.fill: parent
+            radius: parent.radius
+            color: bubble.incoming ? Theme.text : ShellPrefs.onAccentColor
+            opacity: bubbleMouse.pressed ? 0.10 : 0.0
+            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+        }
 
         Text {
             id: msg
@@ -36,8 +47,8 @@ Item {
                 fill: parent
                 leftMargin: Theme.spaceM
                 rightMargin: Theme.spaceM
-                topMargin: Theme.spaceS
-                bottomMargin: Theme.spaceS
+                topMargin: Theme.spaceS + 2
+                bottomMargin: Theme.spaceS + 2
             }
             text: bubble.body
             color: bubble.incoming ? Theme.text : ShellPrefs.onAccentColor
@@ -48,6 +59,7 @@ Item {
     }
 
     MouseArea {
+        id: bubbleMouse
         anchors.fill: rect
         onPressAndHold: bubble.longPressed()
     }

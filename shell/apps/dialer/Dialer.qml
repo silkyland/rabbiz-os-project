@@ -246,6 +246,7 @@ ApplicationWindow {
         anchors {
             fill: parent
             margins: Theme.spaceM
+            topMargin: Theme.statusBarHeight + Theme.spaceXS
             bottomMargin: Theme.navZoneHeight + Theme.spaceS
         }
         spacing: Theme.spaceM
@@ -573,11 +574,21 @@ ApplicationWindow {
                                 width: 80
                                 height: 80
                                 radius: 40
-                                color: vmTap.pressed ? Theme.surfaceHigh : Theme.card
+                                color: Theme.card
                                 border.width: 1
-                                border.color: Qt.alpha(Theme.text, 0.08)
-                                scale: vmTap.pressed ? 0.92 : 1.0
-                                Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                border.color: vmTap.pressed
+                                              ? Qt.alpha(ShellPrefs.accentColor, 0.35)
+                                              : Qt.alpha(Theme.text, 0.08)
+                                scale: vmTap.pressed ? 0.91 : 1.0
+                                Behavior on scale { SpringAnimation { spring: 5.5; damping: 0.44; mass: 0.8 } }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    color: Theme.text
+                                    opacity: vmTap.pressed ? 0.10 : 0.0
+                                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                }
 
                                 Components.MaterialIcon {
                                     anchors.centerIn: parent
@@ -600,21 +611,41 @@ ApplicationWindow {
                         // Center: Prominent green Call pill
                         Item {
                             Layout.fillWidth: true
-                            Layout.preferredHeight: 84
+                            Layout.preferredHeight: 88
+
+                            // Subtle active halo for clear primary CTA hierarchy
+                            Rectangle {
+                                anchors.centerIn: parent
+                                width: 164
+                                height: 90
+                                radius: 45
+                                color: "transparent"
+                                border.width: 2
+                                border.color: Qt.alpha(Theme.success, root.dialNumber.length > 0 ? 0.32 : 0.0)
+                                Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+                            }
 
                             Rectangle {
                                 anchors.centerIn: parent
-                                width: 152
-                                height: 80
-                                radius: 40
+                                width: 156
+                                height: 82
+                                radius: 41
                                 color: root.dialNumber.length > 0
                                        ? Theme.success
                                        : Qt.alpha(Theme.success, 0.22)
                                 border.width: root.dialNumber.length > 0 ? 0 : 1
-                                border.color: Qt.alpha(Theme.success, 0.40)
-                                scale: callBtnTap.pressed ? 0.93 : 1.0
-                                Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                border.color: Qt.alpha(Theme.success, 0.42)
+                                scale: callBtnTap.pressed ? 0.92 : 1.0
+                                Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.42; mass: 0.85 } }
                                 Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    color: root.dialNumber.length > 0 ? "#052E16" : Theme.success
+                                    opacity: callBtnTap.pressed ? 0.16 : 0.0
+                                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                }
 
                                 Components.MaterialIcon {
                                     anchors.centerIn: parent
@@ -640,12 +671,24 @@ ApplicationWindow {
                                 width: 80
                                 height: 80
                                 radius: 40
-                                visible: root.dialNumber.length > 0
-                                color: bkTap.pressed ? Qt.alpha(Theme.danger, 0.22) : Theme.card
+                                opacity: root.dialNumber.length > 0 ? 1.0 : 0.0
+                                enabled: root.dialNumber.length > 0
+                                color: Theme.card
                                 border.width: 1
-                                border.color: Qt.alpha(Theme.text, 0.08)
-                                scale: bkTap.pressed ? 0.92 : 1.0
-                                Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                border.color: bkTap.pressed
+                                              ? Qt.alpha(Theme.danger, 0.45)
+                                              : Qt.alpha(Theme.text, 0.08)
+                                scale: bkTap.pressed ? 0.91 : (root.dialNumber.length > 0 ? 1.0 : 0.86)
+                                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                Behavior on scale { SpringAnimation { spring: 5.5; damping: 0.44; mass: 0.8 } }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    color: Theme.danger
+                                    opacity: bkTap.pressed ? 0.16 : 0.0
+                                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                }
 
                                 Components.MaterialIcon {
                                     anchors.centerIn: parent
@@ -687,11 +730,22 @@ ApplicationWindow {
                                 required property var modelData
                                 readonly property bool active: root.recentsFilter === modelData.id
                                 implicitWidth: fText.implicitWidth + Theme.spaceM * 1.4
-                                implicitHeight: 42
+                                implicitHeight: 48
                                 radius: Theme.radiusPill
                                 color: active ? ShellPrefs.accentColor : Theme.card
                                 border.width: active ? 0 : 1
                                 border.color: Qt.alpha(Theme.text, 0.08)
+                                scale: filterTap.pressed ? 0.94 : 1.0
+                                Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    color: active ? ShellPrefs.onAccentColor : Theme.text
+                                    opacity: filterTap.pressed ? 0.12 : 0.0
+                                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                }
 
                                 Text {
                                     id: fText
@@ -705,6 +759,7 @@ ApplicationWindow {
                                 }
 
                                 TapHandler {
+                                    id: filterTap
                                     onTapped: root.recentsFilter = modelData.id
                                 }
                             }
@@ -715,11 +770,21 @@ ApplicationWindow {
                         Rectangle {
                             visible: recentsModel.count > 0
                             implicitWidth: clrRow.implicitWidth + Theme.spaceM
-                            implicitHeight: 42
+                            implicitHeight: 48
                             radius: Theme.radiusPill
                             color: Theme.surfaceHigh
                             border.width: 1
                             border.color: Qt.alpha(Theme.text, 0.08)
+                            scale: clrTap.pressed ? 0.94 : 1.0
+                            Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: parent.radius
+                                color: Theme.text
+                                opacity: clrTap.pressed ? 0.10 : 0.0
+                                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                            }
 
                             Row {
                                 id: clrRow
@@ -741,6 +806,7 @@ ApplicationWindow {
                             }
 
                             TapHandler {
+                                id: clrTap
                                 onTapped: {
                                     recentsModel.clear();
                                     root.showToast("Call history cleared");
@@ -759,6 +825,7 @@ ApplicationWindow {
                             anchors.fill: parent
                             clip: true
                             model: recentsModel
+                            bottomMargin: Theme.spaceS
                             spacing: 0
 
                             delegate: Item {
@@ -788,9 +855,19 @@ ApplicationWindow {
                                     radius: Theme.radiusL
                                     color: Theme.card
                                     border.width: 1
-                                    border.color: Qt.alpha(Theme.text, 0.07)
+                                    border.color: rowTap.pressed
+                                                  ? Qt.alpha(Theme.text, 0.14)
+                                                  : Qt.alpha(Theme.text, 0.07)
                                     scale: rowTap.pressed ? 0.985 : 1.0
                                     Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        radius: parent.radius
+                                        color: Theme.text
+                                        opacity: rowTap.pressed ? 0.07 : 0.0
+                                        Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                                    }
 
                                     RowLayout {
                                         anchors {
@@ -870,11 +947,12 @@ ApplicationWindow {
                                             Layout.preferredWidth: 54
                                             Layout.preferredHeight: 54
                                             radius: 27
-                                            color: Qt.alpha(Theme.success, callRowTap.pressed ? 0.30 : 0.14)
+                                            color: Qt.alpha(Theme.success, callRowTap.pressed ? 0.28 : 0.14)
                                             border.width: 1
                                             border.color: Qt.alpha(Theme.success, 0.28)
                                             scale: callRowTap.pressed ? 0.90 : 1.0
-                                            Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+                                            Behavior on scale { SpringAnimation { spring: 5.5; damping: 0.44; mass: 0.8 } }
+                                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
                                             Components.MaterialIcon {
                                                 anchors.centerIn: parent
@@ -1225,7 +1303,17 @@ ApplicationWindow {
                         Layout.fillHeight: true
                         radius: Theme.radiusPill
                         color: active ? ShellPrefs.accentColor : "transparent"
+                        scale: tabTap.pressed ? 0.95 : 1.0
+                        Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
                         Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: active ? ShellPrefs.onAccentColor : Theme.text
+                            opacity: tabTap.pressed ? 0.12 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                        }
 
                         Row {
                             anchors.centerIn: parent
@@ -1257,6 +1345,7 @@ ApplicationWindow {
                         }
 
                         TapHandler {
+                            id: tabTap
                             onTapped: root.currentTab = index
                         }
                     }
@@ -1861,16 +1950,23 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: padGrid.keyHeight
                 radius: Math.min(32, height / 2)
-                color: keyTap.pressed
-                       ? Qt.alpha(ShellPrefs.accentColor, 0.22)
-                       : Theme.card
+                color: Theme.card
                 border.width: 1
                 border.color: keyTap.pressed
                               ? Qt.alpha(ShellPrefs.accentColor, 0.55)
                               : Qt.alpha(Theme.text, 0.08)
-                scale: keyTap.pressed ? 0.93 : 1.0
-                Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
-                Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                scale: keyTap.pressed ? 0.92 : 1.0
+                Behavior on scale { SpringAnimation { spring: 5.5; damping: 0.42; mass: 0.8 } }
+                Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
+
+                // MD3 state-layer press feedback
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    color: ShellPrefs.accentColor
+                    opacity: keyTap.pressed ? 0.18 : 0.0
+                    Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                }
 
                 Column {
                     anchors.centerIn: parent

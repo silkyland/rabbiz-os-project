@@ -5,12 +5,14 @@
 #   exec = "command line"          # required; run via `setsid`, sh-split
 #   [overrides."<desktop-id>".env] # optional extra env on top of the contract
 #
-# Exact desktop-id matches only — no globs. Third-party wrappers keep their
-# own branding/flags; e.g. Chrome launches through `rabbiz-browser` so
-# `--disable-gpu` and the 1.5 scale stay in one place.
+# Exact desktop-id matches only — no globs. Chrome uses its own native
+# google-chrome.desktop identity with the A21s Wayland/software-GPU flags.
 
 [overrides."google-chrome"]
-exec = "rabbiz-browser"
+exec = "/opt/google/chrome/google-chrome --disable-gpu --ozone-platform=wayland --no-first-run --no-default-browser-check --touch-events=enabled --enable-pinch --force-device-scale-factor=1.5 --disable-component-update --password-store=basic --enable-wayland-ime"
 
 [overrides."com.google.Chrome"]
-exec = "rabbiz-browser"
+exec = "/opt/google/chrome/google-chrome --disable-gpu --ozone-platform=wayland --no-first-run --no-default-browser-check --touch-events=enabled --enable-pinch --force-device-scale-factor=1.5 --disable-component-update --password-store=basic --enable-wayland-ime"
+
+[overrides."ai.opencode"]
+exec = "/opt/OpenCode/ai.opencode --no-sandbox --disable-gpu --ozone-platform=wayland --force-device-scale-factor=0.85 --enable-wayland-ime"

@@ -168,6 +168,8 @@ pub struct De {
     pub catalog: de_apps::catalog::Catalog,
     /// Hide/pin/dock + wallpaper prefs (`~/.config/rabbiz-de/prefs.json`).
     pub app_prefs: de_apps::prefs::AppPrefs,
+    /// Active theme palette (resolved from prefs / `~/.config/rabbiz-de/theme`).
+    pub(crate) theme: de_design::tokens::Theme,
     /// Shell i18n catalog (LANG-derived).
     pub strings: de_ui::i18n::Strings,
     /// Shell frame needs re-raster (nav/status/page/prefs changed).
@@ -186,6 +188,8 @@ pub struct De {
     pub(crate) osk_respawn_at: Option<Instant>,
     /// When the current child was spawned (drives the backoff).
     pub(crate) osk_spawned_at: Option<Instant>,
+    /// Unix socket bridge for compositor-rendered search inputs (`Search`, `Drawer`).
+    pub(crate) shell_im: crate::osk::ShellImBridge,
 
     /// Queued `copy_with_damage` screencopy requests awaiting a damaged frame.
     pub(crate) screencopy_pending: Vec<crate::screencopy::PendingCapture>,
@@ -290,7 +294,22 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     });
     let form_factor =
         de_design::motion::FormFactor::from_profile_name(&profile.display.form_factor);
-    let motion_clock = de_paint::animation::AnimationClock::new().for_form_factor(form_factor);
+    let scheme = match std::env::var("RABBIZ_MOTION_SCHEME").as_deref() {
+        Ok("expressive") => de_design::motion::MotionScheme::Expressive,
+        _ => de_design::motion::MotionScheme::Standard,
+    };
+    let reduced_motion = matches!(
+        std::env::var("RABBIZ_REDUCED_MOTION").as_deref(),
+        Ok("1" | "true")
+    );
+    let motion_clock = de_paint::animation::AnimationClock::with_motion(scheme, reduced_motion, false)
+        .for_form_factor(form_factor);
+    let app_prefs = de_apps::prefs::AppPrefs::load();
+    let theme = if app_prefs.prefs().theme_mode.trim() == "dark" {
+        de_design::tokens::DARK
+    } else {
+        de_design::theme::persisted_mode().theme()
+    };
     let card =
         de_backend::drm::find_card().ok_or_else(|| InitError::Compositor("no drm card".into()))?;
     let (mut session, seat_notifier) = de_backend::session::activate()?;
@@ -479,7 +498,11 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         popup_grab: None,
         shell_menu: None,
         home_ui: crate::home_ui::HomeUi::new(),
-        panels: crate::panel_ui::PanelUi::new(),
+        panels: {
+            let mut p = crate::panel_ui::PanelUi::new();
+            p.pull.set_reach(de_ui::pull::reach_for(out_h));
+            p
+        },
         navigation: crate::navigation::Navigation::new(),
         output_obj,
 
@@ -535,7 +558,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         motion_clock,
         launch_error: None,
         catalog: de_apps::catalog::Catalog::scan(&shell_locales()),
-        app_prefs: de_apps::prefs::AppPrefs::load(),
+        app_prefs,
+        theme,
         strings: de_ui::i18n::Strings::load(shell_locale()),
         shell_dirty: true,
         shell_px: None,
@@ -544,6 +568,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         osk: None,
         osk_respawn_at: None,
         osk_spawned_at: None,
+        shell_im: crate::osk::ShellImBridge::bind(),
         screencopy_pending: Vec::new(),
         power: crate::power::Power::default(),
         lock: crate::lock_ui::LockUi::default(),

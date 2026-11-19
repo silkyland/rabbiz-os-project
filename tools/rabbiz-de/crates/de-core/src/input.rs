@@ -231,12 +231,13 @@ impl De {
                     return FilterResult::Intercept(());
                 }
                 if de.foreground == crate::state::Foreground::Shell
-                    && de.nav.current == de_ui::nav::Screen::Search
+                    && matches!(de.nav.current, de_ui::nav::Screen::Search | de_ui::nav::Screen::Drawer)
                 {
                     if state == KeyState::Pressed {
                         match raw {
                             Some(Keysym::BackSpace) => {
                                 de.navigation.search_query.pop();
+                                de.navigation.drawer_scroll = 0;
                                 de.shell_dirty = true;
                                 de.needs_present = true;
                             }
@@ -248,6 +249,7 @@ impl De {
                                 if let Some(ch) = keysym.modified_sym().key_char() {
                                     if !ch.is_control() {
                                         de.navigation.search_query.push(ch);
+                                        de.navigation.drawer_scroll = 0;
                                         de.shell_dirty = true;
                                         de.needs_present = true;
                                     }
@@ -443,8 +445,9 @@ impl De {
         {
             eprintln!("gesture: {ev:?}");
         }
-        // The lock overlay owns every gesture while it covers the screen.
-        if self.lock.shown() {
+        // The lock overlay owns every gesture while it covers the screen
+        // (until an unlock has been committed).
+        if self.lock.shown() && !self.lock.is_unlocking() {
             self.lock_gesture(ev);
             return;
         }
@@ -454,23 +457,39 @@ impl De {
                 dx,
                 dy,
             } => {
+                // Horizontal scrub along the bottom bar is QuickSwitch; don't
+                // hijack it as a vertical home-drag.
+                if dx.abs() > dy.abs() * 1.5 && dy > -24.0 {
+                    return;
+                }
                 self.follow_home_drag(dx, dy, time_ms);
                 return;
             }
             GestureEvent::Progress { zone, dx, dy } if zone != Zone::NavBar => {
                 if matches!(zone, Zone::EdgeLeft | Zone::EdgeRight) {
                     self.back_progress(zone, dx, dy);
+                    if self.navigation.back.is_some() {
+                        return;
+                    }
                 }
                 if self.panel_progress(zone == Zone::TopEdge, dx, dy) {
                     return;
                 }
                 if zone == Zone::Content {
-                    if self.foreground == Foreground::Shell && self.nav.current == Screen::Drawer {
-                        if self.navigation.drawer_drag_origin == 0 && dy > 0.0 {
+                    if self.foreground == Foreground::Shell
+                        && self.nav.current == Screen::Drawer
+                        && !self.navigation.drawer_closing
+                    {
+                        if self.navigation.drawer_dragging && self.navigation.drawer_pull_y == 0.0 && dy < 0.0 {
+                            self.drag_drawer(dy);
+                        } else if self.navigation.drawer_pull_y > 0.0
+                            || (self.navigation.drawer_drag_origin == 0 && dy > 0.0)
+                        {
+                            let pull = dy.max(0.0);
                             self.navigation.drawer_dragging = true;
-                            self.navigation.drawer_pull_y = dy;
-                            self.navigation.drawer_slide.value = dy;
-                            self.navigation.drawer_slide.target = dy;
+                            self.navigation.drawer_pull_y = pull;
+                            self.navigation.drawer_slide.value = pull;
+                            self.navigation.drawer_slide.target = pull;
                             self.needs_present = true;
                         } else {
                             self.navigation.drawer_dragging = false;
@@ -488,12 +507,25 @@ impl De {
                         let axis = *self.navigation.recents_axis.get_or_insert_with(|| {
                             if dx.abs() > dy.abs() { RecentsAxis::Horizontal } else { RecentsAxis::Vertical }
                         });
-                        if axis == RecentsAxis::Horizontal {
+                        if axis == RecentsAxis::Vertical && self.morph.is_none() {
+                            self.card_dismiss_drag(dy);
+                        } else if axis == RecentsAxis::Horizontal {
                             let size = de_api::Size::new(self.output.width as i32, self.output.height as i32);
                             self.navigation.recents_pager.drag(dx, de_ui::recents::card_stride(size) as f32);
                             self.shell_dirty = true;
                             self.needs_present = true;
                         }
+                    } else if self.foreground == Foreground::Shell
+                        && self.nav.current == Screen::Home
+                        && !self.home_ui.paging()
+                        && !self.home_ui.dragging_icon()
+                        && dy < -16.0
+                        && -dy > dx.abs() * 1.25
+                    {
+                        self.home_drag_cancelled();
+                        self.begin_drawer_drag();
+                        self.drag_drawer(dy);
+                        return;
                     } else if self.foreground == Foreground::Shell
                         && self.nav.current == Screen::Home
                         && !self.home_ui.paging()
@@ -523,13 +555,21 @@ impl De {
                 self.home_touch_started();
                 return;
             }
-            GestureEvent::NavReleased { dy, vy } => {
+            GestureEvent::NavPaused => {
+                self.nav_preview(true);
+                return;
+            }
+            GestureEvent::NavResumed => {
+                self.nav_preview(false);
+                return;
+            }
+            GestureEvent::NavReleased { dy, vy, paused } => {
                 use de_ui::gestures::{decide_navigation, NavDestination};
-                match decide_navigation(dy, vy, self.output.height as f32) {
+                match decide_navigation(dy, vy, self.output.height as f32, paused) {
                     NavDestination::Home if self.panels.shown() => self.panel_close(),
                     NavDestination::Home => {
                         if self.foreground == Foreground::Shell && self.nav.current == Screen::Home {
-                            self.open_drawer_animated(None);
+                            self.open_drawer_animated(None, vy);
                         } else if self.foreground == Foreground::App {
                             self.minimize_foreground();
                         } else {
@@ -549,7 +589,13 @@ impl De {
                 } else if self.foreground == Foreground::Shell
                     && self.nav.current == Screen::Recents
                 {
-                    match self.navigation.recents_axis {
+                    let axis = self.navigation.recents_axis;
+                    match axis {
+                        // Swipe up on a card closes that app (Android).
+                        Some(RecentsAxis::Vertical) if self.card_dismiss_release(dy, vy) => {
+                            self.release_recents_pager(0.0);
+                        }
+                        // Swipe up on the space around the cards: Home.
                         Some(RecentsAxis::Vertical) if -dy > self.output.height as f32 * 0.09 => {
                             self.release_recents_pager(0.0);
                             self.show_shell(Screen::Home);
@@ -557,6 +603,12 @@ impl De {
                         Some(RecentsAxis::Horizontal) => self.release_recents_pager(vx),
                         _ => self.release_recents_pager(0.0),
                     }
+                } else if self.foreground == Foreground::Shell
+                    && self.nav.current == Screen::Drawer
+                    && self.navigation.drawer_dragging
+                    && self.navigation.drawer_pull_y == 0.0
+                {
+                    self.release_drawer_drag(vy);
                 } else if self.foreground == Foreground::Shell
                     && self.nav.current == Screen::Drawer
                     && self.navigation.drawer_pull_y > 0.0
@@ -578,11 +630,12 @@ impl De {
                     self.needs_present = true;
                 } else if self.foreground == Foreground::Shell
                     && self.nav.current == Screen::Home
-                    && dy < -96.0 && -dy > dx.abs() * 1.4
+                    && (dy < -64.0 || (dy < -28.0 && vy <= -350.0))
+                    && -dy > dx.abs() * 1.4
                 {
                     self.home_drag_cancelled();
                     let from_y = (self.output.height as f32 + dy).max(0.0);
-                    self.open_drawer_animated(Some(from_y));
+                    self.open_drawer_animated(Some(from_y), vy);
                 } else {
                     self.home_drag_released(vx);
                 }
@@ -600,7 +653,15 @@ impl De {
                 self.clear_back_feedback();
                 self.panel_cancelled();
                 self.home_drag_cancelled();
+                if self.foreground == Foreground::Shell
+                    && self.nav.current == Screen::Drawer
+                    && self.navigation.drawer_dragging
+                    && self.navigation.drawer_pull_y == 0.0
+                {
+                    self.release_drawer_drag(0.0);
+                }
                 if self.nav.current == Screen::Recents {
+                    self.card_dismiss_release(0.0, 0.0);
                     self.release_recents_pager(0.0);
                 }
                 self.release_home_drag(false);
@@ -619,15 +680,59 @@ impl De {
                     self.show_shell(Screen::Home);
                 }
             }
-            Gesture::Recents => {
-                self.show_shell(Screen::Recents);
+            Gesture::QuickSwitch { to_previous } => {
+                if !self.panels.shown() {
+                    let windows = self.recent_windows();
+                    if !windows.is_empty() {
+                        let target = if self.foreground == Foreground::App {
+                            if windows.len() >= 2 {
+                                self.capture_topmost();
+                                if to_previous {
+                                    windows[1].clone()
+                                } else {
+                                    windows[windows.len() - 1].clone()
+                                }
+                            } else {
+                                windows[0].clone()
+                            }
+                        } else if to_previous {
+                            windows[0].clone()
+                        } else {
+                            windows[windows.len() - 1].clone()
+                        };
+                        self.morph = None;
+                        self.launch.cancel();
+                        self.show_app_window(&target);
+                    }
+                }
             }
             Gesture::EdgeBack { .. } => {
                 if matches!(self.foreground, Foreground::App) {
-                    // Back preserves the client and its state, morphing to Home.
-                    self.minimize_foreground();
+                    // Android: Back belongs to the app (owner decision
+                    // 2026-11-19, docs/AUDIT-UIUX-2026-11-19.md Q1).
+                    self.app_back(time_ms);
                 } else if self.nav.current == Screen::Recents {
-                    self.show_shell(Screen::Home);
+                    let windows = self.recent_windows();
+                    if self.navigation.recents_from_app && self.morph.is_none() {
+                        if let Some(window) = windows.into_iter().next() {
+                            let size = de_api::Size::new(
+                                self.output.width as i32,
+                                self.output.height as i32,
+                            );
+                            let pos = self.navigation.recents_pager.pos();
+                            self.release_recents_pager(0.0);
+                            self.navigation.recents_fade = None;
+                            self.restore_recent(window, de_ui::recents::card_at(size, 0, pos));
+                        } else {
+                            self.show_shell(Screen::Home);
+                        }
+                    } else {
+                        self.show_shell(Screen::Home);
+                    }
+                } else if self.nav.current == Screen::Settings && self.navigation.settings_keyboard {
+                    self.navigation.settings_keyboard = false;
+                    self.shell_dirty = true;
+                    self.needs_present = true;
                 } else {
                     self.launch.cancel();
                     self.morph = None;
@@ -672,6 +777,10 @@ impl De {
         if screen == Screen::Home && from_overview && animate_overview {
             self.fade_recents(false);
             return;
+        }
+        if screen == Screen::Recents && !from_overview {
+            self.navigation.recents_from_app = self.foreground == Foreground::App
+                || self.morph.as_ref().is_some_and(|m| m.window.is_some());
         }
         if screen == Screen::Recents {
             if self.morph.as_ref().is_some_and(|m| m.phase == crate::morph::Phase::Recents)
@@ -748,6 +857,8 @@ impl De {
                 self.lock.cancel_drag();
                 self.power.menu_over_lock = false;
             }
+            // The Recents preview means nothing on the lock screen.
+            GestureEvent::NavPaused | GestureEvent::NavResumed => {}
             _ => self.lock.cancel_drag(),
         }
         self.needs_present = true;
@@ -801,10 +912,11 @@ impl De {
                         }
                     }
                     Some(de_ui::home::HomeHit::Drawer) => {
-                        self.open_drawer_animated(None);
+                        self.open_drawer_animated(None, 0.0);
                     }
                     Some(de_ui::home::HomeHit::Search) => {
                         self.nav.go(Screen::Search);
+                        self.shell_im.set_visible(true);
                         self.shell_dirty = true;
                         self.needs_present = true;
                     }
@@ -823,15 +935,24 @@ impl De {
                 }
             }
             Screen::Drawer => {
+                let recent = self.recent_drawer_icons();
                 let ids = self.visible_ids();
                 let apps = self.app_icons(&ids);
-                match de_ui::drawer::hit_test(size, &apps, self.navigation.drawer_scroll, pos) {
+                let query = self.navigation.search_query.clone();
+                match de_ui::drawer::hit_test_with_query(
+                    size,
+                    &recent,
+                    &apps,
+                    &query,
+                    self.navigation.drawer_scroll,
+                    pos,
+                ) {
                     Some(de_ui::drawer::DrawerHit::App(id)) => {
                         let cx = de_api::Rect::new(size.w / 2 - 56, size.h / 2 - 56, 112, 112);
                         self.try_launch(&id, Some(cx));
                     }
                     Some(de_ui::drawer::DrawerHit::Search) => {
-                        self.nav.go(Screen::Search);
+                        self.shell_im.set_visible(true);
                         self.shell_dirty = true;
                         self.needs_present = true;
                     }
@@ -859,14 +980,60 @@ impl De {
                 None => {}
             },
             Screen::Settings => {
-                if let Some(idx) = de_ui::settings::index::hit_test(size, pos) {
-                    if de_ui::settings::index::section_key(idx) == Some("settings.display") {
-                        let next = de_paint::wallpaper::next_id(&self.app_prefs.prefs().wallpaper_id);
-                        if self.app_prefs.set_wallpaper(next) {
-                            self.wallpaper = None;
+                if self.navigation.settings_keyboard {
+                    let prefs = self.app_prefs.prefs();
+                    let active = de_config::keyboards::resolve_active_keyboard(prefs);
+                    let options = de_config::keyboards::discover_keyboards(prefs.allow_third_party_keyboards)
+                        .into_iter()
+                        .map(|k| de_ui::settings::keyboard::KeyboardOption {
+                            active: k.id == active.id,
+                            id: k.id,
+                            name: k.name,
+                            third_party: k.third_party,
+                            installed: k.installed,
+                        })
+                        .collect::<Vec<_>>();
+                    match de_ui::settings::keyboard::hit_test(size, &options, pos) {
+                        Some(de_ui::settings::keyboard::KeyboardHit::Back) => {
+                            self.navigation.settings_keyboard = false;
                             self.shell_dirty = true;
                             self.needs_present = true;
                         }
+                        Some(de_ui::settings::keyboard::KeyboardHit::ToggleThirdParty) => {
+                            let next = !self.app_prefs.prefs().allow_third_party_keyboards;
+                            if self.app_prefs.set_allow_third_party_keyboards(next) {
+                                self.restart_osk();
+                                self.shell_dirty = true;
+                                self.needs_present = true;
+                            }
+                        }
+                        Some(de_ui::settings::keyboard::KeyboardHit::Select(i)) => {
+                            if let Some(opt) = options.get(i) {
+                                if self.app_prefs.set_keyboard(&opt.id) {
+                                    self.restart_osk();
+                                    self.shell_dirty = true;
+                                    self.needs_present = true;
+                                }
+                            }
+                        }
+                        None => {}
+                    }
+                } else if let Some(idx) = de_ui::settings::index::hit_test(size, pos) {
+                    match de_ui::settings::index::section_key(idx) {
+                        Some("settings.display") => {
+                            let next = de_paint::wallpaper::next_id(&self.app_prefs.prefs().wallpaper_id);
+                            if self.app_prefs.set_wallpaper(next) {
+                                self.wallpaper = None;
+                                self.shell_dirty = true;
+                                self.needs_present = true;
+                            }
+                        }
+                        Some("settings.keyboard") => {
+                            self.navigation.settings_keyboard = true;
+                            self.shell_dirty = true;
+                            self.needs_present = true;
+                        }
+                        _ => {}
                     }
                 }
             }

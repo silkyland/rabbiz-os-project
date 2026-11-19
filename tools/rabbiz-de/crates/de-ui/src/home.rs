@@ -323,7 +323,7 @@ pub fn render_with_hidden(size: Size, s: &Strings, t: &Theme, m: &HomeModel,
         chrome::draw(&mut c, m.charging, &style::caption(on_wp_sub), LEFT, 360, None);
     }
 
-    // Search card: glass, hint text, mic and camera buttons.
+    // Search card: glass + search glyph + hint text (single tap target).
     let card = search_card(size);
     c.fill_rounded_rect(card, 44.0, t.glass);
     chrome::draw_ink_centered(
@@ -338,15 +338,8 @@ pub fn render_with_hidden(size: Size, s: &Strings, t: &Theme, m: &HomeModel,
         &style::body(t.text2),
         card.x + 84,
         card.y + (card.h - 34) / 2,
-        Some(card.w - 84 - 170),
+        Some(card.w - 84 - 28),
     );
-    let d = 60;
-    for (i, glyph) in ["\u{e029}", "\u{e412}"].into_iter().enumerate() {
-        let x = card.x + card.w - 24 - d * (2 - i as i32) - 12 * (1 - i as i32);
-        let r = Rect::new(x, card.y + (card.h - d) / 2, d, d);
-        c.fill_rounded_rect(r, 999.0, t.glass_hi);
-        chrome::draw_ink_centered(&mut c, glyph, &text::LabelStyle::icon(30.0, t.accent), r);
-    }
 
     // 4×4 grid for the current page.
     for (i, e) in m.apps.iter().take(PAGE_SIZE).enumerate() {

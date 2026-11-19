@@ -28,15 +28,18 @@ pub enum Zone {
 /// A finished or in-progress gesture.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Gesture {
-    /// Edge drag that qualifies as back (dx > 48 px, mostly horizontal).
+    /// Edge drag that qualifies as back (dx > 40 px, mostly horizontal).
     EdgeBack { from_left: bool },
-    /// Bottom-strip upward swipe (fast, or past half the screen).
+    /// Bottom-strip upward swipe (fast, or past 75% of screen).
     Home,
-    /// Bottom-strip upward swipe followed by a ≥ `HOLD_MS` stall.
-    Recents,
+    /// Bottom-strip horizontal scrub (AOSP Quickstep quick-switch).
+    /// `to_previous` is a rightward scrub: like Android, swiping right along
+    /// the bar returns to the app used before this one; leftward goes the
+    /// other way through the list.
+    QuickSwitch { to_previous: bool },
     /// Short touch with little movement.
     Tap { pos: Point },
-    /// Touch held ≥ `HOLD_MS` without moving past the slop.
+    /// Touch held ≥ `hold_ms` without moving past the slop.
     LongPress { pos: Point },
 }
 
@@ -54,8 +57,14 @@ pub enum GestureEvent {
     /// velocity (px/s, from the last ~50 ms of movement, not the average) so
     /// the UI can project where the content should settle.
     Released { dx: f32, dy: f32, vx: f32, vy: f32 },
-    /// Bottom-strip drag released; velocity uses the same recent samples as content.
-    NavReleased { dy: f32, vy: f32 },
+    /// Bottom-strip drag released; velocity uses the same recent samples as
+    /// content. `paused` = the finger was resting (Recents preview) at lift.
+    NavReleased { dy: f32, vy: f32, paused: bool },
+    /// Bottom-strip drag rested ≥ `hold_ms` after rising 15 %: show the
+    /// Recents *preview*. Nothing is committed; the release decides (Android).
+    NavPaused,
+    /// The finger moved on after a [`GestureEvent::NavPaused`]: leave the preview.
+    NavResumed,
     /// Finger moved after a long-press (item lifted for rearranging).
     HoldDrag { pos: Point },
     /// Finger lifted after a long-press drag.
@@ -72,10 +81,24 @@ pub enum NavDestination {
     Cancel,
 }
 
+/// Release speed (px/s) that counts as a deliberate fling, up or down.
+const NAV_FLING_PX_S: f32 = 450.0;
+
+/// Where a released bottom-bar drag goes. A fling back down means the user
+/// changed their mind: like Android it returns to where they were instead of
+/// opening Recents just because the finger had passed 20 % on the way.
+/// A pause at release (the Recents preview) means Recents, unless the user
+/// flung on up (Home) or back down (Cancel) after it.
 #[must_use]
-pub fn decide_navigation(dy: f32, vy: f32, height: f32) -> NavDestination {
+pub fn decide_navigation(dy: f32, vy: f32, height: f32, paused: bool) -> NavDestination {
     let rise = -dy / height.max(1.0);
-    if rise >= 0.75 || (rise >= 0.007 && vy <= -500.0) {
+    if vy >= NAV_FLING_PX_S && rise < 0.75 {
+        NavDestination::Cancel
+    } else if rise >= 0.03 && vy <= -NAV_FLING_PX_S {
+        NavDestination::Home
+    } else if paused && rise >= 0.03 {
+        NavDestination::Recents
+    } else if rise >= 0.75 {
         NavDestination::Home
     } else if rise >= 0.20 {
         NavDestination::Recents
@@ -83,6 +106,11 @@ pub fn decide_navigation(dy: f32, vy: f32, height: f32) -> NavDestination {
         NavDestination::Cancel
     }
 }
+
+/// Inward distance at which edge-back commits on release. The feedback bell
+/// turns to its "armed" colour at exactly this point, so what the user sees
+/// is what a release will do.
+pub const BACK_COMMIT_PX: f32 = 40.0;
 
 /// Geometry + thresholds (physical px / ms).
 #[derive(Debug, Clone, Copy)]
@@ -116,10 +144,77 @@ impl GestureConfig {
             top_h: 64,
             edge_w: 44,
             slop: 12.0,
-            back_dx: 40.0,
+            back_dx: BACK_COMMIT_PX,
             hold_ms: 400,
             fling_v: 0.45,
         }
+    }
+}
+
+/// AOSP-style sliding-window velocity tracker (last ~100 ms, 8 samples,
+/// zero heap allocation) so 1 ms touch jitter never causes a false fling.
+#[derive(Debug, Clone, Copy)]
+struct VelocityWindow {
+    samples: [(Point, u64); 8],
+    len: usize,
+    head: usize,
+}
+
+impl VelocityWindow {
+    fn new(pos: Point, ms: u64) -> Self {
+        let mut samples = [(pos, ms); 8];
+        samples[0] = (pos, ms);
+        Self {
+            samples,
+            len: 1,
+            head: 1,
+        }
+    }
+
+    fn push(&mut self, pos: Point, ms: u64) {
+        self.samples[self.head] = (pos, ms);
+        self.head = (self.head + 1) % 8;
+        if self.len < 8 {
+            self.len += 1;
+        }
+    }
+
+    /// Velocity in px/ms over recent samples (within 100 ms of `now_ms`).
+    fn velocity(&self, now_ms: u64) -> (f32, f32) {
+        if self.len < 2 {
+            return (0.0, 0.0);
+        }
+        let newest_idx = (self.head + 7) % 8;
+        let (new_pos, new_ms) = self.samples[newest_idx];
+        if now_ms.saturating_sub(new_ms) >= 80 {
+            return (0.0, 0.0);
+        }
+        // Pick the oldest sample within 100 ms that gives >= 8 ms span.
+        let mut best: Option<(Point, u64)> = None;
+        for offset in 1..self.len {
+            let idx = (self.head + 8 - 1 - offset) % 8;
+            let (p, t) = self.samples[idx];
+            let span = new_ms.saturating_sub(t);
+            if span <= 100 {
+                best = Some((p, t));
+            } else if best.is_none() {
+                best = Some((p, t));
+                break;
+            } else {
+                break;
+            }
+        }
+        let Some((old_pos, old_ms)) = best else {
+            return (0.0, 0.0);
+        };
+        let dt = new_ms.saturating_sub(old_ms);
+        if dt < 4 {
+            return (0.0, 0.0);
+        }
+        (
+            (new_pos.x - old_pos.x) as f32 / dt as f32,
+            (new_pos.y - old_pos.y) as f32 / dt as f32,
+        )
     }
 }
 
@@ -137,12 +232,13 @@ struct Track {
     committed: bool,
     /// The commit was a long-press: later motion is a hold-drag.
     held: bool,
-    /// Smoothed velocity in px/ms.
-    vx: f32,
-    vy: f32,
-    /// Held position at `HOLD_MS` check (recents needs a stall, not a pa`rk`).
+    /// Windowed velocity tracker.
+    vel: VelocityWindow,
+    /// Held position at Recents stall check.
     stall_y: f32,
     stall_ms: u64,
+    /// The Recents preview is showing (finger resting after the rise).
+    paused: bool,
 }
 
 /// Single-finger tracker — the first slot owns the gesture; extra fingers
@@ -196,10 +292,10 @@ impl GestureTracker {
                     dy: 0.0,
                     committed: false,
                     held: false,
-                    vx: 0.0,
-                    vy: 0.0,
+                    vel: VelocityWindow::new(ev.pos, ev.time_ms),
                     stall_y: 0.0,
                     stall_ms: ev.time_ms,
+                    paused: false,
                 });
                 Some(GestureEvent::Started { zone, pos: ev.pos })
             }
@@ -209,28 +305,32 @@ impl GestureTracker {
                     tr.last = ev.pos;
                     return Some(GestureEvent::HoldDrag { pos: ev.pos });
                 }
-                let dt = ev.time_ms.saturating_sub(tr.last_ms);
-                if dt > 0 {
-                    let a = 0.5;
-                    tr.vx = a * ((ev.pos.x - tr.last.x) as f32 / dt as f32) + (1.0 - a) * tr.vx;
-                    tr.vy = a * ((ev.pos.y - tr.last.y) as f32 / dt as f32) + (1.0 - a) * tr.vy;
-                }
+                tr.vel.push(ev.pos, ev.time_ms);
                 tr.dx = (ev.pos.x - tr.start.x) as f32;
                 tr.dy = (ev.pos.y - tr.start.y) as f32;
                 tr.last = ev.pos;
                 tr.last_ms = ev.time_ms;
-                // A hold starts after rising 20% and measures actual time at
-                // rest, rather than time since the initial contact.
+                // A hold starts after rising 15% (consistent with `tick()`) and
+                // measures actual time at rest, rather than initial contact.
                 if tr.zone == Zone::NavBar && !tr.committed {
-                    if tr.dy > -(self.cfg.output_h as f32 * 0.20)
+                    if tr.paused {
+                        // Hysteresis: a resting finger jitters; only a clear
+                        // move (2× slop) leaves the preview.
+                        if (tr.dy - tr.stall_y).abs() >= self.cfg.slop * 2.0 {
+                            tr.paused = false;
+                            tr.stall_y = tr.dy;
+                            tr.stall_ms = ev.time_ms;
+                            return Some(GestureEvent::NavResumed);
+                        }
+                    } else if tr.dy > -(self.cfg.output_h as f32 * 0.15)
                         || tr.stall_y == 0.0
                         || (tr.dy - tr.stall_y).abs() >= self.cfg.slop
                     {
                         tr.stall_y = tr.dy;
                         tr.stall_ms = ev.time_ms;
                     } else if ev.time_ms.saturating_sub(tr.stall_ms) >= self.cfg.hold_ms {
-                        tr.committed = true;
-                        return Some(GestureEvent::Recognized(Gesture::Recents));
+                        tr.paused = true;
+                        return Some(GestureEvent::NavPaused);
                     }
                 }
                 // Long-press: still inside the slop, time crossed hold_ms.
@@ -266,15 +366,25 @@ impl GestureTracker {
                 let dt = (ev.time_ms - tr.start_ms).max(1) as f32;
                 let g = match tr.zone {
                     Zone::NavBar => {
-                        if tr.dx.abs() >= self.cfg.slop || tr.dy.abs() >= self.cfg.slop {
+                        if tr.dx.abs() >= self.cfg.slop * 2.0
+                            && tr.dx.abs() > tr.dy.abs() * 1.5
+                            && tr.dy > -(self.cfg.output_h as f32 * 0.15)
+                        {
+                            Some(Gesture::QuickSwitch { to_previous: tr.dx > 0.0 })
+                        } else if tr.dx.abs() >= self.cfg.slop || tr.dy.abs() >= self.cfg.slop {
                             let GestureEvent::Released { dy, vy, .. } =
                                 Self::released(&tr, ev.time_ms)
                             else {
                                 unreachable!()
                             };
-                            return Some(GestureEvent::NavReleased { dy, vy });
+                            return Some(GestureEvent::NavReleased {
+                                dy,
+                                vy,
+                                paused: tr.paused,
+                            });
+                        } else {
+                            Some(Gesture::Tap { pos: tr.start })
                         }
-                        Some(Gesture::Tap { pos: tr.start })
                     }
                     Zone::EdgeLeft | Zone::EdgeRight => {
                         let inward = if tr.zone == Zone::EdgeLeft {
@@ -282,9 +392,7 @@ impl GestureTracker {
                         } else {
                             -tr.dx
                         };
-                        let stale = ev.time_ms.saturating_sub(tr.last_ms) >= 80;
-                        // `tr.vx` is already in px/ms (matching `fling_v`).
-                        let recent_vx = if stale { 0.0 } else { tr.vx };
+                        let (recent_vx, _) = tr.vel.velocity(ev.time_ms);
                         let fallback_vx = tr.dx / dt;
                         let eff_vx = if recent_vx.abs() > fallback_vx.abs() {
                             recent_vx
@@ -296,8 +404,8 @@ impl GestureTracker {
                         } else {
                             -eff_vx
                         };
-                        if (inward >= self.cfg.back_dx || inward_v >= self.cfg.fling_v)
-                            && inward.abs() > tr.dy.abs() * 1.1
+                        if (inward >= self.cfg.back_dx || (inward > self.cfg.slop && inward_v >= self.cfg.fling_v))
+                            && inward.abs() > tr.dy.abs() * 1.25
                         {
                             Some(Gesture::EdgeBack {
                                 from_left: tr.zone == Zone::EdgeLeft,
@@ -327,13 +435,12 @@ impl GestureTracker {
     /// The release of a drag: displacement plus the velocity of the last
     /// moments. A stale velocity (the finger rested before lifting) is no fling.
     fn released(tr: &Track, now_ms: u64) -> GestureEvent {
-        let fresh = now_ms.saturating_sub(tr.last_ms) < 80;
-        let k = if fresh { 1000.0 } else { 0.0 };
+        let (vx, vy) = tr.vel.velocity(now_ms);
         GestureEvent::Released {
             dx: tr.dx,
             dy: tr.dy,
-            vx: tr.vx * k,
-            vy: tr.vy * k,
+            vx: vx * 1000.0,
+            vy: vy * 1000.0,
         }
     }
 
@@ -342,10 +449,11 @@ impl GestureTracker {
     pub fn tick(&mut self, now_ms: u64) -> Option<GestureEvent> {
         let tr = self.track.as_mut()?;
         if tr.committed { return None; }
-        if tr.zone == Zone::NavBar && tr.dy <= -(self.cfg.output_h as f32 * 0.15)
+        if tr.zone == Zone::NavBar && !tr.paused
+            && tr.dy <= -(self.cfg.output_h as f32 * 0.15)
             && now_ms.saturating_sub(tr.stall_ms) >= self.cfg.hold_ms {
-            tr.committed = true;
-            return Some(GestureEvent::Recognized(Gesture::Recents));
+            tr.paused = true;
+            return Some(GestureEvent::NavPaused);
         }
         if tr.dx.abs() < self.cfg.slop && tr.dy.abs() < self.cfg.slop
             && now_ms.saturating_sub(tr.start_ms) >= self.cfg.hold_ms {
@@ -367,15 +475,26 @@ impl GestureTracker {
 /// touched edge, growing smoothly inward with a `<` / `>` chevron inside.
 #[must_use]
 pub fn back_feedback(size: de_api::Size, left: bool, y: i32, inward: f32) -> (de_api::Pixels, Point) {
+    back_feedback_themed(&de_design::tokens::DEFAULT, size, left, y, inward)
+}
+
+/// Theme-aware variant of [`back_feedback`].
+#[must_use]
+pub fn back_feedback_themed(
+    t: &de_design::tokens::Theme,
+    size: de_api::Size,
+    left: bool,
+    y: i32,
+    inward: f32,
+) -> (de_api::Pixels, Point) {
     use de_api::Size;
-    use de_design::tokens;
     use de_paint::Canvas;
-    let t = tokens::DEFAULT;
     let progress = (inward / 96.0).clamp(0.0, 1.0);
     let w = (16.0 + 44.0 * progress).round() as i32;
     let h = 260;
     let mut c = Canvas::new(Size::new(w, h));
-    let fill = if inward >= 48.0 {
+    let armed = inward >= BACK_COMMIT_PX;
+    let fill = if armed {
         [t.accent[0], t.accent[1], t.accent[2], 230]
     } else {
         [28, 24, 32, 200]
@@ -412,7 +531,7 @@ pub fn back_feedback(size: de_api::Size, left: bool, y: i32, inward: f32) -> (de
     }
     if w >= 28 {
         let glyph = if left { "\u{e5cb}" } else { "\u{e5cc}" };
-        let color = if inward >= 48.0 {
+        let color = if armed {
             t.text_on_accent
         } else {
             [0xFF, 0xF8, 0xF0, 0xFF]
@@ -464,35 +583,71 @@ mod tests {
             t.feed(&ev(TouchPhase::Up, 360, 1400, 200)),
             Some(GestureEvent::NavReleased {
                 dy: -190.0,
-                vy: 0.0
+                vy: 0.0,
+                paused: false
             })
         );
     }
 
     #[test]
-    fn swipe_up_hold_is_recents() {
+    fn swipe_up_hold_previews_recents_and_release_decides() {
         let mut t = tr();
         t.feed(&ev(TouchPhase::Down, 360, 1590, 0));
         t.feed(&ev(TouchPhase::Motion, 360, 1200, 100)); // rose >20%
         assert_eq!(
             t.feed(&ev(TouchPhase::Motion, 360, 1198, 520)), // stalled ≥400 ms
-            Some(GestureEvent::Recognized(Gesture::Recents))
+            Some(GestureEvent::NavPaused)
         );
+        match t.feed(&ev(TouchPhase::Up, 360, 1198, 540)) {
+            Some(GestureEvent::NavReleased { dy, vy, paused: true }) => {
+                assert_eq!(
+                    decide_navigation(dy, vy, 1600.0, true),
+                    NavDestination::Recents
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn moving_on_after_the_preview_resumes_and_can_still_go_home() {
+        let mut t = tr();
+        t.feed(&ev(TouchPhase::Down, 360, 1590, 0));
+        t.feed(&ev(TouchPhase::Motion, 360, 1200, 100));
+        assert_eq!(t.tick(500), Some(GestureEvent::NavPaused));
+        // Jitter inside the hysteresis keeps the preview.
+        assert!(matches!(
+            t.feed(&ev(TouchPhase::Motion, 360, 1190, 520)),
+            Some(GestureEvent::Progress { .. })
+        ));
         assert_eq!(
-            t.feed(&ev(TouchPhase::Up, 360, 1198, 540)),
-            Some(GestureEvent::Cancelled)
+            t.feed(&ev(TouchPhase::Motion, 360, 1100, 560)),
+            Some(GestureEvent::NavResumed)
         );
+        t.feed(&ev(TouchPhase::Motion, 360, 900, 580));
+        match t.feed(&ev(TouchPhase::Up, 360, 800, 590)) {
+            Some(GestureEvent::NavReleased { dy, vy, paused: false }) => {
+                assert_eq!(decide_navigation(dy, vy, 1600.0, false), NavDestination::Home);
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
     fn navigation_destinations_follow_distance_and_recent_velocity() {
         use NavDestination::{Cancel, Home, Recents};
-        assert_eq!(decide_navigation(-100.0, -900.0, 1600.0), Home);
-        assert_eq!(decide_navigation(-800.0, 0.0, 1600.0), Recents);
-        assert_eq!(decide_navigation(-1200.0, 0.0, 1600.0), Home);
-        assert_eq!(decide_navigation(-200.0, 0.0, 1600.0), Cancel);
-        assert_eq!(decide_navigation(100.0, 900.0, 1600.0), Cancel);
-        assert_eq!(decide_navigation(-480.0, 0.0, 2400.0), Recents);
+        assert_eq!(decide_navigation(-100.0, -900.0, 1600.0, false), Home);
+        assert_eq!(decide_navigation(-800.0, 0.0, 1600.0, false), Recents);
+        assert_eq!(decide_navigation(-1200.0, 0.0, 1600.0, false), Home);
+        assert_eq!(decide_navigation(-200.0, 0.0, 1600.0, false), Cancel);
+        assert_eq!(decide_navigation(100.0, 900.0, 1600.0, false), Cancel);
+        assert_eq!(decide_navigation(-480.0, 0.0, 2400.0, false), Recents);
+        // Pulled up past the Recents line, then flung back down: cancel.
+        assert_eq!(decide_navigation(-600.0, 900.0, 1600.0, false), Cancel);
+        // Preview showing: Recents, even high up; a fling still overrides.
+        assert_eq!(decide_navigation(-1300.0, 0.0, 1600.0, true), Recents);
+        assert_eq!(decide_navigation(-400.0, -900.0, 1600.0, true), Home);
+        assert_eq!(decide_navigation(-400.0, 900.0, 1600.0, true), Cancel);
     }
 
     #[test]
@@ -520,7 +675,8 @@ mod tests {
             t.feed(&ev(TouchPhase::Up, 360, 1200, 300)),
             Some(GestureEvent::NavReleased {
                 dy: -390.0,
-                vy: 0.0
+                vy: 0.0,
+                paused: false
             })
         );
     }
@@ -531,7 +687,7 @@ mod tests {
         t.feed(&ev(TouchPhase::Down, 360, 1590, 1000));
         t.feed(&ev(TouchPhase::Motion, 360, 1200, 1100));
         assert_eq!(t.tick(1499), None);
-        assert_eq!(t.tick(1500), Some(GestureEvent::Recognized(Gesture::Recents)));
+        assert_eq!(t.tick(1500), Some(GestureEvent::NavPaused));
         assert_eq!(t.tick(1600), None);
     }
 
@@ -675,6 +831,24 @@ mod tests {
             Some(GestureEvent::Recognized(Gesture::LongPress {
                 pos: Point::new(300, 900)
             }))
+        );
+    }
+
+    #[test]
+    fn nav_bar_horizontal_scrub_triggers_quick_switch() {
+        let mut t = tr();
+        t.feed(&ev(TouchPhase::Down, 360, 1590, 0));
+        t.feed(&ev(TouchPhase::Motion, 240, 1585, 80));
+        assert_eq!(
+            t.feed(&ev(TouchPhase::Up, 240, 1585, 110)),
+            Some(GestureEvent::Recognized(Gesture::QuickSwitch { to_previous: false }))
+        );
+        let mut t = tr();
+        t.feed(&ev(TouchPhase::Down, 360, 1590, 0));
+        t.feed(&ev(TouchPhase::Motion, 480, 1588, 80));
+        assert_eq!(
+            t.feed(&ev(TouchPhase::Up, 480, 1588, 110)),
+            Some(GestureEvent::Recognized(Gesture::QuickSwitch { to_previous: true }))
         );
     }
 

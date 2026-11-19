@@ -18,6 +18,10 @@ const EXPORTS: &[(&str, &str)] = &[
     // Wayland for the common non-Qt toolkits, same as the labwc launcher.
     ("MOZ_ENABLE_WAYLAND", "1"),
     ("SDL_VIDEODRIVER", "wayland"),
+    // Mobile DPI scaling for 3rd-party apps on the 720x1600 handset display
+    // (720 / 1.5 = 480 dp), plus native Wayland for Electron/Chromium apps.
+    ("GDK_DPI_SCALE", "1.5"),
+    ("ELECTRON_OZONE_PLATFORM_HINT", "wayland"),
 ];
 
 /// Variables cleared before the session starts (wlroots/Mesa GPU overrides

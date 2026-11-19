@@ -14,7 +14,6 @@ use std::hash::{Hash, Hasher};
 use std::time::Instant;
 
 use de_api::{Pixels, Point, Size};
-use de_design::tokens;
 use de_ui::home::{self, DropTarget, HomeHit};
 use de_ui::nav::Screen;
 use de_ui::pager::Pager;
@@ -370,7 +369,7 @@ impl De {
     /// (builds only what changed; the first frame of a drag pays once).
     pub(crate) fn home_layers_frame(&mut self) {
         let size = Size::new(self.output.width as i32, self.output.height as i32);
-        let t = tokens::DEFAULT;
+        let t = self.theme;
         let s = self.strings.clone();
         let (status, date) = self.shell_meta();
         let prefs = self.app_prefs.prefs().clone();

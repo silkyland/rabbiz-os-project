@@ -205,6 +205,7 @@ ApplicationWindow {
 
         // ---- segmented control: no in-app back button (system back minimizes) ----
         Rectangle {
+            id: segBar
             Layout.fillWidth: true
             Layout.preferredHeight: 56
             radius: Theme.radiusPill
@@ -212,66 +213,105 @@ ApplicationWindow {
             border.width: 1
             border.color: Qt.alpha(Theme.text, 0.06)
 
-            RowLayout {
+            readonly property int tabIndex: win.section === "alarm" ? 0
+                                          : win.section === "timer" ? 1 : 2
+
+            Item {
+                id: segInner
                 anchors { fill: parent; margins: 4 }
-                spacing: 4
 
-                Repeater {
-                    model: [
-                        { key: "alarm", label: "Alarm" },
-                        { key: "timer", label: "Timer" },
-                        { key: "stopwatch", label: "Stopwatch" }
-                    ]
+                Rectangle {
+                    id: segIndicator
+                    readonly property real tabWidth: (segInner.width - 8) / 3
+                    x: segBar.tabIndex * (tabWidth + 4)
+                    y: 0
+                    width: tabWidth
+                    height: segInner.height
+                    radius: Theme.radiusPill
+                    color: ShellPrefs.accentColor
+                    Behavior on x { SpringAnimation { spring: 7.5; damping: 0.68 } }
+                }
 
-                    delegate: Rectangle {
-                        required property var modelData
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        radius: Theme.radiusPill
-                        color: win.section === modelData.key
-                            ? ShellPrefs.accentColor : "transparent"
+                RowLayout {
+                    anchors.fill: parent
+                    spacing: 4
 
-                        Text {
-                            anchors.centerIn: parent
-                            text: modelData.label
-                            color: win.section === modelData.key
-                                ? ShellPrefs.onAccentColor : Theme.textDim
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontBody - 6
-                            font.weight: Font.Medium
+                    Repeater {
+                        model: [
+                            { key: "alarm", label: "Alarm" },
+                            { key: "timer", label: "Timer" },
+                            { key: "stopwatch", label: "Stopwatch" }
+                        ]
+
+                        delegate: Item {
+                            required property var modelData
+                            readonly property bool active: win.section === modelData.key
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            scale: tabTap.pressed ? 0.96 : 1.0
+                            Behavior on scale { SpringAnimation { spring: 7.0; damping: 0.5 } }
+
+                            Rectangle {
+                                anchors.fill: parent
+                                radius: Theme.radiusPill
+                                color: active ? ShellPrefs.onAccentColor : Theme.text
+                                opacity: tabTap.pressed ? 0.10 : 0.0
+                                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                            }
+
+                            Text {
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: active ? ShellPrefs.onAccentColor : Theme.textDim
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontBody - 6
+                                font.weight: active ? Font.DemiBold : Font.Medium
+                                Behavior on color { ColorAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                            }
+                            TapHandler { id: tabTap; onTapped: win.section = modelData.key }
                         }
-                        TapHandler { onTapped: win.section = modelData.key }
                     }
                 }
             }
         }
 
         // ---- sections ----------------------------------------------------------
-        AlarmSection {
+        Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            visible: win.section === "alarm"
-            alarms: win.alarms
-            onAlarmsEdited: function (list) {
-                win.alarms = list
-                win.saveAlarms()
-            }
-        }
 
-        TimerSection {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            visible: win.section === "timer"
-            onAlert: function (title, body) {
-                win.notify(title, body)
-                win.raiseAlert(title, body, "timer")
+            AlarmSection {
+                anchors.fill: parent
+                opacity: win.section === "alarm" ? 1.0 : 0.0
+                visible: opacity > 0.01
+                enabled: win.section === "alarm"
+                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                alarms: win.alarms
+                onAlarmsEdited: function (list) {
+                    win.alarms = list
+                    win.saveAlarms()
+                }
             }
-        }
 
-        StopwatchSection {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            visible: win.section === "stopwatch"
+            TimerSection {
+                anchors.fill: parent
+                opacity: win.section === "timer" ? 1.0 : 0.0
+                visible: opacity > 0.01
+                enabled: win.section === "timer"
+                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                onAlert: function (title, body) {
+                    win.notify(title, body)
+                    win.raiseAlert(title, body, "timer")
+                }
+            }
+
+            StopwatchSection {
+                anchors.fill: parent
+                opacity: win.section === "stopwatch" ? 1.0 : 0.0
+                visible: opacity > 0.01
+                enabled: win.section === "stopwatch"
+                Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+            }
         }
     }
 
@@ -295,7 +335,11 @@ ApplicationWindow {
         border.color: Qt.alpha(ShellPrefs.accentColor, 0.55)
         opacity: win.bannerTitle.length > 0 ? 1 : 0
         visible: opacity > 0.01
-        Behavior on opacity { NumberAnimation { duration: Theme.animMed } }
+        Behavior on opacity { NumberAnimation { duration: Theme.animMed; easing.type: Theme.animEase } }
+        transform: Translate {
+            y: win.bannerTitle.length > 0 ? 0 : -20
+            Behavior on y { NumberAnimation { duration: Theme.animMed; easing.type: Theme.animEase } }
+        }
 
         RowLayout {
             id: bannerRow

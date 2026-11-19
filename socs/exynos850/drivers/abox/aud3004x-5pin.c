@@ -1837,23 +1837,42 @@ int aud3004x_jack_probe(struct snd_soc_component *codec)
 int aud3004x_jack_remove(struct snd_soc_component *codec)
 {
 	struct aud3004x_priv *aud3004x = snd_soc_component_get_drvdata(codec);
-	struct aud3004x_jack *jackdet = aud3004x->p_jackdet;
+	struct aud3004x_jack *jackdet = aud3004x ? aud3004x->p_jackdet : NULL;
+
+	if (!jackdet)
+		return 0;
 
 	dev_dbg(codec->dev, "(*) %s called\n", __func__);
 
 	wake_lock_destroy(&jackdet->jack_wake_lock);
 
-	destroy_workqueue(jackdet->buttons_wq);
-	destroy_workqueue(jackdet->jack_det_wq);
-	destroy_workqueue(jackdet->ldet_adc_wq);
-	destroy_workqueue(jackdet->ovp_det_wq);
-	destroy_workqueue(jackdet->surge_out_wq);
+	if (jackdet->buttons_wq) {
+		cancel_delayed_work_sync(&jackdet->buttons_work);
+		destroy_workqueue(jackdet->buttons_wq);
+	}
+	if (jackdet->jack_det_wq) {
+		cancel_delayed_work_sync(&jackdet->jack_det_work);
+		destroy_workqueue(jackdet->jack_det_wq);
+	}
+	if (jackdet->ldet_adc_wq) {
+		cancel_delayed_work_sync(&jackdet->ldet_adc_work);
+		destroy_workqueue(jackdet->ldet_adc_wq);
+	}
+	if (jackdet->ovp_det_wq) {
+		cancel_delayed_work_sync(&jackdet->ovp_det_work);
+		destroy_workqueue(jackdet->ovp_det_wq);
+	}
+	if (jackdet->surge_out_wq) {
+		cancel_delayed_work_sync(&jackdet->surge_out_work);
+		destroy_workqueue(jackdet->surge_out_wq);
+	}
 
 	set_codec_notifier_flag(false);
 	aud3004x_jack_register_exit(codec);
 
 	/* Unregister ADC pin */
 	adc_stop(jackdet);
+	aud3004x->p_jackdet = NULL;
 	kfree(jackdet);
 
 	return true;

@@ -21,6 +21,16 @@ pub(crate) struct LaunchOrigin {
     pub home_page: usize,
 }
 
+/// Recents preview during a held navigation drag (Android "swipe up and
+/// hold"): the card springs to the overview size while the finger rests,
+/// then springs back under the finger when it moves on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Peek {
+    Off,
+    Holding,
+    CatchingUp,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Phase {
     Opening,
@@ -49,6 +59,7 @@ pub(crate) struct WindowMorph {
     last_drag_ms: Option<u64>,
     navigation: bool,
     drag_offset_x: f32,
+    peek: Peek,
 }
 
 impl WindowMorph {
@@ -82,6 +93,7 @@ impl WindowMorph {
             last_drag_ms: None,
             navigation: phase == Phase::Dragging,
             drag_offset_x: 0.0,
+            peek: Peek::Off,
         }
     }
 
@@ -91,6 +103,9 @@ impl WindowMorph {
             .replace(now)
             .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
         if self.phase == Phase::Dragging {
+            if self.peek != Peek::Off {
+                self.animator.advance(delta, clock);
+            }
             return false;
         }
         self.drag_offset_x *= (-15.0 * delta.max(0.0)).exp();
@@ -164,7 +179,7 @@ impl WindowMorph {
 
     /// The render can return `EmptyFrame` near an endpoint. Wake even without a flip.
     pub fn next_frame_at(&self, interval: Duration) -> Option<Instant> {
-        if self.phase == Phase::Dragging
+        if (self.phase == Phase::Dragging && self.peek == Peek::Off)
             || (self.animator.settled() && self.phase == Phase::Opening && self.ready_at.is_none())
         {
             return None;
@@ -172,8 +187,41 @@ impl WindowMorph {
         self.last_frame.map(|last| last + interval)
     }
 
+    /// Start or leave the Recents preview of a held navigation drag.
+    pub fn set_preview(&mut self, on: bool) {
+        if self.phase != Phase::Dragging {
+            return;
+        }
+        if on {
+            self.peek = Peek::Holding;
+            self.animator.settle_recents();
+        } else if self.peek == Peek::Holding {
+            self.peek = Peek::CatchingUp;
+        }
+    }
+
+    /// The preview spring still moves (the frame loop must keep drawing).
+    pub fn previewing(&self) -> bool {
+        self.phase == Phase::Dragging && self.peek != Peek::Off && !self.animator.settled()
+    }
+
     fn drag(&mut self, progress: f32, time_ms: u64) {
         let progress = progress.clamp(0.0, 1.0);
+        match self.peek {
+            Peek::Holding => {
+                self.last_drag_ms = Some(time_ms);
+                return;
+            }
+            Peek::CatchingUp => {
+                self.last_drag_ms = Some(time_ms);
+                if (self.animator.progress() - progress).abs() > 0.01 {
+                    self.animator.chase(progress);
+                    return;
+                }
+                self.peek = Peek::Off;
+            }
+            Peek::Off => {}
+        }
         let velocity = self
             .last_drag_ms
             .replace(time_ms)
@@ -185,6 +233,7 @@ impl WindowMorph {
     }
 
     fn release(&mut self, close: bool) {
+        self.peek = Peek::Off;
         self.phase = if close {
             Phase::Closing
         } else {
@@ -199,16 +248,19 @@ impl De {
         let icon = self.app_icon(desktop_id);
         let origin = LaunchOrigin {
             rect,
-            icon: de_ui::launch_morph::morph_icon(&de_design::DEFAULT, &icon, rect),
+            icon: de_ui::launch_morph::morph_icon(&self.theme, &icon, rect),
             screen: self.nav.current,
             home_page: self.home_page,
         };
-        self.morph = Some(WindowMorph::new(
+        let color = self.theme.surface1.map(|v| f32::from(v) / 255.0);
+        let mut morph = WindowMorph::new(
             origin,
             None,
             Phase::Opening,
             self.motion_clock.form_factor(),
-        ));
+        );
+        morph.backing = smithay::backend::renderer::element::solid::SolidColorBuffer::new((1, 1), color);
+        self.morph = Some(morph);
     }
 
     pub(crate) fn first_app_frame(&mut self, window: Window) {
@@ -265,7 +317,7 @@ impl De {
         let icon = window.user_data().get::<LaunchOrigin>().map(|o| o.icon.clone())
             .unwrap_or_else(|| {
                 let icon = self.app_icon(&app_id);
-                de_ui::launch_morph::morph_icon(&de_design::DEFAULT, &icon, rect)
+                de_ui::launch_morph::morph_icon(&self.theme, &icon, rect)
             });
         LaunchOrigin { rect, icon, screen: Screen::Home, home_page: self.home_page }
     }
@@ -319,6 +371,14 @@ impl De {
         }
     }
 
+    /// Recents preview on/off for the in-flight navigation drag.
+    pub(crate) fn nav_preview(&mut self, on: bool) {
+        if let Some(morph) = self.morph.as_mut().filter(|m| m.phase == Phase::Dragging) {
+            morph.set_preview(on);
+            self.needs_present = true;
+        }
+    }
+
     pub(crate) fn edge_back_to_home(&mut self, time_ms: u64) -> bool {
         self.follow_home_drag(0.0, -48.0, time_ms);
         let Some(morph) = self.morph.as_mut().filter(|m| m.phase == Phase::Dragging) else {
@@ -364,6 +424,7 @@ impl De {
         self.navigation.recents_backdrop = morph.backdrop.take().or_else(|| self.shell_px.clone());
         self.navigation.recents_blur_rx = morph.backdrop_rx.take();
         morph.snapshot = crate::snapshots::snapshot(&window);
+        morph.peek = Peek::Off;
         morph.phase = Phase::Recents;
         morph.animator.settle_recents();
         self.foreground = Foreground::Shell;
@@ -438,7 +499,11 @@ impl De {
                 Err(mpsc::TryRecvError::Disconnected) => {}
             }
         }
-        if morph.tick(now, &self.motion_clock) {
+        let ticked = morph.tick(now, &self.motion_clock);
+        if morph.previewing() {
+            self.needs_present = true;
+        }
+        if ticked {
             self.foreground = match morph.phase {
                 Phase::Opening | Phase::Returning | Phase::Restoring => {
                     if let Some(window) = &morph.window {

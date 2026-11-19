@@ -57,6 +57,7 @@ struct cpif_dev {
 
 	struct regmap		*pmu;	/* CP power-control regs */
 	void __iomem		*vgpio;	/* VGPIO_TX_MONITOR wait block */
+	resource_size_t		vgpio_size;
 	void __iomem		*ap2cp_cfg;
 	void __iomem		*mbox;		/* cp_mailbox 0x11920000 */
 	int			mbox_irq;

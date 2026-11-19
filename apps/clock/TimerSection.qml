@@ -122,6 +122,7 @@ Item {
                         height: parent.height
                         radius: parent.radius
                         color: ShellPrefs.accentColor
+                        Behavior on width { NumberAnimation { duration: 180; easing.type: Easing.Linear } }
                     }
                 }
 
@@ -171,25 +172,38 @@ Item {
 
                 delegate: Rectangle {
                     required property int modelData
+                    readonly property bool selected: root.durationMs === modelData * 60000
                     Layout.fillWidth: true
                     Layout.preferredHeight: 48
                     radius: Theme.radiusPill
-                    color: (root.durationMs === modelData * 60000 && !root.running)
+                    color: (selected && !root.running)
                         ? Qt.alpha(ShellPrefs.accentColor, 0.22) : Theme.card
                     border.width: 1
-                    border.color: (root.durationMs === modelData * 60000)
+                    border.color: selected
                         ? ShellPrefs.accentColor : Qt.alpha(Theme.text, 0.08)
+                    scale: chipTap.pressed ? 0.94 : 1.0
+                    Behavior on scale { SpringAnimation { spring: 7.0; damping: 0.48 } }
+                    Behavior on color { ColorAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                    Behavior on border.color { ColorAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: parent.radius
+                        color: selected ? ShellPrefs.accentColor : Theme.text
+                        opacity: chipTap.pressed ? 0.12 : 0.0
+                        Behavior on opacity { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
+                    }
 
                     Text {
                         anchors.centerIn: parent
                         text: modelData + " min"
-                        color: (root.durationMs === modelData * 60000)
+                        color: selected
                             ? ShellPrefs.accentColor : Theme.text
                         font.family: Theme.fontFamily
                         font.pixelSize: Theme.fontCaption
                         font.weight: Font.Medium
                     }
-                    TapHandler { onTapped: root.setDuration(modelData * 60000) }
+                    TapHandler { id: chipTap; onTapped: root.setDuration(modelData * 60000) }
                 }
             }
         }

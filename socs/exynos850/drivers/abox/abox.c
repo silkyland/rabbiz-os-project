@@ -93,6 +93,9 @@ void __weak exynos_sysmmu_tlb_invalidate(struct iommu_domain *domain,
 
 /* For only external static functions */
 static struct abox_data *p_abox_data;
+static DEFINE_MUTEX(abox_init_lock);
+static bool abox_module_init_done;
+static bool abox_probe_pm_held;
 
 struct abox_data *abox_get_abox_data(void)
 {
@@ -107,7 +110,7 @@ struct abox_data *abox_get_data(struct device *dev)
 	return dev ? dev_get_drvdata(dev) : NULL;
 }
 
-#ifdef CONFIG_EXYNOS_IOMMU
+#ifdef CONFIG_IOMMU_API
 static int abox_iommu_fault_handler(
 		struct iommu_domain *domain, struct device *dev,
 		unsigned long fault_addr, int fault_flags, void *token)
@@ -3435,7 +3438,12 @@ static int samsung_abox_probe(struct platform_device *pdev)
 	pm_runtime_enable(dev);
 	pm_runtime_set_autosuspend_delay(dev, 500);
 	pm_runtime_use_autosuspend(dev);
-	pm_runtime_get(dev);
+	mutex_lock(&abox_init_lock);
+	if (!abox_module_init_done) {
+		pm_runtime_get(dev);
+		abox_probe_pm_held = true;
+	}
+	mutex_unlock(&abox_init_lock);
 
 	return 0;
 }
@@ -3571,8 +3579,13 @@ static int __init samsung_abox_module_init(void)
 		}
 	}
 
-	if (p_abox_data && p_abox_data->dev)
+	mutex_lock(&abox_init_lock);
+	abox_module_init_done = true;
+	if (abox_probe_pm_held && p_abox_data && p_abox_data->dev) {
+		abox_probe_pm_held = false;
 		pm_runtime_put_sync_suspend(p_abox_data->dev);
+	}
+	mutex_unlock(&abox_init_lock);
 
 	return 0;
 }

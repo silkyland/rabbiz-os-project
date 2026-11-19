@@ -206,7 +206,7 @@ impl De {
         let Some(m) = self.shell_menu.as_ref() else {
             return base;
         };
-        let top = menu::render(&m.menu, &m.layout, m.sel, &de_design::tokens::DEFAULT);
+        let top = menu::render(&m.menu, &m.layout, m.sel, &self.theme);
         let mut canvas = de_paint::Canvas::new(base.size);
         canvas.blit(&base, ApiPoint::ZERO);
         canvas.blit(&top, ApiPoint::new(m.layout.rect.x, m.layout.rect.y));

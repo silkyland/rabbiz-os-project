@@ -144,7 +144,7 @@ pub fn render(size: Size, s: &Strings, t: &Theme, status: &StatusInfo, m: &Recen
 #[must_use]
 pub fn render_with_backdrop(size: Size, s: &Strings, t: &Theme, status: &StatusInfo,
     m: &RecentsModel, backdrop: Option<&Pixels>) -> Pixels {
-    render_at_pos(size, s, t, status, m, backdrop, m.focus as f32, None)
+    render_at_pos(size, s, t, status, m, backdrop, m.focus as f32, None, None)
 }
 
 /// Render Recents at a continuous fractional card index `pos` (for 1:1 drag + spring snap).
@@ -158,6 +158,7 @@ pub fn render_at_pos(
     backdrop: Option<&Pixels>,
     pos: f32,
     morphing_card: Option<usize>,
+    lift: Option<CardLift>,
 ) -> Pixels {
     let mut c = Canvas::filled(size, t.bg);
     if let Some(px) = backdrop {
@@ -180,9 +181,14 @@ pub fn render_at_pos(
     }
 
     for (i, e) in m.entries.iter().enumerate() {
-        let card = card_at(size, i, pos);
+        let mut card = card_at(size, i, pos);
+        let mut alpha = 1.0;
+        if let Some(l) = lift.filter(|l| l.index == i) {
+            card.y += l.dy.round() as i32;
+            alpha = l.alpha(size);
+        }
         let (x, y) = (card.x, card.y);
-        if x + card.w < 0 || x > size.w {
+        if x + card.w < 0 || x > size.w || y + card.h < 0 || alpha <= 0.0 {
             continue;
         }
         // Label + icon above the card.
@@ -206,9 +212,11 @@ pub fn render_at_pos(
             continue;
         }
         if let Some(px) = &e.snapshot {
-            c.blit_scaled(px, card, 1.0);
+            c.blit_scaled(px, card, alpha);
         } else {
-            c.fill_rounded_rect(card, tokens::RADIUS_CARD, t.surface2);
+            let mut fill = t.surface2;
+            fill[3] = (f32::from(fill[3]) * alpha).round() as u8;
+            c.fill_rounded_rect(card, tokens::RADIUS_CARD, fill);
             let ie2 = IconEntry {
                 id: e.id.clone(),
                 label: e.title.clone(),
@@ -237,6 +245,29 @@ pub fn render_at_pos(
     }
     chrome::nav_pill(&mut c, t);
     c.into_pixels()
+}
+
+/// A card being swiped up to close its app (Android): it follows the finger
+/// (`dy` < 0 is up) and fades as it leaves.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CardLift {
+    pub index: usize,
+    pub dy: f32,
+}
+
+impl CardLift {
+    /// Fully opaque at rest, transparent once lifted 60 % of the screen.
+    #[must_use]
+    pub fn alpha(&self, size: Size) -> f32 {
+        1.0 - (-self.dy / (size.h as f32 * 0.6).max(1.0)).clamp(0.0, 1.0)
+    }
+}
+
+/// Whether a released card swipe closes the app: far enough up, or flung up
+/// (px, px/s; up is negative). A fling back down never closes.
+#[must_use]
+pub fn dismiss_on_release(size: Size, dy: f32, vy: f32) -> bool {
+    vy < 600.0 && (-dy >= size.h as f32 * 0.18 || (-dy >= 48.0 && vy <= -1000.0))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,6 +346,18 @@ mod tests {
         m.push(RecentEntry::new("a1", "x"));
         assert_eq!(m.entries.len(), 2);
         assert_eq!(m.entries[0].id, "a1");
+    }
+
+    #[test]
+    fn card_swipe_closes_when_far_or_flung_up() {
+        let size = Size::new(720, 1600);
+        assert!(dismiss_on_release(size, -300.0, 0.0));
+        assert!(dismiss_on_release(size, -80.0, -1500.0));
+        assert!(!dismiss_on_release(size, -120.0, 0.0));
+        assert!(!dismiss_on_release(size, -400.0, 900.0), "flung back down");
+        let lift = CardLift { index: 0, dy: -1000.0 };
+        assert!(lift.alpha(size) <= 0.0);
+        assert!((CardLift { index: 0, dy: 0.0 }.alpha(size) - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]

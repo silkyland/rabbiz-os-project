@@ -81,6 +81,17 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     if let (true, Some(px)) = (de.panels.pull.shown(), de.panels.active_pixels()) {
         let f = de.panels.pull.frac().clamp(0.0, 1.0);
         let y = (-(1.0 - f) * px.size.h as f32).round() as i32;
+        if de.panels.use_gpu_blur {
+            // On GL the panel image holds only the controls; the display gets
+            // its frosted sheet (blurred scene + scrim) from separate GPU
+            // elements. Draw the same sheet here so captures match the screen.
+            let alpha = (f * 1.6).min(1.0);
+            let blurred = de_paint::glass::blurred_backdrop(&canvas.to_pixels());
+            canvas.blit_scaled(&blurred, de_api::Rect::new(0, 0, blurred.size.w, blurred.size.h), alpha);
+            let mut scrim = de.theme.scrim;
+            scrim[3] = (f32::from(scrim[3]) * alpha).round() as u8;
+            canvas.fill_rect(de_api::Rect::new(0, 0, blurred.size.w, blurred.size.h), scrim);
+        }
         canvas.blit_scaled(
             px,
             de_api::Rect::new(0, y, px.size.w, px.size.h),

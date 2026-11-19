@@ -370,8 +370,13 @@ ApplicationWindow {
         visible: win.editingId === ""
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: Theme.spaceM
+            anchors {
+                fill: parent
+                leftMargin: Theme.spaceM
+                rightMargin: Theme.spaceM
+                topMargin: Theme.spaceM
+                bottomMargin: Theme.navZoneHeight
+            }
             spacing: Theme.spaceM
 
             AppHeader {
@@ -391,6 +396,7 @@ ApplicationWindow {
                 border.color: searchField.activeFocus
                               ? Qt.alpha(ShellPrefs.accentColor, 0.65)
                               : Qt.alpha(Theme.text, 0.08)
+                Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
 
                 MaterialIcon {
                     id: searchIcon
@@ -427,7 +433,7 @@ ApplicationWindow {
 
                 Item {
                     id: clearSearchHit
-                    width: Theme.spaceXL
+                    width: Math.max(48, Theme.spaceXL)
                     anchors {
                         right: parent.right
                         top: parent.top
@@ -435,13 +441,25 @@ ApplicationWindow {
                     }
                     visible: win.query.length > 0
 
-                    MaterialIcon {
+                    Rectangle {
                         anchors.centerIn: parent
-                        name: "close"
-                        size: Theme.fontCaption
-                        color: Theme.textDim
+                        width: 36
+                        height: 36
+                        radius: 18
+                        color: Qt.alpha(Theme.text, clearTap.pressed ? 0.14 : 0.0)
+                        scale: clearTap.pressed ? 0.88 : 1.0
+                        Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+                        Behavior on color { ColorAnimation { duration: Theme.animFast } }
+
+                        MaterialIcon {
+                            anchors.centerIn: parent
+                            name: "close"
+                            size: Theme.fontCaption
+                            color: Theme.textDim
+                        }
                     }
                     TapHandler {
+                        id: clearTap
                         onTapped: {
                             searchField.text = ""
                             win.query = ""
@@ -494,10 +512,16 @@ ApplicationWindow {
                             clip: true
                             visible: win.visibleNotes.length > 0
                             model: win.visibleNotes
-                            spacing: Theme.spaceXS
+                            spacing: Theme.spaceS
                             boundsBehavior: Flickable.StopAtBounds
                             // Software renderer: keep roughly two screens of rows ready.
                             cacheBuffer: Theme.iconL * 24
+                            add: Transition {
+                                NumberAnimation { properties: "opacity"; from: 0; to: 1; duration: Theme.animFast; easing.type: Theme.animEase }
+                            }
+                            displaced: Transition {
+                                NumberAnimation { properties: "y"; duration: Theme.animMed; easing.type: Theme.animEase }
+                            }
                             // Room for the floating button, so the last note stays tappable.
                             footer: Item {
                                 width: listView.width
@@ -556,6 +580,15 @@ ApplicationWindow {
                                 color: Theme.surfaceHigh
                                 border.width: 1
                                 border.color: Qt.alpha(Theme.text, 0.10)
+                                scale: clearSearchBtnTap.pressed ? 0.94 : 1.0
+                                Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+
+                                Rectangle {
+                                    anchors.fill: parent
+                                    radius: parent.radius
+                                    color: Qt.alpha(Theme.text, clearSearchBtnTap.pressed ? 0.12 : 0.0)
+                                    Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                                }
 
                                 Text {
                                     id: clearSearchLabel
@@ -567,6 +600,7 @@ ApplicationWindow {
                                     font.weight: Font.Medium
                                 }
                                 TapHandler {
+                                    id: clearSearchBtnTap
                                     onTapped: {
                                         searchField.text = ""
                                         win.query = ""
@@ -601,8 +635,17 @@ ApplicationWindow {
             height: Theme.iconM + Theme.spaceXS
             radius: height / 2
             color: ShellPrefs.accentColor
-            scale: newTap.pressed ? 0.96 : 1.0
-            Behavior on scale { NumberAnimation { duration: Theme.animFast } }
+            border.width: 1
+            border.color: Qt.alpha(ShellPrefs.onAccentColor, 0.16)
+            scale: newTap.pressed ? 0.93 : 1.0
+            Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: parent.radius
+                color: Qt.alpha(ShellPrefs.onAccentColor, newTap.pressed ? 0.16 : 0.0)
+                Behavior on color { ColorAnimation { duration: Theme.animFast } }
+            }
 
             Row {
                 id: newRow
@@ -656,6 +699,7 @@ ApplicationWindow {
                     height: saveChipLabel.implicitHeight + Theme.spaceXS * 2
                     radius: height / 2
                     color: Qt.alpha(win.saveColor, 0.16)
+                    Behavior on color { ColorAnimation { duration: Theme.animFast } }
 
                     Text {
                         id: saveChipLabel
@@ -674,6 +718,9 @@ ApplicationWindow {
                 IconButton {
                     icon: "delete_outline"
                     tint: Theme.danger
+                    width: 48
+                    height: 48
+                    radius: 24
                     onClicked: win.askDelete()
                 }
 
@@ -707,6 +754,7 @@ ApplicationWindow {
                     border.color: titleField.activeFocus
                                   ? Qt.alpha(ShellPrefs.accentColor, 0.65)
                                   : Qt.alpha(Theme.text, 0.08)
+                    Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
                 }
                 onTextChanged: win.draftChanged()
             }
@@ -721,6 +769,7 @@ ApplicationWindow {
                 border.color: bodyArea.activeFocus
                               ? Qt.alpha(ShellPrefs.accentColor, 0.65)
                               : Qt.alpha(Theme.text, 0.08)
+                Behavior on border.color { ColorAnimation { duration: Theme.animFast } }
                 clip: true
 
                 // TextArea.flickable is Qt's own way to make a TextArea scrollable: the
@@ -788,6 +837,8 @@ ApplicationWindow {
             anchors.centerIn: parent
             width: parent.width - Theme.spaceXL * 2
             padding: Theme.spaceL
+            scale: win.deletingId !== "" ? 1.0 : 0.94
+            Behavior on scale { NumberAnimation { duration: Theme.animFast; easing.type: Theme.animEase } }
 
             // Swallow taps on the dialog so only the scrim (outside) cancels.
             TapHandler { }
@@ -827,6 +878,15 @@ ApplicationWindow {
                         color: Theme.surfaceHigh
                         border.width: 1
                         border.color: Qt.alpha(Theme.text, 0.10)
+                        scale: cancelDeleteTap.pressed ? 0.94 : 1.0
+                        Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: Qt.alpha(Theme.text, cancelDeleteTap.pressed ? 0.12 : 0.0)
+                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                        }
 
                         Text {
                             id: cancelDeleteLabel
@@ -836,7 +896,7 @@ ApplicationWindow {
                             font.family: Theme.fontFamily
                             font.pixelSize: Theme.fontBody - 4
                         }
-                        TapHandler { onTapped: win.cancelDelete() }
+                        TapHandler { id: cancelDeleteTap; onTapped: win.cancelDelete() }
                     }
 
                     Rectangle {
@@ -845,6 +905,15 @@ ApplicationWindow {
                         implicitHeight: Theme.spaceXL
                         radius: height / 2
                         color: Theme.danger
+                        scale: confirmDeleteTap.pressed ? 0.94 : 1.0
+                        Behavior on scale { SpringAnimation { spring: 5.0; damping: 0.35 } }
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: parent.radius
+                            color: Qt.alpha(Theme.primaryContent, confirmDeleteTap.pressed ? 0.16 : 0.0)
+                            Behavior on color { ColorAnimation { duration: Theme.animFast } }
+                        }
 
                         Text {
                             id: confirmDeleteLabel
@@ -855,7 +924,7 @@ ApplicationWindow {
                             font.pixelSize: Theme.fontBody - 4
                             font.weight: Font.Medium
                         }
-                        TapHandler { onTapped: win.confirmDelete() }
+                        TapHandler { id: confirmDeleteTap; onTapped: win.confirmDelete() }
                     }
                 }
             }
