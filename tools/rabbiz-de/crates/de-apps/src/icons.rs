@@ -41,7 +41,9 @@ fn candidates(icon_name: &str) -> Vec<PathBuf> {
         // file in this user's home, and Chrome's PWA icons are also
         // findable by name in the hicolor tree.
         if let (Some(rest), Some(home)) = (
-            icon_name.strip_prefix("/home/").and_then(|r| r.split_once('/')),
+            icon_name
+                .strip_prefix("/home/")
+                .and_then(|r| r.split_once('/')),
             std::env::var_os("HOME").map(PathBuf::from),
         ) {
             out.push(home.join(rest.1));
@@ -198,10 +200,7 @@ fn tile_icon(label: &str, size: i32) -> Pixels {
         let p = Pixels::new(Size::new(w, h), px.data().to_vec());
         c.blit(
             &p,
-            de_api::Point::new(
-                (size - (x1 - x0)) / 2 - x0,
-                (size - (y1 - y0)) / 2 - y0,
-            ),
+            de_api::Point::new((size - (x1 - x0)) / 2 - x0, (size - (y1 - y0)) / 2 - y0),
         );
     }
     c.into_pixels()
@@ -244,10 +243,20 @@ pub fn icon(desktop_id: &str, icon_name: &str, label: &str, size: i32) -> Pixels
 mod tests {
     #[test]
     fn absolute_icon_path_of_another_user_falls_back_to_this_home_and_name() {
-        let c = candidates("/home/gamer/.local/share/icons/hicolor/256x256/apps/chrome-x-Default.png");
-        assert_eq!(c[0], PathBuf::from("/home/gamer/.local/share/icons/hicolor/256x256/apps/chrome-x-Default.png"));
-        assert!(c.iter().any(|p| p.ends_with(".local/share/icons/hicolor/256x256/apps/chrome-x-Default.png") && !p.starts_with("/home/gamer")));
-        assert!(c.iter().any(|p| p.ends_with("hicolor/128x128/apps/chrome-x-Default.png")));
+        let c =
+            candidates("/home/gamer/.local/share/icons/hicolor/256x256/apps/chrome-x-Default.png");
+        assert_eq!(
+            c[0],
+            PathBuf::from(
+                "/home/gamer/.local/share/icons/hicolor/256x256/apps/chrome-x-Default.png"
+            )
+        );
+        assert!(c.iter().any(|p| p
+            .ends_with(".local/share/icons/hicolor/256x256/apps/chrome-x-Default.png")
+            && !p.starts_with("/home/gamer")));
+        assert!(c
+            .iter()
+            .any(|p| p.ends_with("hicolor/128x128/apps/chrome-x-Default.png")));
     }
 
     fn solid(size: i32, f: impl Fn(i32, i32) -> bool) -> Pixels {
@@ -268,13 +277,20 @@ mod tests {
         assert!(is_framed(&solid(96, |_, _| true)));
         // Rounded tile: corners cut.
         assert!(is_framed(&solid(96, |x, y| {
-            let (dx, dy) = ((x - 47).abs().max(47 - 28) - (47 - 28), (y - 47).abs().max(47 - 28) - (47 - 28));
+            let (dx, dy) = (
+                (x - 47).abs().max(47 - 28) - (47 - 28),
+                (y - 47).abs().max(47 - 28) - (47 - 28),
+            );
             dx * dx + dy * dy <= 28 * 28
         })));
         // Full-bleed circle (a round logo): not a tile.
-        assert!(!is_framed(&solid(96, |x, y| (x - 48).pow(2) + (y - 48).pow(2) <= 48 * 48)));
+        assert!(!is_framed(&solid(96, |x, y| (x - 48).pow(2)
+            + (y - 48).pow(2)
+            <= 48 * 48)));
         // Small glyph in the middle, and an empty icon.
-        assert!(!is_framed(&solid(96, |x, y| (20..76).contains(&x) && (20..76).contains(&y))));
+        assert!(!is_framed(
+            &solid(96, |x, y| (20..76).contains(&x) && (20..76).contains(&y))
+        ));
         assert!(!is_framed(&Pixels::empty(Size::new(96, 96))));
     }
 

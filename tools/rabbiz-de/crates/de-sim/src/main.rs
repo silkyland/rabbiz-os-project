@@ -105,8 +105,11 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             let card = de_ui::recents::card_rect(size);
             let settings = de_ui::settings::render_index(size, s, t, "09:41");
             let preview = de_paint::wallpaper::cover_scale(&settings, card.size());
-            let mut recent = de_ui::recents::RecentEntry::new("rabbiz-settings", s.get("settings.title"));
-            recent.snapshot = Some(std::sync::Arc::new(de_ui::recents::round_snapshot(preview, card)));
+            let mut recent =
+                de_ui::recents::RecentEntry::new("rabbiz-settings", s.get("settings.title"));
+            recent.snapshot = Some(std::sync::Arc::new(de_ui::recents::round_snapshot(
+                preview, card,
+            )));
             let m = de_ui::recents::RecentsModel::new(vec![
                 recent,
                 de_ui::recents::RecentEntry::new("rabbiz-files", "Files"),
@@ -115,7 +118,12 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             let home = render_scene("home", size, s)?;
             let backdrop = de_paint::glass::blurred_backdrop(&home);
             Some(de_ui::recents::render_with_backdrop(
-                size, s, t, &sim_status(), &m, Some(&backdrop),
+                size,
+                s,
+                t,
+                &sim_status(),
+                &m,
+                Some(&backdrop),
             ))
         }
         "shade" => Some(de_ui::shade::render(size, s, t, "09:41")),
@@ -123,53 +131,93 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
             let wp = de_paint::wallpaper::wallpaper(None, "sand", size);
             let blurred = de_paint::glass::blurred_backdrop(&wp);
             let controls = {
-            if name == "panel-quick" {
-                let tile = |id: &'static str, label: &str, glyph: &'static str, on: bool, detail: &str| {
-                    de_ui::panels::QuickTile {
-                        id,
-                        label: label.into(),
-                        glyph,
-                        on,
-                        available: true,
-                        detail: detail.into(),
-                    }
-                };
-                let m = de_ui::panels::QuickModel {
-                    tiles: vec![
-                        tile("wifi", s.get("qs.wifi"), "\u{e63e}", true, "DATA-HORIZON"),
-                        tile("bt", s.get("qs.bluetooth"), "\u{e1a7}", false, s.get("qs.off")),
-                        tile("air", s.get("qs.airplane"), "\u{e195}", false, s.get("qs.off")),
-                        tile("dnd", s.get("qs.dnd"), "\u{e644}", true, s.get("qs.on")),
-                        tile("torch", s.get("qs.flashlight"), "\u{e3e7}", false, ""),
-                        tile("rot", s.get("qs.rotate"), "\u{e1c1}", true, ""),
-                        tile("saver", s.get("qs.battery_saver"), "\u{efde}", false, ""),
-                        tile("loc", s.get("qs.location"), "\u{e0c8}", true, ""),
-                        tile("hot", s.get("qs.hotspot"), "\u{e1e2}", false, ""),
-                        tile("shot", s.get("qs.screenshot"), "\u{e412}", false, ""),
-                        tile("rec", s.get("qs.record"), "\u{e04b}", false, ""),
-                        tile("nfc", "NFC", "\u{e1bb}", false, ""),
-                    ],
-                    brightness: 0.62,
-                    volume: 0.35,
-                    brightness_available: true, volume_available: true, feedback: None,
-                };
-                de_ui::panels::render_quick(size, s, t, &blurred, "16:11", "Mon, 16 Nov", &m)
-            } else {
-                let n = |id, app: &str, title: &str, body: &str, when: &str| de_ui::panels::Notification {
-                    id,
-                    app: app.into(),
-                    title: title.into(),
-                    body: body.into(),
-                    when: when.into(),
-                    icon: None,
-                };
-                let items = vec![
-                    n(1, "Chats", "ESport win", "Wittoon: sent a photo", "26 min"),
-                    n(2, "Mail", "Nokpirab Express", "Thank you for playing with us. Your parcel ISX315632 is on its way.", "57 min"),
-                    n(3, "Files", "Download finished", "rabbiz-de-release.tar.zst", "13:21"),
-                ];
-                de_ui::panels::render_notifications(size, s, t, &blurred, "16:11", "Mon, 16 Nov", &items)
-            }
+                if name == "panel-quick" {
+                    let tile = |id: &'static str,
+                                label: &str,
+                                glyph: &'static str,
+                                on: bool,
+                                detail: &str| {
+                        de_ui::panels::QuickTile {
+                            id,
+                            label: label.into(),
+                            glyph,
+                            on,
+                            available: true,
+                            detail: detail.into(),
+                        }
+                    };
+                    let m = de_ui::panels::QuickModel {
+                        tiles: vec![
+                            tile("wifi", s.get("qs.wifi"), "\u{e63e}", true, "DATA-HORIZON"),
+                            tile(
+                                "bt",
+                                s.get("qs.bluetooth"),
+                                "\u{e1a7}",
+                                false,
+                                s.get("qs.off"),
+                            ),
+                            tile(
+                                "air",
+                                s.get("qs.airplane"),
+                                "\u{e195}",
+                                false,
+                                s.get("qs.off"),
+                            ),
+                            tile("dnd", s.get("qs.dnd"), "\u{e644}", true, s.get("qs.on")),
+                            tile("torch", s.get("qs.flashlight"), "\u{e3e7}", false, ""),
+                            tile("rot", s.get("qs.rotate"), "\u{e1c1}", true, ""),
+                            tile("saver", s.get("qs.battery_saver"), "\u{efde}", false, ""),
+                            tile("loc", s.get("qs.location"), "\u{e0c8}", true, ""),
+                            tile("hot", s.get("qs.hotspot"), "\u{e1e2}", false, ""),
+                            tile("shot", s.get("qs.screenshot"), "\u{e412}", false, ""),
+                            tile("rec", s.get("qs.record"), "\u{e04b}", false, ""),
+                            tile("nfc", "NFC", "\u{e1bb}", false, ""),
+                        ],
+                        brightness: 0.62,
+                        volume: 0.35,
+                        brightness_available: true,
+                        volume_available: true,
+                        feedback: None,
+                    };
+                    de_ui::panels::render_quick(size, s, t, &blurred, "16:11", "Mon, 16 Nov", &m)
+                } else {
+                    let n = |id, app: &str, title: &str, body: &str, when: &str| {
+                        de_ui::panels::Notification {
+                            id,
+                            app: app.into(),
+                            title: title.into(),
+                            body: body.into(),
+                            when: when.into(),
+                            icon: None,
+                        }
+                    };
+                    let items = vec![
+                        n(1, "Chats", "ESport win", "Wittoon: sent a photo", "26 min"),
+                        n(
+                            2,
+                            "Mail",
+                            "Nokpirab Express",
+                            "Thank you for playing with us. Your parcel ISX315632 is on its way.",
+                            "57 min",
+                        ),
+                        n(
+                            3,
+                            "Files",
+                            "Download finished",
+                            "rabbiz-de-release.tar.zst",
+                            "13:21",
+                        ),
+                    ];
+                    de_ui::panels::render_notifications(
+                        size,
+                        s,
+                        t,
+                        &blurred,
+                        "16:11",
+                        "Mon, 16 Nov",
+                        &items,
+                    )
+                }
             };
             // The panel texture already bakes the frosted sheet beneath the
             // controls; the sim shows it fully open.

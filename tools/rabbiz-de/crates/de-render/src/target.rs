@@ -83,4 +83,3 @@ where
 {
     TextureRenderElement::from_texture_buffer(location, buffer, None, None, None, Kind::Unspecified)
 }
-

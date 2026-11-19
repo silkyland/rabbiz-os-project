@@ -102,7 +102,6 @@ pub fn blurred_backdrop(src: &Pixels) -> Pixels {
     }
     let blurred = Pixels::new(Size::new(sw, sh), data);
     upsample(&blurred, src.size)
-
 }
 
 /// Fixed-point bilinear upsampling of an already blurred image. Avoid a
@@ -173,9 +172,19 @@ fn frost_pixel(dst: &mut [u8], src: &[u8], tint: [u8; 4], ta: u32, inv_ta: u32, 
 /// No per-control crop, mask image, or intermediate full-size allocation.
 /// The incoming pixels and destination both use premultiplied RGBA8.
 pub fn frost(c: &mut Canvas, backdrop: &Pixels, rect: Rect, radius: f32, tint: [u8; 4]) {
-    let bounds = Rect::new(0, 0, c.size().w.min(backdrop.size.w), c.size().h.min(backdrop.size.h));
-    let Some(clip) = rect.intersect(bounds) else { return; };
-    let radius = radius.max(0.0).min(rect.w as f32 / 2.0).min(rect.h as f32 / 2.0);
+    let bounds = Rect::new(
+        0,
+        0,
+        c.size().w.min(backdrop.size.w),
+        c.size().h.min(backdrop.size.h),
+    );
+    let Some(clip) = rect.intersect(bounds) else {
+        return;
+    };
+    let radius = radius
+        .max(0.0)
+        .min(rect.w as f32 / 2.0)
+        .min(rect.h as f32 / 2.0);
     let width = c.size().w as usize;
     let b_width = backdrop.size.w as usize;
     let target = c.pixmap_mut().data_mut();
@@ -183,7 +192,9 @@ pub fn frost(c: &mut Canvas, backdrop: &Pixels, rect: Rect, radius: f32, tint: [
     let inv_ta = 255 - ta;
     let r_bound = radius.ceil() as i32 + 1;
     let left_corner_end = (rect.x + r_bound).min(clip.x + clip.w).max(clip.x);
-    let right_corner_start = (rect.x + rect.w - r_bound).max(left_corner_end).min(clip.x + clip.w);
+    let right_corner_start = (rect.x + rect.w - r_bound)
+        .max(left_corner_end)
+        .min(clip.x + clip.w);
 
     for y in clip.y..clip.y + clip.h {
         let dy = (radius - (y - rect.y) as f32 - 0.5)
@@ -194,7 +205,14 @@ pub fn frost(c: &mut Canvas, backdrop: &Pixels, rect: Rect, radius: f32, tint: [
         if dy == 0.0 {
             for x in clip.x..clip.x + clip.w {
                 let o = x as usize * 4;
-                frost_pixel(&mut dst_row[o..o + 4], &src_row[o..o + 4], tint, ta, inv_ta, 255);
+                frost_pixel(
+                    &mut dst_row[o..o + 4],
+                    &src_row[o..o + 4],
+                    tint,
+                    ta,
+                    inv_ta,
+                    255,
+                );
             }
             continue;
         }
@@ -210,19 +228,44 @@ pub fn frost(c: &mut Canvas, backdrop: &Pixels, rect: Rect, radius: f32, tint: [
         };
         for x in clip.x..left_corner_end {
             let mask = corner_mask(x);
-            if mask == 0 { continue; }
+            if mask == 0 {
+                continue;
+            }
             let o = x as usize * 4;
-            frost_pixel(&mut dst_row[o..o + 4], &src_row[o..o + 4], tint, ta, inv_ta, mask);
+            frost_pixel(
+                &mut dst_row[o..o + 4],
+                &src_row[o..o + 4],
+                tint,
+                ta,
+                inv_ta,
+                mask,
+            );
         }
         for x in left_corner_end..right_corner_start {
             let o = x as usize * 4;
-            frost_pixel(&mut dst_row[o..o + 4], &src_row[o..o + 4], tint, ta, inv_ta, 255);
+            frost_pixel(
+                &mut dst_row[o..o + 4],
+                &src_row[o..o + 4],
+                tint,
+                ta,
+                inv_ta,
+                255,
+            );
         }
         for x in right_corner_start..clip.x + clip.w {
             let mask = corner_mask(x);
-            if mask == 0 { continue; }
+            if mask == 0 {
+                continue;
+            }
             let o = x as usize * 4;
-            frost_pixel(&mut dst_row[o..o + 4], &src_row[o..o + 4], tint, ta, inv_ta, mask);
+            frost_pixel(
+                &mut dst_row[o..o + 4],
+                &src_row[o..o + 4],
+                tint,
+                ta,
+                inv_ta,
+                mask,
+            );
         }
     }
 }
@@ -237,19 +280,30 @@ mod tests {
 
     #[test]
     fn frost_preserves_premultiplied_alpha_and_clips_negative_bounds() {
-        let backdrop = Pixels::new(Size::new(16, 16), [128, 0, 0, 128].repeat(16*16));
+        let backdrop = Pixels::new(Size::new(16, 16), [128, 0, 0, 128].repeat(16 * 16));
         let mut c = Canvas::new(Size::new(16, 16));
-        frost(&mut c, &backdrop, Rect::new(-4, -4, 12, 12), 0.0, [0, 0, 0, 0]);
+        frost(
+            &mut c,
+            &backdrop,
+            Rect::new(-4, -4, 12, 12),
+            0.0,
+            [0, 0, 0, 0],
+        );
         let px = c.into_pixels();
         assert_eq!(&px.data[0..4], &[128, 0, 0, 128]);
-        assert_eq!(&px.data[(15*16+15)*4..(15*16+15)*4+4], &[0, 0, 0, 0]);
+        assert_eq!(
+            &px.data[(15 * 16 + 15) * 4..(15 * 16 + 15) * 4 + 4],
+            &[0, 0, 0, 0]
+        );
     }
 
     #[test]
     fn upsampling_preserves_flat_translucent_pixels() {
         let src = Pixels::new(Size::new(3, 5), [128, 64, 0, 128].repeat(15));
         let out = upsample(&src, Size::new(19, 23));
-        for p in out.data.chunks_exact(4) { assert_eq!(p, &[128, 64, 0, 128]); }
+        for p in out.data.chunks_exact(4) {
+            assert_eq!(p, &[128, 64, 0, 128]);
+        }
     }
 
     #[test]
@@ -277,7 +331,13 @@ mod tests {
     fn frost_clips_to_the_rounded_corner_and_tints() {
         let backdrop = solid(Size::new(100, 100), [255, 0, 0, 255]);
         let mut c = Canvas::new(Size::new(100, 100));
-        frost(&mut c, &backdrop, Rect::new(10, 10, 80, 80), 30.0, [255, 255, 255, 100]);
+        frost(
+            &mut c,
+            &backdrop,
+            Rect::new(10, 10, 80, 80),
+            30.0,
+            [255, 255, 255, 100],
+        );
         let px = c.into_pixels();
         let a = |x: i32, y: i32| px.data[((y * 100 + x) * 4 + 3) as usize];
         assert_eq!(a(10, 10), 0, "corner is outside the rounded rect");

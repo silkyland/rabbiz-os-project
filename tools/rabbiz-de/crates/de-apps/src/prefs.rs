@@ -48,50 +48,24 @@ impl AppPrefs {
         now
     }
 
-    /// Choose the wallpaper by id; persists. Returns `false` (and changes nothing) if it is already selected.
+    /// Choose the wallpaper by id; delegates to [`Prefs::set_wallpaper`].
     pub fn set_wallpaper(&mut self, id: &str) -> bool {
-        if self.prefs.wallpaper_id == id {
-            return false;
-        }
-        self.prefs.wallpaper_id = id.to_string();
-        let _ = self.prefs.save();
-        true
+        self.prefs.set_wallpaper(id)
     }
 
-    /// Persist DND before reflecting it in the UI. Failed writes preserve the old state.
+    /// Persist DND; delegates to [`Prefs::set_do_not_disturb`].
     pub fn set_do_not_disturb(&mut self, on: bool) -> bool {
-        let mut next = self.prefs.clone();
-        next.do_not_disturb = on;
-        if next.save().is_err() { return false; }
-        self.prefs = next;
-        true
+        self.prefs.set_do_not_disturb(on)
     }
 
-    /// Select active keyboard id; persists.
+    /// Select active keyboard id; delegates to [`Prefs::set_keyboard`].
     pub fn set_keyboard(&mut self, id: &str) -> bool {
-        if self.prefs.keyboard_id == id {
-            return false;
-        }
-        let mut next = self.prefs.clone();
-        next.keyboard_id = id.to_string();
-        if next.save().is_err() { return false; }
-        self.prefs = next;
-        true
+        self.prefs.set_keyboard(id)
     }
 
-    /// Toggle whether 3rd-party / market keyboards are allowed; persists.
+    /// Toggle 3rd-party keyboards; delegates to [`Prefs::set_allow_third_party_keyboards`].
     pub fn set_allow_third_party_keyboards(&mut self, allow: bool) -> bool {
-        if self.prefs.allow_third_party_keyboards == allow {
-            return false;
-        }
-        let mut next = self.prefs.clone();
-        next.allow_third_party_keyboards = allow;
-        if !allow {
-            next.keyboard_id = de_config::keyboards::DEFAULT_KEYBOARD_ID.into();
-        }
-        if next.save().is_err() { return false; }
-        self.prefs = next;
-        true
+        self.prefs.set_allow_third_party_keyboards(allow)
     }
 
     /// Pin to dock (no-op when full); persists.

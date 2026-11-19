@@ -1,32 +1,17 @@
-//! `de-core` — compositor state, Wayland protocol handlers and frame loop
-//! (Linux only).
+//! `de-core` — compositor state, Wayland protocol handlers, runtime, and shell
+//! UI controllers (Linux only).
 
-pub mod comp;
-pub mod composite;
-pub mod frame;
-pub mod input;
-pub mod launch;
-mod home_ui;
-mod layer_shell;
-mod lock_ui;
-pub mod misc;
-mod morph;
-mod navigation;
-mod panel_ui;
-mod osk;
-mod popups;
-mod power;
-mod shell_menu;
-mod shot_ui;
-mod privileged;
-pub mod screencopy;
-pub mod seat;
-pub mod selection;
-pub mod shell;
-pub mod snapshots;
-pub mod state;
-pub mod virtual_pointer;
-pub mod xdg;
+pub mod protocols;
+pub mod runtime;
+pub mod shell_ui;
 
-pub use frame::{event_loop, Run};
-pub use state::{init, De, DeClientState, InitError};
+// Re-export module paths at crate root so internal and downstream imports stay concise.
+pub use protocols::{comp, output_dmabuf, screencopy, seat, selection, virtual_pointer, xdg};
+pub(crate) use protocols::{popups, privileged};
+pub use runtime::{composite, frame, input, launch, snapshots, state};
+pub(crate) use runtime::{ctl_ipc, cursor, display_stack, haptics, osk, power};
+pub use shell_ui::shell;
+pub(crate) use shell_ui::{home_ui, lock_ui, morph, navigation, panel_ui, shell_menu, shot_ui};
+
+pub use runtime::frame::{event_loop, Run};
+pub use runtime::state::{init, De, DeClientState, InitError};

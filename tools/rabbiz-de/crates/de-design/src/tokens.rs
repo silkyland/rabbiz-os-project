@@ -80,7 +80,7 @@ pub const LIGHT: Theme = Theme {
     text2: [0x58, 0x43, 0x5E, 0xFF],    // plum-muted
     text3: [0x7A, 0x64, 0x82, 0xFF],    // plum-subtle
     text_on_accent: [0xFD, 0xFB, 0xF7, 0xFF],
-    accent: [0xA6, 0x5A, 0x2E, 0xFF],    // copper (darkened to meet 4.5:1 with text_on_accent)
+    accent: [0xA6, 0x5A, 0x2E, 0xFF], // copper (darkened to meet 4.5:1 with text_on_accent)
     accent_hi: [0xE2, 0x97, 0x6C, 0xFF], // copper-light (glow)
     // copper-dark pressed. #A55C32 from §7.17 only reaches 4.32:1 on bg;
     // deepened to meet the 4.5:1 accent contract (contrast.rs).

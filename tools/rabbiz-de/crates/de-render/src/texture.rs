@@ -69,4 +69,3 @@ pub fn upload_rgba(
         },
     )
 }
-

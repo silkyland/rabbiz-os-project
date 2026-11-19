@@ -92,7 +92,10 @@ pub fn discover_keyboards(allow_third_party: bool) -> Vec<KeyboardInfo> {
 pub fn resolve_active_keyboard(prefs: &Prefs) -> KeyboardInfo {
     let list = discover_keyboards(prefs.allow_third_party_keyboards);
     if prefs.allow_third_party_keyboards {
-        if let Some(found) = list.iter().find(|k| k.id == prefs.keyboard_id && k.installed) {
+        if let Some(found) = list
+            .iter()
+            .find(|k| k.id == prefs.keyboard_id && k.installed)
+        {
             return found.clone();
         }
     }
@@ -155,7 +158,9 @@ mod tests {
         assert!(list.iter().any(|k| k.id == "rabbiz-osk" && !k.third_party));
         assert!(list.iter().any(|k| k.id == "squeekboard" && k.third_party));
         assert!(list.iter().any(|k| k.id == "stevia" && k.third_party));
-        assert!(list.iter().any(|k| k.id == "maliit-keyboard" && k.third_party));
+        assert!(list
+            .iter()
+            .any(|k| k.id == "maliit-keyboard" && k.third_party));
         assert!(list.iter().any(|k| k.id == "fcitx5" && k.third_party));
     }
 }

@@ -10,7 +10,9 @@ use smithay::backend::renderer::gles::{
 };
 use smithay::backend::renderer::utils::draw_render_elements;
 use smithay::backend::renderer::{Bind, Frame, Offscreen, Renderer};
-use smithay::utils::{Buffer as BufferCoord, Logical, Physical, Point, Rectangle, Scale, Size, Transform};
+use smithay::utils::{
+    Buffer as BufferCoord, Logical, Physical, Point, Rectangle, Scale, Size, Transform,
+};
 
 use crate::RenderError;
 
@@ -112,8 +114,9 @@ impl GpuBlur {
                 .map_err(|e| RenderError::Gl(format!("finish fbo_a: {e}")))?;
         }
 
-        let src_rect: Rectangle<f64, BufferCoord> =
-            Rectangle::from_size((f64::from(self.small_size.w), f64::from(self.small_size.h)).into());
+        let src_rect: Rectangle<f64, BufferCoord> = Rectangle::from_size(
+            (f64::from(self.small_size.w), f64::from(self.small_size.h)).into(),
+        );
         let w_f = self.small_size.w as f32;
         let h_f = self.small_size.h as f32;
 
@@ -170,8 +173,9 @@ impl GpuBlur {
     #[must_use]
     pub fn element(&self, alpha: f32) -> Option<TextureRenderElement<GlesTexture>> {
         let buf = self.blurred.as_ref()?;
-        let src: Rectangle<f64, Logical> =
-            Rectangle::from_size((f64::from(self.small_size.w), f64::from(self.small_size.h)).into());
+        let src: Rectangle<f64, Logical> = Rectangle::from_size(
+            (f64::from(self.small_size.w), f64::from(self.small_size.h)).into(),
+        );
         let dst: Size<i32, Logical> = Size::from((self.full_size.w, self.full_size.h));
         Some(TextureRenderElement::from_texture_buffer(
             Point::<f64, Physical>::from((0.0, 0.0)),

@@ -3,8 +3,10 @@
 use de_api::RendererKind;
 use de_render::target::DeRenderer;
 use de_render::texture::{upload, upload_rgba, DeTexture};
-use smithay::backend::allocator::{Format as DrmFormat, Fourcc as DrmFourcc, Modifier as DrmModifier};
 use de_render::RenderError;
+use smithay::backend::allocator::{
+    Format as DrmFormat, Fourcc as DrmFourcc, Modifier as DrmModifier,
+};
 
 fn soft() -> DeRenderer {
     DeRenderer::Soft(de_render::soft::create().expect("pixman renderer"))
@@ -31,7 +33,9 @@ fn soft_renderer_formats_match_shm_formats() {
 #[test]
 fn render_error_display_tags_the_stage() {
     assert!(RenderError::Gl("x".into()).to_string().starts_with("gl: "));
-    assert!(RenderError::Soft("x".into()).to_string().starts_with("soft: "));
+    assert!(RenderError::Soft("x".into())
+        .to_string()
+        .starts_with("soft: "));
     assert!(RenderError::Upload("x".into())
         .to_string()
         .starts_with("upload: "));

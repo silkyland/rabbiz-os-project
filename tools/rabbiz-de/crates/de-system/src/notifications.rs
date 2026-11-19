@@ -1,7 +1,7 @@
 //! Bounded, session-only freedesktop notification server. No payloads are logged
 //! or written to disk. The compositor consumes snapshots without D-Bus calls.
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 use zbus::zvariant::OwnedValue;
 
@@ -19,25 +19,50 @@ pub struct Entry {
     expires: Option<Instant>,
 }
 #[derive(Default)]
-struct Store { entries: VecDeque<Entry>, next: u32, generation: u64 }
+struct Store {
+    entries: VecDeque<Entry>,
+    next: u32,
+    generation: u64,
+}
 impl Store {
-    fn notify(&mut self, app: &str, replaces: u32, title: &str, body: &str,
-        timeout: i32, critical: bool) -> u32 {
+    fn notify(
+        &mut self,
+        app: &str,
+        replaces: u32,
+        title: &str,
+        body: &str,
+        timeout: i32,
+        critical: bool,
+    ) -> u32 {
         let existing = self.entries.iter().position(|e| e.id == replaces);
-        let id = if existing.is_some() { replaces } else {
+        let id = if existing.is_some() {
+            replaces
+        } else {
             loop {
                 self.next = self.next.wrapping_add(1).max(1);
-                if !self.entries.iter().any(|e| e.id == self.next) { break self.next; }
+                if !self.entries.iter().any(|e| e.id == self.next) {
+                    break self.next;
+                }
             }
         };
-        if let Some(i) = existing { self.entries.remove(i); }
+        if let Some(i) = existing {
+            self.entries.remove(i);
+        }
         let now = Instant::now();
         // Persistent notifications and critical alarms remain until dismissed.
-        let expires = if timeout == 0 || critical { None } else {
+        let expires = if timeout == 0 || critical {
+            None
+        } else {
             Some(now + Duration::from_millis(if timeout < 0 { 8000 } else { timeout as u64 }))
         };
-        self.entries.push_front(Entry { id, app: bounded(app, 128), title: bounded(title, 256),
-            body: plain_body(body), created: now, expires });
+        self.entries.push_front(Entry {
+            id,
+            app: bounded(app, 128),
+            title: bounded(title, 256),
+            body: plain_body(body),
+            created: now,
+            expires,
+        });
         self.entries.truncate(LIMIT);
         self.generation = self.generation.wrapping_add(1);
         id
@@ -46,41 +71,87 @@ impl Store {
         let before = self.entries.len();
         self.entries.retain(|e| e.id != id);
         let changed = self.entries.len() != before;
-        if changed { self.generation = self.generation.wrapping_add(1); }
+        if changed {
+            self.generation = self.generation.wrapping_add(1);
+        }
         changed
     }
 }
-fn bounded(s: &str, n: usize) -> String { s.chars().take(n).collect() }
+fn bounded(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
 fn plain_body(body: &str) -> String {
     let mut tag = false;
-    body.chars().take(8192).filter(|c| {
-        if *c == '<' { tag = true; false } else if *c == '>' { tag = false; false }
-        else { !tag }
-    }).take(2048).collect()
+    body.chars()
+        .take(8192)
+        .filter(|c| {
+            if *c == '<' {
+                tag = true;
+                false
+            } else if *c == '>' {
+                tag = false;
+                false
+            } else {
+                !tag
+            }
+        })
+        .take(2048)
+        .collect()
 }
-struct Service { store: Arc<Mutex<Store>> }
+struct Service {
+    store: Arc<Mutex<Store>>,
+}
 #[zbus::interface(name = "org.freedesktop.Notifications")]
 impl Service {
-    fn get_capabilities(&self) -> Vec<&str> { vec!["body"] }
+    fn get_capabilities(&self) -> Vec<&str> {
+        vec!["body"]
+    }
     fn get_server_information(&self) -> (&str, &str, &str, &str) {
         ("RabbizOS", "Devded", env!("CARGO_PKG_VERSION"), "1.3")
     }
     #[allow(clippy::too_many_arguments)]
-    fn notify(&self, app_name: &str, replaces_id: u32, _app_icon: &str, summary: &str,
-        body: &str, _actions: Vec<String>, hints: HashMap<String, OwnedValue>, expire_timeout: i32) -> u32 {
+    fn notify(
+        &self,
+        app_name: &str,
+        replaces_id: u32,
+        _app_icon: &str,
+        summary: &str,
+        body: &str,
+        _actions: Vec<String>,
+        hints: HashMap<String, OwnedValue>,
+        expire_timeout: i32,
+    ) -> u32 {
         let critical = hints.get("urgency").and_then(|v| u8::try_from(v).ok()) == Some(2);
-        self.store.lock().unwrap_or_else(|e| e.into_inner())
-            .notify(app_name, replaces_id, summary, body, expire_timeout, critical)
+        self.store.lock().unwrap_or_else(|e| e.into_inner()).notify(
+            app_name,
+            replaces_id,
+            summary,
+            body,
+            expire_timeout,
+            critical,
+        )
     }
-    async fn close_notification(&self, id: u32,
-        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>) -> zbus::fdo::Result<()> {
-        let removed = self.store.lock().unwrap_or_else(|e| e.into_inner()).remove(id);
-        if removed { Self::notification_closed(&emitter, id, 3).await?; }
+    async fn close_notification(
+        &self,
+        id: u32,
+        #[zbus(signal_emitter)] emitter: zbus::object_server::SignalEmitter<'_>,
+    ) -> zbus::fdo::Result<()> {
+        let removed = self
+            .store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(id);
+        if removed {
+            Self::notification_closed(&emitter, id, 3).await?;
+        }
         Ok(())
     }
     #[zbus(signal)]
-    async fn notification_closed(emitter: &zbus::object_server::SignalEmitter<'_>,
-        id: u32, reason: u32) -> zbus::Result<()>;
+    async fn notification_closed(
+        emitter: &zbus::object_server::SignalEmitter<'_>,
+        id: u32,
+        reason: u32,
+    ) -> zbus::Result<()>;
 }
 
 pub struct Server {
@@ -98,9 +169,18 @@ impl Server {
         std::thread::spawn(move || {
             let connection = zbus::blocking::connection::Builder::session()
                 .and_then(|b| b.name(IFACE))
-                .and_then(|b| b.serve_at(PATH, Service { store: shared.clone() }))
+                .and_then(|b| {
+                    b.serve_at(
+                        PATH,
+                        Service {
+                            store: shared.clone(),
+                        },
+                    )
+                })
                 .and_then(|b| b.build());
-            let Ok(connection) = connection else { return; };
+            let Ok(connection) = connection else {
+                return;
+            };
             ready.store(true, std::sync::atomic::Ordering::Relaxed);
             loop {
                 let command = match rx.recv_timeout(Duration::from_millis(100)) {
@@ -112,28 +192,59 @@ impl Server {
                 {
                     let mut s = shared.lock().unwrap_or_else(|e| e.into_inner());
                     if let Some(id) = command {
-                        let ids: Vec<_> = s.entries.iter().filter(|e| id == 0 || id == e.id).map(|e| e.id).collect();
-                        for id in ids { if s.remove(id) { closed.push((id, 2u32)); } }
+                        let ids: Vec<_> = s
+                            .entries
+                            .iter()
+                            .filter(|e| id == 0 || id == e.id)
+                            .map(|e| e.id)
+                            .collect();
+                        for id in ids {
+                            if s.remove(id) {
+                                closed.push((id, 2u32));
+                            }
+                        }
                     }
                     let now = Instant::now();
-                    let expired: Vec<_> = s.entries.iter()
-                        .filter(|e| e.expires.is_some_and(|t| now >= t)).map(|e| e.id).collect();
-                    for id in expired { if s.remove(id) { closed.push((id, 1u32)); } }
+                    let expired: Vec<_> = s
+                        .entries
+                        .iter()
+                        .filter(|e| e.expires.is_some_and(|t| now >= t))
+                        .map(|e| e.id)
+                        .collect();
+                    for id in expired {
+                        if s.remove(id) {
+                            closed.push((id, 1u32));
+                        }
+                    }
                 }
                 for (id, reason) in closed {
-                    let _ = connection.emit_signal(None::<&str>, PATH, IFACE, "NotificationClosed", &(id, reason));
+                    let _ = connection.emit_signal(
+                        None::<&str>,
+                        PATH,
+                        IFACE,
+                        "NotificationClosed",
+                        &(id, reason),
+                    );
                 }
             }
         });
-        Self { store, dismiss: tx, available }
+        Self {
+            store,
+            dismiss: tx,
+            available,
+        }
     }
     pub fn snapshot(&self) -> (u64, Vec<Entry>) {
         let s = self.store.lock().unwrap_or_else(|e| e.into_inner());
         (s.generation, s.entries.iter().cloned().collect())
     }
-    pub fn available(&self) -> bool { self.available.load(std::sync::atomic::Ordering::Relaxed) }
+    pub fn available(&self) -> bool {
+        self.available.load(std::sync::atomic::Ordering::Relaxed)
+    }
     /// Zero means dismiss all; IDs allocated to clients are always nonzero.
-    pub fn dismiss(&self, id: u32) { let _ = self.dismiss.send(id); }
+    pub fn dismiss(&self, id: u32) {
+        let _ = self.dismiss.send(id);
+    }
 }
 #[cfg(test)]
 mod tests {
@@ -152,7 +263,9 @@ mod tests {
     #[test]
     fn bounded_plain_text_store_and_critical_timeout() {
         let mut s = Store::default();
-        for _ in 0..100 { s.notify("app", 0, "title", "<b>hello</b>", 1, false); }
+        for _ in 0..100 {
+            s.notify("app", 0, "title", "<b>hello</b>", 1, false);
+        }
         assert_eq!(s.entries.len(), LIMIT);
         assert_eq!(s.entries[0].body, "hello");
         s.notify("alarm", 0, "wake", "", 10, true);

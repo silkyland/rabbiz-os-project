@@ -48,7 +48,11 @@ pub fn read() -> Option<Reading> {
         .ok()
         .and_then(|s| s.trim().parse().ok())
         .unwrap_or(0);
-    Some(Reading { chipid, status, irq_count })
+    Some(Reading {
+        chipid,
+        status,
+        irq_count,
+    })
 }
 
 /// Pulse the driver's unlock-confirm (same write `a21s-power-key fp-unlock`

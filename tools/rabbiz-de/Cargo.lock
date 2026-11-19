@@ -473,16 +473,11 @@ dependencies = [
 name = "de-bin"
 version = "0.1.0"
 dependencies = [
- "de-api",
  "de-apps",
  "de-backend",
  "de-config",
  "de-core",
- "de-paint",
- "de-render",
  "de-system",
- "de-ui",
- "serde_json",
  "smithay",
  "tracing-subscriber",
 ]

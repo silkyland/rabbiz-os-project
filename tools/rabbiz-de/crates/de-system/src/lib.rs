@@ -7,5 +7,5 @@ pub mod power;
 pub mod privacy;
 pub mod upower;
 
-pub mod notifications;
 pub mod controls;
+pub mod notifications;

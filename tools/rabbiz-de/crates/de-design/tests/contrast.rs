@@ -44,12 +44,7 @@ fn light_theme_pairs() {
     );
     assert_contrast("text2/surface1", t.text2, t.surface1, 4.5);
     assert_contrast("text3/surface1", t.text3, t.surface1, 3.0);
-    assert_contrast(
-        "text_on_accent/accent",
-        t.text_on_accent,
-        t.accent,
-        4.5,
-    );
+    assert_contrast("text_on_accent/accent", t.text_on_accent, t.accent, 4.5);
     assert_contrast(
         "text_on_accent/accent_dim",
         t.text_on_accent,

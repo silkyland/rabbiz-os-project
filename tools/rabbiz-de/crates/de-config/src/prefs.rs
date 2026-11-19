@@ -190,6 +190,67 @@ impl Prefs {
         Ok(())
     }
 
+    /// Transactionally mutate a clone and commit it to `path`; failed writes
+    /// leave `self` unchanged.
+    pub fn commit_to<F>(&mut self, path: &std::path::Path, mutate: F) -> bool
+    where
+        F: FnOnce(&mut Self) -> bool,
+    {
+        let mut next = self.clone();
+        if !mutate(&mut next) {
+            return false;
+        }
+        if next.save_to(path).is_err() {
+            return false;
+        }
+        *self = next;
+        true
+    }
+
+    /// Choose the wallpaper by id; persists atomically.
+    pub fn set_wallpaper(&mut self, id: &str) -> bool {
+        self.commit_to(&Self::path(), |p| {
+            if p.wallpaper_id == id {
+                return false;
+            }
+            p.wallpaper_id = id.to_string();
+            true
+        })
+    }
+
+    /// Persist Do-Not-Disturb before reflecting it in the UI.
+    pub fn set_do_not_disturb(&mut self, on: bool) -> bool {
+        self.commit_to(&Self::path(), |p| {
+            p.do_not_disturb = on;
+            true
+        })
+    }
+
+    /// Select active keyboard id; persists atomically.
+    pub fn set_keyboard(&mut self, id: &str) -> bool {
+        self.commit_to(&Self::path(), |p| {
+            if p.keyboard_id == id {
+                return false;
+            }
+            p.keyboard_id = id.to_string();
+            true
+        })
+    }
+
+    /// Toggle whether 3rd-party / market keyboards are allowed; persists atomically.
+    pub fn set_allow_third_party_keyboards(&mut self, allow: bool) -> bool {
+        self.commit_to(&Self::path(), |p| {
+            if p.allow_third_party_keyboards == allow {
+                return false;
+            }
+            p.allow_third_party_keyboards = allow;
+            if !allow {
+                p.keyboard_id = crate::keyboards::DEFAULT_KEYBOARD_ID.into();
+            }
+            true
+        })
+    }
+
     /// Serialise (pretty so `git diff`/debugging stays readable).
     #[must_use]
     pub fn to_json(&self) -> String {
@@ -239,7 +300,12 @@ impl Prefs {
     pub fn drop_on_dock(&mut self, desktop_id: &str, slot: usize, swap_to: usize, grid: &[String]) {
         const MAX: usize = 6;
         let was_in_dock = self.dock.iter().any(|d| d == desktop_id);
-        let mut dock: Vec<String> = self.dock.iter().filter(|d| *d != desktop_id).cloned().collect();
+        let mut dock: Vec<String> = self
+            .dock
+            .iter()
+            .filter(|d| *d != desktop_id)
+            .cloned()
+            .collect();
         let mut displaced = None;
         if dock.len() >= MAX && !was_in_dock {
             let at = slot.min(dock.len() - 1);

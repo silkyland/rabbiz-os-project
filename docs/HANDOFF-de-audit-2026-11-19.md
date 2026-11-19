@@ -22,13 +22,13 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
 ### P1 — `de-core` is becoming a flat monolith
 [de-core/src/lib.rs](../tools/rabbiz-de/crates/de-core/src/lib.rs) exposes **28 flat `.rs` files** with no subdirectory boundaries:
 
-- **God struct**: `De` in [state.rs](../tools/rabbiz-de/crates/de-core/src/state.rs) holds ~70 fields spanning DRM/renderer, Wayland protocol globals, seat/pointer/keyboard tracking, launcher/icon/wallpaper caches, OSK lifecycle, screencopy, power state, lock overlay, and screenshot FX.
+- **God struct**: `De` in [state.rs](../tools/rabbiz-de/crates/de-core/src/runtime/state.rs) holds ~70 fields spanning DRM/renderer, Wayland protocol globals, seat/pointer/keyboard tracking, launcher/icon/wallpaper caches, OSK lifecycle, screencopy, power state, lock overlay, and screenshot FX.
 - **Oversized files**:
-  - [frame.rs](../tools/rabbiz-de/crates/de-core/src/frame.rs) (**1,792 LOC**) mixes the event loop, render-element assembly, GPU blur preparation, texture upload/sync, cursor rasterization (`cursor_pixels`/`fill_poly`), shell IM polling, and debug frame dumping.
-  - [input.rs](../tools/rabbiz-de/crates/de-core/src/input.rs) (**1,531 LOC**) is a single `impl De` block handling all touch, pointer, and keyboard routing.
-  - [panel_ui.rs](../tools/rabbiz-de/crates/de-core/src/panel_ui.rs) (714 LOC), [state.rs](../tools/rabbiz-de/crates/de-core/src/state.rs) (646 LOC), [power.rs](../tools/rabbiz-de/crates/de-core/src/power.rs) (638 LOC), [morph.rs](../tools/rabbiz-de/crates/de-core/src/morph.rs) (635 LOC).
+  - [frame.rs](../tools/rabbiz-de/crates/de-core/src/runtime/frame.rs) (**1,792 LOC**) mixes the event loop, render-element assembly, GPU blur preparation, texture upload/sync, cursor rasterization (`cursor_pixels`/`fill_poly`), shell IM polling, and debug frame dumping.
+  - [input.rs](../tools/rabbiz-de/crates/de-core/src/runtime/input.rs) (**1,531 LOC**) is a single `impl De` block handling all touch, pointer, and keyboard routing.
+  - [panel_ui.rs](../tools/rabbiz-de/crates/de-core/src/shell_ui/panel_ui.rs) (714 LOC), [state.rs](../tools/rabbiz-de/crates/de-core/src/runtime/state.rs) (646 LOC), [power.rs](../tools/rabbiz-de/crates/de-core/src/runtime/power.rs) (638 LOC), [morph.rs](../tools/rabbiz-de/crates/de-core/src/shell_ui/morph.rs) (635 LOC).
 - **Mixed concerns**: Wayland protocol handlers (`comp.rs`, `xdg.rs`, `layer_shell.rs`, `seat.rs`, `selection.rs`, `screencopy.rs`, `virtual_pointer.rs`, `popups.rs`, `misc.rs`), compositor runtime (`frame.rs`, `composite.rs`, `input.rs`, `power.rs`, `osk.rs`), and shell UI controllers (`home_ui.rs`, `panel_ui.rs`, `lock_ui.rs`, `shot_ui.rs`, `shell.rs`, `shell_menu.rs`, `morph.rs`, `navigation.rs`) sit in one flat directory.
-- **Anti-home filename**: `misc.rs` violated the repo naming rule (*no `misc` — name the concept*); renamed to [output_dmabuf.rs](../tools/rabbiz-de/crates/de-core/src/output_dmabuf.rs) (holds output/viewporter/fractional-scale/dmabuf protocol handlers).
+- **Anti-home filename**: `misc.rs` violated the repo naming rule (*no `misc` — name the concept*); renamed to [output_dmabuf.rs](../tools/rabbiz-de/crates/de-core/src/protocols/output_dmabuf.rs) (holds output/viewporter/fractional-scale/dmabuf protocol handlers).
 
 ### P1 — Crate boundary drift (`de-apps` & `de-backend`)
 - **System prefs inside `de-apps`**: `AppPrefs` in [de-apps/src/prefs.rs](../tools/rabbiz-de/crates/de-apps/src/prefs.rs) owns `set_wallpaper`, `set_do_not_disturb`, `set_keyboard`, and `set_allow_third_party_keyboards`. These are OS/shell preferences, not app-catalog state, and belong in `de-config`.
@@ -43,7 +43,7 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
 
 ### P2 — `de-ui` flat layout & legacy skeleton overlap
 - **Flat 25-file tree**: [de-ui/src/lib.rs](../tools/rabbiz-de/crates/de-ui/src/lib.rs) mixes interaction primitives (`gestures.rs` 896 LOC, `nav.rs`, `pager.rs`, `pull.rs`, `transitions.rs`), shared chrome (`chrome.rs` 634 LOC, `menu.rs` 532 LOC, `nav_bar.rs`), and screens (`home.rs`, `panels.rs`, `drawer.rs`, `recents.rs`, `lock.rs`, `settings/*`).
-- **Legacy skeleton overlap**: [qs.rs](../tools/rabbiz-de/crates/de-ui/src/qs.rs), [status.rs](../tools/rabbiz-de/crates/de-ui/src/status.rs), and [first_run.rs](../tools/rabbiz-de/crates/de-ui/src/first_run.rs) are only called by `de-sim`; [shade.rs](../tools/rabbiz-de/crates/de-ui/src/shade.rs) coexists with the real split-panel UI in [panels.rs](../tools/rabbiz-de/crates/de-ui/src/panels.rs) (still referenced by `Screen::Shade` in [de-core/src/shell.rs](../tools/rabbiz-de/crates/de-core/src/shell.rs)).
+- **Legacy skeleton overlap**: [qs.rs](../tools/rabbiz-de/crates/de-ui/src/screens/qs.rs), [status.rs](../tools/rabbiz-de/crates/de-ui/src/screens/status.rs), and [first_run.rs](../tools/rabbiz-de/crates/de-ui/src/screens/first_run.rs) are only called by `de-sim`; [shade.rs](../tools/rabbiz-de/crates/de-ui/src/screens/shade.rs) coexists with the real split-panel UI in [panels.rs](../tools/rabbiz-de/crates/de-ui/src/screens/panels.rs) (still referenced by `Screen::Shade` in [de-core/src/shell.rs](../tools/rabbiz-de/crates/de-core/src/shell_ui/shell.rs)).
 
 ### P3 — Host test gate & dual-shell placement
 - **`de-system` tests skipped on macOS**: [scripts/de_test_host.sh](../scripts/de_test_host.sh) omits `-p de-system` from `HOST_CRATES`, even though `de-system` already builds on macOS as a dependency of `de-apps`.
@@ -109,26 +109,26 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
    - Added `-p de-system` to `HOST_CRATES` in `scripts/de_test_host.sh`.
    - Updated `docs/DE-SEAMS.md` to match `check_seams.py` and extended `check_seams.py` to check `dev-dependencies` and `build-dependencies`.
    - **Evidence**: L0 (`check_seams.py` → 14 crates one-way; `cargo test` across all 8 host crates including `de-system` passed; `check_links.mjs` → 107 md files ok). Note: `de-sim --check` golden diffs in this working tree are from pre-existing uncommitted `de-ui` edits.
-2. **Fix Ownership Leaks**:
-   - Move non-app prefs (`wallpaper`, `do_not_disturb`, `keyboard_*`) out of `de-apps::prefs::AppPrefs` into `de-config`.
-   - Decide & clean up legacy `de-ui::{shade, qs}` vs `de-ui::panels`.
-   - **Exit criterion**: `de-apps` owns app catalog/launch/pin/order only; host tests + goldens pass.
+2. **Fix Ownership Leaks** — **prefs delegation done in working tree (2026-11-19)**:
+   - Moved transactional OS/shell preference mutators (`commit_to`, `set_wallpaper`, `set_do_not_disturb`, `set_keyboard`, `set_allow_third_party_keyboards`) onto `de_config::Prefs`; `de-apps::prefs::AppPrefs` now delegates to `Prefs`.
+   - Remaining: decide & clean up legacy `de-ui::{shade, qs}` vs `de-ui::panels`.
 
 ### Tier 1 — Structural Refactor & Foundation (do before adding major features)
-3. **Sub-module `de-core`** — **in progress (2026-11-19, working tree)**:
-   - Renamed anti-home `misc.rs` → `output_dmabuf.rs`.
-   - Extracted pointer cursor sprite rasterization out of `frame.rs` into `cursor.rs` (and fixed cursor Z-order bug: `elements.insert(0, ...)` instead of `elements.push(...)`).
-   - Added `display_stack.rs` (`RenderStack<E>` Smithay front-to-back adapter backed by `de_api::DisplayStack`).
-   - Remaining: group into `protocols/`, `runtime/`, `shell_ui/`; split `frame.rs` & `input.rs`; break `De` god-struct into sub-structs.
-   - **Exit criterion**: Behavior-preserving refactor; arm64 container build + `de-smoke` pass.
-4. **Sub-module `de-ui`**:
-   - Group into `interaction/` (`gestures`, `nav`, `pager`, `pull`, `transitions`), `chrome/` (`chrome`, `menu`, `nav_bar`), `screens/`.
-   - **Exit criterion**: `./scripts/de_test_host.sh` + golden check pass with 0 pixel diff.
-5. **Blueprint & Implement Scene Graph + Layer Z-Order + Window Insets** — **Step 1 landed, Step 4 IME insets wired in working tree (2026-11-19)**:
+3. **Sub-module `de-core`** — **directory split done in working tree (2026-11-19)**:
+   - Organized `de-core/src/` into `protocols/` (10 files), `runtime/` (13 files), and `shell_ui/` (8 files) with crate-root re-exports in `lib.rs`.
+   - Renamed anti-home `misc.rs` → `protocols/output_dmabuf.rs`.
+   - Extracted pointer cursor sprite rasterization out of `frame.rs` into `runtime/cursor.rs` (and fixed cursor Z-order bug).
+   - Added `runtime/display_stack.rs` (`RenderStack<E>` Smithay front-to-back adapter backed by `de_api::DisplayStack`).
+   - Remaining: split `runtime/frame.rs` & `runtime/input.rs` further; break `De` god-struct into sub-structs.
+   - **Evidence**: L1 (`rabbiz-de-build:arm64` `cargo test -p de-core --lib --locked` → 28 passed, 0 failed, 0 warnings).
+4. **Sub-module `de-ui`** — **done in working tree (2026-11-19)**:
+   - Organized `de-ui/src/` into `interaction/` (6 files), `chrome/` (`mod.rs`, `menu.rs`, `nav_bar.rs`), and `screens/` (17 modules incl. `settings/`) with crate-root re-exports in `lib.rs`.
+   - **Evidence**: L0 (`cargo test -p de-ui -p de-sim` → 88 passed, 0 failed; `check_seams.py` ok; `check_links.mjs` → 111 md files ok).
+5. **Blueprint & Implement Scene Graph + Layer Z-Order + Window Insets** — **Step 1 landed, Step 2 (`RenderStack`) & Step 4 (IME insets) wired in working tree (2026-11-19)**:
    - See [DE-SCENE-INSETS.md](DE-SCENE-INSETS.md) (approved by owner).
    - Landed on `main`: `de-api` v1.1 (`DisplayArea`, `DisplayStack<T>` with Keyguard isolation, `EdgeInsets`, `WindowInsets` + 6 unit tests).
-   - Wired in working tree & **L1 verified** (`rabbiz-de-build:arm64` `cargo check -p de-core -p de-bin --locked`): `De.insets` (`state.rs`) and `De::sync_layer_insets()` (`layer_shell.rs`, auto-reconfigures active toplevels when exclusive-zone OSK maps/unmaps). Kept uncommitted in working tree because `de-core/src/{lib,state,frame}.rs` carry pre-existing uncommitted work from another task.
-   - Remaining: migrate `frame.rs` draw calls and `input.rs` hit-testing onto `DisplayStack`.
+   - Wired in working tree & **L1 verified** (`rabbiz-de-build:arm64`): `runtime/frame.rs::render_with` now buckets backdrop, `SystemBars`, `Overlay`, `Shade`, `Keyguard`, and `Critical` through `RenderStack` (enforcing Keyguard isolation when strictly locked); `De.insets` (`runtime/state.rs`) and `De::sync_layer_insets()` (`protocols/layer_shell.rs`) auto-reconfigure toplevels on exclusive-zone OSK changes.
+   - Remaining: route `runtime/input.rs` hit-testing top-down through `DisplayStack`.
 6. **Shell Control IPC** — **RFC + wire types + CLI client landed; `de-core` server wired in working tree (2026-11-19)**:
    - See [DE-IPC.md](DE-IPC.md) for the Unix-socket JSON-lines protocol.
    - Landed on `main`: `de-config::ipc` (wire types, 16 KiB guard, `send_request` Unix socket client + `UnixListener` round-trip test), `de-config::flags` (`ctl` subcommand), `de-bin` (`rabbiz-de ctl`).
