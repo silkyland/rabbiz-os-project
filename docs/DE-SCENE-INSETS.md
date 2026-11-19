@@ -1,7 +1,7 @@
 # RFC: `DisplayArea` Z-Order Stack & `WindowInsets` Contract (Tier 1.5)
 
 - **Lane**: `de`
-- **Status**: Proposed (requires owner sign-off before editing frozen `de-api`, per [DE-SEAMS.md](DE-SEAMS.md))
+- **Status**: Approved (owner sign-off 2026-11-19; Step 1 landed in `de-api` v1.1)
 - **Parent handoff**: [HANDOFF-de-audit-2026-11-19.md](HANDOFF-de-audit-2026-11-19.md) §3 Pillar 1 & §4 Tier 1.5
 
 ---

@@ -13,11 +13,11 @@ pub mod scene;
 pub mod services;
 pub mod stats;
 
-pub use geom::{Point, Rect, Size};
+pub use geom::{EdgeInsets, Point, Rect, Size, WindowInsets};
 pub use input::{
     InputEvent, KeyEvent, KeyState, PointerEvent, SwitchEvent, TouchEvent, TouchPhase,
 };
-pub use scene::{Layer, LayerId, Pixels, Scene, Texture, TextureId};
+pub use scene::{DisplayArea, Layer, LayerId, Pixels, Scene, Texture, TextureId};
 pub use services::{
     BatteryState, BluetoothState, Notification, ServiceCommand, Services, ServicesSnapshot,
     VolumeState, WifiState,

@@ -166,6 +166,100 @@ impl Rect {
     }
 }
 
+/// Physical-pixel insets from the four edges of an output or rect.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct EdgeInsets {
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+    pub left: i32,
+}
+
+impl EdgeInsets {
+    pub const ZERO: Self = Self {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+    };
+
+    #[must_use]
+    pub const fn new(top: i32, right: i32, bottom: i32, left: i32) -> Self {
+        Self {
+            top,
+            right,
+            bottom,
+            left,
+        }
+    }
+
+    /// Component-wise maximum of two inset sets.
+    #[must_use]
+    pub const fn max(self, other: Self) -> Self {
+        Self {
+            top: if self.top > other.top {
+                self.top
+            } else {
+                other.top
+            },
+            right: if self.right > other.right {
+                self.right
+            } else {
+                other.right
+            },
+            bottom: if self.bottom > other.bottom {
+                self.bottom
+            } else {
+                other.bottom
+            },
+            left: if self.left > other.left {
+                self.left
+            } else {
+                other.left
+            },
+        }
+    }
+
+    /// Apply these insets to `rect`, clamping width and height at 0.
+    #[must_use]
+    pub const fn deflate(self, rect: Rect) -> Rect {
+        let w = rect.w - self.left - self.right;
+        let h = rect.h - self.top - self.bottom;
+        Rect::new(
+            rect.x + self.left,
+            rect.y + self.top,
+            if w > 0 { w } else { 0 },
+            if h > 0 { h } else { 0 },
+        )
+    }
+}
+
+/// Complete inset breakdown for a single output (status/nav bars, cutout, IME).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct WindowInsets {
+    /// Status bar + navigation/gesture bar.
+    pub system_bars: EdgeInsets,
+    /// Display cutout / notch / punch-hole safe area.
+    pub cutout: EdgeInsets,
+    /// Active on-screen keyboard height (typically `bottom > 0`).
+    pub ime: EdgeInsets,
+}
+
+impl WindowInsets {
+    /// Usable rect for an app that respects system bars, cutouts, and IME.
+    #[must_use]
+    pub const fn app_frame(&self, output: Size) -> Rect {
+        let combined = self.system_bars.max(self.cutout).max(self.ime);
+        combined.deflate(Rect::new(0, 0, output.w, output.h))
+    }
+
+    /// Usable rect for an edge-to-edge/immersive app (ignores bars, still respects IME).
+    #[must_use]
+    pub const fn immersive_frame(&self, output: Size) -> Rect {
+        self.ime.deflate(Rect::new(0, 0, output.w, output.h))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,5 +278,24 @@ mod tests {
         let r = Rect::new(10, 10, 20, 20);
         assert!(r.contains(Point::new(10, 10)));
         assert!(!r.contains(Point::new(30, 10)));
+    }
+
+    #[test]
+    fn window_insets_compute_app_and_immersive_frames() {
+        let out = Size::new(720, 1600);
+        let insets = WindowInsets {
+            system_bars: EdgeInsets::new(56, 0, 48, 0),
+            cutout: EdgeInsets::new(64, 0, 0, 0),
+            ime: EdgeInsets::new(0, 0, 520, 0),
+        };
+        assert_eq!(insets.app_frame(out), Rect::new(0, 64, 720, 1016));
+        assert_eq!(insets.immersive_frame(out), Rect::new(0, 0, 720, 1080));
+    }
+
+    #[test]
+    fn edge_insets_deflate_clamps_non_negative() {
+        let r = Rect::new(0, 0, 100, 100);
+        let huge = EdgeInsets::new(80, 60, 80, 60);
+        assert_eq!(huge.deflate(r), Rect::new(60, 80, 0, 0));
     }
 }

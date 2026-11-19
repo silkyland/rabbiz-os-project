@@ -34,9 +34,9 @@ Geometry (`geom.rs`): `Point{x:i32,y:i32}`, `Size{w:i32,h:i32}`,
 `Rect{x:i32,y:i32,w:i32,h:i32}` — physical pixels only. Helpers: `new`,
 `from_origin_size`, `size`, `origin`, `right`, `bottom`, `is_empty`,
 `contains`, `translate`, `intersect -> Option<Rect>`, `union`, `inset`,
-`Size::area -> i64`.
+`Size::area -> i64`. Added in v1.1 (owner-approved 2026-11-19): `EdgeInsets{top,right,bottom,left}` (`max`, `deflate`), `WindowInsets{system_bars,cutout,ime}` (`app_frame`, `immersive_frame`).
 
-Scene (`scene.rs`): `LayerId(u64)`, `TextureId(u64)` opaque ids;
+Scene (`scene.rs`): `DisplayArea` (v1.1 additive Z-order enum: `Wallpaper..Critical` + `allowed_while_locked`), `LayerId(u64)`, `TextureId(u64)` opaque ids;
 `Pixels{size:Size,data:Vec<u8>}` premultiplied RGBA8 (`4*w*h` bytes);
 `Texture{id,pixels,damage:Vec<Rect>}` (empty damage = full upload);
 `Layer{id,texture:Option<TextureId>,dst:Rect,opacity:f32,corner_radius:f32,color:[u8;4],damage:Vec<Rect>,visible:bool}` with `Layer::textured` / `Layer::solid` constructors;
