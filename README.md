@@ -2,6 +2,13 @@
 
 # RabbizOS
 
+> ## 🌱 This is only the very beginning
+>
+> RabbizOS is at its earliest stage. Expect rough edges, missing pieces, things that
+> break, and decisions that will change. It boots and runs on one phone today; it is
+> **not** a daily-driver system yet. That is exactly why we are opening the project to
+> contributors now — come and shape it from the start. See [CONTRIBUTING.md](CONTRIBUTING.md).
+
 **An Arch Linux ARM–based mobile Linux system, by Devded.**
 
 RabbizOS brings native Linux to phones and tablets, with its own touch-first shell,

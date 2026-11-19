@@ -1,5 +1,9 @@
 # Contributing to RabbizOS
 
+> **🌱 This is only the very beginning.** The project is brand new and just opened to
+> contributors. Rules, structure and names may still change; if something here does not
+> make sense, open an issue — that feedback is a contribution too.
+
 RabbizOS is a mobile Linux system (Arch Linux ARM + mainline kernel + its own desktop
 environment). It runs on real phones, so a change that "looks right" in a diff can still
 brick a device. These rules exist to keep contributions — from people and from AI agents —
