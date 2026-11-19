@@ -28,6 +28,7 @@ use smithay::utils::{Clock, Monotonic};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
+use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::input_method::InputMethodManagerState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
@@ -113,6 +114,12 @@ pub struct De {
     pub output_manager_state: OutputManagerState,
     pub dmabuf_state: DmabufState,
     pub dmabuf_global: Option<DmabufGlobal>,
+    /// Kept alive for the `zwp_idle_inhibit_manager_v1` global's lifetime.
+    #[allow(dead_code)]
+    pub(crate) idle_inhibit_state: IdleInhibitManagerState,
+    /// Surfaces currently holding a `zwp_idle_inhibitor_v1` (`protocols/idle_inhibit.rs`).
+    pub(crate) idle_inhibitors:
+        Vec<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface>,
 
     pub seat: Seat<De>,
     pub seat_name: String,
@@ -446,6 +453,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let viewporter_state = ViewporterState::new::<De>(&dh);
     let fractional_scale_state = FractionalScaleManagerState::new::<De>(&dh);
     let output_manager_state = OutputManagerState::new_with_xdg_output::<De>(&dh);
+    let idle_inhibit_state = IdleInhibitManagerState::new::<De>(&dh);
     crate::screencopy::init(&dh);
     crate::virtual_pointer::init(&dh);
     let mut dmabuf_state = DmabufState::new();
@@ -552,6 +560,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         output_manager_state,
         dmabuf_state,
         dmabuf_global,
+        idle_inhibit_state,
+        idle_inhibitors: Vec::new(),
 
         seat,
         seat_name,

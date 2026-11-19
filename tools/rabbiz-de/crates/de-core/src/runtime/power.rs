@@ -344,7 +344,8 @@ impl De {
             _ => {}
         }
 
-        // Idle chain — only while nothing covers the screen; 0 = never dim.
+        // Idle chain — only while nothing covers the screen and no surface inhibits idle; 0 = never dim.
+        self.prune_idle_inhibitors();
         let idle = now.saturating_duration_since(self.power.last_activity);
         let timeout_secs = self.app_prefs.prefs().screen_timeout_sec;
         let timeout = Duration::from_secs(u64::from(timeout_secs));
@@ -356,6 +357,7 @@ impl De {
                 if timeout_secs > 0
                     && !self.locked()
                     && !self.panels.shown()
+                    && !self.idle_inhibited()
                     && idle >= timeout =>
             {
                 self.power.save();

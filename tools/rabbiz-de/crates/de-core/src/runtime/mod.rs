@@ -5,6 +5,7 @@ pub(crate) mod ctl_ipc;
 pub(crate) mod cursor;
 pub(crate) mod display_stack;
 pub mod frame;
+pub(crate) mod frame_io;
 pub(crate) mod haptics;
 pub mod input;
 pub mod launch;
