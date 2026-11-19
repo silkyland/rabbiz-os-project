@@ -23,6 +23,8 @@ pub enum Command {
     Env,
     /// `launch <desktop-id>`: launch helper (M1 path, stub in M0).
     Launch(String),
+    /// `ctl <subcommand>`: send a runtime control request over the IPC socket.
+    Ctl(crate::ipc::IpcCommand),
 }
 
 /// Parsed invocation.
@@ -81,6 +83,9 @@ pub fn parse<I: Iterator<Item = String>>(args: I) -> Result<Cli, String> {
                 let id = it.next().ok_or("launch needs a desktop-id")?;
                 command = Command::Launch(id);
             }
+            "ctl" => {
+                command = Command::Ctl(parse_ctl(&mut it)?);
+            }
             // `--shell` is only meaningful with `env`; `--json` matches the probe
             // contract — both accepted silently.
             "--shell" | "--json" => {}
@@ -119,8 +124,77 @@ fn value<I: Iterator<Item = String>>(flag: &str, it: &mut I) -> Result<String, S
     it.next().ok_or_else(|| format!("{flag} needs a value"))
 }
 
+fn parse_ctl<I: Iterator<Item = String>>(
+    it: &mut std::iter::Peekable<I>,
+) -> Result<crate::ipc::IpcCommand, String> {
+    use crate::ipc::{IpcCommand, OsdKind, PanelKind};
+
+    let sub = it
+        .next()
+        .ok_or("ctl needs a subcommand: state|lock|launch|screenshot|reload-theme|panel|osd")?;
+    match sub.as_str() {
+        "state" | "get_state" => Ok(IpcCommand::GetState),
+        "lock" => Ok(IpcCommand::Lock),
+        "launch" => {
+            let desktop_id = it.next().ok_or("ctl launch needs a desktop-id")?;
+            Ok(IpcCommand::Launch { desktop_id })
+        }
+        "screenshot" => {
+            let save = if it.peek().is_some_and(|s| s == "--no-save") {
+                it.next();
+                false
+            } else {
+                true
+            };
+            Ok(IpcCommand::Screenshot { save })
+        }
+        "reload-theme" | "reload_theme" => Ok(IpcCommand::ReloadTheme),
+        "panel" => {
+            let panel = match it
+                .next()
+                .ok_or("ctl panel needs notifications|quick")?
+                .as_str()
+            {
+                "notifications" => PanelKind::Notifications,
+                "quick" => PanelKind::Quick,
+                other => return Err(format!("unknown panel '{other}'")),
+            };
+            let open = match it.next().ok_or("ctl panel needs open|close")?.as_str() {
+                "open" => true,
+                "close" => false,
+                other => return Err(format!("expected open|close, got '{other}'")),
+            };
+            Ok(IpcCommand::SetPanel { panel, open })
+        }
+        "osd" => {
+            let kind = match it.next().ok_or("ctl osd needs volume|brightness")?.as_str() {
+                "volume" => OsdKind::Volume,
+                "brightness" => OsdKind::Brightness,
+                other => return Err(format!("unknown osd kind '{other}'")),
+            };
+            let percent: u8 = it
+                .next()
+                .ok_or("ctl osd needs a percent (0..=100)")?
+                .parse()
+                .map_err(|_| "ctl osd percent must be 0..=255")?;
+            let muted = if it.peek().is_some_and(|s| s == "--muted") {
+                it.next();
+                true
+            } else {
+                false
+            };
+            Ok(IpcCommand::ShowOsd {
+                kind,
+                percent,
+                muted,
+            })
+        }
+        other => Err(format!("unknown ctl subcommand '{other}'")),
+    }
+}
+
 fn help() -> String {
-    "rabbiz-de [run|probe|env --shell|launch <id>] \
+    "rabbiz-de [run|probe|env --shell|launch <id>|ctl <subcmd>] \
      [--renderer=auto|gl|soft] [--require=gl] [--stats] [--stats-file F] \
      [--stats-summary F] [--scenario N] [--duration S] [--force-fail]"
         .to_string()
@@ -158,5 +232,40 @@ mod tests {
         let c = parse(argv(&[])).unwrap();
         assert_eq!(c.command, Command::Run);
         assert_eq!(c.flags.renderer, RendererSelect::Auto);
+    }
+
+    #[test]
+    fn parse_ctl_subcommands() {
+        use crate::ipc::{IpcCommand, OsdKind, PanelKind};
+
+        assert_eq!(
+            parse(argv(&["ctl", "state"])).unwrap().command,
+            Command::Ctl(IpcCommand::GetState)
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "panel", "quick", "open"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::SetPanel {
+                panel: PanelKind::Quick,
+                open: true,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "osd", "volume", "70", "--muted"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::ShowOsd {
+                kind: OsdKind::Volume,
+                percent: 70,
+                muted: true,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "screenshot", "--no-save"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::Screenshot { save: false })
+        );
     }
 }

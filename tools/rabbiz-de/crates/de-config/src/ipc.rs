@@ -3,7 +3,15 @@
 //! Line-delimited JSON messages (`\n`-terminated, capped at [`MAX_MESSAGE_BYTES`])
 //! sent over `$XDG_RUNTIME_DIR/rabbiz-de-ctl.sock`.
 
+#[cfg(unix)]
+use std::io::{BufRead, BufReader, Read, Write};
+#[cfg(unix)]
+use std::os::unix::net::UnixStream;
+#[cfg(unix)]
+use std::path::Path;
 use std::path::PathBuf;
+#[cfg(unix)]
+use std::time::Duration;
 
 use de_api::Size;
 use serde::{Deserialize, Serialize};
@@ -151,11 +159,58 @@ pub fn decode_request(line: &str) -> Result<IpcRequest, String> {
     serde_json::from_str(line.trim()).map_err(|e| format!("invalid request: {e}"))
 }
 
+/// Encode a single IPC request as a newline-terminated JSON line.
+pub fn encode_request(req: &IpcRequest) -> Result<String, String> {
+    let mut s = serde_json::to_string(req).map_err(|e| format!("encode request: {e}"))?;
+    if s.len() >= MAX_MESSAGE_BYTES {
+        return Err(format!(
+            "request exceeds limit ({} >= {MAX_MESSAGE_BYTES} bytes)",
+            s.len()
+        ));
+    }
+    s.push('\n');
+    Ok(s)
+}
+
+/// Decode a single IPC response line, enforcing [`MAX_MESSAGE_BYTES`].
+pub fn decode_response(line: &str) -> Result<IpcResponse, String> {
+    if line.len() > MAX_MESSAGE_BYTES {
+        return Err(format!(
+            "response exceeds limit ({} > {MAX_MESSAGE_BYTES} bytes)",
+            line.len()
+        ));
+    }
+    serde_json::from_str(line.trim()).map_err(|e| format!("invalid response: {e}"))
+}
+
 /// Encode a single IPC response as a newline-terminated JSON line.
 pub fn encode_response(resp: &IpcResponse) -> Result<String, String> {
     let mut s = serde_json::to_string(resp).map_err(|e| format!("encode response: {e}"))?;
     s.push('\n');
     Ok(s)
+}
+
+/// Send one request to a running `rabbiz-de` control socket and read its reply.
+#[cfg(unix)]
+pub fn send_request(path: &Path, req: &IpcRequest) -> Result<IpcResponse, String> {
+    let payload = encode_request(req)?;
+    let mut stream =
+        UnixStream::connect(path).map_err(|e| format!("connect {}: {e}", path.display()))?;
+    let timeout = Some(Duration::from_secs(2));
+    let _ = stream.set_read_timeout(timeout);
+    let _ = stream.set_write_timeout(timeout);
+    stream
+        .write_all(payload.as_bytes())
+        .map_err(|e| format!("write request: {e}"))?;
+    let mut reader = BufReader::new(stream.take((MAX_MESSAGE_BYTES + 1) as u64));
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|e| format!("read response: {e}"))?;
+    if line.is_empty() {
+        return Err("empty response from compositor".into());
+    }
+    decode_response(&line)
 }
 
 #[cfg(test)]
@@ -246,5 +301,37 @@ mod tests {
         let err_line = encode_response(&err).expect("encode err");
         assert!(err_line.contains("\"permission_denied\""));
         assert!(!err_line.contains("\"data\""));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unix_socket_roundtrip() {
+        use std::os::unix::net::UnixListener;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let sock = dir.path().join(SOCKET_NAME);
+        let listener = UnixListener::bind(&sock).expect("bind");
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("read");
+            let req = decode_request(&line).expect("decode req");
+            assert_eq!(req.command, IpcCommand::Lock);
+            let reply = encode_response(&IpcResponse::ok(req.id, None)).expect("encode");
+            stream.write_all(reply.as_bytes()).expect("write");
+        });
+
+        let resp = send_request(
+            &sock,
+            &IpcRequest {
+                id: 42,
+                command: IpcCommand::Lock,
+            },
+        )
+        .expect("send_request");
+        assert_eq!(resp, IpcResponse::ok(42, None));
+        server.join().expect("server thread");
     }
 }

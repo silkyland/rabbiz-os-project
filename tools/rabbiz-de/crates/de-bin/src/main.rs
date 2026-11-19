@@ -60,6 +60,29 @@ fn main() {
                 2
             }
         },
+        Command::Ctl(cmd) => {
+            let path = de_config::ipc::socket_path();
+            let req = de_config::ipc::IpcRequest {
+                id: 1,
+                command: cmd,
+            };
+            match de_config::ipc::send_request(&path, &req) {
+                Ok(resp) => {
+                    if let Ok(line) = de_config::ipc::encode_response(&resp) {
+                        print!("{line}");
+                    }
+                    if resp.ok {
+                        0
+                    } else {
+                        1
+                    }
+                }
+                Err(e) => {
+                    eprintln!("ctl: {e}");
+                    2
+                }
+            }
+        }
         Command::Run => {
             let mut display =
                 match smithay::reexports::wayland_server::Display::<de_core::De>::new() {
