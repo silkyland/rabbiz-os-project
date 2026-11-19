@@ -456,10 +456,17 @@ impl De {
         };
         self.navigation.recents_backdrop = morph.backdrop.take().or_else(|| self.shell_px.clone());
         self.navigation.recents_blur_rx = morph.backdrop_rx.take();
-        morph.snapshot = crate::snapshots::snapshot(&window);
-        morph.peek = Peek::Off;
-        morph.phase = Phase::Recents;
-        morph.animator.settle_recents();
+        let already_settled = morph.peek == Peek::Holding && morph.animator.settled();
+        if already_settled {
+            // Recents preview already settled during the hold — hand off
+            // straight to Screen::Recents without replaying the settle animation.
+            self.morph = None;
+        } else {
+            morph.snapshot = crate::snapshots::snapshot(&window);
+            morph.peek = Peek::Off;
+            morph.phase = Phase::Recents;
+            morph.animator.settle_recents();
+        }
         self.foreground = Foreground::Shell;
         self.focus_foreground();
         self.nav.current = Screen::Recents;

@@ -87,17 +87,19 @@ const NAV_FLING_PX_S: f32 = 450.0;
 /// Where a released bottom-bar drag goes. A fling back down means the user
 /// changed their mind: like Android it returns to where they were instead of
 /// opening Recents just because the finger had passed 20 % on the way.
-/// A pause at release (the Recents preview) means Recents, unless the user
-/// flung on up (Home) or back down (Cancel) after it.
+/// Once the finger is resting in the Recents preview (`paused == true`),
+/// lifting always commits Recents — a thumb-lift velocity spike never
+/// hijacks it into Home or Cancel (leaving preview requires moving past
+/// hysteresis first, which clears `paused`).
 #[must_use]
 pub fn decide_navigation(dy: f32, vy: f32, height: f32, paused: bool) -> NavDestination {
     let rise = -dy / height.max(1.0);
-    if vy >= NAV_FLING_PX_S && rise < 0.75 {
+    if paused && rise >= 0.03 {
+        NavDestination::Recents
+    } else if vy >= NAV_FLING_PX_S && rise < 0.75 {
         NavDestination::Cancel
     } else if rise >= 0.03 && vy <= -NAV_FLING_PX_S {
         NavDestination::Home
-    } else if paused && rise >= 0.03 {
-        NavDestination::Recents
     } else if rise >= 0.75 {
         NavDestination::Home
     } else if rise >= 0.20 {
@@ -208,7 +210,7 @@ impl VelocityWindow {
             return (0.0, 0.0);
         };
         let dt = new_ms.saturating_sub(old_ms);
-        if dt < 4 {
+        if dt < 12 {
             return (0.0, 0.0);
         }
         (
@@ -314,9 +316,10 @@ impl GestureTracker {
                 // measures actual time at rest, rather than initial contact.
                 if tr.zone == Zone::NavBar && !tr.committed {
                     if tr.paused {
-                        // Hysteresis: a resting finger jitters; only a clear
-                        // move (2× slop) leaves the preview.
-                        if (tr.dy - tr.stall_y).abs() >= self.cfg.slop * 2.0 {
+                        // Hysteresis: a resting thumb jitters on touchscreens;
+                        // require a deliberate move (4.5× slop ≈ 54 px) to leave
+                        // the Recents preview so it never oscillates.
+                        if (tr.dy - tr.stall_y).abs() >= self.cfg.slop * 4.5 {
                             tr.paused = false;
                             tr.stall_y = tr.dy;
                             tr.stall_ms = ev.time_ms;
@@ -671,10 +674,11 @@ mod tests {
         assert_eq!(decide_navigation(-480.0, 0.0, 2400.0, false), Recents);
         // Pulled up past the Recents line, then flung back down: cancel.
         assert_eq!(decide_navigation(-600.0, 900.0, 1600.0, false), Cancel);
-        // Preview showing: Recents, even high up; a fling still overrides.
+        // Preview showing (`paused == true`): always commits Recents, even if
+        // thumb lift produces a velocity spike.
         assert_eq!(decide_navigation(-1300.0, 0.0, 1600.0, true), Recents);
-        assert_eq!(decide_navigation(-400.0, -900.0, 1600.0, true), Home);
-        assert_eq!(decide_navigation(-400.0, 900.0, 1600.0, true), Cancel);
+        assert_eq!(decide_navigation(-400.0, -900.0, 1600.0, true), Recents);
+        assert_eq!(decide_navigation(-400.0, 900.0, 1600.0, true), Recents);
     }
 
     #[test]
