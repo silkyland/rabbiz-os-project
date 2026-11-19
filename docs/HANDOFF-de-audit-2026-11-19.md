@@ -124,11 +124,13 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
 4. **Sub-module `de-ui`**:
    - Group into `interaction/` (`gestures`, `nav`, `pager`, `pull`, `transitions`), `chrome/` (`chrome`, `menu`, `nav_bar`), `screens/`.
    - **Exit criterion**: `./scripts/de_test_host.sh` + golden check pass with 0 pixel diff.
-5. **Blueprint & Implement Scene Graph + Layer Z-Order + Window Insets** (requires maintainer sign-off if touching frozen `de-api`):
-   - Define formal layer stack and `WindowInsets` (`top`, `bottom`, `ime`, `cutout`) in `de-api` / `de-core`.
-   - Replace hardcoded `push_*` ordering in `frame.rs` with layer-driven compositing.
-6. **Shell Control IPC**:
-   - Add a typed D-Bus or Unix-socket control interface for lock, screenshot, OSD/toast, launch, and state inspection.
+5. **Blueprint & Implement Scene Graph + Layer Z-Order + Window Insets** — **RFC drafted (2026-11-19)**:
+   - See [DE-SCENE-INSETS.md](DE-SCENE-INSETS.md) for the additive `de-api` v1.1 proposal (`DisplayArea`, `EdgeInsets`, `WindowInsets`), `de-core` mapping, and IME inset flow.
+   - Awaits owner sign-off on frozen `de-api` before implementation.
+6. **Shell Control IPC** — **RFC + wire types done (2026-11-19)**:
+   - See [DE-IPC.md](DE-IPC.md) for the Unix-socket JSON-lines protocol.
+   - Step 1 implemented & host-tested in `de-config::ipc` (`IpcRequest`, `IpcCommand`, `IpcResponse`, `ShellStateSnapshot`, 16 KiB line guard).
+   - Remaining: non-blocking socket listener in `de-core` + `rabbiz-de ctl` CLI subcommand in `de-bin`.
 
 ### Tier 2 — Mobile OS Readiness
 7. Retained UI / partial dirty-rect damage in `de-paint`/`de-ui`.

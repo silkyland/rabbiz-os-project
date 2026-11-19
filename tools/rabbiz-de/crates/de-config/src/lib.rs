@@ -2,6 +2,7 @@
 
 pub mod device_profile;
 pub mod flags;
+pub mod ipc;
 pub mod keyboards;
 pub mod prefs;
 pub mod privileged;
