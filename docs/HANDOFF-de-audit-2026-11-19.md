@@ -124,14 +124,15 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
 4. **Sub-module `de-ui`**:
    - Group into `interaction/` (`gestures`, `nav`, `pager`, `pull`, `transitions`), `chrome/` (`chrome`, `menu`, `nav_bar`), `screens/`.
    - **Exit criterion**: `./scripts/de_test_host.sh` + golden check pass with 0 pixel diff.
-5. **Blueprint & Implement Scene Graph + Layer Z-Order + Window Insets** — **Step 1 landed (2026-11-19)**:
+5. **Blueprint & Implement Scene Graph + Layer Z-Order + Window Insets** — **Step 1 landed, Step 4 IME insets wired in working tree (2026-11-19)**:
    - See [DE-SCENE-INSETS.md](DE-SCENE-INSETS.md) (approved by owner).
-   - Step 1 landed in `de-api` v1.1 (`DisplayArea`, `EdgeInsets`, `WindowInsets` + 5 unit tests).
-   - Remaining: `LayerStack` collector in `de-core`, top-down input routing, and IME inset wiring.
-6. **Shell Control IPC** — **RFC + wire types + CLI client done (2026-11-19)**:
+   - Landed on `main`: `de-api` v1.1 (`DisplayArea`, `DisplayStack<T>` with Keyguard isolation, `EdgeInsets`, `WindowInsets` + 6 unit tests).
+   - Wired in working tree & **L1 verified** (`rabbiz-de-build:arm64` `cargo check -p de-core -p de-bin --locked`): `De.insets` (`state.rs`) and `De::sync_layer_insets()` (`layer_shell.rs`, auto-reconfigures active toplevels when exclusive-zone OSK maps/unmaps). Kept uncommitted in working tree because `de-core/src/{lib,state,frame}.rs` carry pre-existing uncommitted work from another task.
+   - Remaining: migrate `frame.rs` draw calls and `input.rs` hit-testing onto `DisplayStack`.
+6. **Shell Control IPC** — **RFC + wire types + CLI client landed; `de-core` server wired in working tree (2026-11-19)**:
    - See [DE-IPC.md](DE-IPC.md) for the Unix-socket JSON-lines protocol.
-   - Implemented & host-tested in `de-config::ipc` (wire types, 16 KiB line guard, `send_request` Unix socket client) + `de-config::flags` (`ctl` subcommand) + `de-bin` (`rabbiz-de ctl`).
-   - Remaining: non-blocking socket listener in `de-core`.
+   - Landed on `main`: `de-config::ipc` (wire types, 16 KiB guard, `send_request` Unix socket client + `UnixListener` round-trip test), `de-config::flags` (`ctl` subcommand), `de-bin` (`rabbiz-de ctl`).
+   - Wired in working tree & **L1 verified** (`rabbiz-de-build:arm64`): `de-core/src/ctl_ipc.rs` (non-blocking `0600` Unix listener dispatching `GetState`, `Lock`, `Launch`, `ReloadTheme`, `SetPanel(close)`) polled in `frame.rs`. Kept uncommitted alongside the pre-existing `de-core` edits.
 
 ### Tier 2 — Mobile OS Readiness
 7. Retained UI / partial dirty-rect damage in `de-paint`/`de-ui`.
