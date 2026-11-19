@@ -147,5 +147,38 @@ Verified command: `python3 tools/rabbiz-de/scripts/check_seams.py` → `seams ok
 11. Unified interruptible Transition Coordinator (Predictive Back, gesture scrub).
 12. Display rotation, fractional scale, multi-output, and Split/PiP/Desktop windowing policies.
 13. XWayland + pointer constraints + Polkit/Portal UI + AT-SPI accessibility — **relative-pointer + pointer-constraints landed (2026-11-19)**:
-    - Implemented `protocols/pointer_constraints.rs` (`zwp_relative_pointer_manager_v1` + `zwp_pointer_constraints_v1`) wired into `runtime/state.rs` (pairs with existing `ptr.relative_motion` in `runtime/input.rs`).
+    - Implemented `protocols/pointer_constraints.rs` (`zwp_relative_pointer_manager_v1` + `zwp_pointer_constraints_v1`) wired into `runtime/state.rs` (pairs with existing `ptr.relative_motion` in `runtime/input/mod.rs`).
     - Remaining: XWayland lifecycle, Polkit/Portal UI, AT-SPI.
+
+---
+
+## 5. End-of-Day Checkpoint (2026-11-19 Evening)
+
+Everything below is committed & pushed on `origin/main` (clean working tree) and **L2 on-device verified** on `devices/samsung/a21s`:
+
+### Landed Today (`d0ac3b3..a4af7e7`)
+- **Audits & RFCs**: [HANDOFF-de-audit-2026-11-19.md](HANDOFF-de-audit-2026-11-19.md), [PROMPT-de-audit-2026-11-19.md](PROMPT-de-audit-2026-11-19.md), [HANDOFF-osk-apps-audit-2026-11-19.md](HANDOFF-osk-apps-audit-2026-11-19.md), [HANDOFF-repo-structure-audit-2026-11-19.md](HANDOFF-repo-structure-audit-2026-11-19.md), [DE-SCENE-INSETS.md](DE-SCENE-INSETS.md), [DE-IPC.md](DE-IPC.md).
+- **`rabbiz-de`**:
+  - Tier 0.1/0.2: Manifest & seam hygiene (`de-bin`, `de-smoke`, `de-system` host tests, `DE-SEAMS.md`), transactional OS prefs moved onto `de_config::Prefs`.
+  - `de-api` v1.1 (owner-approved additive): `DisplayArea`, `DisplayStack<T>` (Keyguard isolation), `EdgeInsets`, `WindowInsets`.
+  - Runtime Control IPC (`de-config::ipc` + `rabbiz-de ctl` + `de-core` non-blocking `0600` Unix socket).
+  - Structural refactor: `de-core/src/` → `protocols/`, `runtime/` (`frame/{mod,render,event_loop}.rs`, `input/{mod,keyboard,pointer,touch,gestures,shell}.rs`, `cursor.rs`, `frame_io.rs`, `textures.rs`, `display_stack.rs`, `ctl_ipc.rs`), `shell_ui/`; `de-ui/src/` → `interaction/`, `chrome/`, `screens/`.
+  - Compositor protocols: `zwp_idle_inhibit_manager_v1`, `zwp_relative_pointer_manager_v1` + `zwp_pointer_constraints_v1`, `ext-session-lock-v1`, plus `RenderStack` in `frame/render.rs` and OSK IME inset resizing in `protocols/layer_shell.rs`.
+- **`rabbiz-osk`**: Workspace lints/MSRV, duplicate dev-dep removed, `osk-wayland/src/main.rs` (1,414 LOC) split into 9 focused modules (`905680d`).
+- **`rabbiz-apps`**: Unlocked macOS host tests via `rabbiz-app-kit/src/wayland_stub.rs` (308/308 tests pass on macOS), workspace MSRV/lints (`5de61c6`), and modularized `contacts`, `files`, `clock`, `calculator` (`a4af7e7`).
+
+### L2 On-Device Verification Log (`devices/samsung/a21s`, 2026-11-19 18:00 +07:00)
+Deployed `/usr/local/bin/rabbiz-de` (20M) and `/usr/local/bin/rabbiz-osk` (8.0M) via `scripts/device_session.sh` + reboot:
+```text
+kernel:  7.3.0-g14a425b3a7dc-dirty
+session: rabbiz-session.service active
+procs:   1150 /usr/local/bin/rabbiz-de run
+         1239 rabbiz-osk
+ctl:     {"id":1,"ok":true,"data":{"foreground":"shell","insets":{"ime_bottom":0},"locked":false,"output":{"h":1600,"w":720},"screen":"home","windows":[]}}
+```
+
+### Next Session Starting Point
+1. **Finish remaining 3 large `rabbiz-apps`**: `rabbiz-dialer/src/app.rs` (1,752), `rabbiz-music/src/main.rs` (1,448), `rabbiz-pdf/src/main.rs` (1,344) + document `unsafe_code` warnings with `// SAFETY:`.
+2. **`de-core` Tier 1 finish**: Break `De` god-struct in `runtime/state.rs` into sub-structs, route `runtime/input/` hit-testing via `DisplayStack`, and add remaining `ctl_ipc` commands (`SetPanel(open)`, `Screenshot`, `ShowOsd`).
+3. **Repo-wide cleanup** (see [HANDOFF-repo-structure-audit-2026-11-19.md](HANDOFF-repo-structure-audit-2026-11-19.md)): Split `rootfs-overlay/` (OS-wide vs A21s) and organize `scripts/`.
+
