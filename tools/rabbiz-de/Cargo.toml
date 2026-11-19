@@ -14,6 +14,7 @@ members = [
     "crates/de-protocols",
     "crates/de-core",
     "crates/de-bin",
+    "tests/smoke",
 ]
 
 [workspace.package]

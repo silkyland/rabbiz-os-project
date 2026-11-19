@@ -17,7 +17,8 @@
 #             ≥60 s uptime after readiness truncates the fail file.
 #
 # Extra args after the mode flag are forwarded to rabbiz-de (e.g.
-# --force-fail); they are ignored in labwc mode.
+# --force-fail); they are ignored in labwc mode. --print-mode prints the
+# resolved mode and exits without launching anything.
 
 set -uo pipefail
 
@@ -42,11 +43,13 @@ if [ -d "$XDG_CONFIG_HOME/a21s-shell" ] && [ ! -e "$XDG_CONFIG_HOME/rabbiz-shell
 fi
 
 MODE=""
+PRINT_MODE=0
 DE_ARGS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --labwc) MODE=labwc ;;
         --de) MODE=de ;;
+        --print-mode) PRINT_MODE=1 ;;
         *) DE_ARGS+=("$1") ;;
     esac
     shift
@@ -66,6 +69,13 @@ if [ -z "$MODE" ]; then
     fi
 fi
 [ -z "$MODE" ] && MODE=labwc
+
+# --print-mode: report the resolved mode without launching anything (used by
+# scripts/de_m1_check.sh to verify precedence).
+if [ "$PRINT_MODE" = "1" ]; then
+    echo "$MODE"
+    exit 0
+fi
 
 if [ "$MODE" != "de" ]; then
     exec "$LABWC_LAUNCHER"

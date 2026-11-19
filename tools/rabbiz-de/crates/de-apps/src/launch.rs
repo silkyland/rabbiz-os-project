@@ -62,6 +62,9 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
             None => cmd.env_remove(k),
         };
     }
+    for name in de_system::env::unset_names() {
+        cmd.env_remove(name);
+    }
     for (k, v) in &extra_env {
         cmd.env(k, v);
     }

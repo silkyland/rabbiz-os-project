@@ -7,6 +7,7 @@ DE_DIR="$REPO_ROOT/tools/rabbiz-de"
 # Plan §10: on macOS the smithay/Linux crates cannot build (libudev, libseat,
 # gbm). Only the platform-neutral crates are host-testable; the full workspace
 # is tested in the arm64 container.
+python3 "$DE_DIR/scripts/check_seams.py"
 HOST_CRATES=(-p de-api -p de-design -p de-paint -p de-ui -p de-apps -p de-config -p de-sim)
 case "$(uname -s)" in
   Darwin) cargo test --manifest-path "$DE_DIR/Cargo.toml" "${HOST_CRATES[@]}" ;;
