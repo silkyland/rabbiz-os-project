@@ -33,4 +33,8 @@ fi
 # container and tested on the device (docs/BUILD.md §6).
 if command -v cargo >/dev/null 2>&1; then
   cargo test --quiet --manifest-path tools/rabbiz-osk/Cargo.toml --workspace --exclude osk-wayland
+  # rabbiz-apps uses smithay-client-toolkit (Linux-only); run host tests on Linux hosts.
+  if [[ "$(uname -s)" == "Linux" && -f tools/rabbiz-apps/Cargo.toml ]]; then
+    cargo test --quiet --manifest-path tools/rabbiz-apps/Cargo.toml --workspace
+  fi
 fi

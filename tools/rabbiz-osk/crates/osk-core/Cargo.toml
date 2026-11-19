@@ -4,7 +4,11 @@ description = "Pure on-screen-keyboard logic: layouts, geometry, shift/caps, tou
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 publish.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 serde.workspace = true

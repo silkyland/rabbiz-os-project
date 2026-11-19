@@ -4,7 +4,11 @@ description = "Wayland client for the rabbiz-osk keyboard: layer-shell surface, 
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 publish.workspace = true
+
+[lints]
+workspace = true
 
 [[bin]]
 name = "rabbiz-osk"

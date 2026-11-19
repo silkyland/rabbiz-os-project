@@ -4,7 +4,11 @@ description = "Host PNG snapshots of osk-core layouts (tiny-skia + cosmic-text);
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 publish.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 osk-core = { path = "../osk-core" }
@@ -13,4 +17,3 @@ cosmic-text = "0.12"
 
 [dev-dependencies]
 tempfile = "3"
-tiny-skia = "0.11"
