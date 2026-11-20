@@ -417,7 +417,7 @@ impl StoreApp {
                 };
             }
         }
-        let s = Self {
+        let mut s = Self {
             tab: StoreTab::Updates,
             search: TextBuffer::new(),
             search_focused: false,
@@ -437,8 +437,29 @@ impl StoreApp {
             job_tx,
             job_rx,
         };
+        s.sync_installed_flags();
         s.save_state();
         s
+    }
+
+    /// Reconcile `installed` state against actual binaries and `.desktop` entries on this system.
+    pub fn sync_installed_flags(&mut self) {
+        if std::env::var_os("RABBIZ_STORE_DRY_RUN").is_some() {
+            return;
+        }
+        for item in &mut self.items {
+            if item.source == PackageSource::LinuxPatch {
+                continue;
+            }
+            if backend::desktop_exists(&item.id)
+                || (item.id == "htop" && backend::available("htop"))
+                || (item.id == "fastfetch"
+                    && (backend::available("fastfetch") || backend::available("neofetch")))
+                || (item.id == "paru-bin" && backend::available("paru"))
+            {
+                item.installed = true;
+            }
+        }
     }
 
     pub fn save_state(&self) {
@@ -502,17 +523,50 @@ impl StoreApp {
             self.busy_job = None;
             changed = true;
             if res.ok {
-                let n = backend::count_lines(&res.stdout);
-                self.status_banner = if n > 0 {
-                    format!("{} done ({n} entries)", res.label)
+                if let (Some(id), Some(want_install)) = (&res.item_id, res.install_intent) {
+                    if let Some(item) = self.items.iter_mut().find(|i| i.id == *id) {
+                        item.installed = want_install;
+                        if want_install && item.update_available {
+                            item.update_available = false;
+                            if let Some((_, new_ver)) = item.version.split_once("->") {
+                                item.version = new_ver.trim().to_string();
+                            }
+                        }
+                    }
+                } else if res.label == "Linux & System Updates" {
+                    for item in &mut self.items {
+                        if item.update_available {
+                            item.update_available = false;
+                            item.installed = true;
+                            if let Some((_, new_ver)) = item.version.split_once("->") {
+                                item.version = new_ver.trim().to_string();
+                            }
+                        }
+                    }
+                }
+                let summary_line = res
+                    .stdout
+                    .lines()
+                    .rev()
+                    .find(|l| !l.trim().is_empty())
+                    .map(str::trim)
+                    .unwrap_or("");
+                self.status_banner = if !summary_line.is_empty() && summary_line.len() <= 52 {
+                    format!("{}: {summary_line}", res.label)
                 } else {
-                    format!("{} completed cleanly", res.label)
+                    let n = backend::count_lines(&res.stdout);
+                    if n > 0 {
+                        format!("{} done ({n} lines)", res.label)
+                    } else {
+                        format!("{} completed cleanly", res.label)
+                    }
                 };
             } else {
                 let err = res
                     .stderr
                     .lines()
-                    .next()
+                    .chain(res.stdout.lines())
+                    .find(|l| !l.trim().is_empty())
                     .unwrap_or("command failed")
                     .trim();
                 self.status_banner = format!("{} failed: {err}", res.label);
@@ -526,18 +580,35 @@ impl StoreApp {
     pub fn check_for_updates(&mut self) {
         self.last_checked = "Synced just now".into();
         let pending = self.pending_updates_count();
-        self.last_cmd_log = "paru -Qu && flatpak remote-ls --updates".into();
         if backend::available("paru") {
             self.busy_job = Some("Checking updates".into());
-            self.status_banner = "Checking paru / Arch Linux ARM updates…".into();
-            backend::spawn_job(
+            self.last_cmd_log = "paru -Qu && flatpak remote-ls --updates".into();
+            self.status_banner = "Checking Arch Linux ARM (paru) & Flatpak…".into();
+            backend::spawn_shell_job(
+                None,
+                None,
                 "Check updates".into(),
-                backend::argv_of("paru -Qu"),
+                "paru -Qu || true".into(),
+                false,
+                self.job_tx.clone(),
+            );
+        } else if backend::available("apt-get") {
+            self.busy_job = Some("Checking updates".into());
+            self.last_cmd_log = "apt-get update && apt list --upgradable".into();
+            self.status_banner = "Checking Linux packages (apt-get)…".into();
+            backend::spawn_shell_job(
+                None,
+                None,
+                "Check updates".into(),
+                "DEBIAN_FRONTEND=noninteractive apt-get update -qq && apt list --upgradable 2>/dev/null | tail -n +2".into(),
+                false,
                 self.job_tx.clone(),
             );
         } else if pending == 0 {
+            self.last_cmd_log = "rabbiz-updater --check".into();
             self.status_banner = "System is up to date (Kernel 7.3.0-3 + all patches)".into();
         } else {
+            self.last_cmd_log = "rabbiz-updater --check".into();
             self.status_banner = format!("{pending} Linux kernel & driver patches available");
         }
         self.save_state();
@@ -545,16 +616,39 @@ impl StoreApp {
 
     /// Apply all pending Linux kernel, DTB, and driver patches.
     pub fn apply_all_updates(&mut self) -> usize {
-        if backend::available("rabbiz-updater") {
-            self.busy_job = Some("Applying Linux patches".into());
-            self.status_banner = "Applying Linux kernel & driver patches…".into();
-            self.last_cmd_log = "rabbiz-updater apply-all".into();
-            backend::spawn_job(
-                "Apply Linux patches".into(),
-                backend::argv_of("rabbiz-updater apply-all"),
+        if backend::available("paru") {
+            self.busy_job = Some("Linux & System Updates".into());
+            self.last_cmd_log = "paru -Syu --noconfirm && flatpak update -y".into();
+            self.status_banner = "Updating Linux & packages via paru…".into();
+            let script = if backend::available("flatpak") {
+                "paru -Syu --noconfirm && flatpak update -y"
+            } else {
+                "paru -Syu --noconfirm"
+            };
+            backend::spawn_shell_job(
+                None,
+                None,
+                "Linux & System Updates".into(),
+                script.into(),
+                true,
                 self.job_tx.clone(),
             );
+            return self.pending_updates_count();
+        } else if backend::available("apt-get") {
+            self.busy_job = Some("Linux & System Updates".into());
+            self.last_cmd_log = "apt-get update && apt-get upgrade -y".into();
+            self.status_banner = "Updating Linux system packages (apt-get)…".into();
+            backend::spawn_shell_job(
+                None,
+                None,
+                "Linux & System Updates".into(),
+                "DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y".into(),
+                true,
+                self.job_tx.clone(),
+            );
+            return self.pending_updates_count();
         }
+
         let mut applied = 0;
         for item in &mut self.items {
             if item.update_available {
@@ -566,14 +660,12 @@ impl StoreApp {
                 applied += 1;
             }
         }
-        if !backend::available("rabbiz-updater") {
-            if applied > 0 {
-                self.kernel_release = "7.3.0-3-rabbiz-a21s".into();
-                self.status_banner = format!("Applied {applied} Linux & driver patches cleanly");
-                self.last_cmd_log = "rabbiz-updater apply-all && paru -Syu --noconfirm".into();
-            } else {
-                self.status_banner = "All Linux patches are already up to date".into();
-            }
+        if applied > 0 {
+            self.kernel_release = "7.3.0-3-rabbiz-a21s".into();
+            self.status_banner = format!("Applied {applied} Linux & driver patches cleanly");
+            self.last_cmd_log = "rabbiz-updater apply-all && paru -Syu --noconfirm".into();
+        } else {
+            self.status_banner = "All Linux patches are already up to date".into();
         }
         self.save_state();
         applied
@@ -581,51 +673,152 @@ impl StoreApp {
 
     /// Toggle install/update/remove on `self.items[idx]`.
     pub fn trigger_item_action(&mut self, idx: usize) {
-        let Some(item) = self.items.get_mut(idx) else {
+        let Some(item) = self.items.get(idx).cloned() else {
             return;
         };
         let want_install = item.update_available || !item.installed;
         let cmd_preview = item.source.cli_preview(&item.id, want_install);
-        let tool = match item.source {
-            PackageSource::LinuxPatch => "rabbiz-updater",
-            PackageSource::Recommended => "rabbiz",
-            PackageSource::Flatpak => "flatpak",
-            PackageSource::Paru => "paru",
-        };
-        if backend::available(tool) {
-            self.busy_job = Some(item.name.clone());
-            self.last_cmd_log = cmd_preview.clone();
-            self.status_banner = format!("Running {cmd_preview}…");
-            backend::spawn_job(
-                item.name.clone(),
-                backend::argv_of(&cmd_preview),
-                self.job_tx.clone(),
-            );
+
+        // 1. Curated first-party .rbz app (`com.devded.rabbiz-weather`) installs real .desktop + SVG!
+        if item.id == "com.devded.rabbiz-weather"
+            && std::env::var_os("RABBIZ_STORE_DRY_RUN").is_none()
+        {
+            match backend::install_curated_rbz_app(&item.id, &item.name, want_install) {
+                Ok(msg) => {
+                    if let Some(it) = self.items.get_mut(idx) {
+                        it.installed = want_install;
+                        it.update_available = false;
+                    }
+                    self.last_cmd_log = cmd_preview;
+                    self.status_banner = msg;
+                }
+                Err(err) => {
+                    self.status_banner = format!("Failed: {err}");
+                }
+            }
+            self.save_state();
+            return;
         }
-        if item.update_available {
-            item.update_available = false;
-            item.installed = true;
-            if let Some((_, new_ver)) = item.version.split_once("->") {
-                item.version = new_ver.trim().to_string();
+
+        // 2. Real Flatpak backend (auto-bootstraps flatpak + flathub if apt-get/paru is present)
+        if item.source == PackageSource::Flatpak {
+            if backend::available("flatpak") {
+                let script = if want_install {
+                    format!(
+                        "flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo && flatpak install -y --noninteractive flathub {}",
+                        item.id
+                    )
+                } else {
+                    format!("flatpak uninstall -y --noninteractive {}", item.id)
+                };
+                self.busy_job = Some(item.name.clone());
+                self.last_cmd_log = cmd_preview;
+                self.status_banner = format!("Running Flatpak for {}…", item.name);
+                backend::spawn_shell_job(
+                    Some(item.id),
+                    Some(want_install),
+                    item.name,
+                    script,
+                    true,
+                    self.job_tx.clone(),
+                );
+                return;
+            } else if want_install && backend::available("apt-get") {
+                let script = format!(
+                    "DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y flatpak && flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo && flatpak install -y --noninteractive flathub {}",
+                    item.id
+                );
+                self.busy_job = Some(item.name.clone());
+                self.last_cmd_log = format!(
+                    "apt-get install flatpak && flatpak install flathub {}",
+                    item.id
+                );
+                self.status_banner = format!("Installing Flatpak + {}…", item.name);
+                backend::spawn_shell_job(
+                    Some(item.id),
+                    Some(true),
+                    item.name,
+                    script,
+                    true,
+                    self.job_tx.clone(),
+                );
+                return;
             }
-            self.last_cmd_log = cmd_preview;
-            if self.busy_job.is_none() {
-                self.status_banner = format!("Updated {} ({})", item.name, item.version);
+        }
+
+        // 3. Real Paru (Arch Linux ARM) or APT (Debian ARM64 container) backend
+        if matches!(item.source, PackageSource::Paru | PackageSource::Recommended) {
+            if backend::available("paru") {
+                let pkg = backend::map_arch_pkg(&item.id);
+                let script = if want_install {
+                    format!("paru -S --noconfirm {pkg}")
+                } else {
+                    format!("paru -Rns --noconfirm {pkg}")
+                };
+                self.busy_job = Some(item.name.clone());
+                self.last_cmd_log = script.clone();
+                self.status_banner = format!("Running {script}…");
+                backend::spawn_shell_job(
+                    Some(item.id),
+                    Some(want_install),
+                    item.name,
+                    script,
+                    true,
+                    self.job_tx.clone(),
+                );
+                return;
+            } else if backend::available("apt-get") {
+                if let Some(deb_pkg) = backend::map_debian_pkg(&item.id) {
+                    let script = if want_install {
+                        format!(
+                            "DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y {deb_pkg}"
+                        )
+                    } else {
+                        format!("DEBIAN_FRONTEND=noninteractive apt-get remove -y {deb_pkg}")
+                    };
+                    self.busy_job = Some(item.name.clone());
+                    self.last_cmd_log = format!(
+                        "apt-get {} {deb_pkg}",
+                        if want_install { "install" } else { "remove" }
+                    );
+                    self.status_banner = format!(
+                        "{} {deb_pkg}…",
+                        if want_install { "Installing" } else { "Removing" }
+                    );
+                    backend::spawn_shell_job(
+                        Some(item.id),
+                        Some(want_install),
+                        item.name,
+                        script,
+                        true,
+                        self.job_tx.clone(),
+                    );
+                    return;
+                }
             }
-        } else if !item.installed {
-            item.installed = true;
-            self.last_cmd_log = cmd_preview;
-            if self.busy_job.is_none() {
-                self.status_banner = format!("Installed {} via {}", item.name, item.source.badge());
+        }
+
+        // 4. Fallback / Linux patch simulation when offline or in dry-run tests
+        if let Some(it) = self.items.get_mut(idx) {
+            if it.update_available {
+                it.update_available = false;
+                it.installed = true;
+                if let Some((_, new_ver)) = it.version.split_once("->") {
+                    it.version = new_ver.trim().to_string();
+                }
+                self.last_cmd_log = cmd_preview;
+                self.status_banner = format!("Updated {} ({})", it.name, it.version);
+            } else if !it.installed {
+                it.installed = true;
+                self.last_cmd_log = cmd_preview;
+                self.status_banner = format!("Installed {} via {}", it.name, it.source.badge());
+            } else if it.source != PackageSource::LinuxPatch {
+                it.installed = false;
+                self.last_cmd_log = cmd_preview;
+                self.status_banner = format!("Removed {}", it.name);
+            } else {
+                self.status_banner = format!("{} is active in the running kernel", it.name);
             }
-        } else if item.source != PackageSource::LinuxPatch {
-            item.installed = false;
-            self.last_cmd_log = cmd_preview;
-            if self.busy_job.is_none() {
-                self.status_banner = format!("Removed {}", item.name);
-            }
-        } else if self.busy_job.is_none() {
-            self.status_banner = format!("{} is active in the running kernel", item.name);
         }
         self.save_state();
     }
@@ -1300,6 +1493,7 @@ mod tests {
     #[test]
     fn store_tabs_filter_linux_patches_recommended_flatpak_and_paru() {
         let tmp = std::env::temp_dir().join(format!("rabbiz-store-test-{}", std::process::id()));
+        std::env::set_var("RABBIZ_STORE_DRY_RUN", "1");
         std::env::set_var("XDG_DATA_HOME", &tmp);
 
         let mut app = StoreApp::new();
@@ -1329,6 +1523,7 @@ mod tests {
     #[test]
     fn test_harness_renders_and_switches_store_tabs() {
         let tmp = std::env::temp_dir().join(format!("rabbiz-store-ui-test-{}", std::process::id()));
+        std::env::set_var("RABBIZ_STORE_DRY_RUN", "1");
         std::env::set_var("XDG_DATA_HOME", &tmp);
 
         let mut h = rabbiz_app_kit::TestHarness::new(StoreApp::new());

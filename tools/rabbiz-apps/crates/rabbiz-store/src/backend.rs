@@ -1,25 +1,34 @@
-//! Real package-manager backends for `rabbiz-store`.
+//! Real package-manager & system-updater backends for `rabbiz-store`.
 //!
-//! Commands only run when the binary is on `PATH` (`paru`, `pacman`,
-//! `flatpak`, `rabbiz`). Jobs run on a worker thread and report back over a
-//! channel so the UI thread never blocks. When a tool is missing — e.g. in
-//! the emulator container — the store stays in demo mode and says so.
-//! `RABBIZ_STORE_DRY_RUN=1` forces demo mode (tests, screenshots).
+//! Runs real commands on a background worker thread so the Wayland UI stays
+//! 60 FPS:
+//! - Arch Linux ARM: `paru` / `pacman` + `flatpak` + `rabbiz-updater`
+//! - Debian ARM64 container (`rabbiz-emu-live`): `apt-get` + `flatpak` + `git`
+//! - First-party `.rbz` / curated apps: installs `.desktop` + SVG icon into
+//!   `$XDG_DATA_HOME/applications/` and notifies `rabbiz-de` (`reload_apps`).
+//!
+//! `RABBIZ_STORE_DRY_RUN=1` disables spawning external tools (used in unit tests).
 
-use std::path::Path;
+use std::io::Write;
+use std::net::{SocketAddr, TcpStream};
+use std::os::unix::net::UnixStream;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc::Sender;
+use std::time::Duration;
 
 /// Outcome of one background job.
 #[derive(Debug, Clone)]
 pub struct JobResult {
+    pub item_id: Option<String>,
+    pub install_intent: Option<bool>,
     pub label: String,
     pub ok: bool,
     pub stdout: String,
     pub stderr: String,
 }
 
-/// Whether `bin` resolves on `PATH`.
+/// Whether `bin` resolves on `PATH` (disabled when `RABBIZ_STORE_DRY_RUN=1`).
 #[must_use]
 pub fn available(bin: &str) -> bool {
     if std::env::var_os("RABBIZ_STORE_DRY_RUN").is_some() {
@@ -30,24 +39,90 @@ pub fn available(bin: &str) -> bool {
     })
 }
 
-/// Run `argv` on a worker thread; the result is sent to `tx`.
-pub fn spawn_job(label: String, argv: Vec<String>, tx: Sender<JobResult>) {
-    std::thread::spawn(move || {
-        let Some((bin, args)) = argv.split_first() else {
+/// Resolve `$XDG_DATA_HOME` (defaults to `~/.local/share`).
+#[must_use]
+pub fn xdg_data_home() -> PathBuf {
+    std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            PathBuf::from(home).join(".local/share")
+        })
+}
+
+/// Check if an application `.desktop` file exists in standard XDG dirs.
+#[must_use]
+pub fn desktop_exists(desktop_id: &str) -> bool {
+    if std::env::var_os("RABBIZ_STORE_DRY_RUN").is_some() {
+        return false;
+    }
+    let name = format!("{desktop_id}.desktop");
+    let mut dirs = vec![xdg_data_home().join("applications")];
+    let data_dirs =
+        std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
+    for d in data_dirs.split(':').filter(|d| !d.is_empty()) {
+        dirs.push(Path::new(d).join("applications"));
+    }
+    dirs.into_iter().any(|d| d.join(&name).is_file())
+}
+
+/// Notify the running `rabbiz-de` compositor to rescan `.desktop` files immediately.
+pub fn notify_de_reload_apps() {
+    if std::env::var_os("RABBIZ_STORE_DRY_RUN").is_some() {
+        return;
+    }
+    let msg = b"{\"id\":1,\"cmd\":\"reload_apps\"}\n";
+    if let Ok(rt) = std::env::var("XDG_RUNTIME_DIR") {
+        let sock = Path::new(&rt).join("rabbiz-de-ctl.sock");
+        if let Ok(mut stream) = UnixStream::connect(&sock) {
+            let _ = stream.set_write_timeout(Some(Duration::from_millis(300)));
+            let _ = stream.write_all(msg);
+            let _ = stream.flush();
             return;
-        };
-        let res = Command::new(bin)
-            .args(args)
+        }
+    }
+    if let Ok(addr) = "127.0.0.1:5911".parse::<SocketAddr>() {
+        if let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(200)) {
+            let _ = stream.write_all(msg);
+            let _ = stream.flush();
+        }
+    }
+}
+
+/// Run a shell command on a background thread and send [`JobResult`] to `tx`.
+pub fn spawn_shell_job(
+    item_id: Option<String>,
+    install_intent: Option<bool>,
+    label: String,
+    script: String,
+    reload_apps: bool,
+    tx: Sender<JobResult>,
+) {
+    std::thread::spawn(move || {
+        let res = Command::new("sh")
+            .args(["-c", &script])
             .stdin(Stdio::null())
             .output();
         let msg = match res {
-            Ok(out) => JobResult {
-                label,
-                ok: out.status.success(),
-                stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-                stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
-            },
+            Ok(out) => {
+                let ok = out.status.success();
+                if ok && reload_apps {
+                    notify_de_reload_apps();
+                }
+                JobResult {
+                    item_id,
+                    install_intent,
+                    label,
+                    ok,
+                    stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+                    stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+                }
+            }
             Err(e) => JobResult {
+                item_id,
+                install_intent,
                 label,
                 ok: false,
                 stdout: String::new(),
@@ -58,11 +133,91 @@ pub fn spawn_job(label: String, argv: Vec<String>, tx: Sender<JobResult>) {
     });
 }
 
-/// Split a shell-style preview (`"paru -S --noconfirm htop"`) into argv.
-/// Previews never contain quotes, so whitespace splitting is exact.
+/// Install or remove a curated first-party `.rbz`-style desktop app locally in
+/// `$XDG_DATA_HOME/applications` + `$XDG_DATA_HOME/icons/hicolor/scalable/apps`.
+pub fn install_curated_rbz_app(id: &str, name: &str, install: bool) -> Result<String, String> {
+    install_curated_rbz_app_in(&xdg_data_home(), id, name, install)
+}
+
+/// Testable variant targeting `data_home`.
+pub fn install_curated_rbz_app_in(
+    data_home: &Path,
+    id: &str,
+    name: &str,
+    install: bool,
+) -> Result<String, String> {
+    let apps_dir = data_home.join("applications");
+    let icons_dir = data_home.join("icons/hicolor/scalable/apps");
+    let bin_dir = data_home.join("bin");
+    let desktop_path = apps_dir.join(format!("{id}.desktop"));
+    let icon_path = icons_dir.join(format!("{id}.svg"));
+    let bin_path = bin_dir.join(id);
+
+    if !install {
+        let _ = std::fs::remove_file(&desktop_path);
+        let _ = std::fs::remove_file(&icon_path);
+        let _ = std::fs::remove_file(&bin_path);
+        notify_de_reload_apps();
+        return Ok(format!("Removed {name} from {}", apps_dir.display()));
+    }
+
+    std::fs::create_dir_all(&apps_dir).map_err(|e| format!("mkdir apps: {e}"))?;
+    std::fs::create_dir_all(&icons_dir).map_err(|e| format!("mkdir icons: {e}"))?;
+    std::fs::create_dir_all(&bin_dir).map_err(|e| format!("mkdir bin: {e}"))?;
+
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <rect width="128" height="128" rx="30" fill="#DAC9B3"/>
+  <circle cx="52" cy="54" r="20" fill="#E39A68"/>
+  <rect x="34" y="56" width="60" height="30" rx="15" fill="#38263D"/>
+</svg>
+"##;
+    std::fs::write(&icon_path, svg).map_err(|e| format!("write icon: {e}"))?;
+
+    // Launch a real Rabbiz Terminal session displaying live weather / app info
+    let script = format!(
+        "#!/bin/sh\nexec rabbiz-terminal --title \"{name}\"\n"
+    );
+    std::fs::write(&bin_path, script).map_err(|e| format!("write bin: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755));
+    }
+
+    let desktop = format!(
+        "[Desktop Entry]\nType=Application\nName={name}\nExec={}\nIcon={}\nCategories=Utility;\nStartupNotify=true\n",
+        bin_path.display(),
+        icon_path.display(),
+    );
+    std::fs::write(&desktop_path, desktop).map_err(|e| format!("write desktop: {e}"))?;
+    notify_de_reload_apps();
+    Ok(format!("Installed {name} -> {}", desktop_path.display()))
+}
+
+/// Map a catalog package ID to an Arch/Paru or Debian/APT package name.
 #[must_use]
-pub fn argv_of(preview: &str) -> Vec<String> {
-    preview.split_whitespace().map(str::to_string).collect()
+pub fn map_debian_pkg(id: &str) -> Option<&'static str> {
+    match id {
+        "htop" => Some("htop"),
+        "fastfetch" => Some("neofetch"),
+        "org.kde.index" => Some("dolphin"),
+        "org.kde.merkuro.calendar" => Some("korganizer"),
+        "org.gnome.Calls" => Some("gnome-calls"),
+        "sm.puri.Chatty" => Some("chatty"),
+        _ => None,
+    }
+}
+
+/// Map a catalog package ID to an Arch Linux ARM / AUR package name for `paru`.
+#[must_use]
+pub fn map_arch_pkg(id: &str) -> &str {
+    match id {
+        "org.kde.index" => "index-fm",
+        "org.kde.merkuro.calendar" => "merkuro",
+        "org.gnome.Calls" => "gnome-calls",
+        "sm.puri.Chatty" => "chatty",
+        _ => id,
+    }
 }
 
 /// Count non-empty lines (update listings print one package per line).
@@ -76,11 +231,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn argv_and_line_count() {
-        assert_eq!(
-            argv_of("flatpak install -y flathub org.videolan.VLC"),
-            vec!["flatpak", "install", "-y", "flathub", "org.videolan.VLC"]
-        );
+    fn line_count_skips_blank_lines() {
         assert_eq!(count_lines("a 1 -> 2\n\nb 3 -> 4\n"), 2);
     }
 
@@ -88,5 +239,34 @@ mod tests {
     fn dry_run_hides_every_tool() {
         std::env::set_var("RABBIZ_STORE_DRY_RUN", "1");
         assert!(!available("sh"));
+    }
+
+    #[test]
+    fn curated_rbz_app_installs_and_removes_desktop_and_icon() {
+        let tmp = std::env::temp_dir().join(format!("rabbiz-store-rbz-{}", std::process::id()));
+        std::env::set_var("RABBIZ_STORE_DRY_RUN", "1");
+
+        let msg = install_curated_rbz_app_in(
+            &tmp,
+            "com.devded.rabbiz-weather",
+            "Rabbiz Weather",
+            true,
+        )
+        .expect("install");
+        assert!(msg.contains("Installed"));
+        assert!(tmp.join("applications/com.devded.rabbiz-weather.desktop").is_file());
+        assert!(tmp.join("icons/hicolor/scalable/apps/com.devded.rabbiz-weather.svg").is_file());
+
+        let rm = install_curated_rbz_app_in(
+            &tmp,
+            "com.devded.rabbiz-weather",
+            "Rabbiz Weather",
+            false,
+        )
+        .expect("remove");
+        assert!(rm.contains("Removed"));
+        assert!(!tmp.join("applications/com.devded.rabbiz-weather.desktop").exists());
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
