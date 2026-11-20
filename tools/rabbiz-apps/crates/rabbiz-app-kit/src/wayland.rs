@@ -1,13 +1,14 @@
 //! Native Wayland (`xdg_toplevel` + `wl_shm` + `wl_touch` + `wl_pointer` +
 //! `wl_keyboard` + `zwp_text_input_v3`) window runner for `rabbiz-*` apps.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::os::fd::AsRawFd;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use crate::theme_watch::ThemeWatcher;
+pub use crate::app::{AppEvent, AppFrame, AppState, BTN_LEFT};
 use de_api::{Point, Size};
-use de_design::tokens::Theme;
 use de_paint::Canvas;
 use smithay_client_toolkit::{
     compositor::{CompositorHandler, CompositorState},
@@ -41,62 +42,18 @@ use wayland_protocols::wp::text_input::zv3::client::{
     zwp_text_input_v3::{ContentHint, ContentPurpose, Event as TiEvent, ZwpTextInputV3},
 };
 
-/// evdev `BTN_LEFT` — the only pointer button routed through Touch* events;
-/// every other button surfaces as `AppEvent::PointerButton`.
-const BTN_LEFT: u32 = 0x110;
-
-#[derive(Debug, Clone)]
-pub enum AppEvent {
-    TouchDown {
-        id: i32,
-        pos: Point,
-    },
-    TouchMove {
-        id: i32,
-        pos: Point,
-    },
-    TouchUp {
-        id: i32,
-        pos: Point,
-    },
-    /// Mouse hover motion with no button held (touch never produces this).
-    PointerMove {
-        pos: Point,
-    },
-    /// Mouse wheel / touchpad scroll, in surface pixels (`wl_pointer` axis
-    /// `absolute` values; positive dy scrolls content down).
-    Scroll {
-        dx: f32,
-        dy: f32,
-    },
-    /// Non-primary mouse button edge. `button` is the evdev code
-    /// (0x110 left is routed to Touch* instead; right = 0x111, middle =
-    /// 0x112, others pass through).
-    PointerButton {
-        button: u32,
-        pressed: bool,
-        pos: Point,
-    },
-    Key {
-        keysym: u32,
-        utf8: Option<String>,
-    },
-    TextCommit(String),
-    TextBackspace(usize),
-    Tick(Duration),
-}
-
-#[derive(Default)]
-pub struct AppFrame {
-    pub dirty: bool,
-    pub animating: bool,
-    pub quit: bool,
-}
-
 pub struct TextInputCtl {
     ti: Option<ZwpTextInputV3>,
     pending_commit: Option<String>,
     pending_delete_before: u32,
+    active: Cell<bool>,
+    purpose: Cell<Option<ContentPurpose>>,
+}
+
+impl Default for TextInputCtl {
+    fn default() -> Self {
+        Self::headless()
+    }
 }
 
 impl TextInputCtl {
@@ -105,10 +62,32 @@ impl TextInputCtl {
             ti,
             pending_commit: None,
             pending_delete_before: 0,
+            active: Cell::new(false),
+            purpose: Cell::new(None),
         }
     }
 
+    /// Create an inert [`TextInputCtl`] for headless tests and simulators.
+    #[must_use]
+    pub fn headless() -> Self {
+        Self::new(None)
+    }
+
+    /// Whether the app most recently activated text input without deactivating it.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.active.get()
+    }
+
+    /// The active [`ContentPurpose`] requested by the app, if any.
+    #[must_use]
+    pub fn purpose(&self) -> Option<ContentPurpose> {
+        self.purpose.get()
+    }
+
     pub fn activate(&self, purpose: ContentPurpose) {
+        self.active.set(true);
+        self.purpose.set(Some(purpose));
         if let Some(ti) = &self.ti {
             ti.enable();
             ti.set_content_type(ContentHint::None, purpose);
@@ -130,18 +109,13 @@ impl TextInputCtl {
     }
 
     pub fn deactivate(&self) {
+        self.active.set(false);
+        self.purpose.set(None);
         if let Some(ti) = &self.ti {
             ti.disable();
             ti.commit();
         }
     }
-}
-
-pub trait AppState {
-    fn app_id(&self) -> &'static str;
-    fn title(&self) -> &'static str;
-    fn handle_event(&mut self, event: AppEvent, ti: &TextInputCtl) -> AppFrame;
-    fn render(&mut self, canvas: &mut Canvas, theme: &Theme);
 }
 
 struct Runner<S: AppState> {
@@ -282,6 +256,9 @@ pub fn run_app<S: AppState + 'static>(state: S) {
                 events: libc::POLLIN,
                 revents: 0,
             };
+            // SAFETY: `pfd` is a valid stack `pollfd` referencing `backend.poll_fd()`
+            // which remains open for the duration of `run_app`.
+            #[allow(unsafe_code)]
             let _ = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
             if pfd.revents & libc::POLLIN != 0 {
                 let _ = queue.blocking_dispatch(&mut runner);

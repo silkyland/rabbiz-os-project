@@ -33,7 +33,7 @@ fi
 # container and tested on the device (docs/BUILD.md §6).
 if command -v cargo >/dev/null 2>&1; then
   cargo test --quiet --manifest-path tools/rabbiz-osk/Cargo.toml --workspace --exclude osk-wayland
-  if [[ -f tools/rabbiz-apps/Cargo.toml ]] && [[ "$(uname -s)" == "Linux" || -f tools/rabbiz-apps/crates/rabbiz-app-kit/src/wayland_stub.rs ]]; then
+  if [[ -f tools/rabbiz-apps/Cargo.toml ]]; then
     cargo test --quiet --manifest-path tools/rabbiz-apps/Cargo.toml --workspace
   fi
 fi

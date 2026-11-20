@@ -472,4 +472,28 @@ mod tests {
         assert!(app.error.is_some());
         assert_eq!(app.expr, "5÷0");
     }
+
+    #[test]
+    fn test_harness_renders_and_handles_keys_and_backspace() {
+        let mut h = rabbiz_app_kit::TestHarness::new(CalcApp::new());
+        let initial_px = h.render();
+        assert_eq!(initial_px.size, Size::new(720, 1600));
+
+        h.key(rabbiz_app_kit::sim_config::char_to_xkb('7'), Some("7"));
+        h.key(rabbiz_app_kit::sim_config::char_to_xkb('*'), Some("*"));
+        h.key(rabbiz_app_kit::sim_config::char_to_xkb('6'), Some("6"));
+        h.key(rabbiz_app_kit::sim_config::char_to_xkb('9'), Some("9"));
+        assert_eq!(h.state().expr, "7×69");
+
+        // Backspace (0xFF08 with utf8: None) removes '9' leaving "7×6" = 42.
+        h.key(rabbiz_app_kit::sim_config::XKB_BACKSPACE, None);
+        assert_eq!(h.state().expr, "7×6");
+        assert_eq!(h.state().preview, "42");
+
+        h.key(rabbiz_app_kit::sim_config::XKB_RETURN, Some("\r"));
+        assert_eq!(h.state().expr, "42");
+
+        let after_px = h.render();
+        assert_ne!(initial_px.data, after_px.data);
+    }
 }

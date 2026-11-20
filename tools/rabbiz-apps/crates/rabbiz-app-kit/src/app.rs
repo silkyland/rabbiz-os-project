@@ -1,14 +1,20 @@
-//! Non-Linux host stub for `rabbiz_app_kit::wayland`.
-//!
-//! Keeps all 12 `rabbiz-*` apps compiling and running their unit/headless/CLI
-//! tests natively on macOS without requiring `smithay-client-toolkit` (Linux).
+//! Shared application traits and input/frame types across Wayland, host
+//! simulator, and headless test harness.
 
 use std::time::Duration;
 
 use de_api::Point;
 use de_design::tokens::Theme;
 use de_paint::Canvas;
-use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3::ContentPurpose;
+
+use crate::wayland::TextInputCtl;
+
+/// evdev `BTN_LEFT` — primary pointer button routed through `Touch*` events.
+pub const BTN_LEFT: u32 = 0x110;
+/// evdev `BTN_RIGHT` — secondary pointer button.
+pub const BTN_RIGHT: u32 = 0x111;
+/// evdev `BTN_MIDDLE` — middle pointer button.
+pub const BTN_MIDDLE: u32 = 0x112;
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {
@@ -24,13 +30,19 @@ pub enum AppEvent {
         id: i32,
         pos: Point,
     },
+    /// Mouse hover motion with no button held (touch never produces this).
     PointerMove {
         pos: Point,
     },
+    /// Mouse wheel / touchpad scroll, in surface pixels (`wl_pointer` axis
+    /// `absolute` values; positive dy scrolls content down).
     Scroll {
         dx: f32,
         dy: f32,
     },
+    /// Non-primary mouse button edge. `button` is the evdev code
+    /// (`0x110` left is routed to `Touch*` instead; right = `0x111`, middle =
+    /// `0x112`, others pass through).
     PointerButton {
         button: u32,
         pressed: bool,
@@ -45,20 +57,11 @@ pub enum AppEvent {
     Tick(Duration),
 }
 
-#[derive(Default)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct AppFrame {
     pub dirty: bool,
     pub animating: bool,
     pub quit: bool,
-}
-
-#[derive(Default)]
-pub struct TextInputCtl;
-
-impl TextInputCtl {
-    pub fn activate(&self, _purpose: ContentPurpose) {}
-    pub fn set_surrounding(&self, _text: &str, _cursor_bytes: usize) {}
-    pub fn deactivate(&self) {}
 }
 
 pub trait AppState {
@@ -66,8 +69,4 @@ pub trait AppState {
     fn title(&self) -> &'static str;
     fn handle_event(&mut self, event: AppEvent, ti: &TextInputCtl) -> AppFrame;
     fn render(&mut self, canvas: &mut Canvas, theme: &Theme);
-}
-
-pub fn run_app<S: AppState + 'static>(_state: S) {
-    panic!("rabbiz-app-kit Wayland runner requires Linux");
 }

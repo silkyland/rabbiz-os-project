@@ -19,3 +19,7 @@ serde_json.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 smithay-client-toolkit.workspace = true
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+winit.workspace = true
+softbuffer.workspace = true
