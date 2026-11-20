@@ -1,7 +1,7 @@
 # RFC: `rabbiz-de` Runtime Shell Control IPC (Tier 1.6)
 
 - **Lane**: `de`
-- **Status**: Proposed
+- **Status**: Implemented (v1 — all 7 commands wired in `de-config`/`de-core`/`de-bin`; step 4 script migration pending)
 - **Parent handoff**: [HANDOFF-de-audit-2026-11-19.md](HANDOFF-de-audit-2026-11-19.md) §3 Pillar 6 & §4 Tier 1.6
 
 ---
@@ -60,15 +60,15 @@ Error shape:
 
 ## 4. Crate Placement (Respecting `check_seams.py`)
 
-- **Wire types (`IpcRequest`, `IpcResponse`, `ShellStateSnapshot`)**: `de-config` (or `de-api` if shared with `de-sim`). Keeping them in `de-config::ipc` avoids touching frozen `de-api` in v1.
-- **Socket listener & dispatch**: `de-core/src/runtime/ipc.rs`, polled non-blocking inside the main event loop with peer credential checks via `de-core/src/privileged.rs`.
+- **Wire types (`IpcRequest`, `IpcResponse`, `ShellStateSnapshot`)**: `de-config::ipc` (keeps frozen `de-api` untouched in v1).
+- **Socket listener & dispatch**: `de-core/src/runtime/ctl_ipc.rs`, polled non-blocking inside the main event loop (`0600` user-scoped socket; optional `SO_PEERCRED` check via `de-core/src/protocols/privileged.rs` planned).
 - **CLI client subcommand**: `rabbiz-de ctl <command>` in `de-bin/src/main.rs` (replaces ad-hoc trigger files while keeping legacy `a21s-power.cmd` as a compatibility shim until hardware key daemons migrate).
 
 ---
 
 ## 5. Rollout Order
 
-1. Add `de-config::ipc` wire structs + round-trip unit tests (host-tested on macOS/Linux).
-2. Add non-blocking socket listener in `de-core` (`get_state`, `lock`, `screenshot`, `reload_theme`, `launch`).
-3. Add `rabbiz-de ctl` subcommand in `de-bin`.
-4. Migrate `de-smoke` and hardware key / mirror scripts to `rabbiz-de ctl`, keeping `a21s-power.cmd` fallback for one release cycle.
+1. [x] Add `de-config::ipc` wire structs + round-trip unit tests (host-tested on macOS/Linux).
+2. [x] Add non-blocking socket listener in `de-core/src/runtime/ctl_ipc.rs` (`get_state`, `lock`, `launch`, `screenshot`, `show_osd`, `reload_theme`, `set_panel`).
+3. [x] Add `rabbiz-de ctl` subcommand in `de-bin`.
+4. [ ] Migrate `de-smoke` and hardware key / mirror scripts to `rabbiz-de ctl`, keeping `a21s-power.cmd` fallback for one release cycle.
