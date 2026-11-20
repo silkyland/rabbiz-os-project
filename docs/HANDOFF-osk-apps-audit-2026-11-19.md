@@ -54,3 +54,15 @@ Evidence level: **L0 (static audit + host tests on `rabbiz-osk`)**. Read-only au
 3. **Standardize `rabbiz-apps` app skeleton** — **4/7 large apps split (2026-11-19)**:
    - Split `rabbiz-contacts` (`main.rs` 2,376 → 769 LOC + `views.rs`, `ui.rs`), `rabbiz-files` (`main.rs` 2,050 → 767 LOC + `interaction.rs`, `ui.rs`), `rabbiz-clock` (`main.rs` 1,866 → 437 LOC + `model.rs`, `ui.rs`, `cli.rs`, `mcp.rs`), and `rabbiz-calculator` (`main.rs` 1,497 → 475 LOC + `model.rs`, `ui.rs`).
    - Remaining: `rabbiz-dialer/src/app.rs` (1,752), `rabbiz-music/src/main.rs` (1,448), `rabbiz-pdf/src/main.rs` (1,344).
+
+---
+
+## 2026-11-20 Completion Update
+
+- **All `rabbiz-apps` monoliths modularized (`1b300b3`)**:
+  - `rabbiz-dialer`: `app.rs` (1,752 LOC) → `app/{mod,input,lists,call_ui,chrome,keypad}.rs`.
+  - `rabbiz-music`: `main.rs` (1,448 → 41 LOC) + `playback.rs`, `app.rs`, `render.rs`.
+  - `rabbiz-pdf`: `main.rs` (1,344 → 49 LOC) + `app/{mod,input,viewer,screens}.rs`.
+- **Result**: **0 monoliths >1,300 LOC** remaining across `tools/rabbiz-apps` (7/7 large apps split).
+- **Evidence**: L0 host-tested (`cargo test --manifest-path tools/rabbiz-apps/Cargo.toml --workspace` → **308/308 host tests passing**, 1 ignored). **Not tested on device.**
+

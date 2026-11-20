@@ -11,7 +11,7 @@
 
 `rabbiz-de` currently implements:
 - Visual lock screen ([`de-ui/src/screens/lock.rs`](../tools/rabbiz-de/crates/de-ui/src/screens/lock.rs)) with swipe-up-to-unlock, clock/date, notifications preview, fingerprint prompt pill, and quick actions.
-- Compositor-level **Keyguard isolation** in [`DisplayStack`](../tools/rabbiz-de/crates/de-api/src/display_stack.rs) and [`render_with`](../tools/rabbiz-de/crates/de-core/src/runtime/frame/render.rs) so app/home surfaces are never rendered while strictly locked.
+- Compositor-level **Keyguard isolation** in [`DisplayStack`](../tools/rabbiz-de/crates/de-api/src/scene.rs) and [`render_with`](../tools/rabbiz-de/crates/de-core/src/runtime/frame/render.rs) so app/home surfaces are never rendered while strictly locked.
 - Privileged `ext-session-lock-v1` protocol handler ([`protocols/session_lock.rs`](../tools/rabbiz-de/crates/de-core/src/protocols/session_lock.rs)).
 
 However, **there is no real credential gate yet**: swiping up immediately unlocks the device. Before RabbizOS can be used as a daily-driver phone, Keyguard needs real authentication that protects the user's session without introducing brittle PAM deadlocks inside the compositor thread.

@@ -182,3 +182,37 @@ ctl:     {"id":1,"ok":true,"data":{"foreground":"shell","insets":{"ime_bottom":0
 2. **`de-core` Tier 1 finish**: Break `De` god-struct in `runtime/state.rs` into sub-structs, route `runtime/input/` hit-testing via `DisplayStack`, and add remaining `ctl_ipc` commands (`SetPanel(open)`, `Screenshot`, `ShowOsd`).
 3. **Repo-wide cleanup** (see [HANDOFF-repo-structure-audit-2026-11-19.md](HANDOFF-repo-structure-audit-2026-11-19.md)): Split `rootfs-overlay/` (OS-wide vs A21s) and organize `scripts/`.
 
+---
+
+## 6. 2026-11-20 Offline Progress (L0/L1 — A21s Not Connected)
+
+All commits below are pushed on `origin/main` and verified at **L0/L1** (host tests + arm64 Docker cross-build/tests). **Not yet tested on device.**
+
+### Landed Today (`8be1ca6..a753012`)
+- **Gesture & Apps polish (`8be1ca6`, `1b300b3`)**:
+  - `8be1ca6`: Fixed swipe-up-and-hold Recents double animation and release oscillation in `rabbiz-de`.
+  - `1b300b3`: Completed modularization of the last 3 `rabbiz-apps` monoliths (`rabbiz-dialer`, `rabbiz-music`, `rabbiz-pdf`; see [HANDOFF-osk-apps-audit-2026-11-19.md](HANDOFF-osk-apps-audit-2026-11-19.md)).
+- **`rabbiz-de ctl` IPC v1 complete (`d7b47b1`)**:
+  - Added `panel open`, `osd` overlay, and `screenshot` commands to `ctl_ipc` and the `rabbiz-de ctl` CLI.
+- **Tier 2 Architecture RFCs (`2581024`)**:
+  - Added 4 Tier-2 RFCs: [DE-RETAINED-UI.md](DE-RETAINED-UI.md), [DE-NOTIFICATIONS-SERVICES.md](DE-NOTIFICATIONS-SERVICES.md), [DE-APP-LIFECYCLE.md](DE-APP-LIFECYCLE.md), [DE-KEYGUARD-AUTH.md](DE-KEYGUARD-AUTH.md), and updated [DE-IPC.md](DE-IPC.md) to mark v1 implemented.
+- **Tier 2 Phase 1 (`83b8024`, `1477613`, `bd192fa`)**:
+  - `83b8024` (`de-paint`): Added `RegionCache` and `Canvas::paint_clipped` for retained/sub-rect rendering.
+  - `1477613` (`de-system`): Added app lifecycle manager, keyguard lockout auth, and rich notification primitives.
+  - `bd192fa` (`de-ui` / `de-core`): Added lock bouncer UI, HUN/grouping model, and Keyguard IPC lock guard.
+- **Tier 2 Phase 2 (`658a98f`, `c6afaae`, `a753012`)**:
+  - `658a98f` (`de-config` / `de-system`): Added keyguard/privacy preferences and MPRIS media tracker.
+  - `c6afaae` (`de-ui`): Added shade media card and HUN floating banner renderers.
+  - `a753012` (`de-core`): Added partial GPU texture upload, HUN overlay controller, and `SessionLockTracker`.
+
+### On-Device L2 Checklist (when A21s returns)
+- [ ] Verify `8be1ca6` swipe-up-and-hold Recents fix on touch hardware (no double animation or release oscillation).
+- [ ] Build & deploy latest `rabbiz-de` via `scripts/device_session.sh` and verify `rabbiz-de ctl`:
+  - `rabbiz-de ctl state`
+  - `rabbiz-de ctl panel` (open/close)
+  - `rabbiz-de ctl osd`
+  - `rabbiz-de ctl screenshot`
+  - Lock guard returns `"device_locked"` when Keyguard is active.
+- [ ] Deploy modularized `rabbiz-apps` binaries if needed (`rabbiz-dialer`, `rabbiz-music`, `rabbiz-pdf`, plus earlier split apps).
+
+
