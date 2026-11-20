@@ -258,6 +258,13 @@ impl De {
         let gone = d.closing && d.offset.value <= -(self.output.height as f32) * 0.98;
         if gone || !moving || d.offset.settled() {
             self.navigation.card_dismiss = None;
+            if self.foreground == crate::state::Foreground::Shell
+                && self.nav.current == de_ui::nav::Screen::Recents
+                && self.morph.is_none()
+                && self.recent_windows().is_empty()
+            {
+                self.show_shell(de_ui::nav::Screen::Home);
+            }
         }
         self.shell_dirty = true;
         self.needs_present = true;

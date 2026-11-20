@@ -256,7 +256,7 @@ impl De {
                             self.restore_recent(window, de_ui::recents::card_at(size, idx, index));
                         }
                     }
-                    None => {}
+                    None => self.show_shell(Screen::Home),
                 }
             }
             _ => {}
