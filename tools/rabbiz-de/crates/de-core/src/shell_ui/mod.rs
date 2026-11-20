@@ -1,6 +1,7 @@
 //! Shell UI controllers driven by `de-core` (home, panels, lock, morph, menus).
 
 pub(crate) mod home_ui;
+pub(crate) mod hun_ui;
 pub(crate) mod lock_ui;
 pub(crate) mod morph;
 pub(crate) mod navigation;
