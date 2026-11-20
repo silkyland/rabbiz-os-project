@@ -423,24 +423,33 @@ pub fn when_label(now_unix: i64, then_unix: i64) -> String {
     format!("{}/{}", day_month(then_unix).0, day_month(then_unix).1)
 }
 
+#[allow(unsafe_code)]
 fn hhmm(unix: i64) -> String {
     // Local time via libc.
     let t = unix as libc::time_t;
+    // SAFETY: `tm` is a zeroed, owned `libc::tm`; `localtime_r` is reentrant
+    // and only reads `&t` and writes into `tm`. `tm_zone` is never read.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&t, &mut tm) };
     format!("{:02}:{:02}", tm.tm_hour, tm.tm_min)
 }
 
+#[allow(unsafe_code)]
 fn day_month(unix: i64) -> (i32, i32) {
     let t = unix as libc::time_t;
+    // SAFETY: `tm` is a zeroed, owned `libc::tm`; `localtime_r` is reentrant
+    // and only reads `&t` and writes into `tm`. `tm_zone` is never read.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&t, &mut tm) };
     (tm.tm_mday, tm.tm_mon + 1)
 }
 
+#[allow(unsafe_code)]
 fn weekday_name(unix: i64) -> String {
     const NAMES: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     let t = unix as libc::time_t;
+    // SAFETY: `tm` is a zeroed, owned `libc::tm`; `localtime_r` is reentrant
+    // and only reads `&t` and writes into `tm`. `tm_zone` is never read.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe { libc::localtime_r(&t, &mut tm) };
     NAMES[tm.tm_wday.clamp(0, 6) as usize].to_string()

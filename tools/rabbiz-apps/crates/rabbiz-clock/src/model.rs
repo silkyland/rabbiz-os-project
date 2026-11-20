@@ -72,7 +72,11 @@ pub(crate) struct Alert {
     pub(crate) since: Instant,
 }
 
+#[allow(unsafe_code)]
 pub(crate) fn local_now() -> Now {
+    // SAFETY: `libc::time` accepts a null pointer to return the current epoch
+    // time; `tm` is a zeroed, owned `libc::tm` (plain C struct); `localtime_r`
+    // is reentrant and only reads `&t` and writes into `tm`.
     unsafe {
         let t = libc::time(std::ptr::null_mut());
         let mut tm: libc::tm = std::mem::zeroed();

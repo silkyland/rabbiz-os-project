@@ -45,7 +45,10 @@ pub fn socket_path() -> PathBuf {
         }
     }
     #[cfg(unix)]
+    #[allow(unsafe_code)]
     {
+        // SAFETY: `libc::getuid` is a thread-safe POSIX syscall with no
+        // preconditions and cannot fail.
         let uid = unsafe { libc::getuid() };
         return PathBuf::from(format!("/run/user/{uid}/{SOCKET_NAME}"));
     }

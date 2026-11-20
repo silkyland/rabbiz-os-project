@@ -232,8 +232,11 @@ const MONTHS: [&str; 12] = [
 #[must_use]
 pub fn format_time(secs: i64) -> String {
     #[cfg(unix)]
+    #[allow(unsafe_code)]
     {
         let t = secs as libc::time_t;
+        // SAFETY: `tm` is a zeroed, owned `libc::tm`; `localtime_r` is reentrant
+        // and only reads `&t` and writes into `tm`. Null return is checked below.
         let mut tm: libc::tm = unsafe { std::mem::zeroed() };
         if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
             return secs.to_string();
@@ -274,9 +277,12 @@ pub fn mode_string(mode: u32) -> String {
 /// Free/total bytes of the filesystem containing `path` via `statvfs`.
 /// Returns `None` on error (caller shows "—").
 #[must_use]
+#[allow(unsafe_code)]
 pub fn free_space(path: &Path) -> Option<(u64, u64)> {
     use std::os::unix::ffi::OsStrExt;
     let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
+    // SAFETY: `st` is a zeroed, owned `libc::statvfs` C struct; `c.as_ptr()` is
+    // a valid NUL-terminated path and `&mut st` is valid for the call duration.
     let mut st: libc::statvfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::statvfs(c.as_ptr(), &mut st) } != 0 {
         return None;

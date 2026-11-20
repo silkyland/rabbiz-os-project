@@ -86,6 +86,10 @@ pub fn run(cmd: &str, cwd: &Path, timeout: Option<Duration>) -> Result<RunOutcom
                 if deadline.is_some_and(|d| Instant::now() >= d) {
                     // pgid == child pid (setpgid in pre_exec): kills the
                     // whole group including `sh -c` grandchildren.
+                    // SAFETY: `child` has not been waited on yet so its PID is
+                    // still live (not recycled) and equals its own process
+                    // group ID from `setpgid(0, 0)` in `pre_exec`.
+                    #[allow(unsafe_code)]
                     unsafe {
                         libc::killpg(child.id() as libc::pid_t, libc::SIGKILL);
                     }
@@ -157,6 +161,10 @@ fn configure(c: &mut Command, cwd: &Path, timeout: Option<Duration>, sh_fallback
         // Own process group so the timeout path can killpg the whole tree.
         // Only applied for bounded runs; unbounded runs stay in our group
         // so Ctrl-C in `--cli run` reaches the child too.
+        // SAFETY: The closure runs between `fork` and `exec` and only invokes
+        // `libc::setpgid(0, 0)`, which is async-signal-safe and performs no
+        // allocations or locking.
+        #[allow(unsafe_code)]
         unsafe {
             c.pre_exec(|| {
                 libc::setpgid(0, 0);

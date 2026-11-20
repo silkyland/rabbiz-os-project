@@ -133,6 +133,7 @@ pub struct LocalTime {
 }
 
 #[must_use]
+#[allow(unsafe_code)]
 pub fn local_time(ts: i64) -> LocalTime {
     // SAFETY: `t` is a valid time_t; localtime_r writes into `tm` which we
     // own. tm_zone/tm_gmtoff are not read.
