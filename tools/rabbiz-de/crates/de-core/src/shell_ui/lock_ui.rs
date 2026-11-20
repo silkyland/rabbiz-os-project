@@ -12,6 +12,7 @@ use de_design::motion::{MotionKind, SpringPreset};
 use de_paint::animation::{AnimationClock, SpringValue};
 use de_ui::lock::{LockModel, QuickAction};
 use de_ui::nav::Screen;
+use de_ui::notification_groups::{redact_for_lockscreen, LockscreenPrivacy};
 
 use crate::state::De;
 
@@ -214,6 +215,15 @@ impl LockUi {
     }
 }
 
+/// Map `Prefs::lockscreen_notifications` string to [`LockscreenPrivacy`].
+fn lockscreen_privacy_from_pref(value: &str) -> LockscreenPrivacy {
+    match value {
+        "hide_sensitive" => LockscreenPrivacy::HideSensitive,
+        "hide_all" => LockscreenPrivacy::HideAll,
+        _ => LockscreenPrivacy::ShowAll,
+    }
+}
+
 impl De {
     /// Build the model + rasterize when stale. Returns the lock pixels.
     pub(crate) fn lock_prepare(&mut self, size: Size) -> Option<&Pixels> {
@@ -244,7 +254,11 @@ impl De {
         } else {
             ""
         };
-        let shown = self.panels.notifications.len().min(de_ui::lock::PREVIEW);
+        let privacy =
+            lockscreen_privacy_from_pref(self.app_prefs.prefs().lockscreen_notifications.as_str());
+        let redacted =
+            redact_for_lockscreen(&self.panels.notifications, privacy, "New notification");
+        let shown = redacted.len().min(de_ui::lock::PREVIEW);
         let quick = self
             .catalog
             .all()
@@ -264,8 +278,8 @@ impl De {
             clock: &status.clock,
             date: &date,
             charging,
-            notifications: &self.panels.notifications[..shown],
-            hidden_notifications: self.panels.notifications.len().saturating_sub(shown),
+            notifications: &redacted[..shown],
+            hidden_notifications: redacted.len().saturating_sub(shown),
             fingerprint: self.power.fp_present(),
             flashlight: self.panels.flashlight(),
             quick: quick.map(|(_, q)| q),
@@ -372,5 +386,25 @@ mod tests {
             l.advance(0.016, &clock, size);
         }
         assert!(!l.shown());
+    }
+
+    #[test]
+    fn lockscreen_privacy_maps_pref_strings() {
+        assert_eq!(
+            lockscreen_privacy_from_pref("hide_sensitive"),
+            LockscreenPrivacy::HideSensitive
+        );
+        assert_eq!(
+            lockscreen_privacy_from_pref("hide_all"),
+            LockscreenPrivacy::HideAll
+        );
+        assert_eq!(
+            lockscreen_privacy_from_pref("show_all"),
+            LockscreenPrivacy::ShowAll
+        );
+        assert_eq!(
+            lockscreen_privacy_from_pref("unknown"),
+            LockscreenPrivacy::ShowAll
+        );
     }
 }

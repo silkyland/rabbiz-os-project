@@ -3,10 +3,11 @@
 //! and on-demand pixel rasterization for `DisplayArea::Overlay`.
 
 use std::any::Any;
+use std::time::Instant;
 
 use de_api::{Pixels, Rect, Size};
 use de_design::tokens::{self, Theme};
-use de_ui::hun::{HunCandidate, HunContext, HunOutcome, HunState};
+use de_ui::hun::{HunCandidate, HunContext, HunOutcome, HunPriority, HunState};
 use de_ui::screens::hun_banner::{self, HunBannerModel};
 
 use crate::state::De;
@@ -76,7 +77,6 @@ impl HunFx {
     /// Evaluate the HUN gating policy and enqueue `data` if accepted.
     ///
     /// Returns `true` if the notification became active or was queued.
-    #[allow(dead_code)] // Wired from notification D-Bus daemon in a follow-up
     pub fn enqueue(
         &mut self,
         candidate: HunCandidate,
@@ -193,7 +193,56 @@ impl HunFx {
     }
 }
 
+/// Convert a D-Bus notification entry into HUN policy candidate + banner payload.
+pub(crate) fn entry_to_hun(
+    entry: &de_system::notifications::Entry,
+) -> (HunCandidate, HunBannerData) {
+    let priority = match entry.urgency {
+        de_system::notifications::Urgency::Low => HunPriority::Low,
+        de_system::notifications::Urgency::Normal => HunPriority::Normal,
+        de_system::notifications::Urgency::Critical => HunPriority::Critical,
+    };
+    let is_incoming_call = entry
+        .category
+        .as_deref()
+        .is_some_and(|c| c == "call.incoming" || c == "call");
+    let candidate = HunCandidate {
+        id: entry.id,
+        priority,
+        is_incoming_call,
+    };
+    let data = HunBannerData {
+        id: entry.id,
+        app: entry.app.clone(),
+        title: entry.title.clone(),
+        body: entry.body.clone(),
+        actions: entry
+            .actions
+            .iter()
+            .map(|a| (a.key.clone(), a.label.clone()))
+            .collect(),
+        critical: matches!(entry.urgency, de_system::notifications::Urgency::Critical),
+    };
+    (candidate, data)
+}
+
 impl De {
+    /// Enqueue a newly arrived notification entry into the HUN overlay controller.
+    pub(crate) fn hun_enqueue_entry(
+        &mut self,
+        entry: &de_system::notifications::Entry,
+        now: Instant,
+    ) -> bool {
+        let (candidate, data) = entry_to_hun(entry);
+        let ctx = HunContext {
+            dnd: self.app_prefs.prefs().do_not_disturb,
+            shade_open: self.panels.shown(),
+            locked: self.locked() || self.is_session_locked(),
+        };
+        let now_ms = self.uptime_ms(now);
+        self.hun_fx.enqueue(candidate, data, ctx, now_ms)
+    }
+
     /// Rasterize the active HUN banner when dirty.
     pub(crate) fn hun_prepare(&mut self, output: Size) {
         if let Some((px, _rect)) = self.hun_fx.take_render_pixels(&self.theme, output) {
@@ -209,7 +258,7 @@ impl De {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use de_ui::hun::{HunPriority, DEFAULT_TIMEOUT_MS};
+    use de_ui::hun::DEFAULT_TIMEOUT_MS;
 
     fn normal(id: u32) -> (HunCandidate, HunBannerData) {
         (

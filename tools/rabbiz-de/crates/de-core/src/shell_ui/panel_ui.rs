@@ -202,10 +202,14 @@ impl PanelUi {
 impl De {
     /// Called by the event-loop timer, never performs external I/O here.
     pub(crate) fn poll_panels(&mut self) {
+        let now = Instant::now();
+        if self.hun_fx.tick(self.uptime_ms(now)).is_some() {
+            self.needs_present = true;
+        }
         let state = self.panels.controls.snapshot();
         let (generation, entries) = self.panels.server.snapshot();
-        let changed =
-            self.panels.control_state != state || generation != self.panels.notification_generation;
+        let notifs_changed = generation != self.panels.notification_generation;
+        let changed = self.panels.control_state != state || notifs_changed;
         if !changed {
             return;
         }
@@ -223,7 +227,6 @@ impl De {
         }
         // Auto-rotation, GNSS/location, hotspot, recording and NFC stay
         // unavailable until their own providers expose a working contract.
-        let now = Instant::now();
         let lock_b = self.panels.slider_drag == Some(0)
             || self.panels.slider_lock_until[0].is_some_and(|t| now < t);
         let lock_v = self.panels.slider_drag == Some(1)
@@ -236,6 +239,15 @@ impl De {
         }
         self.panels.control_state = state;
         self.panels.notification_generation = generation;
+        if notifs_changed {
+            if let Some(top) = entries.first() {
+                if top.id != self.last_hun_notif_id {
+                    self.last_hun_notif_id = top.id;
+                    self.hun_enqueue_entry(top, now);
+                }
+            }
+            self.lock.stale = true;
+        }
         self.panels.notifications = entries
             .into_iter()
             .map(|e| Notification {

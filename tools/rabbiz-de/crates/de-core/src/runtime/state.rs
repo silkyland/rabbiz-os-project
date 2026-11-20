@@ -247,6 +247,8 @@ pub struct De {
     pub(crate) osd_fx: crate::osd_ui::OsdFx,
     /// Heads-up notification banner controller (`hun_ui.rs`).
     pub(crate) hun_fx: crate::hun_ui::HunFx,
+    /// Last notification ID forwarded to `hun_fx` (prevents duplicate enqueue).
+    pub(crate) last_hun_notif_id: u32,
     /// Pure app lifecycle & freeze-timer state machine (`de_system::lifecycle`).
     pub(crate) lifecycle: de_system::lifecycle::LifecycleManager,
     /// Output window insets (status/nav bars, cutout, active OSK height).
@@ -649,6 +651,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         shot_fx: crate::shot_ui::ShotFx::default(),
         osd_fx: crate::osd_ui::OsdFx::default(),
         hun_fx: crate::hun_ui::HunFx::default(),
+        last_hun_notif_id: 0,
         lifecycle: de_system::lifecycle::LifecycleManager::default(),
         insets: de_api::WindowInsets {
             system_bars: de_api::EdgeInsets::new(
