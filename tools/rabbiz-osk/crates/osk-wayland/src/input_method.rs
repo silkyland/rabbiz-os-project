@@ -16,9 +16,11 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::{
 
 use crate::app::App;
 
-/// evdev key codes for Backspace and Enter.
+/// evdev key codes for Backspace, Enter, and Left/Right cursor arrows.
 const KEY_BACKSPACE: u32 = 14;
 const KEY_ENTER: u32 = 28;
+const KEY_LEFT: u32 = 105;
+const KEY_RIGHT: u32 = 106;
 
 /// Minimal xkb keymap: the compositor needs one before it accepts key events.
 const KEYMAP: &str = r#"xkb_keymap {
@@ -69,8 +71,16 @@ impl App {
                         self.send_key(KEY_ENTER);
                     }
                 }
-                // Cursor moves and layout switches need no protocol request.
-                Command::MoveCursor(_) | Command::Layer(_) | Command::Language(_) => {}
+                Command::MoveCursor(delta) => {
+                    if !use_shell_bridge {
+                        let keycode = if delta < 0 { KEY_LEFT } else { KEY_RIGHT };
+                        for _ in 0..delta.unsigned_abs() {
+                            self.send_key(keycode);
+                        }
+                    }
+                }
+                // Layout switches need no protocol request.
+                Command::Layer(_) | Command::Language(_) => {}
             }
         }
         let _ = self.conn.flush();
@@ -193,6 +203,9 @@ impl Dispatch<ZwpInputMethodV2, ()> for App {
                 state
                     .keyboard
                     .set_purpose(InputPurpose::from_protocol(purpose.into()));
+                if !state.keyboard.privacy_policy().allow_clipboard_strip() {
+                    state.sheet = None;
+                }
                 state.sync_size();
                 state.draw();
             }

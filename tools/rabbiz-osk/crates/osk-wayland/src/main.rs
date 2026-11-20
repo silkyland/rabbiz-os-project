@@ -24,6 +24,7 @@ use std::time::Instant;
 
 use osk_core::gesture::GestureDetector;
 use osk_core::layout::Layout;
+use osk_core::scrub::SpacebarScrubber;
 use osk_core::state::Keyboard;
 use osk_render::{Renderer, Theme};
 
@@ -155,6 +156,8 @@ fn main() {
         done_count: 0,
         keyboard,
         gesture: GestureDetector::new(),
+        scrubber: SpacebarScrubber::new(),
+        space_touch: None,
         renderer: Renderer::new(),
         theme: load_theme(&theme_path()).unwrap_or_else(Theme::dark),
         active: false,
@@ -195,7 +198,10 @@ fn main() {
         let _ = app.conn.flush();
 
         // D-Bus compat + theme reload are polled (cheap: one atomic load per turn).
-        if app.clipboard_changed.swap(false, Ordering::SeqCst) && app.sheet.is_some() {
+        if app.clipboard_changed.swap(false, Ordering::SeqCst)
+            && app.sheet.is_some()
+            && app.keyboard.privacy_policy().allow_clipboard_strip()
+        {
             app.sheet = Some(app.clipboard.lock().map(|g| g.clone()).unwrap_or_default());
             app.draw();
         }

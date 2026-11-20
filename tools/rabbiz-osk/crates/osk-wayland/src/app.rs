@@ -5,6 +5,7 @@ use std::time::Instant;
 
 use osk_core::gesture::GestureDetector;
 use osk_core::layout::KeyPos;
+use osk_core::scrub::SpacebarScrubber;
 use osk_core::state::Keyboard;
 use osk_render::{Renderer, Theme};
 
@@ -41,6 +42,8 @@ pub(crate) struct App {
     pub(crate) done_count: u32,
     pub(crate) keyboard: Keyboard,
     pub(crate) gesture: GestureDetector,
+    pub(crate) scrubber: SpacebarScrubber,
+    pub(crate) space_touch: Option<(i32, KeyPos)>,
     pub(crate) renderer: Renderer,
     pub(crate) theme: Theme,
     pub(crate) active: bool,

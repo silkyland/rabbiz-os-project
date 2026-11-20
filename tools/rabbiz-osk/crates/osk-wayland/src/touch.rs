@@ -31,6 +31,9 @@ impl App {
         }
         match hit {
             Some(0) => {
+                if !self.keyboard.privacy_policy().allow_clipboard_strip() {
+                    return;
+                }
                 let items = self.clipboard.lock().map(|g| g.clone()).unwrap_or_default();
                 self.sheet = Some(items);
                 self.draw();
@@ -165,6 +168,11 @@ impl TouchHandler for App {
             return;
         }
         if let Some(items) = self.sheet.clone() {
+            if !self.keyboard.privacy_policy().allow_clipboard_strip() {
+                self.sheet = None;
+                self.draw();
+                return;
+            }
             for (index, item) in items.iter().enumerate() {
                 let rect = sheet_row_rect(index, self.keyboard.layout(), 1.0);
                 if pos.1 as f32 >= rect.y && pos.1 as f32 <= rect.y + rect.h {
@@ -189,6 +197,12 @@ impl TouchHandler for App {
             .keyboard
             .layout()
             .hit_test(&self.layer_name(), pos.0 as f32, pos.1 as f32);
+        if let Some(key) = hit {
+            if self.space_touch.is_none() && self.keyboard.is_space(key) {
+                self.space_touch = Some((id, key));
+                self.scrubber.on_down(pos.0 as f32);
+            }
+        }
         // Use our own monotonic clock: wl_touch timestamps come from the compositor and the
         // long-press/repeat tick in `GestureDetector` compares against `now_ms()`.
         let _ = time;
@@ -222,6 +236,18 @@ impl TouchHandler for App {
             }
             return;
         }
+        if let Some((sid, _)) = self.space_touch {
+            if sid == id {
+                let steps = self.scrubber.on_move(pos.0 as f32);
+                for step in steps {
+                    let commands = self.keyboard.space_swipe(step.delta());
+                    self.send_commands(commands);
+                }
+                if self.scrubber.is_scrubbing() {
+                    return;
+                }
+            }
+        }
         let hit = self
             .keyboard
             .layout()
@@ -250,6 +276,19 @@ impl TouchHandler for App {
             self.commit_alternate();
             self.gesture.cancel_all(self.now_ms());
             return;
+        }
+        if let Some((sid, space_key)) = self.space_touch {
+            if sid == id {
+                self.space_touch = None;
+                if self.scrubber.on_up() {
+                    let _ = self
+                        .gesture
+                        .handle(TouchEvent::cancel(id as u64, self.now_ms()), None);
+                    self.pressed.retain(|&p| p != space_key);
+                    self.draw();
+                    return;
+                }
+            }
         }
         let hit = self
             .keyboard
@@ -284,6 +323,8 @@ impl TouchHandler for App {
     fn cancel(&mut self, _: &Connection, _: &QueueHandle<Self>, _: &wl_touch::WlTouch) {
         self.touch_pos.clear();
         self.strip_touches.clear();
+        self.space_touch = None;
+        self.scrubber.reset();
         if self.alt.is_some() {
             self.alt = None;
             self.draw();

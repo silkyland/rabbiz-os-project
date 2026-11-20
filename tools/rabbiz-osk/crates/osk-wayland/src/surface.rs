@@ -59,16 +59,20 @@ impl App {
             items: &alt.items,
             selected: alt.selected,
         });
-        if let Some(items) = self.sheet.clone() {
-            let pixmap = self.renderer.render_sheet(
-                self.keyboard.layout(),
-                &self.theme,
-                1.0,
-                "Clipboard",
-                &items,
-            );
-            self.commit_pixmap(pixmap);
-            return;
+        if self.keyboard.privacy_policy().allow_clipboard_strip() {
+            if let Some(items) = self.sheet.clone() {
+                let pixmap = self.renderer.render_sheet(
+                    self.keyboard.layout(),
+                    &self.theme,
+                    1.0,
+                    "Clipboard",
+                    &items,
+                );
+                self.commit_pixmap(pixmap);
+                return;
+            }
+        } else {
+            self.sheet = None;
         }
         let suggestions = if self.keyboard.is_panel() {
             self.keyboard.strip_text().into_iter().collect::<Vec<_>>()
@@ -163,8 +167,11 @@ impl App {
         }
         self.visible = false;
         self.alt = None;
+        self.sheet = None;
         self.pressed.clear();
         self.strip_touches.clear();
+        self.space_touch = None;
+        self.scrubber.reset();
         let _ = self.gesture.cancel_all(self.now_ms());
         // Slide the surface below the screen edge and stop reserving space for it.
         self.layer.set_margin(0, 0, -(self.h as i32 + NAV_BAR_H), 0);
