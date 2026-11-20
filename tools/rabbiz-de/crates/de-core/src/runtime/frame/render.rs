@@ -51,6 +51,7 @@ pub(super) struct FrameParts<'a> {
     pub(super) navigation: &'a mut crate::navigation::Navigation,
     pub(super) lock: &'a mut crate::lock_ui::LockUi,
     pub(super) shot_fx: &'a mut crate::shot_ui::ShotFx,
+    pub(super) osd_fx: &'a mut crate::osd_ui::OsdFx,
     pub(super) power: &'a mut crate::power::Power,
     /// Draw the home screen from `home` layers instead of `shell_tex`.
     pub(super) layered: bool,
@@ -199,6 +200,10 @@ where
     let mut shot_els = Vec::new();
     push_shot::<R>(&mut shot_els, renderer, de.shot_fx, de.output, de.now);
     stack.extend_front_to_back(de_api::DisplayArea::Overlay, shot_els);
+
+    let mut osd_els = Vec::new();
+    push_osd::<R>(&mut osd_els, renderer, de.osd_fx, de.output, de.now);
+    stack.extend_front_to_back(de_api::DisplayArea::Overlay, osd_els);
 
     // Notification / Quick-Actions panels in Shade.
     let mut panel_els = Vec::new();
@@ -704,6 +709,47 @@ fn push_shot<R>(
                 Point::<i32, Physical>::from((0, 0)),
                 1.0,
                 1.0,
+                Kind::Unspecified,
+            )),
+        );
+    }
+}
+
+/// Volume / brightness OSD pill in `DisplayArea::Overlay`.
+fn push_osd<R>(
+    elements: &mut Vec<DeElement<R>>,
+    renderer: &mut R,
+    osd: &mut crate::osd_ui::OsdFx,
+    output: &de_backend::drm::OutputSelection,
+    now: Instant,
+) where
+    R: Renderer + ImportAll + ImportMem,
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    if !osd.active(now) {
+        osd.tex = None;
+        osd.tex_generation = u64::MAX;
+        return;
+    }
+    if osd.tex.is_none() || osd.tex_generation != osd.generation {
+        if let Some(px) = osd.px.as_ref() {
+            osd.tex = upload_any(renderer, px);
+            osd.tex_generation = osd.generation;
+        }
+    }
+    if let Some(tex) = texture_buffer::<R>(osd.tex.as_ref()) {
+        let r = crate::osd_ui::OsdFx::rect(de_api::Size::new(
+            output.width as i32,
+            output.height as i32,
+        ));
+        elements.insert(
+            0,
+            DeElement::from(TextureRenderElement::from_texture_buffer(
+                Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
+                tex,
+                Some(1.0),
+                None,
+                None,
                 Kind::Unspecified,
             )),
         );

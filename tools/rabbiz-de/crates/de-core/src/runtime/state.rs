@@ -243,6 +243,8 @@ pub struct De {
     pub(crate) lock: crate::lock_ui::LockUi,
     /// Screenshot flash + toast (`shot_ui.rs`).
     pub(crate) shot_fx: crate::shot_ui::ShotFx,
+    /// Transient volume / brightness OSD pill (`osd_ui.rs`).
+    pub(crate) osd_fx: crate::osd_ui::OsdFx,
     /// Output window insets (status/nav bars, cutout, active OSK height).
     pub insets: de_api::WindowInsets,
     /// Non-blocking runtime control IPC socket (`ctl_ipc.rs`).
@@ -641,6 +643,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         power: crate::power::Power::default(),
         lock: crate::lock_ui::LockUi::default(),
         shot_fx: crate::shot_ui::ShotFx::default(),
+        osd_fx: crate::osd_ui::OsdFx::default(),
         insets: de_api::WindowInsets {
             system_bars: de_api::EdgeInsets::new(
                 de_ui::chrome::STATUS_H,

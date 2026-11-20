@@ -270,6 +270,86 @@ mod tests {
     fn screenshot_defaults_save_to_true() {
         let req = decode_request(r#"{"id": 9, "cmd": "screenshot"}"#).expect("decode");
         assert_eq!(req.command, IpcCommand::Screenshot { save: true });
+        let req_no_save =
+            decode_request(r#"{"id": 10, "cmd": "screenshot", "save": false}"#).expect("decode");
+        assert_eq!(req_no_save.command, IpcCommand::Screenshot { save: false });
+    }
+
+    #[test]
+    fn show_osd_defaults_muted_and_supports_brightness() {
+        let vol =
+            decode_request(r#"{"id": 11, "cmd": "show_osd", "kind": "volume", "percent": 50}"#)
+                .expect("decode vol");
+        assert_eq!(
+            vol.command,
+            IpcCommand::ShowOsd {
+                kind: OsdKind::Volume,
+                percent: 50,
+                muted: false,
+            }
+        );
+        let br = decode_request(
+            r#"{"id": 12, "cmd": "show_osd", "kind": "brightness", "percent": 80, "muted": false}"#,
+        )
+        .expect("decode brightness");
+        assert_eq!(
+            br.command,
+            IpcCommand::ShowOsd {
+                kind: OsdKind::Brightness,
+                percent: 80,
+                muted: false,
+            }
+        );
+    }
+
+    #[test]
+    fn set_panel_covers_both_panels_and_directions() {
+        for (wire, panel, open) in [
+            (
+                r#"{"id": 1, "cmd": "set_panel", "panel": "notifications", "open": true}"#,
+                PanelKind::Notifications,
+                true,
+            ),
+            (
+                r#"{"id": 2, "cmd": "set_panel", "panel": "notifications", "open": false}"#,
+                PanelKind::Notifications,
+                false,
+            ),
+            (
+                r#"{"id": 3, "cmd": "set_panel", "panel": "quick", "open": true}"#,
+                PanelKind::Quick,
+                true,
+            ),
+            (
+                r#"{"id": 4, "cmd": "set_panel", "panel": "quick", "open": false}"#,
+                PanelKind::Quick,
+                false,
+            ),
+        ] {
+            let req = decode_request(wire).expect("decode set_panel");
+            assert_eq!(req.command, IpcCommand::SetPanel { panel, open });
+        }
+    }
+
+    #[test]
+    fn screenshot_and_panel_error_responses_roundtrip() {
+        let ok = IpcResponse::ok(
+            4,
+            Some(serde_json::json!({
+                "path": "/tmp/rabbiz-de-shot.png",
+                "width": 720,
+                "height": 1600,
+                "saved": false,
+            })),
+        );
+        let line = encode_response(&ok).expect("encode ok");
+        assert_eq!(decode_response(&line).expect("decode ok"), ok);
+
+        for code in ["panel_not_allowed", "no_frame_available"] {
+            let err = IpcResponse::err(7, code);
+            let line = encode_response(&err).expect("encode err");
+            assert_eq!(decode_response(&line).expect("decode err"), err);
+        }
     }
 
     #[test]

@@ -403,6 +403,18 @@ impl De {
         self.panel_released(0.0);
     }
 
+    pub(crate) fn panel_open(&mut self, kind: PanelKind) -> bool {
+        if !self.panel_allowed() {
+            return false;
+        }
+        self.panels.kind = kind;
+        self.panels.capture_pending = true;
+        self.panels.pull.open();
+        self.panels.last_tick = None;
+        self.panel_touch();
+        true
+    }
+
     pub(crate) fn panel_close(&mut self) {
         if self.panels.pull.shown() {
             self.panels.pull.close();

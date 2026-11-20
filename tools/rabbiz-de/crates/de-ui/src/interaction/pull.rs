@@ -119,6 +119,12 @@ impl Pull {
         open
     }
 
+    /// Animate open programmatically (IPC, keyboard shortcut).
+    pub fn open(&mut self) {
+        self.dragging = false;
+        self.spring.retarget(1.0);
+    }
+
     /// Animate shut (back gesture, tapping outside, Home).
     pub fn close(&mut self) {
         self.dragging = false;
@@ -228,5 +234,17 @@ mod tests {
         assert!(p.animating());
         settle(&mut p);
         assert!(!p.shown());
+    }
+
+    #[test]
+    fn open_animates_to_one() {
+        let mut p = Pull::new();
+        p.open();
+        assert!(p.shown());
+        assert!(p.wants_open());
+        assert!(p.animating());
+        settle(&mut p);
+        assert!(p.is_open());
+        assert!((p.frac() - 1.0).abs() < 1e-3);
     }
 }

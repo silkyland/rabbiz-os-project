@@ -140,29 +140,41 @@ fn parse_ctl<I: Iterator<Item = String>>(
             Ok(IpcCommand::Launch { desktop_id })
         }
         "screenshot" => {
-            let save = if it.peek().is_some_and(|s| s == "--no-save") {
-                it.next();
-                false
-            } else {
-                true
+            let save = match it.peek().map(String::as_str) {
+                Some("--no-save") => {
+                    it.next();
+                    false
+                }
+                Some("--save") => {
+                    it.next();
+                    true
+                }
+                _ => true,
             };
             Ok(IpcCommand::Screenshot { save })
         }
         "reload-theme" | "reload_theme" => Ok(IpcCommand::ReloadTheme),
         "panel" => {
-            let panel = match it
+            let first = it
                 .next()
-                .ok_or("ctl panel needs notifications|quick")?
-                .as_str()
-            {
-                "notifications" => PanelKind::Notifications,
-                "quick" => PanelKind::Quick,
-                other => return Err(format!("unknown panel '{other}'")),
-            };
-            let open = match it.next().ok_or("ctl panel needs open|close")?.as_str() {
-                "open" => true,
-                "close" => false,
-                other => return Err(format!("expected open|close, got '{other}'")),
+                .ok_or("ctl panel needs notifications|quick and open|close")?;
+            let second = it
+                .next()
+                .ok_or("ctl panel needs notifications|quick and open|close")?;
+            let (panel, open) = match (first.as_str(), second.as_str()) {
+                ("notifications", "open") | ("open", "notifications") => {
+                    (PanelKind::Notifications, true)
+                }
+                ("notifications", "close") | ("close", "notifications") => {
+                    (PanelKind::Notifications, false)
+                }
+                ("quick", "open") | ("open", "quick") => (PanelKind::Quick, true),
+                ("quick", "close") | ("close", "quick") => (PanelKind::Quick, false),
+                _ => {
+                    return Err(format!(
+                        "ctl panel expects notifications|quick and open|close, got '{first} {second}'"
+                    ));
+                }
             };
             Ok(IpcCommand::SetPanel { panel, open })
         }
@@ -176,7 +188,9 @@ fn parse_ctl<I: Iterator<Item = String>>(
                 .next()
                 .ok_or("ctl osd needs a percent (0..=100)")?
                 .parse()
-                .map_err(|_| "ctl osd percent must be 0..=255")?;
+                .ok()
+                .filter(|&p: &u8| p <= 100)
+                .ok_or("ctl osd percent must be 0..=100")?;
             let muted = if it.peek().is_some_and(|s| s == "--muted") {
                 it.next();
                 true
@@ -267,5 +281,51 @@ mod tests {
                 .command,
             Command::Ctl(IpcCommand::Screenshot { save: false })
         );
+        assert_eq!(
+            parse(argv(&["ctl", "screenshot"])).unwrap().command,
+            Command::Ctl(IpcCommand::Screenshot { save: true })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "screenshot", "--save"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::Screenshot { save: true })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "panel", "open", "notifications"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::SetPanel {
+                panel: PanelKind::Notifications,
+                open: true,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "panel", "close", "quick"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::SetPanel {
+                panel: PanelKind::Quick,
+                open: false,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "osd", "brightness", "45"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::ShowOsd {
+                kind: OsdKind::Brightness,
+                percent: 45,
+                muted: false,
+            })
+        );
+    }
+
+    #[test]
+    fn parse_ctl_rejects_invalid_args() {
+        assert!(parse(argv(&["ctl", "osd", "volume", "101"])).is_err());
+        assert!(parse(argv(&["ctl", "osd", "unknown", "50"])).is_err());
+        assert!(parse(argv(&["ctl", "panel", "quick"])).is_err());
+        assert!(parse(argv(&["ctl", "panel", "drawer", "open"])).is_err());
     }
 }

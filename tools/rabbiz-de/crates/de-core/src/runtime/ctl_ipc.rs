@@ -7,11 +7,11 @@ use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use de_api::Size;
 use de_config::ipc::{
-    decode_request, encode_response, socket_path, InsetSummary, IpcCommand, IpcResponse,
+    decode_request, encode_response, socket_path, InsetSummary, IpcCommand, IpcResponse, PanelKind,
     ShellStateSnapshot, WindowSummary, MAX_MESSAGE_BYTES,
 };
 
@@ -26,7 +26,10 @@ pub(crate) struct CtlIpc {
 impl CtlIpc {
     /// Bind the user-scoped control socket (`0600`), replacing any stale socket file.
     pub(crate) fn bind() -> Option<Self> {
-        let path = socket_path();
+        Self::bind_at(socket_path())
+    }
+
+    pub(crate) fn bind_at(path: PathBuf) -> Option<Self> {
         let _ = std::fs::remove_file(&path);
         let listener = match UnixListener::bind(&path) {
             Ok(l) => l,
@@ -131,6 +134,7 @@ impl De {
                 } else {
                     de_design::theme::persisted_mode().theme()
                 };
+                self.osd_fx.mark_stale();
                 self.shell_dirty = true;
                 self.needs_present = true;
                 IpcResponse::ok(id, None)
@@ -140,10 +144,61 @@ impl De {
                 self.needs_present = true;
                 IpcResponse::ok(id, None)
             }
-            IpcCommand::SetPanel { open: true, .. }
-            | IpcCommand::Screenshot { .. }
-            | IpcCommand::ShowOsd { .. } => IpcResponse::err(id, "not_implemented_yet"),
+            IpcCommand::SetPanel { panel, open: true } => {
+                if self.panel_open(map_panel_kind(panel)) {
+                    IpcResponse::ok(id, None)
+                } else {
+                    IpcResponse::err(id, "panel_not_allowed")
+                }
+            }
+            IpcCommand::ShowOsd {
+                kind,
+                percent,
+                muted,
+            } => {
+                self.osd_fx
+                    .show(kind, percent.min(100), muted, Instant::now());
+                self.needs_present = true;
+                IpcResponse::ok(id, None)
+            }
+            IpcCommand::Screenshot { save } => self.ctl_screenshot(id, save),
         }
+    }
+
+    fn ctl_screenshot(&mut self, id: u64, save: bool) -> IpcResponse {
+        let Some(px) = crate::composite::capture_output(self) else {
+            return IpcResponse::err(id, "no_frame_available");
+        };
+        let png = match de_paint::encode_png(&px) {
+            Ok(bytes) => bytes,
+            Err(e) => return IpcResponse::err(id, format!("encode_png: {e}")),
+        };
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_millis());
+        let path = screenshot_path(save, now_ms);
+        if let Some(parent) = path.parent() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return IpcResponse::err(id, format!("mkdir {}: {e}", parent.display()));
+            }
+        }
+        if let Err(e) = std::fs::write(&path, png) {
+            return IpcResponse::err(id, format!("write {}: {e}", path.display()));
+        }
+        let path_str = path.to_string_lossy().into_owned();
+        if save {
+            self.shot_fx.fire(&path_str, Instant::now());
+            self.needs_present = true;
+        }
+        IpcResponse::ok(
+            id,
+            Some(serde_json::json!({
+                "path": path_str,
+                "width": px.size.w,
+                "height": px.size.h,
+                "saved": save,
+            })),
+        )
     }
 
     fn ctl_state_snapshot(&self) -> ShellStateSnapshot {
@@ -186,5 +241,87 @@ impl De {
             },
             windows,
         }
+    }
+}
+
+fn map_panel_kind(panel: PanelKind) -> crate::panel_ui::PanelKind {
+    match panel {
+        PanelKind::Notifications => crate::panel_ui::PanelKind::Notifications,
+        PanelKind::Quick => crate::panel_ui::PanelKind::Quick,
+    }
+}
+
+/// Resolve the screenshot destination path:
+/// - `save == true`: `$XDG_PICTURES_DIR/Screenshots` (or `$HOME/Pictures/Screenshots`), timestamped PNG.
+/// - `save == false`: `$XDG_RUNTIME_DIR/rabbiz-de-shot.png` (ephemeral, does not pollute Pictures).
+fn screenshot_path(save: bool, timestamp_ms: u128) -> PathBuf {
+    if save {
+        let pictures = std::env::var_os("XDG_PICTURES_DIR")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| {
+                std::env::var_os("HOME")
+                    .filter(|v| !v.is_empty())
+                    .map(|h| PathBuf::from(h).join("Pictures"))
+            })
+            .unwrap_or_else(|| PathBuf::from("/tmp"));
+        pictures
+            .join("Screenshots")
+            .join(format!("Screenshot_{timestamp_ms}.png"))
+    } else {
+        let runtime = std::env::var_os("XDG_RUNTIME_DIR")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| PathBuf::from("/tmp"));
+        runtime.join("rabbiz-de-shot.png")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn panel_kind_maps_both_variants() {
+        assert_eq!(
+            map_panel_kind(PanelKind::Notifications),
+            crate::panel_ui::PanelKind::Notifications
+        );
+        assert_eq!(
+            map_panel_kind(PanelKind::Quick),
+            crate::panel_ui::PanelKind::Quick
+        );
+    }
+
+    #[test]
+    fn screenshot_paths_distinguish_saved_and_ephemeral() {
+        let saved = screenshot_path(true, 1_700_000_000_123);
+        assert!(saved.ends_with("Screenshots/Screenshot_1700000000123.png"));
+
+        let ephemeral = screenshot_path(false, 1_700_000_000_123);
+        assert!(ephemeral.ends_with("rabbiz-de-shot.png"));
+        assert_ne!(saved, ephemeral);
+    }
+
+    #[test]
+    fn bind_at_sets_mode_0600_and_removes_on_drop() {
+        let path = std::env::temp_dir().join(format!(
+            "rabbiz-de-ctl-test-{}-{}.sock",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos())
+        ));
+        {
+            let ipc = CtlIpc::bind_at(path.clone()).expect("bind_at");
+            let mode = std::fs::metadata(&path)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+            assert!(ipc.try_accept().is_none());
+        }
+        assert!(!path.exists(), "socket must be unlinked on Drop");
     }
 }
