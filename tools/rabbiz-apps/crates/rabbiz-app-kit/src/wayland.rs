@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::os::fd::AsRawFd;
 use std::time::{Duration, Instant};
 
+use crate::theme_watch::ThemeWatcher;
 use de_api::{Point, Size};
 use de_design::tokens::Theme;
 use de_paint::Canvas;
@@ -162,20 +163,27 @@ struct Runner<S: AppState> {
     touches: HashMap<i32, Point>,
     pointer_pos: Point,
     pointer_down: bool,
-    theme: Theme,
+    theme_watcher: ThemeWatcher,
     state: S,
     last_tick: Instant,
 }
 
 impl<S: AppState> Runner<S> {
+    fn poll_theme(&mut self) {
+        if self.theme_watcher.poll() {
+            self.dirty = true;
+        }
+    }
+
     fn draw(&mut self) {
         if !self.configured {
             return;
         }
         let w = self.w.max(1);
         let h = self.h.max(1);
-        let mut canvas = Canvas::filled(Size::new(w as i32, h as i32), self.theme.bg);
-        self.state.render(&mut canvas, &self.theme);
+        let theme = self.theme_watcher.current();
+        let mut canvas = Canvas::filled(Size::new(w as i32, h as i32), theme.bg);
+        self.state.render(&mut canvas, theme);
         let px = canvas.into_pixels();
 
         let stride = (w * 4) as i32;
@@ -256,24 +264,25 @@ pub fn run_app<S: AppState + 'static>(state: S) {
         touches: HashMap::new(),
         pointer_pos: Point::ZERO,
         pointer_down: false,
-        theme: crate::load_theme(),
+        theme_watcher: ThemeWatcher::new(),
         state,
         last_tick: Instant::now(),
     };
 
-    // While `animating` is set, `blocking_dispatch` would sleep until the next
-    // Wayland event and Tick animations would freeze between touches. Poll the
-    // connection fd with a bounded timeout instead so Tick keeps a steady
-    // cadence; idle apps still block as before.
+    // While `configured`, poll the Wayland connection fd with a bounded
+    // timeout: 8 ms during active animations so Tick keeps a steady cadence,
+    // and 500 ms while idle so live Dark/Light theme changes in `prefs.json`
+    // repaint even without incoming Wayland events.
     let backend = conn.backend();
     while !runner.quit {
-        if runner.animating && runner.configured {
+        if runner.configured {
+            let timeout_ms = if runner.animating { 8 } else { 500 };
             let mut pfd = libc::pollfd {
                 fd: backend.poll_fd().as_raw_fd(),
                 events: libc::POLLIN,
                 revents: 0,
             };
-            let _ = unsafe { libc::poll(&mut pfd, 1, 8) };
+            let _ = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
             if pfd.revents & libc::POLLIN != 0 {
                 let _ = queue.blocking_dispatch(&mut runner);
             } else {
@@ -288,6 +297,7 @@ pub fn run_app<S: AppState + 'static>(state: S) {
         if runner.animating {
             runner.dispatch_app(AppEvent::Tick(dt));
         }
+        runner.poll_theme();
         if runner.dirty && runner.configured {
             runner.draw();
         }
@@ -361,6 +371,7 @@ impl<S: AppState> WindowHandler for Runner<S> {
         let _ = self.pool.resize((self.w * self.h * 4 * 2) as usize);
         self.configured = true;
         self.dirty = true;
+        self.poll_theme();
         self.draw();
     }
 }
