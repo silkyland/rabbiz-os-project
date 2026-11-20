@@ -21,12 +21,17 @@ pub const ICON_PX: i32 = tokens::ICON_TILE_SIZE;
 /// Directories searched for themed icons, in priority order.
 fn icon_roots() -> Vec<PathBuf> {
     let mut v = Vec::new();
+    if let Some(h) = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from) {
+        v.push(h.join("icons"));
+    }
     if let Some(h) = std::env::var_os("HOME").map(PathBuf::from) {
         v.push(h.join(".local/share/icons"));
+        v.push(h.join(".local/share/flatpak/exports/share/icons"));
         v.push(h.join(".icons"));
     }
     v.push(PathBuf::from("/usr/share/icons"));
     v.push(PathBuf::from("/usr/local/share/icons"));
+    v.push(PathBuf::from("/var/lib/flatpak/exports/share/icons"));
     v.push(PathBuf::from("/usr/share/pixmaps"));
     v
 }

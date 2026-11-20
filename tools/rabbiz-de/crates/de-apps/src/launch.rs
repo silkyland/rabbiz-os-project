@@ -86,18 +86,7 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
 /// Find `<id>.desktop` in the application dirs and extract its `Exec`,
 /// falling back to the bare id as a command name.
 fn desktop_exec(desktop_id: &str) -> String {
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    if let Ok(home) = std::env::var("XDG_DATA_HOME") {
-        dirs.push(PathBuf::from(home).join("applications"));
-    } else if let Ok(home) = std::env::var("HOME") {
-        dirs.push(PathBuf::from(home).join(".local/share/applications"));
-    }
-    let data_dirs =
-        std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
-    for d in data_dirs.split(':') {
-        dirs.push(PathBuf::from(d).join("applications"));
-    }
-    for dir in dirs {
+    for dir in crate::catalog::applications_dirs() {
         let f = dir.join(format!("{desktop_id}.desktop"));
         if let Ok(text) = std::fs::read_to_string(&f) {
             if let Some(exec) = parse_desktop_exec(&text) {
@@ -125,11 +114,15 @@ fn parse_desktop_exec(text: &str) -> Option<String> {
     None
 }
 
-/// Remove freedesktop field codes (%f %F %u %U %i %c %k ...) per spec.
+/// Remove freedesktop field codes (%f %F %u %U %i %c %k ...) and Flatpak @@u / @@ markers per spec.
 fn strip_field_codes(exec: &str) -> String {
     let mut out = String::with_capacity(exec.len());
     for tok in exec.split_whitespace() {
-        if tok.starts_with('%') && tok.len() == 2 && tok != "%%" {
+        if (tok.starts_with('%') && tok.len() == 2 && tok != "%%")
+            || tok == "@@u"
+            || tok == "@@"
+            || tok == "--file-forwarding"
+        {
             continue;
         }
         if !out.is_empty() {

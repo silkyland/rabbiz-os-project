@@ -40,17 +40,14 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
         de_protocols::layer_shell::BELOW_WINDOWS.iter().rev(),
     );
 
-    // Same slot as the submitted element list: the bar sits behind app and
-    // shell content (in front only while a morph runs, which the dump does
-    // not reproduce).
-    let bar = de_ui::nav_bar::gesture_bar(canvas.size());
-    canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
-
     if matches!(de.foreground, Foreground::App)
         && de.morph.is_none()
         && de.space.elements().next().is_some()
     {
-        for window in de.space.elements().rev() {
+        // `Space::elements()` yields bottom-to-top (back-to-front), matching
+        // painter's-algorithm `canvas.blit()` so the topmost focused window
+        // paints last on top of any background windows.
+        for window in de.space.elements() {
             let loc = de.space.element_location(window).unwrap_or_default();
             let Some(surface) = window.wl_surface().map(std::borrow::Cow::into_owned) else {
                 continue;
@@ -101,6 +98,10 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
             }
         }
     }
+
+    // SystemBars: gesture bar sits above App/Shell and below ABOVE_WINDOWS/OSK/Panels.
+    let bar = de_ui::nav_bar::gesture_bar(canvas.size());
+    canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
 
     blit_layers(
         &mut canvas,

@@ -243,7 +243,7 @@ fn entry_from(de: &DesktopEntry, id: String, locales: &[String]) -> AppEntry {
     }
 }
 
-/// XDG `applications/` dirs in precedence order.
+/// XDG `applications/` dirs in precedence order (including Flatpak user & system exports).
 #[must_use]
 pub fn applications_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -252,10 +252,17 @@ pub fn applications_dirs() -> Vec<PathBuf> {
     } else if let Some(h) = std::env::var_os("HOME").map(PathBuf::from) {
         dirs.push(h.join(".local/share/applications"));
     }
+    if let Some(h) = std::env::var_os("HOME").map(PathBuf::from) {
+        dirs.push(h.join(".local/share/flatpak/exports/share/applications"));
+    }
     let data_dirs =
         std::env::var("XDG_DATA_DIRS").unwrap_or_else(|_| "/usr/local/share:/usr/share".into());
     for d in data_dirs.split(':').filter(|d| !d.is_empty()) {
         dirs.push(Path::new(d).join("applications"));
+    }
+    let sys_flatpak = PathBuf::from("/var/lib/flatpak/exports/share/applications");
+    if !dirs.contains(&sys_flatpak) {
+        dirs.push(sys_flatpak);
     }
     dirs
 }

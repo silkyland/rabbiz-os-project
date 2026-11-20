@@ -170,7 +170,7 @@ fn ensure_linux_backend_running(emu_addr: &str) {
             "-e",
             "HOME=/tmp/rabbiz-home",
             "-e",
-            "XDG_DATA_DIRS=/usr/local/share:/usr/share",
+            "XDG_DATA_DIRS=/usr/local/share:/usr/share:/var/lib/flatpak/exports/share",
             "rabbiz-de-build:arm64",
             "bash",
             "-c",
