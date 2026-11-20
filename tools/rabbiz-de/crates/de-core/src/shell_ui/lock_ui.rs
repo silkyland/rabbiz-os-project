@@ -5,12 +5,15 @@
 //! anything else springs it back.
 
 use std::any::Any;
-use std::time::Instant;
+use std::path::PathBuf;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use de_api::{Pixels, Point, Size};
 use de_design::motion::{MotionKind, SpringPreset};
 use de_paint::animation::{AnimationClock, SpringValue};
+use de_system::auth::{zeroize_secret, AuthOutcome, LockoutPolicy, PinCredential};
 use de_ui::lock::{LockModel, QuickAction};
+use de_ui::lock_bouncer::{BouncerHit, BouncerModel};
 use de_ui::nav::Screen;
 use de_ui::notification_groups::{redact_for_lockscreen, LockscreenPrivacy};
 
@@ -22,6 +25,54 @@ const UNLOCK_PX: f32 = 280.0;
 const FLICK_VY: f32 = -600.0;
 /// Fingerprint-fail shake duration.
 const SHAKE_MS: f32 = 600.0;
+/// Maximum numeric PIN length accepted by the bouncer keypad.
+const MAX_PIN_LEN: usize = 12;
+/// Whether the bouncer displays and hit-tests the Emergency Call pill.
+const EMERGENCY_AVAILABLE: bool = true;
+
+/// Result of dispatching a tap on the PIN bouncer surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BouncerTapOutcome {
+    Consumed,
+    Unlocked,
+    Emergency,
+    Cancelled,
+}
+
+fn now_epoch_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn keyguard_path() -> Option<PathBuf> {
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        if !xdg.is_empty() {
+            return Some(
+                PathBuf::from(xdg)
+                    .join("rabbiz-shell")
+                    .join("keyguard.json"),
+            );
+        }
+    }
+    let home = std::env::var("HOME").ok()?;
+    if home.is_empty() {
+        return None;
+    }
+    Some(
+        PathBuf::from(home)
+            .join(".config")
+            .join("rabbiz-shell")
+            .join("keyguard.json"),
+    )
+}
+
+fn load_pin_credential() -> Option<PinCredential> {
+    let path = keyguard_path()?;
+    let text = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str::<PinCredential>(&text).ok()
+}
 
 pub(crate) struct LockUi {
     /// The lock owns the screen (covering, mid-drag or mid-unlock).
@@ -43,12 +94,31 @@ pub(crate) struct LockUi {
     pub(crate) stale: bool,
     /// Clock string baked into the current raster — re-raster on change.
     baked_clock: String,
+    /// Cooldown seconds baked into the current bouncer raster — re-raster on change.
+    baked_cooldown: Option<u32>,
     /// fp-fail shake window.
     shake_since: Option<Instant>,
     /// Blurred wallpaper backdrop: `(wallpaper_id, size, pixels)`.
     backdrop: Option<(String, Size, Pixels)>,
     /// desktop-id behind the bottom-right action (camera or quick note).
     pub quick_id: Option<String>,
+    /// Whether the PIN credential bouncer is currently open over the lock screen.
+    pub bouncer_open: bool,
+    /// Entered ASCII PIN digits — always zeroized via `zeroize_secret` on submit,
+    /// cancel, lock, unlock, and drop.
+    pin_buf: Vec<u8>,
+    /// Transient error line shown above the PIN dot row.
+    bouncer_error: Option<String>,
+    /// Deterministic backoff/lockout policy for credential attempts.
+    pub lockout: LockoutPolicy,
+    /// Optional salted PIN credential loaded from `keyguard.json`.
+    pin_cred: Option<PinCredential>,
+}
+
+impl Drop for LockUi {
+    fn drop(&mut self) {
+        zeroize_secret(&mut self.pin_buf);
+    }
 }
 
 impl Default for LockUi {
@@ -66,9 +136,15 @@ impl Default for LockUi {
             last_anim: None,
             stale: true,
             baked_clock: String::new(),
+            baked_cooldown: None,
             shake_since: None,
             backdrop: None,
             quick_id: None,
+            bouncer_open: false,
+            pin_buf: Vec::new(),
+            bouncer_error: None,
+            lockout: LockoutPolicy::new(),
+            pin_cred: load_pin_credential(),
         }
     }
 }
@@ -100,8 +176,17 @@ impl LockUi {
         (self.slide_px() / UNLOCK_PX).clamp(0.0, 1.0)
     }
 
+    /// Whether swipe-up must open the PIN bouncer instead of unlocking immediately.
+    #[must_use]
+    pub fn requires_pin(&self, lock_method: &str) -> bool {
+        lock_method == "pin" && self.pin_cred.is_some()
+    }
+
     /// Show the lock (fresh raster; slide starts covered).
     pub fn open(&mut self) {
+        zeroize_secret(&mut self.pin_buf);
+        self.bouncer_open = false;
+        self.bouncer_error = None;
         self.locked = true;
         self.unlocking = false;
         self.dragging = false;
@@ -111,8 +196,11 @@ impl LockUi {
         self.stale = true;
     }
 
-    /// Drop the lock immediately (fingerprint unlock while covered).
+    /// Drop the lock immediately (fingerprint or verified PIN unlock).
     pub fn unlock_now(&mut self) {
+        zeroize_secret(&mut self.pin_buf);
+        self.bouncer_open = false;
+        self.bouncer_error = None;
         self.locked = false;
         self.unlocking = false;
         self.slide.retarget(0.0);
@@ -120,7 +208,7 @@ impl LockUi {
     }
 
     pub fn begin_drag(&mut self) {
-        if self.unlocking {
+        if self.unlocking || self.bouncer_open {
             return;
         }
         self.dragging = true;
@@ -130,7 +218,7 @@ impl LockUi {
 
     /// `dy` is the gesture delta in px (negative = up).
     pub fn drag(&mut self, dy: f32, h: f32) {
-        if self.unlocking {
+        if self.unlocking || self.bouncer_open {
             return;
         }
         if !self.dragging {
@@ -144,26 +232,114 @@ impl LockUi {
     /// Finger up: `vy` is the release velocity in px/s (negative = up).
     /// Judge the drag by `target` — during a pull only the target tracks
     /// the finger, so a fast release between frames still counts.
-    pub fn release(&mut self, vy: f32, h: f32) {
-        if self.unlocking {
+    ///
+    /// When `requires_pin(lock_method)` is true, completing the swipe-up opens
+    /// the PIN bouncer instead of unlocking immediately.
+    pub fn release(&mut self, vy: f32, h: f32, lock_method: &str) {
+        if self.unlocking || self.bouncer_open {
             return;
         }
         self.dragging = false;
         let pos = self.slide.value.max(self.slide.target);
         if pos > UNLOCK_PX || vy < FLICK_VY {
-            self.unlocking = true;
-            self.slide.retarget_with_velocity(h * 1.1, (-vy).max(0.0));
+            if self.requires_pin(lock_method) {
+                zeroize_secret(&mut self.pin_buf);
+                self.bouncer_open = true;
+                self.bouncer_error = None;
+                self.slide.retarget(0.0);
+                self.slide.snap();
+                self.stale = true;
+            } else {
+                self.unlocking = true;
+                self.slide.retarget_with_velocity(h * 1.1, (-vy).max(0.0));
+            }
         } else {
             self.slide.retarget(0.0);
         }
     }
 
     pub fn cancel_drag(&mut self) {
-        if self.unlocking {
+        if self.unlocking || self.bouncer_open {
             return;
         }
         self.dragging = false;
         self.slide.retarget(0.0);
+    }
+
+    /// Handle a tap on the PIN bouncer overlay.
+    pub(crate) fn handle_bouncer_tap(
+        &mut self,
+        pt: Point,
+        output: Size,
+        now_s: u64,
+    ) -> BouncerTapOutcome {
+        if !self.bouncer_open {
+            return BouncerTapOutcome::Consumed;
+        }
+        let dummy = Pixels::empty(Size::new(0, 0));
+        let model = BouncerModel {
+            entered_len: self.pin_buf.len(),
+            max_len: self.pin_buf.len().clamp(6, MAX_PIN_LEN),
+            error: self.bouncer_error.as_deref(),
+            cooldown_secs: self.lockout.cooldown_remaining(now_s),
+            emergency_available: EMERGENCY_AVAILABLE,
+            backdrop: &dummy,
+        };
+        let Some(hit) = de_ui::lock_bouncer::hit(output, pt, &model) else {
+            return BouncerTapOutcome::Consumed;
+        };
+        match hit {
+            BouncerHit::Digit(d) => {
+                if self.pin_buf.len() < MAX_PIN_LEN && d <= 9 {
+                    self.pin_buf.push(b'0' + d);
+                    self.bouncer_error = None;
+                    self.stale = true;
+                }
+                BouncerTapOutcome::Consumed
+            }
+            BouncerHit::Backspace => {
+                if self.pin_buf.pop().is_some() {
+                    self.stale = true;
+                }
+                BouncerTapOutcome::Consumed
+            }
+            BouncerHit::Cancel => {
+                zeroize_secret(&mut self.pin_buf);
+                self.bouncer_open = false;
+                self.bouncer_error = None;
+                self.stale = true;
+                BouncerTapOutcome::Cancelled
+            }
+            BouncerHit::Emergency => BouncerTapOutcome::Emergency,
+            BouncerHit::Submit => {
+                if self.pin_buf.is_empty() {
+                    return BouncerTapOutcome::Consumed;
+                }
+                let ok = self.pin_cred.as_ref().is_some_and(|cred| {
+                    std::str::from_utf8(&self.pin_buf).is_ok_and(|pin| cred.verify(pin))
+                });
+                zeroize_secret(&mut self.pin_buf);
+                match self.lockout.record_attempt(ok, now_s) {
+                    AuthOutcome::Accepted => {
+                        self.unlock_now();
+                        self.stale = true;
+                        BouncerTapOutcome::Unlocked
+                    }
+                    AuthOutcome::Rejected { attempts_remaining } => {
+                        self.bouncer_error = Some(format!(
+                            "Incorrect PIN ({attempts_remaining} attempts left)"
+                        ));
+                        self.stale = true;
+                        BouncerTapOutcome::Consumed
+                    }
+                    AuthOutcome::Cooldown { retry_after_secs } => {
+                        self.bouncer_error = Some(format!("Try again in {retry_after_secs}s"));
+                        self.stale = true;
+                        BouncerTapOutcome::Consumed
+                    }
+                }
+            }
+        }
     }
 
     /// fp-fail: jiggle the surface for a moment.
@@ -206,10 +382,7 @@ impl LockUi {
         if (self.unlocking || (!self.dragging && self.slide.target > size.h as f32))
             && self.slide.settled()
         {
-            self.locked = false;
-            self.unlocking = false;
-            self.slide.retarget(0.0);
-            self.slide.snap();
+            self.unlock_now();
         }
         !self.slide.settled() || self.shake_since.is_some()
     }
@@ -234,9 +407,15 @@ impl De {
         let wp_id = self.app_prefs.prefs().wallpaper_id.clone();
         let backdrop_fresh =
             matches!(&self.lock.backdrop, Some((id, s, _)) if *id == wp_id && *s == size);
+        let cooldown_secs = if self.lock.bouncer_open {
+            self.lock.lockout.cooldown_remaining(now_epoch_secs())
+        } else {
+            None
+        };
         if !self.lock.stale
             && backdrop_fresh
             && self.lock.baked_clock == status.clock
+            && self.lock.baked_cooldown == cooldown_secs
             && self.lock.px.is_some()
         {
             return self.lock.px.as_ref();
@@ -247,46 +426,62 @@ impl De {
             self.lock.backdrop = Some((wp_id, size, de_paint::glass::blurred_backdrop(&wp)));
         }
         let backdrop = self.lock.backdrop.as_ref().map(|(_, _, p)| p.clone())?;
-        let charging = if status.battery_full {
-            self.strings.get("lock.fully_charged")
-        } else if status.charging {
-            self.strings.get("lock.charging")
+        let px = if self.lock.bouncer_open {
+            let model = BouncerModel {
+                entered_len: self.lock.pin_buf.len(),
+                max_len: self.lock.pin_buf.len().clamp(6, MAX_PIN_LEN),
+                error: self.lock.bouncer_error.as_deref(),
+                cooldown_secs,
+                emergency_available: EMERGENCY_AVAILABLE,
+                backdrop: &backdrop,
+            };
+            de_ui::lock_bouncer::render(size, &self.theme, &model, &self.strings)
         } else {
-            ""
+            let charging = if status.battery_full {
+                self.strings.get("lock.fully_charged")
+            } else if status.charging {
+                self.strings.get("lock.charging")
+            } else {
+                ""
+            };
+            let privacy = lockscreen_privacy_from_pref(
+                self.app_prefs.prefs().lockscreen_notifications.as_str(),
+            );
+            let redacted =
+                redact_for_lockscreen(&self.panels.notifications, privacy, "New notification");
+            let shown = redacted.len().min(de_ui::lock::PREVIEW);
+            let quick = self
+                .catalog
+                .all()
+                .iter()
+                .find(|a| {
+                    a.id.contains("camera") || a.exec.as_deref().unwrap_or("").contains("camera")
+                })
+                .map(|a| (a.id.clone(), QuickAction::Camera))
+                .or_else(|| {
+                    self.catalog
+                        .all()
+                        .iter()
+                        .find(|a| a.id.contains("note") || a.id.contains("editor"))
+                        .map(|a| (a.id.clone(), QuickAction::Note))
+                });
+            self.lock.quick_id = quick.as_ref().map(|(id, _)| id.clone());
+            let model = LockModel {
+                status: &status,
+                clock: &status.clock,
+                date: &date,
+                charging,
+                notifications: &redacted[..shown],
+                hidden_notifications: redacted.len().saturating_sub(shown),
+                fingerprint: self.power.fp_present(),
+                flashlight: self.panels.flashlight(),
+                quick: quick.map(|(_, q)| q),
+                backdrop: &backdrop,
+            };
+            de_ui::lock::render(size, &self.strings, &self.theme, &model)
         };
-        let privacy =
-            lockscreen_privacy_from_pref(self.app_prefs.prefs().lockscreen_notifications.as_str());
-        let redacted =
-            redact_for_lockscreen(&self.panels.notifications, privacy, "New notification");
-        let shown = redacted.len().min(de_ui::lock::PREVIEW);
-        let quick = self
-            .catalog
-            .all()
-            .iter()
-            .find(|a| a.id.contains("camera") || a.exec.as_deref().unwrap_or("").contains("camera"))
-            .map(|a| (a.id.clone(), QuickAction::Camera))
-            .or_else(|| {
-                self.catalog
-                    .all()
-                    .iter()
-                    .find(|a| a.id.contains("note") || a.id.contains("editor"))
-                    .map(|a| (a.id.clone(), QuickAction::Note))
-            });
-        self.lock.quick_id = quick.as_ref().map(|(id, _)| id.clone());
-        let model = LockModel {
-            status: &status,
-            clock: &status.clock,
-            date: &date,
-            charging,
-            notifications: &redacted[..shown],
-            hidden_notifications: redacted.len().saturating_sub(shown),
-            fingerprint: self.power.fp_present(),
-            flashlight: self.panels.flashlight(),
-            quick: quick.map(|(_, q)| q),
-            backdrop: &backdrop,
-        };
-        let px = de_ui::lock::render(size, &self.strings, &self.theme, &model);
         self.lock.baked_clock = status.clock;
+        self.lock.baked_cooldown = cooldown_secs;
         self.lock.px = Some(px);
         self.lock.generation += 1;
         self.lock.stale = false;
@@ -312,13 +507,49 @@ impl De {
         self.needs_present = true;
     }
 
-    /// Frame deadline while the lock overlay moves (drag settle, shake).
-    pub(crate) fn lock_wake_at(&self, interval: std::time::Duration) -> Option<Instant> {
-        (self.lock.shown() && self.lock.animating()).then(|| Instant::now() + interval)
+    /// Frame deadline while the lock overlay moves (drag settle, shake) or a
+    /// bouncer cooldown countdown is ticking.
+    pub(crate) fn lock_wake_at(&self, interval: Duration) -> Option<Instant> {
+        if !self.lock.shown() {
+            return None;
+        }
+        if self.lock.animating() {
+            return Some(Instant::now() + interval);
+        }
+        if self.lock.bouncer_open
+            && self
+                .lock
+                .lockout
+                .cooldown_remaining(now_epoch_secs())
+                .is_some()
+        {
+            return Some(Instant::now() + Duration::from_secs(1));
+        }
+        None
     }
 
-    /// Lock-screen tap: bottom-row actions only; everything else is a drag.
+    /// Dispatch a tap on the PIN bouncer overlay.
+    pub(crate) fn lock_bouncer_tap(&mut self, pos: Point) {
+        let size = Size::new(self.output.width as i32, self.output.height as i32);
+        match self.lock.handle_bouncer_tap(pos, size, now_epoch_secs()) {
+            BouncerTapOutcome::Unlocked => {
+                self.shell_dirty = true;
+                self.needs_present = true;
+            }
+            BouncerTapOutcome::Consumed
+            | BouncerTapOutcome::Cancelled
+            | BouncerTapOutcome::Emergency => {
+                self.needs_present = true;
+            }
+        }
+    }
+
+    /// Lock-screen tap: bouncer controls when open, otherwise bottom-row actions.
     pub(crate) fn lock_tap(&mut self, pos: Point) {
+        if self.lock.bouncer_open {
+            self.lock_bouncer_tap(pos);
+            return;
+        }
         let size = Size::new(self.output.width as i32, self.output.height as i32);
         match de_ui::lock::lock_hit(size, pos) {
             Some(de_ui::lock::LockHit::Flashlight) => {
@@ -345,6 +576,27 @@ impl De {
 mod tests {
     use super::*;
 
+    fn find_bouncer_target(size: Size, target: BouncerHit) -> Point {
+        let dummy = Pixels::empty(Size::new(0, 0));
+        let model = BouncerModel {
+            entered_len: 0,
+            max_len: 6,
+            error: None,
+            cooldown_secs: None,
+            emergency_available: EMERGENCY_AVAILABLE,
+            backdrop: &dummy,
+        };
+        for y in (0..size.h).step_by(12) {
+            for x in (0..size.w).step_by(12) {
+                let pt = Point::new(x, y);
+                if de_ui::lock_bouncer::hit(size, pt, &model) == Some(target) {
+                    return pt;
+                }
+            }
+        }
+        panic!("bouncer hit target {target:?} not found on {size:?}");
+    }
+
     #[test]
     fn short_drag_springs_back_long_drag_unlocks() {
         let mut l = LockUi::default();
@@ -353,7 +605,7 @@ mod tests {
         l.open();
         l.begin_drag();
         l.drag(-100.0, 1600.0);
-        l.release(0.0, 1600.0);
+        l.release(0.0, 1600.0, "swipe");
         for _ in 0..120 {
             l.advance(0.016, &clock, size);
         }
@@ -361,7 +613,7 @@ mod tests {
 
         l.begin_drag();
         l.drag(-400.0, 1600.0);
-        l.release(0.0, 1600.0);
+        l.release(0.0, 1600.0, "swipe");
         for _ in 0..240 {
             l.advance(0.016, &clock, size);
         }
@@ -376,7 +628,7 @@ mod tests {
         l.open();
         l.begin_drag();
         l.drag(-400.0, 1600.0);
-        l.release(-800.0, 1600.0);
+        l.release(-800.0, 1600.0, "swipe");
         assert!(l.is_unlocking());
         // Swiping down or cancelling mid-unlock must not bring the lock back.
         l.begin_drag();
@@ -386,6 +638,118 @@ mod tests {
             l.advance(0.016, &clock, size);
         }
         assert!(!l.shown());
+    }
+
+    #[test]
+    fn swipe_mode_unlocks_immediately_without_bouncer() {
+        let mut l = LockUi::default();
+        l.pin_cred = Some(PinCredential::create("1234", [0x22_u8; 16], 16));
+        let clock = AnimationClock::new();
+        let size = Size::new(720, 1600);
+        assert!(!l.requires_pin("swipe"));
+
+        l.open();
+        l.begin_drag();
+        l.drag(-400.0, 1600.0);
+        l.release(0.0, 1600.0, "swipe");
+        assert!(!l.bouncer_open);
+        assert!(l.is_unlocking());
+        for _ in 0..240 {
+            l.advance(0.016, &clock, size);
+        }
+        assert!(!l.shown());
+    }
+
+    #[test]
+    fn pin_mode_requires_bouncer_wrong_right_and_cancel() {
+        let size = Size::new(720, 1600);
+        let mut l = LockUi::default();
+        l.pin_cred = Some(PinCredential::create("1234", [0x42_u8; 16], 16));
+        assert!(l.requires_pin("pin"));
+
+        // Swipe up opens bouncer instead of unlocking immediately.
+        l.open();
+        l.begin_drag();
+        l.drag(-400.0, 1600.0);
+        l.release(0.0, 1600.0, "pin");
+        assert!(l.shown());
+        assert!(l.bouncer_open);
+        assert!(!l.is_unlocking());
+        assert!(l.slide_px() < 1.0);
+
+        let submit = find_bouncer_target(size, BouncerHit::Submit);
+        let backspace = find_bouncer_target(size, BouncerHit::Backspace);
+        let cancel = find_bouncer_target(size, BouncerHit::Cancel);
+        let emergency = find_bouncer_target(size, BouncerHit::Emergency);
+        let digit = |d: u8| find_bouncer_target(size, BouncerHit::Digit(d));
+
+        // Wrong PIN increments lockout, sets error, and zeroizes pin_buf.
+        for d in [9_u8, 9, 9, 9] {
+            assert_eq!(
+                l.handle_bouncer_tap(digit(d), size, 1_000),
+                BouncerTapOutcome::Consumed
+            );
+        }
+        assert_eq!(l.pin_buf.len(), 4);
+        assert_eq!(
+            l.handle_bouncer_tap(submit, size, 1_000),
+            BouncerTapOutcome::Consumed
+        );
+        assert!(l.pin_buf.is_empty());
+        assert!(l.shown() && l.bouncer_open);
+        assert_eq!(l.lockout.state().consecutive_failures, 1);
+        assert!(l.bouncer_error.is_some());
+
+        // Emergency button returns Emergency without closing bouncer.
+        assert_eq!(
+            l.handle_bouncer_tap(emergency, size, 1_001),
+            BouncerTapOutcome::Emergency
+        );
+        assert!(l.bouncer_open);
+
+        // Entering digits + Backspace + Cancel closes bouncer and zeroizes buffer.
+        assert_eq!(
+            l.handle_bouncer_tap(digit(1), size, 1_001),
+            BouncerTapOutcome::Consumed
+        );
+        assert_eq!(
+            l.handle_bouncer_tap(digit(5), size, 1_001),
+            BouncerTapOutcome::Consumed
+        );
+        assert_eq!(l.pin_buf.len(), 2);
+        assert_eq!(
+            l.handle_bouncer_tap(backspace, size, 1_001),
+            BouncerTapOutcome::Consumed
+        );
+        assert_eq!(l.pin_buf.len(), 1);
+        assert_eq!(
+            l.handle_bouncer_tap(cancel, size, 1_002),
+            BouncerTapOutcome::Cancelled
+        );
+        assert!(!l.bouncer_open);
+        assert!(l.pin_buf.is_empty());
+        assert!(l.shown());
+
+        // Re-open bouncer via swipe-up, enter right PIN -> unlocks and resets lockout.
+        l.begin_drag();
+        l.drag(-400.0, 1600.0);
+        l.release(0.0, 1600.0, "pin");
+        assert!(l.bouncer_open);
+        for d in [1_u8, 2, 3, 4] {
+            assert_eq!(
+                l.handle_bouncer_tap(digit(d), size, 1_005),
+                BouncerTapOutcome::Consumed
+            );
+        }
+        assert_eq!(
+            l.handle_bouncer_tap(submit, size, 1_005),
+            BouncerTapOutcome::Unlocked
+        );
+        assert!(!l.shown());
+        assert!(!l.bouncer_open);
+        assert!(l.pin_buf.is_empty());
+        assert_eq!(l.lockout.state().consecutive_failures, 0);
+        assert!(l.lockout.state().bfu_unlocked);
     }
 
     #[test]

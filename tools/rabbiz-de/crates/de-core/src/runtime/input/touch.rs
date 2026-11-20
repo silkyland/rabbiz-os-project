@@ -27,6 +27,11 @@ impl De {
             self.touch_claimed = true;
             return;
         }
+        // PIN bouncer owns every touch while open (unless power menu floats above it).
+        if self.lock.shown() && self.lock.bouncer_open && !self.power.menu_over_lock {
+            self.touch_claimed = true;
+            return;
+        }
         // Floating HUN banner sits in DisplayArea::Overlay above apps/shell.
         if !self.locked() && !self.is_session_locked() {
             let out = de_api::Size::new(self.output.width as i32, self.output.height as i32);
@@ -120,6 +125,9 @@ impl De {
         if self.sleeping() {
             return;
         }
+        if self.lock.shown() && self.lock.bouncer_open && !self.power.menu_over_lock {
+            return;
+        }
         if self
             .hun_fx
             .on_touch_motion(i32::from(evt.slot()), api_point(pos))
@@ -154,6 +162,11 @@ impl De {
             self.sleep_touch_up();
             self.touch_claimed = true;
             self.needs_present = true;
+            return;
+        }
+        if self.lock.shown() && self.lock.bouncer_open && !self.power.menu_over_lock {
+            self.touch_claimed = false;
+            self.lock_bouncer_tap(api_point(pos));
             return;
         }
         let out = de_api::Size::new(self.output.width as i32, self.output.height as i32);
@@ -202,6 +215,10 @@ impl De {
         if self.sleeping() {
             self.sleep_touch_cancel();
             self.touch_claimed = true;
+            return;
+        }
+        if self.lock.shown() && self.lock.bouncer_open && !self.power.menu_over_lock {
+            self.touch_claimed = false;
             return;
         }
         let now_ms = self.uptime_ms(std::time::Instant::now());

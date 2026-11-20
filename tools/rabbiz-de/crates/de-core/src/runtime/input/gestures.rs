@@ -390,7 +390,8 @@ impl De {
                 }
             }
             GestureEvent::Released { vy, .. } | GestureEvent::NavReleased { vy, .. } => {
-                self.lock.release(vy, h);
+                let method = self.app_prefs.prefs().lock_method.clone();
+                self.lock.release(vy, h, &method);
                 self.power_menu_release();
             }
             GestureEvent::Cancelled => {
