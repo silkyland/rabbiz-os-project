@@ -7,3 +7,4 @@ pub mod nav;
 pub mod pager;
 pub mod pull;
 pub mod transitions;
+pub mod universal_search;
