@@ -60,6 +60,8 @@ impl XdgShellHandler for De {
     }
 
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
+        let app_id = crate::snapshots::window_app_id(&surface);
+        self.lifecycle_on_exited(&app_id);
         let n = self.space.elements().count();
         let window = self
             .space

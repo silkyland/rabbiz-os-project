@@ -217,6 +217,12 @@ impl Run {
             self.de.needs_present = true;
         }
         self.de.osd_prepare(t0);
+        let now_ms = self.de.uptime_ms(t0);
+        self.de.lifecycle_tick(now_ms);
+        if self.de.hun_fx.tick(now_ms).is_some() {
+            self.de.needs_present = true;
+        }
+        self.de.hun_prepare(size);
         // Shell surface: re-raster on dirty or when the clock minute rolls.
         let minute = minute_of_day();
         // While the pager moves the home screen is drawn from layers (see
@@ -263,6 +269,7 @@ impl Run {
             lock,
             shot_fx,
             osd_fx,
+            hun_fx,
             power,
             pointer,
             pointer_active,
@@ -289,6 +296,7 @@ impl Run {
             lock,
             shot_fx,
             osd_fx,
+            hun_fx,
             power,
             pointer,
             pointer_active: *pointer_active,

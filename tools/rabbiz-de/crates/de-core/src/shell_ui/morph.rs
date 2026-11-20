@@ -266,6 +266,9 @@ impl De {
 
     pub(crate) fn first_app_frame(&mut self, window: Window) {
         let app_id = window.toplevel().map(crate::snapshots::window_app_id);
+        if let Some(id) = app_id.as_deref() {
+            self.lifecycle_on_mapped(id);
+        }
         let launched = self.launch.on_toplevel_mapped(app_id.as_deref()).is_some();
         if let Some(morph) = self.morph.as_mut() {
             if launched && morph.phase == Phase::Opening && morph.window.is_none() {

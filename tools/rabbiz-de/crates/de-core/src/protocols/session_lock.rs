@@ -18,7 +18,6 @@ use crate::state::De;
 /// Enforces the Wayland protocol's fail-closed contract: if an external locker
 /// disconnects without calling `unlock_and_destroy`, the session MUST remain
 /// locked (`RecoveryRequired`) until built-in recovery authentication succeeds.
-#[allow(dead_code)] // Wired into De::session_lock_tracker in Phase 3
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LockOwner {
     /// No external session lock is active.
@@ -33,13 +32,11 @@ pub enum LockOwner {
 
 /// Pure state machine enforcing the `ext-session-lock-v1` single-lock and
 /// dead-locker fail-closed contract.
-#[allow(dead_code)] // Wired into De::session_lock_tracker in Phase 3
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SessionLockTracker {
     owner: LockOwner,
 }
 
-#[allow(dead_code)]
 impl SessionLockTracker {
     /// Create a tracker in the [`LockOwner::Unlocked`] state.
     #[must_use]
@@ -50,6 +47,7 @@ impl SessionLockTracker {
     }
 
     /// Current lock ownership state.
+    #[allow(dead_code)] // Read by recovery UI / diagnostics once wired
     #[must_use]
     pub const fn owner(&self) -> LockOwner {
         self.owner
@@ -80,6 +78,7 @@ impl SessionLockTracker {
     ///
     /// Fail-closed: transitions `ExternalActive -> RecoveryRequired` and never
     /// unlocks the session.
+    #[allow(dead_code)] // Triggered by client disconnect hook once wired
     pub fn on_external_client_died(&mut self) {
         if self.owner == LockOwner::ExternalActive {
             self.owner = LockOwner::RecoveryRequired;
@@ -89,6 +88,7 @@ impl SessionLockTracker {
     /// Record successful built-in recovery authentication (PIN/PAM).
     ///
     /// Transitions `RecoveryRequired -> Unlocked`.
+    #[allow(dead_code)] // Triggered by recovery bouncer once wired
     pub fn on_recovery_authenticated(&mut self) {
         if self.owner == LockOwner::RecoveryRequired {
             self.owner = LockOwner::Unlocked;
@@ -104,6 +104,7 @@ impl SessionLockTracker {
 
     /// Whether the built-in recovery bouncer must be presented because the
     /// external locker died without unlocking.
+    #[allow(dead_code)] // Read by recovery bouncer UI once wired
     #[must_use]
     pub const fn needs_recovery_bouncer(&self) -> bool {
         matches!(self.owner, LockOwner::RecoveryRequired)
@@ -116,20 +117,22 @@ impl SessionLockHandler for De {
     }
 
     fn lock(&mut self, confirmation: SessionLocker) {
-        if self.session_locked {
-            // Already locked by an external client — dropping `confirmation`
-            // sends `ext_session_lock_v1.finished` as required by the spec.
+        if !self.session_lock_tracker.request_lock() {
+            // Already locked by an external client (or awaiting fail-closed
+            // recovery) — dropping `confirmation` sends `ext_session_lock_v1.finished`
+            // as required by the spec.
             return;
         }
-        self.session_locked = true;
         self.power_lock();
         confirmation.lock();
         self.needs_present = true;
     }
 
     fn unlock(&mut self) {
-        self.session_locked = false;
-        self.lock.unlock_now();
+        self.session_lock_tracker.on_external_unlock();
+        if !self.session_lock_tracker.is_locked() {
+            self.lock.unlock_now();
+        }
         self.needs_present = true;
     }
 

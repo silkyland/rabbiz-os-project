@@ -126,8 +126,8 @@ pub struct De {
     #[allow(dead_code)]
     pub(crate) pointer_constraints_state: PointerConstraintsState,
     pub(crate) session_lock_state: SessionLockManagerState,
-    /// True while an external `ext-session-lock-v1` client holds the lock.
-    pub(crate) session_locked: bool,
+    /// Single-lock and fail-closed recovery tracker for `ext-session-lock-v1`.
+    pub(crate) session_lock_tracker: crate::protocols::session_lock::SessionLockTracker,
     /// Surfaces currently holding a `zwp_idle_inhibitor_v1` (`protocols/idle_inhibit.rs`).
     pub(crate) idle_inhibitors:
         Vec<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface>,
@@ -245,6 +245,10 @@ pub struct De {
     pub(crate) shot_fx: crate::shot_ui::ShotFx,
     /// Transient volume / brightness OSD pill (`osd_ui.rs`).
     pub(crate) osd_fx: crate::osd_ui::OsdFx,
+    /// Heads-up notification banner controller (`hun_ui.rs`).
+    pub(crate) hun_fx: crate::hun_ui::HunFx,
+    /// Pure app lifecycle & freeze-timer state machine (`de_system::lifecycle`).
+    pub(crate) lifecycle: de_system::lifecycle::LifecycleManager,
     /// Output window insets (status/nav bars, cutout, active OSK height).
     pub insets: de_api::WindowInsets,
     /// Non-blocking runtime control IPC socket (`ctl_ipc.rs`).
@@ -582,7 +586,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         relative_pointer_state,
         pointer_constraints_state,
         session_lock_state,
-        session_locked: false,
+        session_lock_tracker: crate::protocols::session_lock::SessionLockTracker::new(),
         idle_inhibitors: Vec::new(),
 
         seat,
@@ -644,6 +648,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         lock: crate::lock_ui::LockUi::default(),
         shot_fx: crate::shot_ui::ShotFx::default(),
         osd_fx: crate::osd_ui::OsdFx::default(),
+        hun_fx: crate::hun_ui::HunFx::default(),
+        lifecycle: de_system::lifecycle::LifecycleManager::default(),
         insets: de_api::WindowInsets {
             system_bars: de_api::EdgeInsets::new(
                 de_ui::chrome::STATUS_H,
@@ -691,4 +697,54 @@ impl De {
 
     /// Keep the keyboard LED state device-synced (no-op for the handset).
     pub fn update_led_state(&mut self, _leds: LedState) {}
+
+    /// Whether an external `ext-session-lock-v1` lock (or fail-closed recovery) is active.
+    #[must_use]
+    pub fn is_session_locked(&self) -> bool {
+        self.session_lock_tracker.is_locked()
+    }
+
+    /// Monotonic milliseconds elapsed since compositor startup.
+    #[must_use]
+    pub(crate) fn uptime_ms(&self, now: Instant) -> u64 {
+        now.saturating_duration_since(self.started).as_millis() as u64
+    }
+
+    /// Record a newly mapped toplevel in the app lifecycle state machine.
+    pub(crate) fn lifecycle_on_mapped(&mut self, app_id: &str) {
+        if app_id.is_empty() {
+            return;
+        }
+        let now_ms = self.uptime_ms(Instant::now());
+        if matches!(
+            self.lifecycle.state_of(app_id),
+            None | Some(de_system::lifecycle::AppState::Dead)
+        ) {
+            let launch_actions = self.lifecycle.on_launch(app_id, now_ms);
+            for action in launch_actions {
+                eprintln!("rabbiz-de: lifecycle {action:?}");
+            }
+        }
+        let actions = self.lifecycle.on_mapped(app_id, now_ms);
+        for action in actions {
+            eprintln!("rabbiz-de: lifecycle {action:?}");
+        }
+    }
+
+    /// Record a destroyed toplevel in the app lifecycle state machine.
+    pub(crate) fn lifecycle_on_exited(&mut self, app_id: &str) {
+        if app_id.is_empty() {
+            return;
+        }
+        self.lifecycle.on_exited(app_id);
+        eprintln!("rabbiz-de: lifecycle exited app_id={app_id}");
+    }
+
+    /// Advance background freeze timers in the app lifecycle state machine.
+    pub(crate) fn lifecycle_tick(&mut self, now_ms: u64) {
+        let actions = self.lifecycle.tick(now_ms);
+        for action in actions {
+            eprintln!("rabbiz-de: lifecycle {action:?}");
+        }
+    }
 }

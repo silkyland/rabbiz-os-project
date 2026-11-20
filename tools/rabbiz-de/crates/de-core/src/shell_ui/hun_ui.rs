@@ -1,14 +1,15 @@
-#![allow(dead_code)] // Wired into De::hun_fx and frame/render.rs in Phase 3
-
 //! Heads-Up Notification (HUN) compositor overlay controller: wraps
 //! [`de_ui::hun::HunState`] with owned banner data, cached GPU texture slot,
-//! and on-demand pixel rasterization for `DisplayArea::NotificationHun`.
+//! and on-demand pixel rasterization for `DisplayArea::Overlay`.
+
+use std::any::Any;
 
 use de_api::{Pixels, Rect, Size};
 use de_design::tokens::{self, Theme};
 use de_ui::hun::{HunCandidate, HunContext, HunOutcome, HunState};
 use de_ui::screens::hun_banner::{self, HunBannerModel};
-use smithay::backend::renderer::gles::GlesTexture;
+
+use crate::state::De;
 
 /// Owned notification payload displayed on a HUN banner.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,7 +41,11 @@ pub(crate) struct HunFx {
     state: HunState,
     active_model: Option<HunBannerData>,
     queued_models: Vec<HunBannerData>,
-    pub tex: Option<GlesTexture>,
+    pub px: Option<Pixels>,
+    pub tex: Option<Box<dyn Any>>,
+    /// Bumped on every re-raster — the frame loop uploads on change.
+    pub generation: u64,
+    pub tex_generation: u64,
     dirty: bool,
     pub top_inset: i32,
 }
@@ -59,7 +64,10 @@ impl HunFx {
             state: HunState::default(),
             active_model: None,
             queued_models: Vec::new(),
+            px: None,
             tex: None,
+            generation: 0,
+            tex_generation: u64::MAX,
             dirty: false,
             top_inset: tokens::STATUS_BAR_HEIGHT,
         }
@@ -68,6 +76,7 @@ impl HunFx {
     /// Evaluate the HUN gating policy and enqueue `data` if accepted.
     ///
     /// Returns `true` if the notification became active or was queued.
+    #[allow(dead_code)] // Wired from notification D-Bus daemon in a follow-up
     pub fn enqueue(
         &mut self,
         candidate: HunCandidate,
@@ -81,6 +90,7 @@ impl HunFx {
         if self.state.active().map(|a| a.id) == Some(candidate.id) {
             self.active_model = Some(data);
             self.dirty = true;
+            self.px = None;
             self.tex = None;
         } else if let Some(slot) = self.queued_models.iter_mut().find(|m| m.id == data.id) {
             *slot = data;
@@ -100,11 +110,13 @@ impl HunFx {
     }
 
     /// Pause (`held = true`) or resume (`held = false`) the auto-dismiss timer.
+    #[allow(dead_code)] // Wired from input/touch.rs in a follow-up
     pub fn set_touch_held(&mut self, held: bool, now_ms: u64) {
         self.state.set_touch_held(held, now_ms);
     }
 
     /// Swipe up on the active banner: snoozes the banner while keeping it in the shade.
+    #[allow(dead_code)] // Wired from input/touch.rs in a follow-up
     pub fn swipe_up(&mut self, now_ms: u64) -> Option<HunOutcome> {
         let outcome = self.state.swipe_up(now_ms);
         if outcome.is_some() {
@@ -114,6 +126,7 @@ impl HunFx {
     }
 
     /// Swipe left or right on the active banner: dismisses the notification completely.
+    #[allow(dead_code)] // Wired from input/touch.rs in a follow-up
     pub fn swipe_horizontal(&mut self, now_ms: u64) -> Option<HunOutcome> {
         let outcome = self.state.swipe_horizontal(now_ms);
         if outcome.is_some() {
@@ -163,6 +176,7 @@ impl HunFx {
     }
 
     fn sync_active_after_transition(&mut self) {
+        self.px = None;
         self.tex = None;
         if let Some(next_id) = self.state.active().map(|a| a.id) {
             if let Some(pos) = self.queued_models.iter().position(|m| m.id == next_id) {
@@ -175,6 +189,19 @@ impl HunFx {
         } else {
             self.active_model = None;
             self.dirty = false;
+        }
+    }
+}
+
+impl De {
+    /// Rasterize the active HUN banner when dirty.
+    pub(crate) fn hun_prepare(&mut self, output: Size) {
+        if let Some((px, _rect)) = self.hun_fx.take_render_pixels(&self.theme, output) {
+            self.hun_fx.px = Some(px);
+            self.hun_fx.generation = self.hun_fx.generation.wrapping_add(1);
+        } else if !self.hun_fx.is_visible() {
+            self.hun_fx.px = None;
+            self.hun_fx.tex = None;
         }
     }
 }

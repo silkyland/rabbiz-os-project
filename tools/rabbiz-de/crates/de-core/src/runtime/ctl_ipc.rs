@@ -107,7 +107,7 @@ impl De {
     }
 
     fn dispatch_ctl(&mut self, id: u64, cmd: IpcCommand) -> IpcResponse {
-        if (self.locked() || self.session_locked) && !command_allowed_while_locked(&cmd) {
+        if (self.locked() || self.is_session_locked()) && !command_allowed_while_locked(&cmd) {
             return IpcResponse::err(id, "device_locked");
         }
         match cmd {
@@ -138,6 +138,7 @@ impl De {
                     de_design::theme::persisted_mode().theme()
                 };
                 self.osd_fx.mark_stale();
+                self.hun_fx.mark_stale();
                 self.shell_dirty = true;
                 self.needs_present = true;
                 IpcResponse::ok(id, None)
