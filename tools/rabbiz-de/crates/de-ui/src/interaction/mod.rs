@@ -1,6 +1,7 @@
 //! Interaction, navigation, gesture, motion, and localization primitives.
 
 pub mod gestures;
+pub mod hun;
 pub mod i18n;
 pub mod nav;
 pub mod pager;

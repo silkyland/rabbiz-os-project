@@ -7,8 +7,8 @@ pub mod screens;
 
 // Re-export module paths at crate root so internal and downstream imports stay concise.
 pub use chrome::{menu, nav_bar};
-pub use interaction::{gestures, i18n, nav, pager, pull, transitions};
+pub use interaction::{gestures, hun, i18n, nav, pager, pull, transitions};
 pub use screens::{
-    boot, drawer, error, first_run, home, launch_morph, lock, osd, panels, power, qs, recents,
-    screenshot, search, settings, shade, status,
+    boot, drawer, error, first_run, home, launch_morph, lock, lock_bouncer, notification_groups,
+    osd, panels, power, qs, recents, screenshot, search, settings, shade, status,
 };

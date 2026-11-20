@@ -107,6 +107,9 @@ impl De {
     }
 
     fn dispatch_ctl(&mut self, id: u64, cmd: IpcCommand) -> IpcResponse {
+        if (self.locked() || self.session_locked) && !command_allowed_while_locked(&cmd) {
+            return IpcResponse::err(id, "device_locked");
+        }
         match cmd {
             IpcCommand::GetState => {
                 let snap = self.ctl_state_snapshot();
@@ -244,6 +247,20 @@ impl De {
     }
 }
 
+/// Commands permitted over the runtime control socket while Keyguard or
+/// `ext-session-lock-v1` is active (`docs/DE-KEYGUARD-AUTH.md` §2.4).
+#[must_use]
+fn command_allowed_while_locked(cmd: &IpcCommand) -> bool {
+    matches!(
+        cmd,
+        IpcCommand::GetState
+            | IpcCommand::Lock
+            | IpcCommand::ReloadTheme
+            | IpcCommand::ShowOsd { .. }
+            | IpcCommand::SetPanel { open: false, .. }
+    )
+}
+
 fn map_panel_kind(panel: PanelKind) -> crate::panel_ui::PanelKind {
     match panel {
         PanelKind::Notifications => crate::panel_ui::PanelKind::Notifications,
@@ -301,6 +318,48 @@ mod tests {
         let ephemeral = screenshot_path(false, 1_700_000_000_123);
         assert!(ephemeral.ends_with("rabbiz-de-shot.png"));
         assert_ne!(saved, ephemeral);
+    }
+
+    #[test]
+    fn lock_guard_blocks_sensitive_commands_while_locked() {
+        use de_config::ipc::OsdKind;
+
+        // Allowed while locked: state query, re-lock, theme reload, OSD, and panel close.
+        assert!(command_allowed_while_locked(&IpcCommand::GetState));
+        assert!(command_allowed_while_locked(&IpcCommand::Lock));
+        assert!(command_allowed_while_locked(&IpcCommand::ReloadTheme));
+        assert!(command_allowed_while_locked(&IpcCommand::ShowOsd {
+            kind: OsdKind::Volume,
+            percent: 50,
+            muted: false,
+        }));
+        assert!(command_allowed_while_locked(&IpcCommand::SetPanel {
+            panel: PanelKind::Notifications,
+            open: false,
+        }));
+        assert!(command_allowed_while_locked(&IpcCommand::SetPanel {
+            panel: PanelKind::Quick,
+            open: false,
+        }));
+
+        // Blocked while locked: launching apps, taking screenshots, opening panels.
+        assert!(!command_allowed_while_locked(&IpcCommand::Launch {
+            desktop_id: "org.example.app".to_string(),
+        }));
+        assert!(!command_allowed_while_locked(&IpcCommand::Screenshot {
+            save: true,
+        }));
+        assert!(!command_allowed_while_locked(&IpcCommand::Screenshot {
+            save: false,
+        }));
+        assert!(!command_allowed_while_locked(&IpcCommand::SetPanel {
+            panel: PanelKind::Notifications,
+            open: true,
+        }));
+        assert!(!command_allowed_while_locked(&IpcCommand::SetPanel {
+            panel: PanelKind::Quick,
+            open: true,
+        }));
     }
 
     #[test]
