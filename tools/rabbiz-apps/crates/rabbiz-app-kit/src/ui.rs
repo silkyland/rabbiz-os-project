@@ -76,9 +76,32 @@ pub fn draw_centered(c: &mut Canvas, s: &str, st: &text::LabelStyle, r: Rect) {
     if let Some(px) = text::label(s, *st, Some((r.w - 8).max(16))) {
         let w = px.width() as i32;
         let h = px.height() as i32;
+        let (x0, y0, x1, y1) = text::ink_bounds(&px).unwrap_or((0, 0, w, h));
+        let dx = r.x + (r.w - (x1 - x0)) / 2 - x0;
+        let dy = r.y + (r.h - (y1 - y0)) / 2 - y0;
         c.blit(
             &de_api::Pixels::new(Size::new(w, h), px.data().to_vec()),
-            Point::new(r.x + (r.w - w) / 2, r.y + (r.h - h) / 2),
+            Point::new(dx, dy),
+        );
+    }
+}
+
+/// Rasterize and draw a Google Material Icon glyph at `(x, y)` (top-left of ink).
+pub fn draw_icon(
+    c: &mut Canvas,
+    codepoint: &str,
+    size: f32,
+    color: [u8; 4],
+    x: i32,
+    y: i32,
+) {
+    if let Some(px) = text::icon(codepoint, size, color) {
+        let w = px.width() as i32;
+        let h = px.height() as i32;
+        let (x0, y0, _, _) = text::ink_bounds(&px).unwrap_or((0, 0, w, h));
+        c.blit(
+            &de_api::Pixels::new(Size::new(w, h), px.data().to_vec()),
+            Point::new(x - x0, y - y0),
         );
     }
 }

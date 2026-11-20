@@ -921,13 +921,21 @@ impl AppState for StoreApp {
                 } else {
                     theme.success
                 };
+                ui::draw_icon(
+                    canvas,
+                    if pending > 0 { "\u{e5d5}" } else { "\u{e5ca}" },
+                    26.0,
+                    head_col,
+                    hero.x + 20,
+                    hero.y + 18,
+                );
                 ui::draw_text(
                     canvas,
                     &headline,
                     &ui::styled(22.0, 600, head_col),
-                    hero.x + 20,
+                    hero.x + 54,
                     hero.y + 18,
-                    Some(hero.w - 40),
+                    Some(hero.w - 74),
                 );
                 ui::draw_text(
                     canvas,
@@ -987,15 +995,22 @@ impl AppState for StoreApp {
             let item = &self.items[idx];
             ui::draw_card(canvas, theme, card, false);
 
-            // Source & size badge
+            // Source & size badge with Google Material Icon
+            let src_glyph = match item.source {
+                PackageSource::LinuxPatch => "\u{e8b8}",
+                PackageSource::Recommended => "\u{e838}",
+                PackageSource::Flatpak => "\u{e2c4}",
+                PackageSource::Paru => "\u{e869}",
+            };
+            ui::draw_icon(canvas, src_glyph, 16.0, theme.accent, card.x + 20, card.y + 16);
             let badge_str = format!("{} · {}", item.source.badge(), item.size_label);
             ui::draw_text(
                 canvas,
                 &badge_str,
                 &ui::styled(14.0, 600, theme.accent),
-                card.x + 20,
+                card.x + 42,
                 card.y + 16,
-                Some(card.w - 180),
+                Some(card.w - 202),
             );
 
             // Title & version
@@ -1081,6 +1096,7 @@ impl AppState for StoreApp {
             theme.surface1
         };
         canvas.fill_rounded_rect(sb, 28.0, sb_bg);
+        ui::draw_icon(canvas, "\u{e8b6}", 22.0, theme.text3, sb.x + 20, sb.y + 17);
         let query = self.search.as_str();
         if query.is_empty() {
             let hint = match self.tab {
@@ -1093,18 +1109,18 @@ impl AppState for StoreApp {
                 canvas,
                 hint,
                 &ui::caption(theme.text3),
-                sb.x + 22,
+                sb.x + 52,
                 sb.y + 17,
-                Some(sb.w - 44),
+                Some(sb.w - 74),
             );
         } else {
             ui::draw_text(
                 canvas,
                 query,
                 &ui::label(theme.text),
-                sb.x + 22,
+                sb.x + 52,
                 sb.y + 15,
-                Some(sb.w - 116),
+                Some(sb.w - 146),
             );
             let clr = self.clear_search_rect();
             ui::draw_pill_button(
