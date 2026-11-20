@@ -1880,6 +1880,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rabbiz-store"
+version = "0.1.0"
+dependencies = [
+ "de-api",
+ "de-design",
+ "de-paint",
+ "rabbiz-app-kit",
+ "serde",
+ "serde_json",
+ "wayland-protocols",
+]
+
+[[package]]
 name = "rabbiz-terminal"
 version = "0.1.0"
 dependencies = [
