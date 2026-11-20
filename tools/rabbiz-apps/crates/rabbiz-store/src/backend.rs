@@ -9,7 +9,7 @@
 //!
 //! `RABBIZ_STORE_DRY_RUN=1` disables spawning external tools (used in unit tests).
 
-use std::io::Write;
+use std::io::{BufRead, BufReader, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -26,6 +26,13 @@ pub struct JobResult {
     pub ok: bool,
     pub stdout: String,
     pub stderr: String,
+}
+
+/// Real-time events emitted by a background command thread.
+#[derive(Debug, Clone)]
+pub enum JobEvent {
+    Line(String),
+    Done(JobResult),
 }
 
 /// Whether `bin` resolves on `PATH` (disabled when `RABBIZ_STORE_DRY_RUN=1`).
@@ -91,45 +98,83 @@ pub fn notify_de_reload_apps() {
     }
 }
 
-/// Run a shell command on a background thread and send [`JobResult`] to `tx`.
+/// Run a shell command on a background thread, streaming stdout/stderr lines
+/// in real time via [`JobEvent::Line`] before emitting [`JobEvent::Done`].
 pub fn spawn_shell_job(
     item_id: Option<String>,
     install_intent: Option<bool>,
     label: String,
     script: String,
     reload_apps: bool,
-    tx: Sender<JobResult>,
+    tx: Sender<JobEvent>,
 ) {
+    let _ = tx.send(JobEvent::Line(format!("$ {script}")));
     std::thread::spawn(move || {
-        let res = Command::new("sh")
+        let spawn_res = Command::new("sh")
             .args(["-c", &script])
             .stdin(Stdio::null())
-            .output();
-        let msg = match res {
-            Ok(out) => {
-                let ok = out.status.success();
-                if ok && reload_apps {
-                    notify_de_reload_apps();
-                }
-                JobResult {
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn();
+        let mut child = match spawn_res {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = tx.send(JobEvent::Line(format!("error: {e}")));
+                let _ = tx.send(JobEvent::Done(JobResult {
                     item_id,
                     install_intent,
                     label,
-                    ok,
-                    stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
-                    stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+                    ok: false,
+                    stdout: String::new(),
+                    stderr: e.to_string(),
+                }));
+                return;
+            }
+        };
+
+        let out_pipe = child.stdout.take();
+        let err_pipe = child.stderr.take();
+
+        let tx_err = tx.clone();
+        let err_handle = std::thread::spawn(move || {
+            let mut buf = String::new();
+            if let Some(pipe) = err_pipe {
+                for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+                    let _ = tx_err.send(JobEvent::Line(line.clone()));
+                    buf.push_str(&line);
+                    buf.push('\n');
                 }
             }
-            Err(e) => JobResult {
-                item_id,
-                install_intent,
-                label,
-                ok: false,
-                stdout: String::new(),
-                stderr: e.to_string(),
-            },
-        };
-        let _ = tx.send(msg);
+            buf
+        });
+
+        let mut stdout_buf = String::new();
+        if let Some(pipe) = out_pipe {
+            for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+                let _ = tx.send(JobEvent::Line(line.clone()));
+                stdout_buf.push_str(&line);
+                stdout_buf.push('\n');
+            }
+        }
+        let stderr_buf = err_handle.join().unwrap_or_default();
+
+        let ok = child.wait().is_ok_and(|s| s.success());
+        if ok && reload_apps {
+            notify_de_reload_apps();
+        }
+        let _ = tx.send(JobEvent::Line(if ok {
+            format!("[done] {label} (exit 0)")
+        } else {
+            format!("[failed] {label}")
+        }));
+        let _ = tx.send(JobEvent::Done(JobResult {
+            item_id,
+            install_intent,
+            label,
+            ok,
+            stdout: stdout_buf,
+            stderr: stderr_buf,
+        }));
     });
 }
 

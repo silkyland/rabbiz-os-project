@@ -7,6 +7,7 @@
 
 mod backend;
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::mpsc::{channel, Receiver, Sender};
@@ -356,6 +357,9 @@ enum Hit {
     Tab(StoreTab),
     SearchBar,
     ClearSearch,
+    ToggleLog,
+    ClearLog,
+    CloseLog,
     CheckUpdatesBtn,
     ApplyAllUpdatesBtn,
     ItemAction(usize),
@@ -370,6 +374,8 @@ pub struct StoreApp {
     pub last_checked: String,
     pub status_banner: String,
     pub last_cmd_log: String,
+    pub show_log: bool,
+    pub log_lines: VecDeque<String>,
     pub items: Vec<CatalogItem>,
     pub scroll_y: i32,
     pub content_h: i32,
@@ -378,8 +384,8 @@ pub struct StoreApp {
     drag_start_y: Option<(i32, i32)>, // (touch_id, last_y)
     drag_moved: bool,
     busy_job: Option<String>,
-    job_tx: Sender<backend::JobResult>,
-    job_rx: Receiver<backend::JobResult>,
+    job_tx: Sender<backend::JobEvent>,
+    job_rx: Receiver<backend::JobEvent>,
 }
 
 impl Default for StoreApp {
@@ -404,6 +410,11 @@ impl StoreApp {
                     last_checked: saved.last_checked,
                     status_banner: "Ready · Linux Patch Updater + Flatpak + Paru Store".into(),
                     last_cmd_log: "paru -Syu / flatpak update ready".into(),
+                    show_log: false,
+                    log_lines: VecDeque::from([
+                        "RabbizOS Store & Updater ready.".to_string(),
+                        "Tap 'Log' anytime to inspect live apt-get / flatpak / paru output.".to_string(),
+                    ]),
                     items: saved.items,
                     scroll_y: 0,
                     content_h: 0,
@@ -426,6 +437,11 @@ impl StoreApp {
             last_checked: "Just now".into(),
             status_banner: "5 Linux & driver patches ready to install".into(),
             last_cmd_log: "rabbiz-updater check --channel=mainline-7.3".into(),
+            show_log: false,
+            log_lines: VecDeque::from([
+                "RabbizOS Store & Updater ready.".to_string(),
+                "Tap 'Log' anytime to inspect live apt-get / flatpak / paru output.".to_string(),
+            ]),
             items: default_catalog_items(),
             scroll_y: 0,
             content_h: 0,
@@ -516,62 +532,86 @@ impl StoreApp {
             .collect()
     }
 
-    /// Drain finished background package-manager jobs.
+    fn push_log_line(&mut self, line: String) {
+        let trimmed = line.trim_end().to_string();
+        if trimmed.is_empty() {
+            return;
+        }
+        if self.log_lines.len() >= 120 {
+            self.log_lines.pop_front();
+        }
+        self.log_lines.push_back(trimmed);
+    }
+
+    /// Drain finished or streaming background package-manager job events.
     pub fn drain_jobs(&mut self) -> bool {
         let mut changed = false;
-        while let Ok(res) = self.job_rx.try_recv() {
-            self.busy_job = None;
+        while let Ok(ev) = self.job_rx.try_recv() {
             changed = true;
-            if res.ok {
-                if let (Some(id), Some(want_install)) = (&res.item_id, res.install_intent) {
-                    if let Some(item) = self.items.iter_mut().find(|i| i.id == *id) {
-                        item.installed = want_install;
-                        if want_install && item.update_available {
-                            item.update_available = false;
-                            if let Some((_, new_ver)) = item.version.split_once("->") {
-                                item.version = new_ver.trim().to_string();
-                            }
-                        }
+            match ev {
+                backend::JobEvent::Line(line) => {
+                    if !line.trim().is_empty() {
+                        self.last_cmd_log = line.trim().to_string();
                     }
-                } else if res.label == "Linux & System Updates" {
-                    for item in &mut self.items {
-                        if item.update_available {
-                            item.update_available = false;
-                            item.installed = true;
-                            if let Some((_, new_ver)) = item.version.split_once("->") {
-                                item.version = new_ver.trim().to_string();
-                            }
-                        }
-                    }
+                    self.push_log_line(line);
                 }
-                let summary_line = res
-                    .stdout
-                    .lines()
-                    .rev()
-                    .find(|l| !l.trim().is_empty())
-                    .map(str::trim)
-                    .unwrap_or("");
-                self.status_banner = if !summary_line.is_empty() && summary_line.len() <= 52 {
-                    format!("{}: {summary_line}", res.label)
-                } else {
-                    let n = backend::count_lines(&res.stdout);
-                    if n > 0 {
-                        format!("{} done ({n} lines)", res.label)
+                backend::JobEvent::Done(res) => {
+                    self.busy_job = None;
+                    if res.ok {
+                        if let (Some(id), Some(want_install)) =
+                            (&res.item_id, res.install_intent)
+                        {
+                            if let Some(item) = self.items.iter_mut().find(|i| i.id == *id) {
+                                item.installed = want_install;
+                                if want_install && item.update_available {
+                                    item.update_available = false;
+                                    if let Some((_, new_ver)) = item.version.split_once("->") {
+                                        item.version = new_ver.trim().to_string();
+                                    }
+                                }
+                            }
+                        } else if res.label == "Linux & System Updates" {
+                            for item in &mut self.items {
+                                if item.update_available {
+                                    item.update_available = false;
+                                    item.installed = true;
+                                    if let Some((_, new_ver)) = item.version.split_once("->") {
+                                        item.version = new_ver.trim().to_string();
+                                    }
+                                }
+                            }
+                        }
+                        let summary_line = res
+                            .stdout
+                            .lines()
+                            .rev()
+                            .find(|l| !l.trim().is_empty())
+                            .map(str::trim)
+                            .unwrap_or("");
+                        self.status_banner =
+                            if !summary_line.is_empty() && summary_line.len() <= 52 {
+                                format!("{}: {summary_line}", res.label)
+                            } else {
+                                let n = backend::count_lines(&res.stdout);
+                                if n > 0 {
+                                    format!("{} done ({n} lines)", res.label)
+                                } else {
+                                    format!("{} completed cleanly", res.label)
+                                }
+                            };
                     } else {
-                        format!("{} completed cleanly", res.label)
+                        let err = res
+                            .stderr
+                            .lines()
+                            .chain(res.stdout.lines())
+                            .find(|l| !l.trim().is_empty())
+                            .unwrap_or("command failed")
+                            .trim();
+                        self.status_banner = format!("{} failed: {err}", res.label);
                     }
-                };
-            } else {
-                let err = res
-                    .stderr
-                    .lines()
-                    .chain(res.stdout.lines())
-                    .find(|l| !l.trim().is_empty())
-                    .unwrap_or("command failed")
-                    .trim();
-                self.status_banner = format!("{} failed: {err}", res.label);
+                    self.save_state();
+                }
             }
-            self.save_state();
         }
         changed
     }
@@ -900,7 +940,43 @@ impl StoreApp {
         out
     }
 
+    fn log_toggle_rect(&self) -> Rect {
+        let w = self.size.w.max(360);
+        Rect::new(w - ui::MARGIN - 118, ui::TOP_SAFE + 14, 118, 44)
+    }
+
+    fn log_panel_rect(&self) -> Rect {
+        let w = self.size.w.max(360);
+        let h = self.size.h.max(640);
+        Rect::new(
+            ui::MARGIN,
+            ui::TOP_SAFE + 236,
+            w - ui::MARGIN * 2,
+            (h - ui::TOP_SAFE - 236 - ui::BOTTOM_SAFE - 16).max(320),
+        )
+    }
+
+    fn log_panel_buttons(&self) -> (Rect, Rect) {
+        let p = self.log_panel_rect();
+        let clear_r = Rect::new(p.right() - 224, p.y + 16, 98, 40);
+        let close_r = Rect::new(p.right() - 114, p.y + 16, 98, 40);
+        (clear_r, close_r)
+    }
+
     fn hit_test(&self, pos: Point) -> Hit {
+        if self.log_toggle_rect().contains(pos) {
+            return Hit::ToggleLog;
+        }
+        if self.show_log {
+            let (clear_r, close_r) = self.log_panel_buttons();
+            if clear_r.contains(pos) {
+                return Hit::ClearLog;
+            }
+            if close_r.contains(pos) || !self.log_panel_rect().contains(pos) {
+                return Hit::CloseLog;
+            }
+            return Hit::None;
+        }
         for (tab, rect) in self.tab_rects() {
             if rect.contains(pos) {
                 return Hit::Tab(tab);
@@ -1006,11 +1082,30 @@ impl AppState for StoreApp {
                             self.search.clear();
                             self.scroll_y = 0;
                         }
-                        Hit::CheckUpdatesBtn => self.check_for_updates(),
+                        Hit::ToggleLog => {
+                            self.show_log = !self.show_log;
+                        }
+                        Hit::ClearLog => {
+                            self.log_lines.clear();
+                            self.push_log_line("Log cleared.".into());
+                        }
+                        Hit::CloseLog => {
+                            self.show_log = false;
+                        }
+                        Hit::CheckUpdatesBtn => {
+                            self.show_log = true;
+                            self.check_for_updates();
+                        }
                         Hit::ApplyAllUpdatesBtn => {
+                            self.show_log = true;
                             self.apply_all_updates();
                         }
-                        Hit::ItemAction(idx) => self.trigger_item_action(idx),
+                        Hit::ItemAction(idx) => {
+                            if std::env::var_os("RABBIZ_STORE_DRY_RUN").is_none() {
+                                self.show_log = true;
+                            }
+                            self.trigger_item_action(idx);
+                        }
                         Hit::None => {
                             if self.search_focused {
                                 self.search_focused = false;
@@ -1149,7 +1244,7 @@ impl AppState for StoreApp {
                 ui::draw_text(
                     canvas,
                     &format!("$ {}", self.last_cmd_log),
-                    &ui::styled(15.0, 500, theme.text3),
+                    &ui::styled(16.0, 500, theme.text2),
                     hero.x + 20,
                     hero.y + 112,
                     Some(hero.w - 40),
@@ -1258,6 +1353,23 @@ impl AppState for StoreApp {
         canvas.fill_rect(Rect::new(0, 0, self.size.w, list_top), theme.bg);
         let _ = ui::draw_header(canvas, theme, "Store & Updates", &self.status_banner);
 
+        let log_btn = self.log_toggle_rect();
+        let log_label = if self.busy_job.is_some() {
+            "Log ●"
+        } else if self.show_log {
+            "Hide Log"
+        } else {
+            "Log"
+        };
+        ui::draw_pill_button(
+            canvas,
+            theme,
+            log_btn,
+            log_label,
+            self.show_log || self.busy_job.is_some(),
+            self.pressed == Hit::ToggleLog,
+        );
+
         // 3. 4-Tab Bar (Updates | Featured | Flatpak | Paru AUR)
         for (tab, rect) in self.tab_rects() {
             let selected = self.tab == tab;
@@ -1324,6 +1436,67 @@ impl AppState for StoreApp {
                 false,
                 self.pressed == Hit::ClearSearch,
             );
+        }
+
+        // 5. High-contrast Live Command Log overlay sheet (readable from any tab!)
+        if self.show_log {
+            let p = self.log_panel_rect();
+            canvas.fill_rounded_rect(p, 24.0, [0x14, 0x0F, 0x18, 0xFA]);
+            ui::draw_icon(canvas, "\u{e869}", 22.0, [0xE3, 0x9A, 0x68, 0xFF], p.x + 20, p.y + 24);
+            let title = if let Some(job) = &self.busy_job {
+                format!("Running: {job}")
+            } else {
+                "Live Command Log".to_string()
+            };
+            ui::draw_text(
+                canvas,
+                &title,
+                &ui::styled(20.0, 600, [0xF4, 0xED, 0xE1, 0xFF]),
+                p.x + 52,
+                p.y + 22,
+                Some(p.w - 290),
+            );
+            let (clear_r, close_r) = self.log_panel_buttons();
+            ui::draw_pill_button(
+                canvas,
+                theme,
+                clear_r,
+                "Clear",
+                false,
+                self.pressed == Hit::ClearLog,
+            );
+            ui::draw_pill_button(
+                canvas,
+                theme,
+                close_r,
+                "Close",
+                true,
+                self.pressed == Hit::CloseLog,
+            );
+
+            let line_h = 26;
+            let body_top = p.y + 74;
+            let max_lines = ((p.h - 94) / line_h).max(1) as usize;
+            let skip = self.log_lines.len().saturating_sub(max_lines);
+            for (row, line) in self.log_lines.iter().skip(skip).enumerate() {
+                let col = if line.starts_with("$ ") {
+                    [0xE3, 0x9A, 0x68, 0xFF] // warm copper
+                } else if line.starts_with("[done]") {
+                    [0x6B, 0xD6, 0x94, 0xFF] // soft green
+                } else if line.starts_with("[failed]") || line.starts_with("error:") || line.contains("Err") {
+                    [0xF2, 0x6D, 0x6D, 0xFF] // soft red
+                } else {
+                    [0xF4, 0xED, 0xE1, 0xFF] // crisp warm cream
+                };
+                ui::draw_text(
+                    canvas,
+                    line,
+                    &ui::styled(16.0, 400, col),
+                    p.x + 20,
+                    body_top + (row as i32) * line_h,
+                    Some(p.w - 40),
+                );
+            }
         }
     }
 }
