@@ -285,6 +285,21 @@ impl De {
         self.panels.shown()
     }
 
+    /// Dismiss a single notification by id from the D-Bus notification store
+    /// and cached shade list (used by HUN horizontal swipe dismiss).
+    pub(crate) fn dismiss_notification(&mut self, id: u32) {
+        if id == 0 {
+            return;
+        }
+        self.panels.server.dismiss(id);
+        self.panels.notifications.retain(|n| n.id != id);
+        self.panels.stale = [true; 2];
+        self.panels.content_gen += 1;
+        self.lock.stale = true;
+        self.meta_cache = None;
+        self.shell_dirty = true;
+    }
+
     pub(crate) fn panel_touch_started(&mut self, pos: Point) {
         self.panels.start_x = pos.x;
         self.panels.start_y = pos.y;
