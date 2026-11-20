@@ -5,6 +5,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::emoji::EmojiIndex;
 use crate::predict::Predictor;
+use crate::privacy::PrivacyPolicy;
 
 use crate::layout::{Key, KeyAction, Layout, LayoutError};
 
@@ -55,6 +56,7 @@ pub enum InputPurpose {
     Email,
     Name,
     Password,
+    Pin,
     Date,
     Time,
     Terminal,
@@ -72,9 +74,10 @@ impl InputPurpose {
             6 => InputPurpose::Email,
             7 => InputPurpose::Name,
             8 => InputPurpose::Password,
-            9 => InputPurpose::Date,
-            10 => InputPurpose::Time,
-            12 => InputPurpose::Terminal,
+            9 => InputPurpose::Pin,
+            10 => InputPurpose::Date,
+            11 => InputPurpose::Time,
+            13 => InputPurpose::Terminal,
             _ => InputPurpose::Normal,
         }
     }
@@ -84,6 +87,7 @@ impl InputPurpose {
             InputPurpose::Digits
             | InputPurpose::Number
             | InputPurpose::Phone
+            | InputPurpose::Pin
             | InputPurpose::Date
             | InputPurpose::Time => Some("num"),
             InputPurpose::Url => Some("url"),
@@ -288,6 +292,11 @@ impl Keyboard {
 
     pub fn purpose(&self) -> InputPurpose {
         self.purpose
+    }
+
+    /// Privacy policy for the currently focused field's [`InputPurpose`].
+    pub fn privacy_policy(&self) -> PrivacyPolicy {
+        PrivacyPolicy::from_purpose(self.purpose)
     }
 
     /// Follow the focused field's purpose: switch layer and (for URL/email) the Latin layout.
@@ -511,7 +520,7 @@ impl Keyboard {
 
     /// Insert text, applying the double-space period rule and re-arming auto-capitalise.
     fn commit_text(&mut self, out: String) -> Vec<Command> {
-        if out == " " || out == "." || out == "," {
+        if (out == " " || out == "." || out == ",") && self.privacy_policy().allow_learning() {
             // A word just finished: teach the predictor (unigram + bigram), then persist
             // happens in the Wayland layer on a debounce.
             if let Some(word) = self.text.split_whitespace().next_back() {
@@ -549,7 +558,11 @@ impl Keyboard {
     }
 
     /// Up to three suggestions for the strip (K6): completions + next-word.
+    /// Returns an empty list when the active [`PrivacyPolicy`] disallows predictions.
     pub fn suggestions(&self) -> Vec<String> {
+        if !self.privacy_policy().allow_predictions() {
+            return Vec::new();
+        }
         self.predictor.suggestions(&self.text)
     }
 
@@ -568,7 +581,9 @@ impl Keyboard {
         self.text.push_str(pick);
         self.text.push(' ');
         commands.push(Command::Commit(format!("{pick} ")));
-        self.predictor.learn(&format!("{pick} "));
+        if self.privacy_policy().allow_learning() {
+            self.predictor.learn(&format!("{pick} "));
+        }
         self.shift = ShiftState::Off;
         self.last_shift_tap_ms = None;
         commands

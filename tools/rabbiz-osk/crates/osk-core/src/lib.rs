@@ -6,12 +6,16 @@ pub mod emoji;
 pub mod gesture;
 pub mod layout;
 pub mod predict;
+pub mod privacy;
+pub mod scrub;
 pub mod state;
 
 pub use emoji::EmojiIndex;
 pub use gesture::{GestureDetector, GestureEvent, TouchEvent, TouchKind};
 pub use layout::{Geometry, Key, KeyAction, KeyPos, Layer, Layout, LayoutError, Rect};
 pub use predict::Predictor;
+pub use privacy::PrivacyPolicy;
+pub use scrub::{ScrubStep, SpacebarScrubber, DEFAULT_STEP_PX};
 pub use state::{Command, InputPurpose, Keyboard, ShiftState};
 
 /// Hardware-keyboard mode: when `RABBIZ_HW_KEYBOARD` is set (any value, even empty) the
