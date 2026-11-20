@@ -1,0 +1,9 @@
+name: rabbiz_sdk
+description: Dart FFI bindings and pure-Dart simulator fallback for RabbizOS Flutter apps.
+version: 0.1.0
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  ffi: ^2.1.0

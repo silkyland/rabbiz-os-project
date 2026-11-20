@@ -1,0 +1,24 @@
+# Tier 2 RabbizOS Full-Stack Wayland Emulator Image (ARM64)
+# Extends `rabbiz-de-build:arm64` with session D-Bus, Noto Latin/Thai/UI fonts,
+# and Mesa llvmpipe software GL so `rabbiz-de --backend=virtual` runs a full
+# Wayland session and streams frames over TCP 5910 + control IPC over TCP 5911.
+
+FROM rabbiz-de-build:arm64
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dbus \
+    fonts-noto-core \
+    fonts-noto-ui-extra \
+    libgl1-mesa-dri \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV XDG_RUNTIME_DIR=/tmp/rabbiz-runtime
+ENV WAYLAND_DISPLAY=wayland-0
+ENV LIBGL_ALWAYS_SOFTWARE=1
+ENV RABBIZ_FORCE_SOFTWARE=1
+
+EXPOSE 5910 5911
+
+RUN printf '#!/bin/sh\nset -e\nmkdir -p "$XDG_RUNTIME_DIR"\nchmod 700 "$XDG_RUNTIME_DIR"\nexec rabbiz-de run --backend=virtual --size=${RABBIZ_EMU_SIZE:-720x1600} --emu-listen=0.0.0.0:5910 --ctl-listen=0.0.0.0:5911 "$@"\n' > /usr/local/bin/rabbiz-emu-entrypoint && chmod +x /usr/local/bin/rabbiz-emu-entrypoint
+
+ENTRYPOINT ["/usr/local/bin/rabbiz-emu-entrypoint"]

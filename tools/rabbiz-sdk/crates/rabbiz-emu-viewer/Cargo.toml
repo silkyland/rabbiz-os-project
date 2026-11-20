@@ -1,0 +1,27 @@
+[package]
+name = "rabbiz-emu-viewer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "rabbiz-emu-viewer"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+de-api.workspace = true
+de-config.workspace = true
+de-design.workspace = true
+de-paint.workspace = true
+rabbiz-app-kit.workspace = true
+rabbiz-emu-proto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+winit.workspace = true
+softbuffer.workspace = true

@@ -1,0 +1,21 @@
+[package]
+name = "rabbiz-flutter-runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "rabbiz-flutter-runner"
+path = "src/main.rs"
+
+[dependencies]
+de-api.workspace = true
+de-design.workspace = true
+de-paint.workspace = true
+rabbiz-app-kit.workspace = true
+rabbiz-sdk.workspace = true
+libc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true

@@ -19,6 +19,10 @@ tools/rabbiz-osk/spikes/*/Cargo.lock
 # rabbiz-apps: pure-Rust Wayland apps build products
 tools/rabbiz-apps/**/target/
 tools/rabbiz-apps/target-*/
+
+# rabbiz-sdk: SDK and emulator build products
+tools/rabbiz-sdk/**/target/
+tools/rabbiz-sdk/target-*/
 # downloaded Unicode/CLDR sources for the emoji dataset (regenerated, not shipped)
 tools/rabbiz-osk/data/raw/
 

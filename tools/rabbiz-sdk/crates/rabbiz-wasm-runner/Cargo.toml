@@ -1,0 +1,17 @@
+[package]
+name = "rabbiz-wasm-runner"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+de-api.workspace = true
+de-design.workspace = true
+de-paint.workspace = true
+rabbiz-app-kit.workspace = true
+rabbiz-sdk.workspace = true
+serde.workspace = true

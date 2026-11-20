@@ -1,0 +1,32 @@
+package rabbiz:app@0.1.0;
+
+interface host {
+    /// Query a theme token color as 0xRRGGBBAA (0=bg, 1=surface1, 2=text, 3=accent, 4=danger).
+    theme-color: func(slot-id: s32) -> s32;
+
+    /// Dispatch a cross-app URI intent (requires `permissions.intents = true` in `rabbiz.toml`).
+    intent-open: func(uri: string) -> s32;
+
+    /// Post a desktop notification (requires `permissions.notifications = true` in `rabbiz.toml`).
+    notify: func(title: string, body: string) -> s32;
+}
+
+interface canvas {
+    /// Fill an axis-aligned rectangle with 0xRRGGBBAA color.
+    fill-rect: func(x: s32, y: s32, w: s32, h: s32, rgba: s32);
+
+    /// Fill a rounded rectangle with corner radius `radius-px` and 0xRRGGBBAA color.
+    fill-rounded-rect: func(x: s32, y: s32, w: s32, h: s32, radius-px: s32, rgba: s32);
+
+    /// Draw a UTF-8 label at `(x, y)` with `size-px` and 0xRRGGBBAA color.
+    draw-text: func(text: string, x: s32, y: s32, size-px: s32, rgba: s32);
+}
+
+world rabbiz-app {
+    import host;
+    import canvas;
+
+    export init: func();
+    export on-event: func(kind: s32, x: s32, y: s32, key: s32) -> s32;
+    export render: func(width: s32, height: s32);
+}

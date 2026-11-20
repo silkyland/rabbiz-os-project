@@ -36,4 +36,7 @@ if command -v cargo >/dev/null 2>&1; then
   if [[ -f tools/rabbiz-apps/Cargo.toml ]]; then
     cargo test --quiet --manifest-path tools/rabbiz-apps/Cargo.toml --workspace
   fi
+  if [[ -f tools/rabbiz-sdk/Cargo.toml ]]; then
+    cargo test --quiet --manifest-path tools/rabbiz-sdk/Cargo.toml --workspace
+  fi
 fi

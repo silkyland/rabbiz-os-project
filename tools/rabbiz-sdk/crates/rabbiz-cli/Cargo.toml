@@ -1,0 +1,27 @@
+[package]
+name = "rabbiz-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "rabbiz"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+de-api.workspace = true
+de-config.workspace = true
+rabbiz-app-kit.workspace = true
+rabbiz-emu-proto.workspace = true
+rabbiz-emu-viewer.workspace = true
+rabbiz-flutter-runner.workspace = true
+rabbiz-pack.workspace = true
+rabbiz-sdk.workspace = true
+rabbiz-wasm-runner.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true

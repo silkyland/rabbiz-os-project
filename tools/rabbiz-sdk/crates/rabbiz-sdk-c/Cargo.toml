@@ -1,0 +1,18 @@
+[package]
+name = "rabbiz-sdk-c"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[dependencies]
+de-api.workspace = true
+de-design.workspace = true
+de-paint.workspace = true
+rabbiz-app-kit.workspace = true
+rabbiz-sdk.workspace = true
+wayland-protocols.workspace = true
+libc.workspace = true

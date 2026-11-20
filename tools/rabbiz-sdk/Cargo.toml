@@ -1,0 +1,44 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/rabbiz-emu-proto",
+    "crates/rabbiz-sdk",
+    "crates/rabbiz-sdk-c",
+    "crates/rabbiz-wasm-runner",
+    "crates/rabbiz-flutter-runner",
+    "crates/rabbiz-pack",
+    "crates/rabbiz-emu-viewer",
+    "crates/rabbiz-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.88"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+[workspace.dependencies]
+de-api = { path = "../rabbiz-de/crates/de-api" }
+de-config = { path = "../rabbiz-de/crates/de-config" }
+de-design = { path = "../rabbiz-de/crates/de-design" }
+de-paint = { path = "../rabbiz-de/crates/de-paint" }
+rabbiz-app-kit = { path = "../rabbiz-apps/crates/rabbiz-app-kit" }
+rabbiz-emu-proto = { path = "crates/rabbiz-emu-proto" }
+rabbiz-sdk = { path = "crates/rabbiz-sdk" }
+rabbiz-sdk-c = { path = "crates/rabbiz-sdk-c" }
+rabbiz-wasm-runner = { path = "crates/rabbiz-wasm-runner" }
+rabbiz-flutter-runner = { path = "crates/rabbiz-flutter-runner" }
+rabbiz-pack = { path = "crates/rabbiz-pack" }
+rabbiz-emu-viewer = { path = "crates/rabbiz-emu-viewer" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+libc = "0.2"
+png = "0.18"
+winit = "0.30"
+softbuffer = "0.4"
+wayland-protocols = { version = "0.32", features = ["client", "unstable"] }
