@@ -1,17 +1,27 @@
 //! Shared Material Design 3 + native Wayland (`wl_shm` + `xdg_toplevel` +
 //! `wl_touch` + `zwp_text_input_v3`) runtime for all `rabbiz-*` Rust apps.
 
+pub mod icons;
+pub mod intent;
 pub mod mcp;
+pub mod scroll;
+pub mod text_input;
+pub mod theme_watch;
 pub mod ui;
 #[cfg(target_os = "linux")]
 pub mod wayland;
 #[cfg(not(target_os = "linux"))]
 #[path = "wayland_stub.rs"]
 pub mod wayland;
+pub mod widgets;
 
 pub use de_api::{Point, Rect, Size};
 pub use de_design::tokens::{self, Theme};
 pub use de_paint::{text, Canvas};
+pub use intent::Intent;
+pub use scroll::ScrollView;
+pub use text_input::{ContentPurpose, TextBuffer};
+pub use theme_watch::ThemeWatcher;
 pub use wayland::{run_app, AppEvent, AppFrame, AppState, TextInputCtl};
 
 /// Load active Light/Dark `Theme` from `de-config::Prefs`.
