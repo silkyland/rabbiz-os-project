@@ -149,6 +149,9 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
                 run.de.poll_ctl_ipc();
                 run.de.poll_emu_server();
                 run.de.poll_mock_system();
+                if run.motion_wake_at().is_some() {
+                    run.de.needs_present = true;
+                }
                 if run.de.needs_present {
                     run.pump();
                 }

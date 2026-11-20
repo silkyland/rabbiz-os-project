@@ -284,7 +284,7 @@ fn cmd_test(args: &[String]) -> Result<(), String> {
 
 fn cmd_ctl(args: &[String]) -> Result<(), String> {
     let mut tcp = "127.0.0.1:5911".to_string();
-    let mut cmd_name = "get_state".to_string();
+    let mut pos: Vec<String> = Vec::new();
     let mut i = 0;
     while i < args.len() {
         if args[i] == "--tcp" {
@@ -293,14 +293,41 @@ fn cmd_ctl(args: &[String]) -> Result<(), String> {
                 i += 1;
             }
         } else {
-            cmd_name = args[i].replace('-', "_");
+            pos.push(args[i].clone());
         }
         i += 1;
     }
-    let req = serde_json::json!({
-        "id": 1,
-        "cmd": cmd_name,
-    });
+    let cmd_name = pos
+        .first()
+        .map(|s| s.replace('-', "_"))
+        .unwrap_or_else(|| "get_state".to_string());
+    let req = match cmd_name.as_str() {
+        "launch" => serde_json::json!({
+            "id": 1,
+            "cmd": "launch",
+            "desktop_id": pos.get(1).cloned().unwrap_or_default(),
+        }),
+        "set_panel" => serde_json::json!({
+            "id": 1,
+            "cmd": "set_panel",
+            "panel": pos.get(1).cloned().unwrap_or_else(|| "none".to_string()),
+        }),
+        "hardware_button" => serde_json::json!({
+            "id": 1,
+            "cmd": "hardware_button",
+            "button": pos.get(1).cloned().unwrap_or_else(|| "power".to_string()),
+        }),
+        "inject_tap" => serde_json::json!({
+            "id": 1,
+            "cmd": "inject_tap",
+            "x": pos.get(1).and_then(|v| v.parse::<i32>().ok()).unwrap_or(0),
+            "y": pos.get(2).and_then(|v| v.parse::<i32>().ok()).unwrap_or(0),
+        }),
+        _ => serde_json::json!({
+            "id": 1,
+            "cmd": cmd_name,
+        }),
+    };
     let resp = send_ctl_tcp_or_offline(&tcp, &req);
     println!("{resp}");
     Ok(())

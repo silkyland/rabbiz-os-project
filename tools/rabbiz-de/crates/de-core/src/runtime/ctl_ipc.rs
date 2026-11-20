@@ -322,6 +322,21 @@ impl De {
                     {
                         disconnected = true;
                     }
+                } else if cmd.eq_ignore_ascii_case("RAW") {
+                    let px = self.composite_emu_pixels();
+                    server.seq = server.seq.wrapping_add(1);
+                    let header = format!(
+                        "RAW {} {} {} {}\n",
+                        server.seq,
+                        px.size.w,
+                        px.size.h,
+                        px.data.len()
+                    );
+                    if !write_emu_bytes(&mut server.clients[i].stream, header.as_bytes())
+                        || !write_emu_bytes(&mut server.clients[i].stream, &px.data)
+                    {
+                        disconnected = true;
+                    }
                 } else {
                     let resp = match decode_request(cmd) {
                         Ok(req) => self.dispatch_ctl(req.id, req.command),
@@ -352,7 +367,7 @@ impl De {
         }
     }
 
-    fn encode_emu_png_frame(&mut self) -> Vec<u8> {
+    fn composite_emu_pixels(&mut self) -> de_api::Pixels {
         let now = Instant::now();
         let size = Size::new(self.output.width as i32, self.output.height as i32);
         if self.shell_px.is_none() || self.shell_dirty {
@@ -364,8 +379,11 @@ impl De {
         self.menu_prepare(size);
         self.osd_prepare(now);
         self.hun_prepare(size);
-        let px =
-            crate::composite::composite_output(self).unwrap_or_else(|| self.brand_px.clone());
+        crate::composite::composite_output(self).unwrap_or_else(|| self.brand_px.clone())
+    }
+
+    fn encode_emu_png_frame(&mut self) -> Vec<u8> {
+        let px = self.composite_emu_pixels();
         de_paint::encode_png(&px).unwrap_or_default()
     }
 
@@ -553,7 +571,7 @@ impl De {
             }
             IpcCommand::Screenshot { save } => self.ctl_screenshot(id, save),
             IpcCommand::InjectTouch { phase, slot, x, y } => {
-                let time_ms = self.uptime_ms(Instant::now()) as u32;
+                let time_ms = std::time::Duration::from(self.clock.now()).as_millis() as u32;
                 let pos = smithay::utils::Point::<f64, smithay::utils::Logical>::from((
                     f64::from(x),
                     f64::from(y),
@@ -576,7 +594,7 @@ impl De {
                 IpcResponse::ok(id, None)
             }
             IpcCommand::InjectKey { keycode, pressed } => {
-                let time_ms = self.uptime_ms(Instant::now()) as u32;
+                let time_ms = std::time::Duration::from(self.clock.now()).as_millis() as u32;
                 self.inject_key(keycode, pressed, time_ms);
                 self.needs_present = true;
                 IpcResponse::ok(id, None)

@@ -364,9 +364,10 @@ pub fn read_frame_packet<R: BufRead>(reader: &mut R) -> Result<EmuFrame, String>
     }
 
     match parts[0] {
-        "FRAME" => {
+        "FRAME" | "RAW" => {
+            let is_png = parts[0] == "FRAME";
             if parts.len() < 5 {
-                return Err(format!("malformed FRAME header: {:?}", header.trim()));
+                return Err(format!("malformed {} header: {:?}", parts[0], header.trim()));
             }
             let seq: u64 = parts[1].parse().map_err(|e| format!("seq: {e}"))?;
             let w: i32 = parts[2].parse().map_err(|e| format!("width: {e}"))?;
@@ -375,10 +376,10 @@ pub fn read_frame_packet<R: BufRead>(reader: &mut R) -> Result<EmuFrame, String>
             if len > MAX_FRAME_BYTES {
                 return Err(format!("frame payload {len} exceeds MAX_FRAME_BYTES"));
             }
-            let mut png = vec![0u8; len];
+            let mut payload = vec![0u8; len];
             reader
-                .read_exact(&mut png)
-                .map_err(|e| format!("read frame PNG payload: {e}"))?;
+                .read_exact(&mut payload)
+                .map_err(|e| format!("read frame payload: {e}"))?;
             let full_size = Size::new(w, h);
             Ok(EmuFrame {
                 seq,
@@ -386,8 +387,8 @@ pub fn read_frame_packet<R: BufRead>(reader: &mut R) -> Result<EmuFrame, String>
                 full_size,
                 tiles: vec![FrameTile {
                     rect: Rect::from_origin_size(Point::ZERO, full_size),
-                    png_or_rgba: png,
-                    is_png: true,
+                    png_or_rgba: payload,
+                    is_png,
                 }],
             })
         }
@@ -460,6 +461,16 @@ pub fn client_poll_frame<S: Read + Write>(stream: &mut S) -> Result<EmuFrame, St
         .write_all(b"FRAME\n")
         .map_err(|e| format!("send FRAME: {e}"))?;
     stream.flush().map_err(|e| format!("flush FRAME: {e}"))?;
+    let mut reader = BufReader::new(stream);
+    read_frame_packet(&mut reader)
+}
+
+/// Request `RAW\n` (uncompressed RGBA8) over a stream for zero-compression 60 FPS viewing.
+pub fn client_poll_raw_frame<S: Read + Write>(stream: &mut S) -> Result<EmuFrame, String> {
+    stream
+        .write_all(b"RAW\n")
+        .map_err(|e| format!("send RAW: {e}"))?;
+    stream.flush().map_err(|e| format!("flush RAW: {e}"))?;
     let mut reader = BufReader::new(stream);
     read_frame_packet(&mut reader)
 }

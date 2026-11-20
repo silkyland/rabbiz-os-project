@@ -65,7 +65,41 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
             }
         }
     } else if let Some(shell) = de.shell_px.as_ref() {
-        canvas.blit(shell, ApiPoint::ZERO);
+        let slide_y = if de.navigation.drawer_slide.value > 0.5 {
+            de.navigation.drawer_slide.value
+        } else {
+            de.navigation.drawer_pull_y
+        };
+        if de.nav.current == de_ui::nav::Screen::Drawer && slide_y > 0.5 {
+            if let Some(under) = de.navigation.home_underlay_px.as_ref() {
+                canvas.blit(under, ApiPoint::ZERO);
+            }
+            canvas.blit(shell, ApiPoint::new(0, slide_y.round() as i32));
+        } else {
+            canvas.blit(shell, ApiPoint::ZERO);
+        }
+        if let Some(morph) = de.morph.as_ref() {
+            let out_rect = de_api::Rect::new(0, 0, canvas.size().w, canvas.size().h);
+            let pose = morph.pose(out_rect, std::time::Instant::now());
+            if pose.card_alpha > 0.0 {
+                let mut bg = de.theme.bg;
+                bg[3] = (f32::from(bg[3]) * pose.card_alpha.clamp(0.0, 1.0)).round() as u8;
+                canvas.fill_rounded_rect(pose.card, 28.0, bg);
+            }
+            if let Some(snapshot) = &morph.snapshot {
+                canvas.blit_scaled(snapshot, pose.card, morph.snapshot_alpha());
+            }
+            if let Some(win) = morph.window.as_ref().filter(|_| pose.app_alpha > 0.0) {
+                if let Some(surface) = win.wl_surface().map(std::borrow::Cow::into_owned) {
+                    if let Some((px, _)) = surface_pixels(&surface) {
+                        canvas.blit_scaled(&px, pose.card, pose.app_alpha);
+                    }
+                }
+            }
+            if pose.icon_alpha > 0.0 {
+                canvas.blit_scaled(&morph.origin.icon, pose.icon, pose.icon_alpha);
+            }
+        }
     }
 
     blit_layers(
