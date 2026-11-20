@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Store & Updates
+Name[th]=ร้านค้าและอัปเดต
+GenericName=App Store & System Updater
+Comment=Update Linux kernel, patches, Flatpak, Paru (AUR/Arch) & Recommended apps
+Exec=rabbiz-store
+Icon=rabbiz-store
+Categories=System;PackageManager;
+Keywords=store;update;flatpak;paru;pacman;kernel;patch;ร้านค้า;อัปเดต;
+Terminal=false
+StartupNotify=true

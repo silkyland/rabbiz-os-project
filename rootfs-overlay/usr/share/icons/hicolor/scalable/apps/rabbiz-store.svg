@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">RabbizOS Store &amp; Updates</title>
+  <desc id="desc">A shopping bag with an upward update arrow on a copper-plum rounded tile.</desc>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#C86D3B"/>
+      <stop offset="1" stop-color="#7D3B1E"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="30" fill="url(#tile)"/>
+  <rect x="1" y="1" width="126" height="126" rx="29" fill="none" stroke="#FFFFFF" stroke-opacity="0.18" stroke-width="2"/>
+  <!-- Handle -->
+  <path d="M46 46 V38 C46 28 54 20 64 20 C74 20 82 28 82 38 V46" fill="none" stroke="#F4EDE1" stroke-width="8" stroke-linecap="round"/>
+  <!-- Store Bag -->
+  <rect x="26" y="44" width="76" height="62" rx="16" fill="#F4EDE1"/>
+  <!-- Copper Update Arrow Circle -->
+  <circle cx="64" cy="75" r="20" fill="#38263D"/>
+  <path d="M64 63 L53 74 H60 V86 H68 V74 H75 Z" fill="#E39A68"/>
+</svg>

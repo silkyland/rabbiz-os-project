@@ -68,7 +68,7 @@ A 14-crate touch-first Wayland compositor and shell built on Smithay, `tiny-skia
 - **Dual Backend (`--backend=drm|virtual`):** Runs directly on KMS/DRM + `libinput` + `libseat` on phone hardware, or headless/virtual over TCP (`--emu-listen`, `--ctl-listen`) inside the RabbizOS Emulator.
 
 ### 2. First-Party Native Rust Apps (`tools/rabbiz-apps/` & `tools/rabbiz-osk/`)
-All 12 built-in apps plus the session keyboard are pure Rust Wayland clients sharing `rabbiz-app-kit` (`wl_shm` + `xdg_toplevel` + `zwp_text_input_v3` + built-in MCP server):
+All 13 built-in apps plus the session keyboard are pure Rust Wayland clients sharing `rabbiz-app-kit` (`wl_shm` + `xdg_toplevel` + `zwp_text_input_v3` + built-in MCP server):
 
 | App | Crate / Binary | Description |
 |---|---|---|
@@ -83,6 +83,7 @@ All 12 built-in apps plus the session keyboard are pure Rust Wayland clients sha
 | **Phone** | `rabbiz-dialer` | Keypad, call log, speed dial, in-call screen |
 | **Photos** | `rabbiz-photos` | Media grid, lightbox viewer, metadata inspector |
 | **Settings** | `rabbiz-settings` | Wi-Fi, Bluetooth, Display, Sound, Battery, Appearance, About |
+| **Store & Updates** | `rabbiz-store` | Linux kernel/DTB/driver patch updater + Flatpak, Paru (AUR), and Featured app store |
 | **Terminal** | `rabbiz-terminal` | VT100/ANSI terminal emulator with touch shortcut bar |
 | **Keyboard (OSK)** | `rabbiz-osk` | `wlr-layer-shell` + `zwp_input_method_v2` keyboard (EN + Thai Kedmanee, long-press alternates) |
 
@@ -101,11 +102,12 @@ Build, debug, and package RabbizOS apps on **macOS, Linux, or Windows** without 
 - **`.rbz` Packaging & AI Agent MCP (`rabbiz emu --mcp`):** Deterministic SHA-256 verified `.rbz` bundles (`rabbiz pack/verify/install`) and a 9-tool JSON-RPC 2.0 MCP server so AI coding agents can inspect, tap, swipe, type, and verify UI screenshots autonomously.
 
 <p align="center">
-  <img src="assets/screenshots/rabbizos-emulator-home.png" width="32%" alt="RabbizOS Emulator — Home Screen & Host Drivers">
-  <img src="assets/screenshots/rabbizos-emulator-calculator.png" width="32%" alt="RabbizOS Emulator — Native Rust Calculator App">
-  <img src="assets/screenshots/rabbizos-emulator-settings.png" width="32%" alt="RabbizOS Emulator — Native Rust Settings App">
+  <img src="assets/screenshots/rabbizos-emulator-home.png" width="24%" alt="RabbizOS Emulator — Home Screen & Host Drivers">
+  <img src="assets/screenshots/rabbizos-emulator-store.png" width="24%" alt="RabbizOS Emulator — Store & Linux Patch Updater">
+  <img src="assets/screenshots/rabbizos-emulator-calculator.png" width="24%" alt="RabbizOS Emulator — Native Rust Calculator App">
+  <img src="assets/screenshots/rabbizos-emulator-settings.png" width="24%" alt="RabbizOS Emulator — Native Rust Settings App">
 </p>
-<p align="center"><em>Live 60 FPS ARM64 Linux Emulator (<code>rabbiz-emu-viewer</code>) running <code>rabbiz-de --backend=virtual</code>, <code>rabbiz-calculator</code>, and <code>rabbiz-settings</code> driven by Host OS Paravirtual Drivers.</em></p>
+<p align="center"><em>Live 60 FPS ARM64 Linux Emulator (<code>rabbiz-emu-viewer</code>) running <code>rabbiz-de --backend=virtual</code>, <code>rabbiz-store</code>, <code>rabbiz-calculator</code>, and <code>rabbiz-settings</code> driven by Host OS Paravirtual Drivers.</em></p>
 
 ---
 

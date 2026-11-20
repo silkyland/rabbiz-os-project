@@ -142,6 +142,7 @@ fn ensure_linux_backend_running(emu_addr: &str) {
             "mkdir -p /tmp/rabbiz-rt /tmp/rabbiz-home /usr/share/applications /usr/share/icons/hicolor/scalable/apps && ",
             "chmod 700 /tmp/rabbiz-rt && ",
             "ln -sf /src/tools/rabbiz-apps/target-linux-arm64/release/rabbiz-* /usr/local/bin/ 2>/dev/null || true && ",
+            "ln -sf /src/tools/rabbiz-apps/target-linux-arm64/aarch64-unknown-linux-gnu/release/rabbiz-* /usr/local/bin/ 2>/dev/null || true && ",
             "ln -sf /src/tools/rabbiz-osk/target-linux-arm64/release/rabbiz-osk /usr/local/bin/rabbiz-osk 2>/dev/null || true && ",
             "cp -f /src/rootfs-overlay/usr/share/applications/*.desktop /usr/share/applications/ 2>/dev/null || true && ",
             "cp -f /src/rootfs-overlay/usr/share/icons/hicolor/scalable/apps/*.svg /usr/share/icons/hicolor/scalable/apps/ 2>/dev/null || true && ",
