@@ -100,6 +100,13 @@ Build, debug, and package RabbizOS apps on **macOS, Linux, or Windows** without 
   - **GTK4 (`gtk4`) & Qt6 (`qt6`):** Standard Wayland Desktop Contract templates.
 - **`.rbz` Packaging & AI Agent MCP (`rabbiz emu --mcp`):** Deterministic SHA-256 verified `.rbz` bundles (`rabbiz pack/verify/install`) and a 9-tool JSON-RPC 2.0 MCP server so AI coding agents can inspect, tap, swipe, type, and verify UI screenshots autonomously.
 
+<p align="center">
+  <img src="assets/screenshots/rabbizos-emulator-home.png" width="32%" alt="RabbizOS Emulator — Home Screen & Host Drivers">
+  <img src="assets/screenshots/rabbizos-emulator-calculator.png" width="32%" alt="RabbizOS Emulator — Native Rust Calculator App">
+  <img src="assets/screenshots/rabbizos-emulator-settings.png" width="32%" alt="RabbizOS Emulator — Native Rust Settings App">
+</p>
+<p align="center"><em>Live 60 FPS ARM64 Linux Emulator (<code>rabbiz-emu-viewer</code>) running <code>rabbiz-de --backend=virtual</code>, <code>rabbiz-calculator</code>, and <code>rabbiz-settings</code> driven by Host OS Paravirtual Drivers.</em></p>
+
 ---
 
 ## Quick Start: Run the Emulator & Build an App (No Phone Required)
