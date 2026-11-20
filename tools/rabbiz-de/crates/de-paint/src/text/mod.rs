@@ -162,12 +162,13 @@ pub fn draw_label(
 ) -> Option<Size> {
     let px = label(text, style, max_width)?;
     let size = Size::new(px.width() as i32, px.height() as i32);
+    let offset = canvas.origin();
     canvas.pixmap_mut().draw_pixmap(
         0,
         0,
         px.as_ref(),
         &PixmapPaint::default(),
-        Transform::from_translate(origin.x as f32, origin.y as f32),
+        Transform::from_translate((origin.x - offset.x) as f32, (origin.y - offset.y) as f32),
         None,
     );
     Some(size)
