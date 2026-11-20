@@ -16,7 +16,8 @@ use de_api::{Pixels, Point, Rect, Size};
 use de_design::tokens::{self, Theme};
 use de_paint::{encode_png, Canvas};
 use rabbiz_app_kit::DevicePreset;
-use rabbiz_emu_proto::{client_poll_frame, client_poll_raw_frame};
+use rabbiz_emu_proto::{client_poll_frame, client_poll_raw_frame, client_poll_raw_if_newer};
+use std::cell::RefCell;
 
 /// Physical width (px) of the right-hand studio dock (320 physical px = 160 logical pt on Retina 2x).
 pub const SIDE_PANEL_WIDTH: i32 = 320;
@@ -335,6 +336,16 @@ impl ViewerLayout {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DockCacheKey {
+    preset: DevicePreset,
+    connected: bool,
+    battery_pct: u8,
+    charging: bool,
+    wifi_on: bool,
+    pressed_button: Option<ControlButton>,
+}
+
 /// Interactive state of `rabbiz-emu-viewer` (persistent TCP link to background Linux `rabbiz-de` + Host Drivers).
 pub struct ViewerState {
     pub emu_addr: String,
@@ -354,6 +365,7 @@ pub struct ViewerState {
     pub pressed_button: Option<ControlButton>,
     emu_stream: Option<TcpStream>,
     host_synced_once: bool,
+    dock_cache: RefCell<Option<(DockCacheKey, Pixels)>>,
 }
 
 impl ViewerState {
@@ -379,6 +391,7 @@ impl ViewerState {
             pressed_button: None,
             emu_stream: None,
             host_synced_once: false,
+            dock_cache: RefCell::new(None),
         };
         s.render_offline_demo_phone();
         s
@@ -447,8 +460,9 @@ impl ViewerState {
         }));
     }
 
-    /// Poll a live frame from `emu_addr` using the persistent TCP stream (`RAW` first, `FRAME` fallback).
+    /// Poll a live frame from `emu_addr` using the persistent TCP stream (`RAW_IF_NEWER` first, `RAW`/`FRAME` fallback).
     pub fn poll_remote_frame(&mut self) -> bool {
+        let last_seq = if self.connected { self.frame_seq } else { 0 };
         let res = {
             let Some(stream) = self.ensure_emu_stream() else {
                 if self.connected {
@@ -457,11 +471,15 @@ impl ViewerState {
                 }
                 return false;
             };
-            client_poll_raw_frame(stream).or_else(|_| client_poll_frame(stream))
+            client_poll_raw_if_newer(stream, last_seq).or_else(|_| {
+                client_poll_raw_frame(stream)
+                    .or_else(|_| client_poll_frame(stream))
+                    .map(Some)
+            })
         };
 
         match res {
-            Ok(frame) => {
+            Ok(Some(frame)) => {
                 if frame.decode_into(&mut self.frame_pixels).is_ok() {
                     self.connected = true;
                     self.frame_seq = frame.seq;
@@ -473,6 +491,7 @@ impl ViewerState {
                 }
                 false
             }
+            Ok(None) => false,
             Err(_) => {
                 self.emu_stream = None;
                 false
@@ -758,10 +777,7 @@ impl ViewerState {
         self.frame_pixels = c.into_pixels();
     }
 
-    /// Render the complete viewer window (1:1 phone bezel + phone screen + 320 px studio dock).
-    #[must_use]
-    pub fn render_viewer_frame(&self) -> Pixels {
-        let layout = self.layout();
+    fn render_dock_template(&self, layout: &ViewerLayout) -> Pixels {
         let dock_theme = tokens::DARK;
         let mut canvas = Canvas::filled(layout.total_size, [0x0E, 0x0B, 0x11, 0xFF]);
 
@@ -774,13 +790,6 @@ impl ViewerState {
         canvas.fill_rounded_rect(Rect::new(nub_x, 300, 5, 96), 2.5, [0x3D, 0x32, 0x45, 0xFF]);
         canvas.fill_rounded_rect(Rect::new(nub_x, 420, 5, 96), 2.5, [0x3D, 0x32, 0x45, 0xFF]);
         canvas.fill_rounded_rect(Rect::new(nub_x, 570, 5, 64), 2.5, [0xA6, 0x5A, 0x2E, 0xFF]);
-
-        // Blit phone framebuffer into `phone_screen_rect` (1:1 when 720x1600!)
-        if self.frame_pixels.size == layout.phone_screen_rect.size() {
-            canvas.blit(&self.frame_pixels, layout.phone_screen_rect.origin());
-        } else {
-            canvas.blit_scaled(&self.frame_pixels, layout.phone_screen_rect, 1.0);
-        }
 
         // Studio dock background (320 px physical)
         canvas.fill_rect(layout.side_panel_rect, [0x16, 0x11, 0x1B, 0xFF]);
@@ -810,13 +819,13 @@ impl ViewerState {
         };
         canvas.fill_rounded_rect(Rect::new(px + 12, 90, 10, 10), 5.0, badge_color);
         let conn_str = if self.connected {
-            format!("LIVE LINUX · #{}", self.frame_seq)
+            "LIVE LINUX · 60Hz"
         } else {
-            "STARTING LINUX...".to_string()
+            "STARTING LINUX..."
         };
         rabbiz_app_kit::ui::draw_text(
             &mut canvas,
-            &conn_str,
+            conn_str,
             &rabbiz_app_kit::ui::styled(17.0, 600, badge_color),
             px + 28,
             84,
@@ -899,6 +908,42 @@ impl ViewerState {
             Some(SIDE_PANEL_WIDTH - 32),
         );
 
+        canvas.into_pixels()
+    }
+
+    /// Render the complete viewer window (1:1 phone bezel + phone screen + 320 px studio dock),
+    /// reusing the cached studio dock & phone bezel so 60 FPS frame updates only blit the screen!
+    #[must_use]
+    pub fn render_viewer_frame(&self) -> Pixels {
+        let layout = self.layout();
+        let key = DockCacheKey {
+            preset: self.preset,
+            connected: self.connected,
+            battery_pct: self.battery_pct,
+            charging: self.charging,
+            wifi_on: self.wifi_on,
+            pressed_button: self.pressed_button,
+        };
+        let mut cache = self.dock_cache.borrow_mut();
+        let needs_rebuild = match cache.as_ref() {
+            Some((k, px)) => *k != key || px.size != layout.total_size,
+            None => true,
+        };
+        if needs_rebuild {
+            let tpl = self.render_dock_template(&layout);
+            *cache = Some((key, tpl));
+        }
+        let base = cache.as_ref().map(|(_, px)| px.clone()).unwrap();
+        drop(cache);
+
+        let mut canvas =
+            Canvas::from_existing(base).unwrap_or_else(|| Canvas::new(layout.total_size));
+        // Blit phone framebuffer into `phone_screen_rect` (1:1 memcpy when 720x1600!)
+        if self.frame_pixels.size == layout.phone_screen_rect.size() {
+            canvas.blit(&self.frame_pixels, layout.phone_screen_rect.origin());
+        } else {
+            canvas.blit_scaled(&self.frame_pixels, layout.phone_screen_rect, 1.0);
+        }
         canvas.into_pixels()
     }
 

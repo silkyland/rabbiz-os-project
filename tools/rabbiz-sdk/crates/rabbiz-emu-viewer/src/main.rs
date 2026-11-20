@@ -122,23 +122,32 @@ fn ensure_linux_backend_running(emu_addr: &str) {
     let Some(repo) = find_repo_root() else {
         return;
     };
-    let de_bin = repo.join(
+    let rel_bin = repo.join(
+        "tools/rabbiz-de/target-linux-arm64/aarch64-unknown-linux-gnu/release/rabbiz-de",
+    );
+    let dbg_bin = repo.join(
         "tools/rabbiz-de/target-linux-arm64/aarch64-unknown-linux-gnu/debug/rabbiz-de",
     );
-    if !Path::new(&de_bin).is_file() {
+    let de_container_bin = if Path::new(&rel_bin).is_file() {
+        "/src/tools/rabbiz-de/target-linux-arm64/aarch64-unknown-linux-gnu/release/rabbiz-de"
+    } else if Path::new(&dbg_bin).is_file() {
+        "/src/tools/rabbiz-de/target-linux-arm64/aarch64-unknown-linux-gnu/debug/rabbiz-de"
+    } else {
         return;
-    }
+    };
 
     let mount_arg = format!("{}:/src", repo.display());
-    let boot_script = concat!(
-        "mkdir -p /tmp/rabbiz-rt /tmp/rabbiz-home /usr/share/applications /usr/share/icons/hicolor/scalable/apps && ",
-        "chmod 700 /tmp/rabbiz-rt && ",
-        "ln -sf /src/tools/rabbiz-apps/target-linux-arm64/release/rabbiz-* /usr/local/bin/ 2>/dev/null || true && ",
-        "ln -sf /src/tools/rabbiz-osk/target-linux-arm64/release/rabbiz-osk /usr/local/bin/rabbiz-osk 2>/dev/null || true && ",
-        "cp -f /src/rootfs-overlay/usr/share/applications/*.desktop /usr/share/applications/ 2>/dev/null || true && ",
-        "cp -f /src/rootfs-overlay/usr/share/icons/hicolor/scalable/apps/*.svg /usr/share/icons/hicolor/scalable/apps/ 2>/dev/null || true && ",
-        "exec /src/tools/rabbiz-de/target-linux-arm64/aarch64-unknown-linux-gnu/debug/rabbiz-de run ",
-        "--backend=virtual --size=720x1600 --emu-listen=0.0.0.0:5910 --ctl-listen=0.0.0.0:5911"
+    let boot_script = format!(
+        concat!(
+            "mkdir -p /tmp/rabbiz-rt /tmp/rabbiz-home /usr/share/applications /usr/share/icons/hicolor/scalable/apps && ",
+            "chmod 700 /tmp/rabbiz-rt && ",
+            "ln -sf /src/tools/rabbiz-apps/target-linux-arm64/release/rabbiz-* /usr/local/bin/ 2>/dev/null || true && ",
+            "ln -sf /src/tools/rabbiz-osk/target-linux-arm64/release/rabbiz-osk /usr/local/bin/rabbiz-osk 2>/dev/null || true && ",
+            "cp -f /src/rootfs-overlay/usr/share/applications/*.desktop /usr/share/applications/ 2>/dev/null || true && ",
+            "cp -f /src/rootfs-overlay/usr/share/icons/hicolor/scalable/apps/*.svg /usr/share/icons/hicolor/scalable/apps/ 2>/dev/null || true && ",
+            "exec {} run --backend=virtual --size=720x1600 --emu-listen=0.0.0.0:5910 --ctl-listen=0.0.0.0:5911"
+        ),
+        de_container_bin
     );
 
     let _ = Command::new("docker").args(["rm", "-f", "rabbiz-emu-live"]).output();
@@ -164,7 +173,7 @@ fn ensure_linux_backend_running(emu_addr: &str) {
             "rabbiz-de-build:arm64",
             "bash",
             "-c",
-            boot_script,
+            &boot_script,
         ])
         .output();
 
@@ -214,6 +223,7 @@ fn run_viewer_window(state: ViewerState) {
         win_phys_h: u32,
         cursor: PhysicalPosition<f64>,
         touch_dragging: bool,
+        pending_drag_move: Option<Point>,
         dirty: bool,
         last_poll: Instant,
     }
@@ -318,8 +328,7 @@ fn run_viewer_window(state: ViewerState) {
                             if let Some(dev_pt) =
                                 layout.viewer_to_device(clamped_pt, self.state.preset.size())
                             {
-                                self.state.inject_touch("move", dev_pt);
-                                self.dirty = true;
+                                self.pending_drag_move = Some(dev_pt);
                             }
                         }
                     }
@@ -334,19 +343,25 @@ fn run_viewer_window(state: ViewerState) {
                         if let Some(pt) = self.cursor_canvas_point(false) {
                             if let Some(ctrl_btn) = layout.hit_button(pt) {
                                 self.state.activate_button(ctrl_btn);
+                                let _ = self.state.poll_remote_frame();
                                 self.dirty = true;
                             } else if let Some(dev_pt) =
                                 layout.viewer_to_device(pt, self.state.preset.size())
                             {
                                 self.touch_dragging = true;
+                                self.pending_drag_move = None;
                                 self.state.inject_touch("down", dev_pt);
-                                self.dirty = true;
                             }
                         }
                     } else {
-                        self.state.pressed_button = None;
+                        if self.state.pressed_button.take().is_some() {
+                            self.dirty = true;
+                        }
                         if self.touch_dragging {
                             self.touch_dragging = false;
+                            if let Some(move_pt) = self.pending_drag_move.take() {
+                                self.state.inject_touch("move", move_pt);
+                            }
                             if let Some(pt) = self.cursor_canvas_point(true) {
                                 let clamped_pt = Point::new(
                                     pt.x.clamp(
@@ -364,6 +379,7 @@ fn run_viewer_window(state: ViewerState) {
                                     self.state.inject_touch("up", dev_pt);
                                 }
                             }
+                            let _ = self.state.poll_remote_frame();
                             self.dirty = true;
                         }
                     }
@@ -429,6 +445,9 @@ fn run_viewer_window(state: ViewerState) {
             let now = Instant::now();
             if now.saturating_duration_since(self.last_poll) >= Duration::from_millis(16) {
                 self.last_poll = now;
+                if let Some(move_pt) = self.pending_drag_move.take() {
+                    self.state.inject_touch("move", move_pt);
+                }
                 if self.state.poll_remote_frame() {
                     self.dirty = true;
                 }
@@ -451,6 +470,7 @@ fn run_viewer_window(state: ViewerState) {
         win_phys_h: 1648,
         cursor: PhysicalPosition::new(0.0, 0.0),
         touch_dragging: false,
+        pending_drag_move: None,
         dirty: true,
         last_poll: Instant::now(),
     };

@@ -155,7 +155,7 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
                 if run.de.needs_present {
                     run.pump();
                 }
-                TimeoutAction::ToDuration(Duration::from_millis(16))
+                TimeoutAction::ToDuration(Duration::from_millis(2))
             })
             .map_err(|e| format!("virtual frame timer: {e}"))?;
     }

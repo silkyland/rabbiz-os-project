@@ -73,6 +73,35 @@ where
         + 'static,
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
 {
+    // Fast path for virtual backend (`de.compositor.is_none()`): skip GPU/software
+    // texture uploads and `RenderStack` assembly; only send Wayland frame callbacks!
+    if de.compositor.is_none() {
+        *de.primary_composite += 1;
+        let map = layer_map_for_output(de.output_obj);
+        let time = de.clock.now();
+        let out = de.output_obj.clone();
+        for layer in map.layers() {
+            layer.send_frame(&out, time, Some(Duration::from_millis(16)), |_, _| {
+                Some(out.clone())
+            });
+        }
+        for window in de.space.elements() {
+            window.send_frame(&out, time, Some(Duration::from_millis(16)), |_, _| {
+                Some(out.clone())
+            });
+            for (popup, _) in crate::popups::popups_of(window) {
+                send_frames_surface_tree(
+                    popup.wl_surface(),
+                    &out,
+                    time,
+                    Some(Duration::from_millis(16)),
+                    |_, _| Some(out.clone()),
+                );
+            }
+        }
+        return Ok(true);
+    }
+
     // Upload the latest shell frame as a texture (re-rastered upstream in
     // `present_once` on dirty/minute change — the cached texture otherwise
     // produces no damage and the frame is simply EmptyFrame).

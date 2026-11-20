@@ -120,11 +120,14 @@ struct EmuClient {
 }
 
 /// Non-blocking TCP server for `--emu-listen` speaking `"HELLO\n"`, `"FRAME\n"`
-/// (length-prefixed PNG frames), and line-delimited JSON [`IpcRequest`]s.
+/// (length-prefixed PNG frames), `"RAW\n"`, `"RAW_IF_NEWER <seq>\n"`, and
+/// line-delimited JSON [`IpcRequest`]s.
 pub(crate) struct EmuFrameServer {
     listener: TcpListener,
     clients: Vec<EmuClient>,
     seq: u64,
+    dirty: bool,
+    cached_px: Option<de_api::Pixels>,
 }
 
 impl EmuFrameServer {
@@ -143,7 +146,9 @@ impl EmuFrameServer {
         Some(Self {
             listener,
             clients: Vec::new(),
-            seq: 0,
+            seq: 1,
+            dirty: true,
+            cached_px: None,
         })
     }
 
@@ -323,23 +328,66 @@ impl De {
                         disconnected = true;
                     }
                 } else if cmd.eq_ignore_ascii_case("RAW") {
-                    let px = self.composite_emu_pixels();
-                    server.seq = server.seq.wrapping_add(1);
-                    let header = format!(
-                        "RAW {} {} {} {}\n",
-                        server.seq,
-                        px.size.w,
-                        px.size.h,
-                        px.data.len()
-                    );
-                    if !write_emu_bytes(&mut server.clients[i].stream, header.as_bytes())
-                        || !write_emu_bytes(&mut server.clients[i].stream, &px.data)
-                    {
-                        disconnected = true;
+                    if server.dirty || server.cached_px.is_none() {
+                        server.cached_px = Some(self.composite_emu_pixels());
+                        server.dirty = false;
+                    }
+                    if let Some(px) = server.cached_px.as_ref() {
+                        let header = format!(
+                            "RAW {} {} {} {}\n",
+                            server.seq,
+                            px.size.w,
+                            px.size.h,
+                            px.data.len()
+                        );
+                        if !write_emu_bytes(&mut server.clients[i].stream, header.as_bytes())
+                            || !write_emu_bytes(&mut server.clients[i].stream, &px.data)
+                        {
+                            disconnected = true;
+                        }
+                    }
+                } else if let Some(rest) = cmd
+                    .strip_prefix("RAW_IF_NEWER ")
+                    .or_else(|| cmd.strip_prefix("raw_if_newer "))
+                {
+                    let client_seq = rest.trim().parse::<u64>().unwrap_or(0);
+                    if self.needs_present || self.shell_dirty {
+                        server.dirty = true;
+                        server.seq = server.seq.wrapping_add(1);
+                    }
+                    if !server.dirty && server.cached_px.is_some() && client_seq == server.seq {
+                        let reply = format!("UNCHANGED {}\n", server.seq);
+                        if !write_emu_bytes(&mut server.clients[i].stream, reply.as_bytes()) {
+                            disconnected = true;
+                        }
+                    } else {
+                        if server.dirty || server.cached_px.is_none() {
+                            server.cached_px = Some(self.composite_emu_pixels());
+                            server.dirty = false;
+                        }
+                        if let Some(px) = server.cached_px.as_ref() {
+                            let header = format!(
+                                "RAW {} {} {} {}\n",
+                                server.seq,
+                                px.size.w,
+                                px.size.h,
+                                px.data.len()
+                            );
+                            if !write_emu_bytes(&mut server.clients[i].stream, header.as_bytes())
+                                || !write_emu_bytes(&mut server.clients[i].stream, &px.data)
+                            {
+                                disconnected = true;
+                            }
+                        }
                     }
                 } else {
                     let resp = match decode_request(cmd) {
-                        Ok(req) => self.dispatch_ctl(req.id, req.command),
+                        Ok(req) => {
+                            let r = self.dispatch_ctl(req.id, req.command);
+                            server.dirty = true;
+                            server.seq = server.seq.wrapping_add(1);
+                            r
+                        }
                         Err(err) => IpcResponse::err(0, err),
                     };
                     if let Ok(encoded) = encode_response(&resp) {
@@ -362,6 +410,10 @@ impl De {
 
     /// Service any pending frame/control requests on `--emu-listen` right after virtual present.
     pub(crate) fn broadcast_emu_frame(&mut self) {
+        if let Some(server) = self.emu_server.as_mut() {
+            server.dirty = true;
+            server.seq = server.seq.wrapping_add(1);
+        }
         if self.emu_server.is_some() {
             self.poll_emu_server();
         }

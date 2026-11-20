@@ -475,6 +475,63 @@ pub fn client_poll_raw_frame<S: Read + Write>(stream: &mut S) -> Result<EmuFrame
     read_frame_packet(&mut reader)
 }
 
+/// Request `RAW_IF_NEWER <last_seq>\n`: returns `Ok(Some(EmuFrame))` when a new frame
+/// has been composited since `last_seq`, or `Ok(None)` when the server replies `UNCHANGED`.
+pub fn client_poll_raw_if_newer<S: Read + Write>(
+    stream: &mut S,
+    last_seq: u64,
+) -> Result<Option<EmuFrame>, String> {
+    let cmd = format!("RAW_IF_NEWER {last_seq}\n");
+    stream
+        .write_all(cmd.as_bytes())
+        .map_err(|e| format!("send RAW_IF_NEWER: {e}"))?;
+    stream.flush().map_err(|e| format!("flush RAW_IF_NEWER: {e}"))?;
+    let mut reader = BufReader::new(stream);
+    let mut header = String::new();
+    reader
+        .read_line(&mut header)
+        .map_err(|e| format!("read RAW_IF_NEWER header: {e}"))?;
+    if header.is_empty() {
+        return Err("unexpected EOF reading RAW_IF_NEWER".to_string());
+    }
+    let parts: Vec<&str> = header.split_whitespace().collect();
+    if parts.is_empty() {
+        return Err("empty RAW_IF_NEWER header".to_string());
+    }
+    if parts[0] == "UNCHANGED" {
+        return Ok(None);
+    }
+    if parts[0] == "RAW" || parts[0] == "FRAME" {
+        let is_png = parts[0] == "FRAME";
+        if parts.len() < 5 {
+            return Err(format!("malformed {} header: {:?}", parts[0], header.trim()));
+        }
+        let seq: u64 = parts[1].parse().map_err(|e| format!("seq: {e}"))?;
+        let w: i32 = parts[2].parse().map_err(|e| format!("width: {e}"))?;
+        let h: i32 = parts[3].parse().map_err(|e| format!("height: {e}"))?;
+        let len: usize = parts[4].parse().map_err(|e| format!("len: {e}"))?;
+        if len > MAX_FRAME_BYTES {
+            return Err(format!("frame payload {len} exceeds MAX_FRAME_BYTES"));
+        }
+        let mut payload = vec![0u8; len];
+        reader
+            .read_exact(&mut payload)
+            .map_err(|e| format!("read frame payload: {e}"))?;
+        let full_size = Size::new(w, h);
+        return Ok(Some(EmuFrame {
+            seq,
+            timestamp_ms: 0,
+            full_size,
+            tiles: vec![FrameTile {
+                rect: Rect::from_origin_size(Point::ZERO, full_size),
+                png_or_rgba: payload,
+                is_png,
+            }],
+        }));
+    }
+    Err(format!("unexpected RAW_IF_NEWER reply: {:?}", header.trim()))
+}
+
 /// Helper to create a test [`Pixels`] canvas filled with `color`.
 #[must_use]
 pub fn solid_pixels(size: Size, color: [u8; 4]) -> Pixels {
