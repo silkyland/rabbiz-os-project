@@ -15,7 +15,9 @@ use smithay::desktop::{layer_map_for_output, LayerMap, LayerSurface};
 use smithay::reexports::wayland_server::protocol::{
     wl_buffer::WlBuffer, wl_shm, wl_surface::WlSurface,
 };
-use smithay::wayland::compositor::with_states;
+use smithay::wayland::compositor::{
+    with_states, with_surface_tree_downward, SubsurfaceCachedState, TraversalAction,
+};
 use smithay::wayland::seat::WaylandFocus;
 use smithay::wayland::shm;
 
@@ -237,16 +239,40 @@ fn blit_layer(canvas: &mut Canvas, map: &LayerMap, layer: &LayerSurface) {
     blit_surface(canvas, layer.wl_surface(), ApiPoint::new(loc.x, loc.y));
 }
 
-/// Blit a surface's committed shm buffer at `loc`, honouring `buffer_scale`.
+/// Blit a surface and all of its `wl_subsurface` children's committed shm buffers at `loc`.
 fn blit_surface(canvas: &mut Canvas, surface: &WlSurface, loc: ApiPoint) {
-    let Some((px, scale)) = surface_pixels(surface) else {
-        return;
-    };
-    if scale <= 1 {
-        canvas.blit(&px, loc);
-    } else {
-        let dst = de_api::Rect::new(loc.x, loc.y, px.size.w / scale, px.size.h / scale);
-        canvas.blit_scaled(&px, dst, 1.0);
+    // Collect `(surface, abs_loc)` first so we do not re-enter `with_states`
+    // while `with_surface_tree_downward` holds each node's `SurfaceData` lock.
+    let mut nodes: Vec<(WlSurface, ApiPoint)> = Vec::new();
+    with_surface_tree_downward(
+        surface,
+        loc,
+        |child, states, &parent_loc| {
+            let mut guard = states.cached_state.get::<SubsurfaceCachedState>();
+            let offset = guard.current().location;
+            drop(guard);
+            let cur_loc = ApiPoint::new(parent_loc.x + offset.x, parent_loc.y + offset.y);
+            nodes.push((child.clone(), cur_loc));
+            TraversalAction::DoChildren(cur_loc)
+        },
+        |_, _, _| {},
+        |_, _, _| true,
+    );
+    for (node, cur_loc) in nodes {
+        let Some((px, scale)) = surface_pixels(&node) else {
+            continue;
+        };
+        if scale <= 1 {
+            canvas.blit(&px, cur_loc);
+        } else {
+            let dst = de_api::Rect::new(
+                cur_loc.x,
+                cur_loc.y,
+                px.size.w / scale,
+                px.size.h / scale,
+            );
+            canvas.blit_scaled(&px, dst, 1.0);
+        }
     }
 }
 
