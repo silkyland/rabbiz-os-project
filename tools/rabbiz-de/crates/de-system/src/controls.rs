@@ -188,6 +188,20 @@ fn poll() -> Snapshot {
         .collect();
     let battery_saver =
         (!governor.is_empty()).then(|| governor.iter().all(|s| s.trim() == "powersave"));
+    let m = crate::mock::snapshot();
+    let (wifi, bluetooth, airplane, brightness, volume) = if m.enabled {
+        (
+            m.wifi_enabled.or(wifi),
+            m.bluetooth_enabled.or(bluetooth),
+            m.airplane.or(airplane),
+            m.brightness_pct
+                .map(|p| f32::from(p) / 100.0)
+                .or(brightness),
+            m.volume_pct.map(|p| f32::from(p) / 100.0).or(volume),
+        )
+    } else {
+        (wifi, bluetooth, airplane, brightness, volume)
+    };
     Snapshot {
         wifi,
         bluetooth,

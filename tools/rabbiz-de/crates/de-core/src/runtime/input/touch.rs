@@ -2,7 +2,9 @@
 //! and gesture tracker feeding.
 
 use de_ui::gestures::Zone;
-use smithay::backend::input::{AbsolutePositionEvent, Event, InputBackend, TouchEvent as _};
+use smithay::backend::input::{
+    AbsolutePositionEvent, Event, InputBackend, TouchEvent as _, TouchSlot,
+};
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotion, UpEvent};
 use smithay::reexports::wayland_server::Resource;
 use smithay::utils::{Logical, Point, Size, SERIAL_COUNTER as SCOUNTER};
@@ -16,6 +18,12 @@ impl De {
             self.output.width as i32,
             self.output.height as i32,
         )));
+        self.inject_touch_down(i32::from(evt.slot()), pos, evt.time_msec());
+    }
+
+    /// Inject a raw touch-down contact (shared by libinput and virtual/IPC touch injection).
+    pub fn inject_touch_down(&mut self, slot: i32, pos: Point<f64, Logical>, time_ms: u32) {
+        self.power_note_activity();
         self.last_touch_pos = pos;
         // A touch between Super-down and Super-up means Super is a real
         // modifier, not the launcher key.
@@ -38,7 +46,7 @@ impl De {
             let now_ms = self.uptime_ms(std::time::Instant::now());
             if self
                 .hun_fx
-                .on_touch_down(i32::from(evt.slot()), api_point(pos), out, now_ms)
+                .on_touch_down(slot, api_point(pos), out, now_ms)
             {
                 self.touch_claimed = true;
                 self.needs_present = true;
@@ -61,12 +69,7 @@ impl De {
             && !self.panel_wants_touch()
             && hit.as_ref().is_some_and(|h| h.above_windows);
         if !layer_contact {
-            self.feed_gesture(
-                i32::from(evt.slot()),
-                de_api::input::TouchPhase::Down,
-                pos,
-                evt.time_msec(),
-            );
+            self.feed_gesture(slot, de_api::input::TouchPhase::Down, pos, time_ms);
         }
         // Power-screen contact down: arm a destructive row (800 ms hold).
         if !self.locked()
@@ -108,10 +111,10 @@ impl De {
             self,
             under,
             &DownEvent {
-                slot: evt.slot(),
+                slot: TouchSlot::from(Some(slot.max(0) as u32)),
                 location: pos,
                 serial,
-                time: evt.time_msec(),
+                time: time_ms,
             },
         );
     }
@@ -121,6 +124,12 @@ impl De {
             self.output.width as i32,
             self.output.height as i32,
         )));
+        self.inject_touch_motion(i32::from(evt.slot()), pos, evt.time_msec());
+    }
+
+    /// Inject a raw touch-motion event.
+    pub fn inject_touch_motion(&mut self, slot: i32, pos: Point<f64, Logical>, time_ms: u32) {
+        self.power_note_activity();
         self.last_touch_pos = pos;
         if self.sleeping() {
             return;
@@ -128,18 +137,10 @@ impl De {
         if self.lock.shown() && self.lock.bouncer_open && !self.power.menu_over_lock {
             return;
         }
-        if self
-            .hun_fx
-            .on_touch_motion(i32::from(evt.slot()), api_point(pos))
-        {
+        if self.hun_fx.on_touch_motion(slot, api_point(pos)) {
             return;
         }
-        self.feed_gesture(
-            i32::from(evt.slot()),
-            de_api::input::TouchPhase::Motion,
-            pos,
-            evt.time_msec(),
-        );
+        self.feed_gesture(slot, de_api::input::TouchPhase::Motion, pos, time_ms);
         if self.touch_claimed {
             return;
         }
@@ -149,14 +150,20 @@ impl De {
             self,
             under,
             &TouchMotion {
-                slot: evt.slot(),
+                slot: TouchSlot::from(Some(slot.max(0) as u32)),
                 location: pos,
-                time: evt.time_msec(),
+                time: time_ms,
             },
         );
     }
 
     pub(super) fn on_touch_up<B: InputBackend>(&mut self, evt: &B::TouchUpEvent) {
+        self.inject_touch_up(i32::from(evt.slot()), evt.time_msec());
+    }
+
+    /// Inject a raw touch-up event.
+    pub fn inject_touch_up(&mut self, slot: i32, time_ms: u32) {
+        self.power_note_activity();
         let pos = self.last_touch_pos;
         if self.sleeping() {
             self.sleep_touch_up();
@@ -171,10 +178,7 @@ impl De {
         }
         let out = de_api::Size::new(self.output.width as i32, self.output.height as i32);
         let now_ms = self.uptime_ms(std::time::Instant::now());
-        if let Some(action) =
-            self.hun_fx
-                .on_touch_up(i32::from(evt.slot()), api_point(pos), out, now_ms)
-        {
+        if let Some(action) = self.hun_fx.on_touch_up(slot, api_point(pos), out, now_ms) {
             self.touch_claimed = false;
             match action {
                 crate::hun_ui::HunTouchAction::Dismissed(id) => {
@@ -189,12 +193,7 @@ impl De {
             return;
         }
         self.power_menu_release();
-        self.feed_gesture(
-            i32::from(evt.slot()),
-            de_api::input::TouchPhase::Up,
-            pos,
-            evt.time_msec(),
-        );
+        self.feed_gesture(slot, de_api::input::TouchPhase::Up, pos, time_ms);
         if std::mem::take(&mut self.touch_claimed) {
             self.needs_present = true;
             return;
@@ -204,14 +203,19 @@ impl De {
         touch.up(
             self,
             &UpEvent {
-                slot: evt.slot(),
+                slot: TouchSlot::from(Some(slot.max(0) as u32)),
                 serial,
-                time: evt.time_msec(),
+                time: time_ms,
             },
         );
     }
 
     pub(super) fn on_touch_cancel<B: InputBackend>(&mut self, evt: &B::TouchCancelEvent) {
+        self.inject_touch_cancel(i32::from(evt.slot()), evt.time_msec());
+    }
+
+    /// Inject a raw touch-cancel event.
+    pub fn inject_touch_cancel(&mut self, slot: i32, time_ms: u32) {
         if self.sleeping() {
             self.sleep_touch_cancel();
             self.touch_claimed = true;
@@ -222,17 +226,17 @@ impl De {
             return;
         }
         let now_ms = self.uptime_ms(std::time::Instant::now());
-        if self.hun_fx.on_touch_cancel(i32::from(evt.slot()), now_ms) {
+        if self.hun_fx.on_touch_cancel(slot, now_ms) {
             self.touch_claimed = false;
             self.needs_present = true;
             return;
         }
         self.power_menu_release();
         self.feed_gesture(
-            i32::from(evt.slot()),
+            slot,
             de_api::input::TouchPhase::Cancel,
             self.last_touch_pos,
-            evt.time_msec(),
+            time_ms,
         );
         if !std::mem::take(&mut self.touch_claimed) {
             self.touch.clone().cancel(self);

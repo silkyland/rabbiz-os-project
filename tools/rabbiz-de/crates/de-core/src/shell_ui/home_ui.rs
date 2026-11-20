@@ -110,6 +110,15 @@ impl HomeUi {
     pub(crate) fn dragging_icon(&self) -> bool {
         self.drag.is_some()
     }
+
+    /// Drop cached home layers/textures after catalog rescan (`ReloadApps`).
+    pub(crate) fn invalidate(&mut self) {
+        self.layers = None;
+        self.tex_key = 0;
+        self.base_tex = None;
+        self.page_tex.clear();
+        self.dots_tex.clear();
+    }
 }
 
 /// Everything the home screen shows, resolved once per use.

@@ -3,7 +3,8 @@
 
 use std::process::Command;
 
-use smithay::backend::input::{Event, InputBackend, KeyState, KeyboardKeyEvent};
+use de_config::ipc::{HwButtonKind, OsdKind};
+use smithay::backend::input::{Event, InputBackend, KeyState, KeyboardKeyEvent, Keycode};
 use smithay::input::keyboard::{FilterResult, Keysym, ModifiersState};
 use smithay::utils::SERIAL_COUNTER as SCOUNTER;
 
@@ -11,10 +12,23 @@ use crate::state::De;
 
 impl De {
     pub(super) fn on_keyboard_key<B: InputBackend>(&mut self, evt: &B::KeyboardKeyEvent) {
+        self.inject_key(
+            evt.key_code().raw(),
+            evt.state() == KeyState::Pressed,
+            evt.time_msec(),
+        );
+    }
+
+    /// Inject a raw XKB keycode (shared by libinput and virtual/IPC key injection).
+    pub fn inject_key(&mut self, keycode_raw: u32, pressed: bool, time: u32) {
+        self.power_note_activity();
         let serial = SCOUNTER.next_serial();
-        let keycode = evt.key_code();
-        let state = evt.state();
-        let time = evt.time_msec();
+        let keycode = Keycode::from(keycode_raw);
+        let state = if pressed {
+            KeyState::Pressed
+        } else {
+            KeyState::Released
+        };
         if state == KeyState::Pressed && self.menu_key(keycode.raw()) {
             return;
         }
@@ -33,9 +47,13 @@ impl De {
                 // combo guard in a21s-power-key never stalls the loop. The
                 // release also wakes a sleeping panel via `toggle`.
                 if raw == Some(Keysym::XF86_PowerOff) && state == KeyState::Released {
-                    let _ = Command::new("setsid")
-                        .args(["a21s-power-key", "toggle"])
-                        .spawn();
+                    if de.compositor.is_none() {
+                        de.inject_hw_button(HwButtonKind::Power);
+                    } else {
+                        let _ = Command::new("setsid")
+                            .args(["a21s-power-key", "toggle"])
+                            .spawn();
+                    }
                     return FilterResult::Intercept(());
                 }
                 if de.sleeping() {
@@ -110,5 +128,33 @@ impl De {
                 FilterResult::Forward
             },
         );
+    }
+
+    /// Inject a hardware button press (Power / VolumeUp / VolumeDown).
+    pub fn inject_hw_button(&mut self, button: HwButtonKind) {
+        match button {
+            HwButtonKind::Power => {
+                if self.sleeping() {
+                    self.power_wake();
+                } else {
+                    self.power_lock();
+                }
+                self.needs_present = true;
+            }
+            HwButtonKind::VolumeUp | HwButtonKind::VolumeDown => {
+                self.power_note_activity();
+                let step = if button == HwButtonKind::VolumeUp {
+                    0.05
+                } else {
+                    -0.05
+                };
+                self.panels.volume = (self.panels.volume + step).clamp(0.0, 1.0);
+                let pct = (self.panels.volume * 100.0).round() as u8;
+                let _ = de_system::mock::apply("volume", &pct.to_string());
+                self.osd_fx
+                    .show(OsdKind::Volume, pct, pct == 0, std::time::Instant::now());
+                self.needs_present = true;
+            }
+        }
     }
 }

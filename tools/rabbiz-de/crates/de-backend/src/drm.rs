@@ -35,6 +35,26 @@ pub struct OutputSelection {
     pub refresh_hz: f64,
 }
 
+/// Backend-neutral output geometry shared by DRM and virtual outputs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct OutputGeometry {
+    pub connector_name: String,
+    pub width: u32,
+    pub height: u32,
+    pub refresh_hz: f64,
+}
+
+impl From<&OutputSelection> for OutputGeometry {
+    fn from(o: &OutputSelection) -> Self {
+        Self {
+            connector_name: o.connector_name.clone(),
+            width: o.width,
+            height: o.height,
+            refresh_hz: o.refresh_hz,
+        }
+    }
+}
+
 /// Everything opened for one DRM card.
 pub struct DrmSetup {
     pub device: DrmDevice,

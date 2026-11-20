@@ -3,14 +3,13 @@
 //! Line-delimited JSON messages (`\n`-terminated, capped at [`MAX_MESSAGE_BYTES`])
 //! sent over `$XDG_RUNTIME_DIR/rabbiz-de-ctl.sock`.
 
-#[cfg(unix)]
 use std::io::{BufRead, BufReader, Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
 #[cfg(unix)]
 use std::os::unix::net::UnixStream;
 #[cfg(unix)]
 use std::path::Path;
 use std::path::PathBuf;
-#[cfg(unix)]
 use std::time::Duration;
 
 use de_api::Size;
@@ -65,12 +64,51 @@ pub enum IpcCommand {
     },
     /// Reload theme/palette and re-rasterize shell chrome.
     ReloadTheme,
+    /// Rescan `.desktop` application catalog and invalidate the home grid.
+    ReloadApps,
     /// Open or close a top-edge panel.
     SetPanel { panel: PanelKind, open: bool },
+    /// Inject a synthetic touch event into the compositor input pipeline.
+    InjectTouch {
+        phase: TouchInjectPhase,
+        #[serde(default)]
+        slot: i32,
+        x: i32,
+        y: i32,
+    },
+    /// Inject a synthetic Linux evdev key event into the compositor input pipeline.
+    InjectKey {
+        keycode: u32,
+        #[serde(default = "default_true")]
+        pressed: bool,
+    },
+    /// Inject a synthetic hardware button press (power / volume).
+    InjectHwButton { button: HwButtonKind },
+    /// Update a synthetic system/hardware state entry in `de_system::mock`.
+    SetMock { key: String, value: String },
 }
 
 const fn default_true() -> bool {
     true
+}
+
+/// Touch injection phase for [`IpcCommand::InjectTouch`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TouchInjectPhase {
+    Down,
+    Move,
+    Up,
+    Cancel,
+}
+
+/// Hardware button kind for [`IpcCommand::InjectHwButton`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HwButtonKind {
+    Power,
+    VolumeUp,
+    VolumeDown,
 }
 
 /// OSD pill type for [`IpcCommand::ShowOsd`].
@@ -190,9 +228,45 @@ pub fn encode_response(resp: &IpcResponse) -> Result<String, String> {
     Ok(s)
 }
 
+/// Send one request to a running `rabbiz-de` TCP control listener and read its reply.
+pub fn send_request_tcp(addr: &str, req: &IpcRequest) -> Result<IpcResponse, String> {
+    let payload = encode_request(req)?;
+    let timeout = Duration::from_secs(2);
+    let sock_addr = addr
+        .to_socket_addrs()
+        .map_err(|e| format!("resolve {addr}: {e}"))?
+        .next()
+        .ok_or_else(|| format!("no address for {addr}"))?;
+    let mut stream = TcpStream::connect_timeout(&sock_addr, timeout)
+        .map_err(|e| format!("connect {addr}: {e}"))?;
+    let _ = stream.set_read_timeout(Some(timeout));
+    let _ = stream.set_write_timeout(Some(timeout));
+    stream
+        .write_all(payload.as_bytes())
+        .map_err(|e| format!("write request: {e}"))?;
+    let mut reader = BufReader::new(stream.take((MAX_MESSAGE_BYTES + 1) as u64));
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|e| format!("read response: {e}"))?;
+    if line.is_empty() {
+        return Err("empty response from compositor".into());
+    }
+    decode_response(&line)
+}
+
 /// Send one request to a running `rabbiz-de` control socket and read its reply.
+///
+/// When `RABBIZ_DE_CTL_TCP` is set to a non-empty `host:port`, routes over TCP
+/// instead of the local Unix domain socket.
 #[cfg(unix)]
 pub fn send_request(path: &Path, req: &IpcRequest) -> Result<IpcResponse, String> {
+    if let Ok(addr) = std::env::var("RABBIZ_DE_CTL_TCP") {
+        let trimmed = addr.trim();
+        if !trimmed.is_empty() {
+            return send_request_tcp(trimmed, req);
+        }
+    }
     let payload = encode_request(req)?;
     let mut stream =
         UnixStream::connect(path).map_err(|e| format!("connect {}: {e}", path.display()))?;
@@ -255,6 +329,39 @@ mod tests {
                 command: IpcCommand::SetPanel {
                     panel: PanelKind::Quick,
                     open: true,
+                },
+            },
+            IpcRequest {
+                id: 8,
+                command: IpcCommand::ReloadApps,
+            },
+            IpcRequest {
+                id: 9,
+                command: IpcCommand::InjectTouch {
+                    phase: TouchInjectPhase::Down,
+                    slot: 0,
+                    x: 360,
+                    y: 800,
+                },
+            },
+            IpcRequest {
+                id: 10,
+                command: IpcCommand::InjectKey {
+                    keycode: 28,
+                    pressed: true,
+                },
+            },
+            IpcRequest {
+                id: 11,
+                command: IpcCommand::InjectHwButton {
+                    button: HwButtonKind::Power,
+                },
+            },
+            IpcRequest {
+                id: 12,
+                command: IpcCommand::SetMock {
+                    key: "battery".into(),
+                    value: "42".into(),
                 },
             },
         ];
@@ -412,6 +519,43 @@ mod tests {
         )
         .expect("send_request");
         assert_eq!(resp, IpcResponse::ok(42, None));
+        server.join().expect("server thread");
+    }
+
+    #[test]
+    fn tcp_socket_roundtrip() {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let addr = listener.local_addr().expect("local_addr").to_string();
+
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut reader = BufReader::new(stream.try_clone().expect("clone"));
+            let mut line = String::new();
+            reader.read_line(&mut line).expect("read");
+            let req = decode_request(&line).expect("decode req");
+            assert_eq!(req.command, IpcCommand::ReloadApps);
+            let reply = encode_response(&IpcResponse::ok(
+                req.id,
+                Some(serde_json::json!({ "apps": 9 })),
+            ))
+            .expect("encode");
+            stream.write_all(reply.as_bytes()).expect("write");
+        });
+
+        let resp = send_request_tcp(
+            &addr,
+            &IpcRequest {
+                id: 77,
+                command: IpcCommand::ReloadApps,
+            },
+        )
+        .expect("send_request_tcp");
+        assert_eq!(
+            resp,
+            IpcResponse::ok(77, Some(serde_json::json!({ "apps": 9 })))
+        );
         server.join().expect("server thread");
     }
 }

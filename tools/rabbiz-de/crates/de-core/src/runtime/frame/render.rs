@@ -34,12 +34,12 @@ render_elements! {
 /// Field-split view of `De` for [`render_with`], so the renderer can be
 /// borrowed mutably at the same time as the scene state.
 pub(super) struct FrameParts<'a> {
-    pub(super) compositor: &'a mut de_backend::probe::DeCompositor,
+    pub(super) compositor: &'a mut Option<de_backend::probe::DeCompositor>,
     pub(super) space: &'a mut smithay::desktop::Space<smithay::desktop::Window>,
     pub(super) shell_tex: &'a mut Option<Box<dyn std::any::Any>>,
     pub(super) shell_px: &'a mut Option<de_api::Pixels>,
     pub(super) gesture_bar: &'a mut Option<Box<dyn std::any::Any>>,
-    pub(super) output: &'a de_backend::drm::OutputSelection,
+    pub(super) output: &'a de_backend::drm::OutputGeometry,
     pub(super) output_obj: &'a smithay::output::Output,
     pub(super) clock: &'a smithay::utils::Clock<smithay::utils::Monotonic>,
     pub(super) primary_composite: &'a mut u64,
@@ -269,31 +269,34 @@ where
         de.lock.shown() && !de.lock.is_unlocking() && de.lock.progress() <= f32::EPSILON;
     let elements = stack.into_smithay_elements(strictly_locked);
 
-    let res = de
-        .compositor
-        .render_frame(
-            renderer,
-            &elements,
-            [0.086, 0.063, 0.102, 1.0],
-            if transitioning {
-                FrameFlags::empty()
-            } else {
-                FrameFlags::DEFAULT
-            },
-        )
-        .map_err(|e| format!("render: {e:?}"))?;
+    if let Some(compositor) = de.compositor.as_mut() {
+        let res = compositor
+            .render_frame(
+                renderer,
+                &elements,
+                [0.086, 0.063, 0.102, 1.0],
+                if transitioning {
+                    FrameFlags::empty()
+                } else {
+                    FrameFlags::DEFAULT
+                },
+            )
+            .map_err(|e| format!("render: {e:?}"))?;
 
-    if let Err(e) = de.compositor.queue_frame(()) {
-        if !format!("{e:?}").contains("EmptyFrame") {
-            return Err(format!("queue: {e:?}"));
+        if let Err(e) = compositor.queue_frame(()) {
+            if !format!("{e:?}").contains("EmptyFrame") {
+                return Err(format!("queue: {e:?}"));
+            }
+            return Ok(false);
         }
-        return Ok(false);
-    }
 
-    // M1-T4 counters from the observed result, not a guess.
-    match res.primary_element {
-        PrimaryPlaneElement::Swapchain(_) => *de.primary_composite += 1,
-        PrimaryPlaneElement::Element(_) => *de.direct_scanout += 1,
+        // M1-T4 counters from the observed result, not a guess.
+        match res.primary_element {
+            PrimaryPlaneElement::Swapchain(_) => *de.primary_composite += 1,
+            PrimaryPlaneElement::Element(_) => *de.direct_scanout += 1,
+        }
+    } else {
+        *de.primary_composite += 1;
     }
 
     // Frame callbacks for the freshly-committed surfaces.
@@ -469,7 +472,7 @@ fn prepare_panel_gpu_blur<R: Renderer + ImportAll + ImportMem + 'static>(
     renderer: &mut R,
     panel: &mut crate::panel_ui::PanelUi,
     scene: &Vec<DeElement<R>>,
-    output: &de_backend::drm::OutputSelection,
+    output: &de_backend::drm::OutputGeometry,
 ) where
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
 {
@@ -513,7 +516,7 @@ fn push_panel<R>(
     elements: &mut Vec<DeElement<R>>,
     renderer: &mut R,
     panel: &mut crate::panel_ui::PanelUi,
-    output: &de_backend::drm::OutputSelection,
+    output: &de_backend::drm::OutputGeometry,
 ) where
     R: Renderer + ImportAll + ImportMem + 'static,
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
@@ -596,7 +599,7 @@ fn push_lock<R>(
     elements: &mut Vec<DeElement<R>>,
     renderer: &mut R,
     lock: &mut crate::lock_ui::LockUi,
-    output: &de_backend::drm::OutputSelection,
+    output: &de_backend::drm::OutputGeometry,
     now: Instant,
 ) where
     R: Renderer + ImportAll + ImportMem,
@@ -637,7 +640,7 @@ fn push_menu_over<R>(
     elements: &mut Vec<DeElement<R>>,
     renderer: &mut R,
     power: &mut crate::power::Power,
-    _output: &de_backend::drm::OutputSelection,
+    _output: &de_backend::drm::OutputGeometry,
 ) where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
@@ -674,7 +677,7 @@ fn push_shot<R>(
     elements: &mut Vec<DeElement<R>>,
     renderer: &mut R,
     shot: &mut crate::shot_ui::ShotFx,
-    output: &de_backend::drm::OutputSelection,
+    output: &de_backend::drm::OutputGeometry,
     now: Instant,
 ) where
     R: Renderer + ImportAll + ImportMem,
@@ -731,7 +734,7 @@ fn push_osd<R>(
     elements: &mut Vec<DeElement<R>>,
     renderer: &mut R,
     osd: &mut crate::osd_ui::OsdFx,
-    output: &de_backend::drm::OutputSelection,
+    output: &de_backend::drm::OutputGeometry,
     now: Instant,
 ) where
     R: Renderer + ImportAll + ImportMem,
@@ -772,7 +775,7 @@ fn push_hun<R>(
     elements: &mut Vec<DeElement<R>>,
     renderer: &mut R,
     hun: &mut crate::hun_ui::HunFx,
-    output: &de_backend::drm::OutputSelection,
+    output: &de_backend::drm::OutputGeometry,
 ) where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
@@ -803,7 +806,7 @@ fn push_hun<R>(
 fn push_fade<R>(
     elements: &mut Vec<DeElement<R>>,
     power: &crate::power::Power,
-    output: &de_backend::drm::OutputSelection,
+    output: &de_backend::drm::OutputGeometry,
     now: Instant,
 ) where
     R: Renderer + ImportAll + ImportMem,
@@ -834,7 +837,7 @@ fn push_drag_overlay<R>(
     elements: &mut Vec<DeElement<R>>,
     renderer: &mut R,
     home: &mut crate::home_ui::HomeUi,
-    output: &de_backend::drm::OutputSelection,
+    output: &de_backend::drm::OutputGeometry,
 ) where
     R: Renderer + ImportAll + ImportMem,
     R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,

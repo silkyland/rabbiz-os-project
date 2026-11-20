@@ -309,14 +309,18 @@ impl Run {
             DeRenderer::Gl(r) => render_with(&mut parts, &mut **r)?,
             DeRenderer::Soft(r) => render_with(&mut parts, r)?,
         };
-        // `copy_with_damage` completes on the frame that carried damage.
-        if queued {
-            self.vblank_pending = true;
-            self.de.screencopy_flush_pending();
-        }
         let cpu = t0.elapsed().as_secs_f64() * 1000.0;
         self.cpu_samples.push(cpu);
         self.all_cpu.push(cpu);
+        // `copy_with_damage` completes on the frame that carried damage.
+        if queued {
+            if self.de.compositor.is_some() {
+                self.vblank_pending = true;
+                self.de.screencopy_flush_pending();
+            } else {
+                self.on_virtual_present();
+            }
+        }
         if self.trace_motion && queued && self.de.panels.pull.animating() {
             let gap = self
                 .last_panel_frame
@@ -431,8 +435,10 @@ impl Run {
     /// emit stats, request the next frame.
     pub fn on_vblank(&mut self) {
         self.vblank_pending = false;
-        if let Err(e) = self.de.compositor.frame_submitted() {
-            eprintln!("frame_submitted: {e:?}");
+        if let Some(comp) = self.de.compositor.as_mut() {
+            if let Err(e) = comp.frame_submitted() {
+                eprintln!("frame_submitted: {e:?}");
+            }
         }
         let now = Instant::now();
         if let Some(last) = self.last_vblank.replace(now) {
@@ -459,6 +465,24 @@ impl Run {
         // flush so clients see them this vblank, not on their next request.
         if let Err(e) = self.de.display_handle.flush_clients() {
             eprintln!("flush_clients: {e}");
+        }
+    }
+
+    /// Virtual-backend present accounting (no hardware vblank notifier).
+    fn on_virtual_present(&mut self) {
+        let now = Instant::now();
+        if !self.de.first_flip {
+            self.de.first_flip = true;
+            write_ready_file();
+        }
+        self.frames += 1;
+        self.window_frames += 1;
+        self.rss_peak = self.rss_peak.max(rss_kb());
+        self.cma_min = self.cma_min.min(cma_free_kb());
+        self.de.screencopy_flush_pending();
+        self.de.broadcast_emu_frame();
+        if now.duration_since(self.last_second) >= Duration::from_secs(1) {
+            self.flush_second(now);
         }
     }
 

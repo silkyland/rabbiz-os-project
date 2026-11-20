@@ -23,9 +23,15 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         EventLoop::try_new().map_err(|e| format!("event loop: {e}"))?;
     let handle = event_loop.handle();
 
-    // Wayland client socket: fixed name `wayland-0` (§7.20).
-    let socket = ListeningSocketSource::with_name("wayland-0")
-        .map_err(|e| format!("wayland socket: {e:?}"))?;
+    // Wayland client socket: fixed name `wayland-0` (§7.20), falling back to an
+    // auto-assigned socket name in virtual mode when `wayland-0` is already bound.
+    let socket = match ListeningSocketSource::with_name("wayland-0") {
+        Ok(s) => s,
+        Err(_) if run.de.compositor.is_none() => {
+            ListeningSocketSource::new_auto().map_err(|e| format!("wayland socket: {e:?}"))?
+        }
+        Err(e) => return Err(format!("wayland socket: {e:?}")),
+    };
     let socket_name = socket.socket_name().to_string_lossy().into_owned();
     run.de.socket_name = Some(socket_name.clone());
     handle
@@ -60,24 +66,21 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         )
         .map_err(|e| format!("display source: {e}"))?;
 
-    // libseat notifier: keep the session dispatchable.
-    let seat = run
-        .de
-        .seat_notifier
-        .take()
-        .ok_or("seat notifier consumed")?;
-    handle
-        .insert_source(seat, |_, (), _: &mut Run| {})
-        .map_err(|e| format!("seat source: {e}"))?;
-
-    // libinput.
-    let libinput = de_backend::libinput::init(&run.de.session, &run.de.seat_name);
-    handle
-        .insert_source(libinput, |event, (), run: &mut Run| {
-            run.de.process_input_event(event);
-            run.pump();
-        })
-        .map_err(|e| format!("libinput source: {e}"))?;
+    // libseat notifier + libinput (hardware DRM session only).
+    if let Some(seat) = run.de.seat_notifier.take() {
+        handle
+            .insert_source(seat, |_, (), _: &mut Run| {})
+            .map_err(|e| format!("seat source: {e}"))?;
+    }
+    if let Some(session) = run.de.session.as_ref() {
+        let libinput = de_backend::libinput::init(session, &run.de.seat_name);
+        handle
+            .insert_source(libinput, |event, (), run: &mut Run| {
+                run.de.process_input_event(event);
+                run.pump();
+            })
+            .map_err(|e| format!("libinput source: {e}"))?;
+    }
 
     // Gesture holds must work without manufactured touch motion.
     handle
@@ -117,6 +120,8 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
             run.de.check_osk();
             poll_shell_im_bridge(&mut run.de);
             run.de.poll_ctl_ipc();
+            run.de.poll_emu_server();
+            run.de.poll_mock_system();
             run.de.poll_panels();
             run.de.poll_power();
             run.de.poll_recents_backdrop();
@@ -127,20 +132,30 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         })
         .map_err(|e| format!("shot timer source: {e}"))?;
 
-    // DRM vblank source.
-    let notifier = run
-        .de
-        .setup
-        .notifier
-        .take()
-        .ok_or("drm notifier consumed")?;
-    handle
-        .insert_source(notifier, |event, _meta, run: &mut Run| {
-            if let smithay::backend::drm::DrmEvent::VBlank(_) = event {
-                run.on_vblank();
-            }
-        })
-        .map_err(|e| format!("drm source: {e}"))?;
+    // DRM vblank source (hardware mode) or 16 ms frame/IPC timer (virtual mode).
+    if let Some(setup) = run.de.setup.as_mut() {
+        let notifier = setup.notifier.take().ok_or("drm notifier consumed")?;
+        handle
+            .insert_source(notifier, |event, _meta, run: &mut Run| {
+                if let smithay::backend::drm::DrmEvent::VBlank(_) = event {
+                    run.on_vblank();
+                }
+            })
+            .map_err(|e| format!("drm source: {e}"))?;
+    }
+    if run.de.compositor.is_none() {
+        handle
+            .insert_source(Timer::immediate(), |_, (), run: &mut Run| {
+                run.de.poll_ctl_ipc();
+                run.de.poll_emu_server();
+                run.de.poll_mock_system();
+                if run.de.needs_present {
+                    run.pump();
+                }
+                TimeoutAction::ToDuration(Duration::from_millis(16))
+            })
+            .map_err(|e| format!("virtual frame timer: {e}"))?;
+    }
 
     let deadline = run.duration.map(|d| Instant::now() + d);
     // Kick off the first frame.
@@ -175,6 +190,8 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
             .map_err(|e| format!("dispatch: {e}"))?;
         poll_shell_im_bridge(&mut run.de);
         run.de.poll_ctl_ipc();
+        run.de.poll_emu_server();
+        run.de.poll_mock_system();
         if run.de.needs_present {
             run.pump();
         }

@@ -12,6 +12,16 @@ pub enum RendererSelect {
     Soft,
 }
 
+/// `--backend` value.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum BackendSelect {
+    /// Hardware DRM/KMS + libseat + libinput (default).
+    #[default]
+    Drm,
+    /// Headless / emulator virtual output with software renderer.
+    Virtual,
+}
+
 /// Subcommand.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
@@ -35,8 +45,15 @@ pub struct Cli {
 }
 
 /// Flags accepted by `rabbiz-de` (see plan M0-T4).
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone)]
 pub struct Flags {
+    pub backend: BackendSelect,
+    pub virtual_size: (u32, u32),
+    pub virtual_refresh_hz: f64,
+    pub ctl_listen: Option<String>,
+    pub emu_listen: Option<String>,
+    pub headless: bool,
     pub renderer: RendererSelect,
     /// Fail when GL cannot initialize.
     pub require_gl: bool,
@@ -57,6 +74,12 @@ pub struct Flags {
 impl Default for Flags {
     fn default() -> Self {
         Self {
+            backend: BackendSelect::Drm,
+            virtual_size: (720, 1600),
+            virtual_refresh_hz: 60.0,
+            ctl_listen: None,
+            emu_listen: None,
+            headless: false,
             renderer: RendererSelect::Auto,
             require_gl: false,
             stats: false,
@@ -89,9 +112,29 @@ pub fn parse<I: Iterator<Item = String>>(args: I) -> Result<Cli, String> {
             // `--shell` is only meaningful with `env`; `--json` matches the probe
             // contract — both accepted silently.
             "--shell" | "--json" => {}
+            "--headless" => flags.headless = true,
             "--force-fail" => flags.force_fail = true,
             "--require=gl" => flags.require_gl = true,
             "--stats" => flags.stats = true,
+            s if s.starts_with("--backend") => {
+                flags.backend = match value(s, &mut it)?.as_str() {
+                    "drm" => BackendSelect::Drm,
+                    "virtual" => BackendSelect::Virtual,
+                    other => return Err(format!("unknown --backend {other}")),
+                };
+            }
+            s if s.starts_with("--size") => {
+                flags.virtual_size = parse_virtual_size(&value(s, &mut it)?)?;
+            }
+            s if s.starts_with("--refresh") => {
+                flags.virtual_refresh_hz = parse_virtual_refresh(&value(s, &mut it)?)?;
+            }
+            s if s.starts_with("--ctl-listen") => {
+                flags.ctl_listen = Some(value(s, &mut it)?);
+            }
+            s if s.starts_with("--emu-listen") => {
+                flags.emu_listen = Some(value(s, &mut it)?);
+            }
             s if s.starts_with("--stats-file") => {
                 flags.stats_file = Some(PathBuf::from(value(s, &mut it)?));
             }
@@ -114,7 +157,39 @@ pub fn parse<I: Iterator<Item = String>>(args: I) -> Result<Cli, String> {
             other => return Err(format!("unknown argument '{other}'\n{}", help())),
         }
     }
+    if flags.backend != BackendSelect::Virtual
+        && (flags.ctl_listen.is_some() || flags.emu_listen.is_some())
+    {
+        return Err("--ctl-listen and --emu-listen require --backend=virtual".to_string());
+    }
     Ok(Cli { command, flags })
+}
+
+fn parse_virtual_size(spec: &str) -> Result<(u32, u32), String> {
+    let (w_str, h_str) = spec
+        .split_once('x')
+        .or_else(|| spec.split_once('X'))
+        .ok_or_else(|| format!("--size expects WxH, got '{spec}'"))?;
+    let w: u32 = w_str
+        .parse()
+        .map_err(|_| format!("invalid width in --size '{spec}'"))?;
+    let h: u32 = h_str
+        .parse()
+        .map_err(|_| format!("invalid height in --size '{spec}'"))?;
+    if w == 0 || h == 0 || w > 8192 || h > 8192 {
+        return Err(format!("--size dimensions must be 1..=8192, got {w}x{h}"));
+    }
+    Ok((w, h))
+}
+
+fn parse_virtual_refresh(spec: &str) -> Result<f64, String> {
+    let hz: f64 = spec
+        .parse()
+        .map_err(|_| format!("invalid --refresh '{spec}'"))?;
+    if !hz.is_finite() || !(1.0..=240.0).contains(&hz) {
+        return Err(format!("--refresh must be 1.0..=240.0, got '{spec}'"));
+    }
+    Ok(hz)
 }
 
 fn value<I: Iterator<Item = String>>(flag: &str, it: &mut I) -> Result<String, String> {
@@ -127,11 +202,11 @@ fn value<I: Iterator<Item = String>>(flag: &str, it: &mut I) -> Result<String, S
 fn parse_ctl<I: Iterator<Item = String>>(
     it: &mut std::iter::Peekable<I>,
 ) -> Result<crate::ipc::IpcCommand, String> {
-    use crate::ipc::{IpcCommand, OsdKind, PanelKind};
+    use crate::ipc::{HwButtonKind, IpcCommand, OsdKind, PanelKind, TouchInjectPhase};
 
-    let sub = it
-        .next()
-        .ok_or("ctl needs a subcommand: state|lock|launch|screenshot|reload-theme|panel|osd")?;
+    let sub = it.next().ok_or(
+        "ctl needs a subcommand: state|lock|launch|screenshot|reload-theme|reload-apps|panel|osd|touch|key|button|mock",
+    )?;
     match sub.as_str() {
         "state" | "get_state" => Ok(IpcCommand::GetState),
         "lock" => Ok(IpcCommand::Lock),
@@ -154,6 +229,7 @@ fn parse_ctl<I: Iterator<Item = String>>(
             Ok(IpcCommand::Screenshot { save })
         }
         "reload-theme" | "reload_theme" => Ok(IpcCommand::ReloadTheme),
+        "reload-apps" | "reload_apps" => Ok(IpcCommand::ReloadApps),
         "panel" => {
             let first = it
                 .next()
@@ -203,12 +279,86 @@ fn parse_ctl<I: Iterator<Item = String>>(
                 muted,
             })
         }
+        "touch" => {
+            let phase = match it
+                .next()
+                .ok_or("ctl touch needs down|move|up|cancel")?
+                .as_str()
+            {
+                "down" => TouchInjectPhase::Down,
+                "move" | "motion" => TouchInjectPhase::Move,
+                "up" => TouchInjectPhase::Up,
+                "cancel" => TouchInjectPhase::Cancel,
+                other => return Err(format!("unknown touch phase '{other}'")),
+            };
+            let (x, y) = if matches!(phase, TouchInjectPhase::Up | TouchInjectPhase::Cancel)
+                && it.peek().is_none()
+            {
+                (0, 0)
+            } else {
+                let x: i32 = it
+                    .next()
+                    .ok_or("ctl touch needs <x> <y>")?
+                    .parse()
+                    .map_err(|_| "ctl touch <x> must be an integer")?;
+                let y: i32 = it
+                    .next()
+                    .ok_or("ctl touch needs <x> <y>")?
+                    .parse()
+                    .map_err(|_| "ctl touch <y> must be an integer")?;
+                (x, y)
+            };
+            let slot: i32 = match it.next() {
+                Some(s) => s
+                    .parse()
+                    .map_err(|_| "ctl touch [slot] must be an integer")?,
+                None => 0,
+            };
+            Ok(IpcCommand::InjectTouch { phase, slot, x, y })
+        }
+        "key" => {
+            let keycode: u32 = it
+                .next()
+                .ok_or("ctl key needs a keycode")?
+                .parse()
+                .map_err(|_| "ctl key keycode must be a u32")?;
+            let pressed = match it.next().as_deref() {
+                None | Some("press" | "down") => true,
+                Some("release" | "up") => false,
+                Some(other) => return Err(format!("unknown key state '{other}'")),
+            };
+            Ok(IpcCommand::InjectKey { keycode, pressed })
+        }
+        "button" => {
+            let button = match it
+                .next()
+                .ok_or("ctl button needs power|vol-up|vol-down")?
+                .as_str()
+            {
+                "power" => HwButtonKind::Power,
+                "vol-up" | "vol_up" | "volume-up" | "volume_up" => HwButtonKind::VolumeUp,
+                "vol-down" | "vol_down" | "volume-down" | "volume_down" => HwButtonKind::VolumeDown,
+                other => return Err(format!("unknown button '{other}'")),
+            };
+            Ok(IpcCommand::InjectHwButton { button })
+        }
+        "mock" => {
+            let key = it.next().ok_or("ctl mock needs <key> <value>")?;
+            let value = match it.next() {
+                Some(v) => v,
+                None if key == "reset" => String::new(),
+                None => return Err("ctl mock needs <key> <value>".to_string()),
+            };
+            Ok(IpcCommand::SetMock { key, value })
+        }
         other => Err(format!("unknown ctl subcommand '{other}'")),
     }
 }
 
 fn help() -> String {
     "rabbiz-de [run|probe|env --shell|launch <id>|ctl <subcmd>] \
+     [--backend=drm|virtual] [--size=WxH] [--refresh=HZ] [--headless] \
+     [--ctl-listen=ADDR:PORT] [--emu-listen=ADDR:PORT] \
      [--renderer=auto|gl|soft] [--require=gl] [--stats] [--stats-file F] \
      [--stats-summary F] [--scenario N] [--duration S] [--force-fail]"
         .to_string()
@@ -245,16 +395,132 @@ mod tests {
     fn defaults_to_run_auto() {
         let c = parse(argv(&[])).unwrap();
         assert_eq!(c.command, Command::Run);
+        assert_eq!(c.flags.backend, BackendSelect::Drm);
+        assert_eq!(c.flags.virtual_size, (720, 1600));
+        assert!((c.flags.virtual_refresh_hz - 60.0).abs() < f64::EPSILON);
         assert_eq!(c.flags.renderer, RendererSelect::Auto);
     }
 
     #[test]
+    fn parse_virtual_backend_and_listeners() {
+        let c = parse(argv(&[
+            "--backend=virtual",
+            "--size=1600x2560",
+            "--refresh=120",
+            "--headless",
+            "--ctl-listen=127.0.0.1:4721",
+            "--emu-listen=127.0.0.1:4722",
+        ]))
+        .unwrap();
+        assert_eq!(c.flags.backend, BackendSelect::Virtual);
+        assert_eq!(c.flags.virtual_size, (1600, 2560));
+        assert!((c.flags.virtual_refresh_hz - 120.0).abs() < f64::EPSILON);
+        assert!(c.flags.headless);
+        assert_eq!(c.flags.ctl_listen.as_deref(), Some("127.0.0.1:4721"));
+        assert_eq!(c.flags.emu_listen.as_deref(), Some("127.0.0.1:4722"));
+    }
+
+    #[test]
+    fn rejects_tcp_listeners_without_virtual_backend() {
+        let err = parse(argv(&["--ctl-listen=127.0.0.1:4721"])).unwrap_err();
+        assert!(err.contains("require --backend=virtual"));
+
+        let err2 = parse(argv(&["--backend=drm", "--emu-listen=127.0.0.1:4722"])).unwrap_err();
+        assert!(err2.contains("require --backend=virtual"));
+
+        assert!(parse(argv(&["--size=0x1600"])).is_err());
+        assert!(parse(argv(&["--size=9000x1600"])).is_err());
+        assert!(parse(argv(&["--refresh=0"])).is_err());
+        assert!(parse(argv(&["--refresh=300"])).is_err());
+    }
+
+    #[test]
     fn parse_ctl_subcommands() {
-        use crate::ipc::{IpcCommand, OsdKind, PanelKind};
+        use crate::ipc::{HwButtonKind, IpcCommand, OsdKind, PanelKind, TouchInjectPhase};
 
         assert_eq!(
             parse(argv(&["ctl", "state"])).unwrap().command,
             Command::Ctl(IpcCommand::GetState)
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "reload-apps"])).unwrap().command,
+            Command::Ctl(IpcCommand::ReloadApps)
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "touch", "down", "360", "800"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::InjectTouch {
+                phase: TouchInjectPhase::Down,
+                slot: 0,
+                x: 360,
+                y: 800,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "touch", "move", "360", "400", "2"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::InjectTouch {
+                phase: TouchInjectPhase::Move,
+                slot: 2,
+                x: 360,
+                y: 400,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "touch", "up", "360", "400"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::InjectTouch {
+                phase: TouchInjectPhase::Up,
+                slot: 0,
+                x: 360,
+                y: 400,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "key", "28"])).unwrap().command,
+            Command::Ctl(IpcCommand::InjectKey {
+                keycode: 28,
+                pressed: true,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "key", "28", "release"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::InjectKey {
+                keycode: 28,
+                pressed: false,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "button", "power"])).unwrap().command,
+            Command::Ctl(IpcCommand::InjectHwButton {
+                button: HwButtonKind::Power,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "button", "vol-up"])).unwrap().command,
+            Command::Ctl(IpcCommand::InjectHwButton {
+                button: HwButtonKind::VolumeUp,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "button", "vol-down"])).unwrap().command,
+            Command::Ctl(IpcCommand::InjectHwButton {
+                button: HwButtonKind::VolumeDown,
+            })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "mock", "battery", "42"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::SetMock {
+                key: "battery".into(),
+                value: "42".into(),
+            })
         );
         assert_eq!(
             parse(argv(&["ctl", "panel", "quick", "open"]))
@@ -327,5 +593,8 @@ mod tests {
         assert!(parse(argv(&["ctl", "osd", "unknown", "50"])).is_err());
         assert!(parse(argv(&["ctl", "panel", "quick"])).is_err());
         assert!(parse(argv(&["ctl", "panel", "drawer", "open"])).is_err());
+        assert!(parse(argv(&["ctl", "touch", "hover", "10", "20"])).is_err());
+        assert!(parse(argv(&["ctl", "button", "camera"])).is_err());
+        assert!(parse(argv(&["ctl", "key", "28", "hold"])).is_err());
     }
 }

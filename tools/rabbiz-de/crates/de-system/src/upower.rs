@@ -37,10 +37,24 @@ pub fn poll_battery_in(root: &Path) -> BatteryState {
     BatteryState::default()
 }
 
-/// Poll the real sysfs tree.
+/// Poll the real sysfs tree (or `de_system::mock` overrides when active).
 #[must_use]
 pub fn poll_battery() -> BatteryState {
-    poll_battery_in(Path::new(SYSFS))
+    let mut state = poll_battery_in(Path::new(SYSFS));
+    let m = crate::mock::snapshot();
+    if m.enabled {
+        if let Some(pct) = m.battery_pct {
+            state.percent = Some(pct);
+            state.full = pct >= 100;
+        }
+        if let Some(charging) = m.charging {
+            state.charging = charging;
+            if charging && state.percent == Some(100) {
+                state.full = true;
+            }
+        }
+    }
+    state
 }
 
 #[cfg(test)]

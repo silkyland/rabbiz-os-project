@@ -129,8 +129,8 @@ pub(crate) struct PanelUi {
     pub(crate) control_state: de_system::controls::Snapshot,
     server: de_system::notifications::Server,
     notification_generation: u64,
-    brightness: f32,
-    volume: f32,
+    pub(crate) brightness: f32,
+    pub(crate) volume: f32,
     pub(crate) notifications: Vec<Notification>,
 }
 

@@ -10,10 +10,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use de_api::{OutputInfo, RendererKind};
-use de_backend::drm::{DrmSetup, OutputSelection};
+use de_backend::drm::{DrmSetup, OutputGeometry};
 use de_backend::probe::DeCompositor;
 use de_backend::session::SessionError;
-use de_config::flags::{Flags, RendererSelect};
+use de_config::flags::{BackendSelect, Flags, RendererSelect};
 use de_render::{DeRenderer, DeTexture, RenderError};
 use smithay::backend::egl::EGLDisplay;
 use smithay::backend::session::libseat::{LibSeatSession, LibSeatSessionNotifier};
@@ -72,18 +72,18 @@ impl smithay::reexports::wayland_server::backend::ClientData for DeClientState {
 /// Everything `de-core` needs to run the session.
 #[allow(clippy::struct_excessive_bools)] // compositor-wide state; the bools are independent flags
 pub struct De {
-    /// Kept alive for the session's lifetime.
+    /// Kept alive for the session's lifetime (`None` in virtual mode).
     #[allow(dead_code)]
-    pub session: LibSeatSession,
+    pub session: Option<LibSeatSession>,
     pub seat_notifier: Option<LibSeatSessionNotifier>,
-    pub setup: DrmSetup,
-    pub compositor: DeCompositor,
+    pub setup: Option<DrmSetup>,
+    pub compositor: Option<DeCompositor>,
     pub renderer: DeRenderer,
     /// The uploaded brand frame texture (validates the renderer at init).
     pub brand: DeTexture,
     /// Source pixels — re-uploaded when the home stub needs damage.
     pub brand_px: de_api::Pixels,
-    pub output: OutputSelection,
+    pub output: OutputGeometry,
     pub started: Instant,
     /// First successful page flip has happened (gates readiness + exit code).
     pub first_flip: bool,
@@ -255,6 +255,10 @@ pub struct De {
     pub insets: de_api::WindowInsets,
     /// Non-blocking runtime control IPC socket (`ctl_ipc.rs`).
     pub(crate) ctl_ipc: Option<crate::ctl_ipc::CtlIpc>,
+    /// Non-blocking TCP emulator frame & control listener (`--emu-listen`).
+    pub(crate) emu_server: Option<crate::ctl_ipc::EmuFrameServer>,
+    /// Monotonic ID counter for synthetic mock notifications.
+    pub(crate) next_mock_notif_id: u32,
 }
 
 /// What the screen is showing (M3).
@@ -317,7 +321,7 @@ fn shell_locale() -> de_ui::i18n::Locale {
 }
 
 /// Catalog scan locales: Thai first when the shell is Thai.
-fn shell_locales() -> Vec<String> {
+pub(crate) fn shell_locales_vec() -> Vec<String> {
     match shell_locale() {
         de_ui::i18n::Locale::Th => vec!["th".into(), "en".into()],
         de_ui::i18n::Locale::En => vec!["en".into()],
@@ -342,6 +346,9 @@ pub fn rss_kb() -> u64 {
 /// Fails before the first page flip ⇒ exit 75 territory.
 #[allow(clippy::too_many_lines)] // sequential bring-up; splitting hides ordering
 pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
+    if flags.backend == BackendSelect::Virtual && std::env::var_os("XDG_RUNTIME_DIR").is_none() {
+        std::env::set_var("XDG_RUNTIME_DIR", "/tmp");
+    }
     let profile = de_config::device_profile::DeviceProfile::load().unwrap_or_else(|error| {
         eprintln!("device profile: {error}; using handset timing");
         de_config::device_profile::DeviceProfile::default()
@@ -365,71 +372,112 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     } else {
         de_design::theme::persisted_mode().theme()
     };
-    let card =
-        de_backend::drm::find_card().ok_or_else(|| InitError::Compositor("no drm card".into()))?;
-    let (mut session, seat_notifier) = de_backend::session::activate()?;
-    let mut setup = de_backend::drm::open_drm(&mut session, &card)?;
 
-    let output = de_backend::drm::select_output(&mut setup.device)?
-        .ok_or_else(|| InitError::Compositor("no connected connector".into()))?;
+    let (session, seat_notifier, setup, mut renderer, compositor, output, render_node) =
+        match flags.backend {
+            BackendSelect::Drm => {
+                let card = de_backend::drm::find_card()
+                    .ok_or_else(|| InitError::Compositor("no drm card".into()))?;
+                let (mut session, seat_notifier) = de_backend::session::activate()?;
+                let mut setup = de_backend::drm::open_drm(&mut session, &card)?;
 
-    // Renderer selection: explicit > auto (GL if it inits and CMA is healthy).
-    let want_gl = match flags.renderer {
-        RendererSelect::Gl => true,
-        RendererSelect::Soft => false,
-        RendererSelect::Auto => cma_free_kb() >= CMA_FLOOR_KB,
-    };
-    let mut renderer: Option<DeRenderer> = None;
-    let mut gl_error: Option<String> = None;
-    if want_gl && de_backend::drm::init_egl(&mut setup).is_ok() {
-        let display_egl: EGLDisplay = setup.egl_display.clone().expect("egl init");
-        match de_render::gl::create(&display_egl) {
-            Ok(r) => renderer = Some(DeRenderer::Gl(Box::new(r))),
-            Err(e) => gl_error = Some(e.to_string()),
-        }
-    } else if want_gl {
-        gl_error = Some("egl init failed".to_string());
-    }
-    if renderer.is_none() {
-        if flags.require_gl || flags.renderer == RendererSelect::Gl {
-            return Err(InitError::GlRequired(
-                gl_error.unwrap_or_else(|| "unavailable".into()),
-            ));
-        }
-        let r = de_render::soft::create()
-            .map_err(|e| InitError::Render(RenderError::Soft(format!("{e}"))))?;
-        renderer = Some(DeRenderer::Soft(r));
-    }
-    let mut renderer = renderer.expect("renderer");
+                let drm_out = de_backend::drm::select_output(&mut setup.device)?
+                    .ok_or_else(|| InitError::Compositor("no connected connector".into()))?;
 
-    let surface = setup
-        .device
-        .create_surface(output.crtc, output.mode, &[output.connector])
-        .map_err(|e| InitError::Compositor(format!("surface: {e}")))?;
-    let planes = setup
-        .device
-        .planes(&output.crtc)
-        .map_err(|e| InitError::Compositor(format!("planes: {e}")))?;
-    let (allocator, exporter) = de_backend::drm::allocators(&setup);
-    let compositor = DeCompositor::new(
-        smithay::output::OutputModeSource::Static {
-            size: smithay::utils::Size::from((output.width as i32, output.height as i32)),
-            scale: smithay::utils::Scale::from(1.0),
-            transform: smithay::utils::Transform::Normal,
-        },
-        surface,
-        Some(planes),
-        allocator,
-        exporter,
-        [
-            smithay::backend::allocator::Fourcc::Argb8888,
-            smithay::backend::allocator::Fourcc::Xrgb8888,
-        ],
-        renderer.renderer_formats(),
-        smithay::utils::Size::<u32, smithay::utils::Buffer>::from((64, 64)),
-        Some(setup.gbm.clone()),
-    )
-    .map_err(|e| InitError::Compositor(format!("{e:?}")))?;
+                // Renderer selection: explicit > auto (GL if it inits and CMA is healthy).
+                let want_gl = match flags.renderer {
+                    RendererSelect::Gl => true,
+                    RendererSelect::Soft => false,
+                    RendererSelect::Auto => cma_free_kb() >= CMA_FLOOR_KB,
+                };
+                let mut renderer: Option<DeRenderer> = None;
+                let mut gl_error: Option<String> = None;
+                if want_gl && de_backend::drm::init_egl(&mut setup).is_ok() {
+                    let display_egl: EGLDisplay = setup.egl_display.clone().expect("egl init");
+                    match de_render::gl::create(&display_egl) {
+                        Ok(r) => renderer = Some(DeRenderer::Gl(Box::new(r))),
+                        Err(e) => gl_error = Some(e.to_string()),
+                    }
+                } else if want_gl {
+                    gl_error = Some("egl init failed".to_string());
+                }
+                if renderer.is_none() {
+                    if flags.require_gl || flags.renderer == RendererSelect::Gl {
+                        return Err(InitError::GlRequired(
+                            gl_error.unwrap_or_else(|| "unavailable".into()),
+                        ));
+                    }
+                    let r = de_render::soft::create()
+                        .map_err(|e| InitError::Render(RenderError::Soft(format!("{e}"))))?;
+                    renderer = Some(DeRenderer::Soft(r));
+                }
+                let renderer = renderer.expect("renderer");
+
+                let surface = setup
+                    .device
+                    .create_surface(drm_out.crtc, drm_out.mode, &[drm_out.connector])
+                    .map_err(|e| InitError::Compositor(format!("surface: {e}")))?;
+                let planes = setup
+                    .device
+                    .planes(&drm_out.crtc)
+                    .map_err(|e| InitError::Compositor(format!("planes: {e}")))?;
+                let (allocator, exporter) = de_backend::drm::allocators(&setup);
+                let compositor = DeCompositor::new(
+                    smithay::output::OutputModeSource::Static {
+                        size: smithay::utils::Size::from((
+                            drm_out.width as i32,
+                            drm_out.height as i32,
+                        )),
+                        scale: smithay::utils::Scale::from(1.0),
+                        transform: smithay::utils::Transform::Normal,
+                    },
+                    surface,
+                    Some(planes),
+                    allocator,
+                    exporter,
+                    [
+                        smithay::backend::allocator::Fourcc::Argb8888,
+                        smithay::backend::allocator::Fourcc::Xrgb8888,
+                    ],
+                    renderer.renderer_formats(),
+                    smithay::utils::Size::<u32, smithay::utils::Buffer>::from((64, 64)),
+                    Some(setup.gbm.clone()),
+                )
+                .map_err(|e| InitError::Compositor(format!("{e:?}")))?;
+                let render_node = setup
+                    .device
+                    .device_fd()
+                    .dev_id()
+                    .ok()
+                    .and_then(|id| smithay::backend::drm::DrmNode::from_dev_id(id).ok());
+                let output = OutputGeometry::from(&drm_out);
+                (
+                    Some(session),
+                    Some(seat_notifier),
+                    Some(setup),
+                    renderer,
+                    Some(compositor),
+                    output,
+                    render_node,
+                )
+            }
+            BackendSelect::Virtual => {
+                if flags.require_gl || flags.renderer == RendererSelect::Gl {
+                    return Err(InitError::GlRequired(
+                        "virtual backend uses software renderer".into(),
+                    ));
+                }
+                let r = de_render::soft::create()
+                    .map_err(|e| InitError::Render(RenderError::Soft(format!("{e}"))))?;
+                let output = OutputGeometry {
+                    connector_name: "VIRTUAL-1".to_string(),
+                    width: flags.virtual_size.0,
+                    height: flags.virtual_size.1,
+                    refresh_hz: flags.virtual_refresh_hz,
+                };
+                (None, None, None, DeRenderer::Soft(r), None, output, None)
+            }
+        };
 
     // Rasterize + upload the brand frame once (P0 → shown until the stub is
     // first composed).
@@ -481,12 +529,6 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     crate::screencopy::init(&dh);
     crate::virtual_pointer::init(&dh);
     let mut dmabuf_state = DmabufState::new();
-    let render_node = setup
-        .device
-        .device_fd()
-        .dev_id()
-        .ok()
-        .and_then(|id| smithay::backend::drm::DrmNode::from_dev_id(id).ok());
     let dmabuf_global = render_node
         .and_then(de_protocols::dmabuf_feedback)
         .map(|fb| dmabuf_state.create_global_with_default_feedback::<De>(&dh, &fb));
@@ -539,7 +581,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
 
     Ok(De {
         session,
-        seat_notifier: Some(seat_notifier),
+        seat_notifier,
         setup,
         compositor,
         renderer,
@@ -633,7 +675,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         morph: None,
         motion_clock,
         launch_error: None,
-        catalog: de_apps::catalog::Catalog::scan(&shell_locales()),
+        catalog: de_apps::catalog::Catalog::scan(&shell_locales_vec()),
         app_prefs,
         theme,
         strings: de_ui::i18n::Strings::load(shell_locale()),
@@ -663,7 +705,12 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
             cutout: de_api::EdgeInsets::ZERO,
             ime: de_api::EdgeInsets::ZERO,
         },
-        ctl_ipc: crate::ctl_ipc::CtlIpc::bind(),
+        ctl_ipc: crate::ctl_ipc::CtlIpc::bind_with_tcp(flags.ctl_listen.as_deref()),
+        emu_server: flags
+            .emu_listen
+            .as_deref()
+            .and_then(crate::ctl_ipc::EmuFrameServer::bind),
+        next_mock_notif_id: 10_000,
     })
 }
 

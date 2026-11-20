@@ -110,6 +110,36 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     if let Some((px, at)) = de.navigation.back.as_ref() {
         canvas.blit(px, *at);
     }
+    let now = std::time::Instant::now();
+    let out_size = canvas.size();
+    if de.osd_fx.active(now) {
+        if let Some(px) = de.osd_fx.px.as_ref() {
+            let r = crate::osd_ui::OsdFx::rect(out_size);
+            canvas.blit(px, ApiPoint::new(r.x, r.y));
+        }
+    }
+    if de.hun_fx.is_visible() {
+        if let (Some(px), Some(r)) = (de.hun_fx.px.as_ref(), de.hun_fx.banner_rect(out_size)) {
+            canvas.blit(px, ApiPoint::new(r.x, r.y));
+        }
+    }
+    if de.lock.shown() {
+        if let Some(px) = de.lock.px.as_ref() {
+            let x = de.lock.shake_x(now).round() as i32;
+            let y = -(de.lock.slide_px().round() as i32);
+            let alpha = (1.0 - de.lock.progress() * 0.55).clamp(0.0, 1.0);
+            canvas.blit_scaled(
+                px,
+                de_api::Rect::new(x, y, px.size.w, px.size.h),
+                alpha,
+            );
+        }
+    }
+    if de.power.menu_over_lock {
+        if let Some(px) = de.power.menu_px.as_ref() {
+            canvas.blit(px, ApiPoint::ZERO);
+        }
+    }
     Some(canvas.into_pixels())
 }
 
