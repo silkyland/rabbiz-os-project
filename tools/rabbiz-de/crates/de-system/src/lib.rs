@@ -6,6 +6,7 @@ pub mod env;
 pub mod fingerprint;
 pub mod input_devices;
 pub mod lifecycle;
+pub mod mpris;
 pub mod notifications;
 pub mod power;
 pub mod privacy;

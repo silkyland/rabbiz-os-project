@@ -14,6 +14,21 @@ pub const DEFAULT_ACCENT: &str = "copper";
 pub const DEFAULT_WALLPAPER: &str = "ember";
 pub const DEFAULT_THEME: &str = "light";
 pub const DEFAULT_KEYBOARD: &str = "rabbiz-osk";
+pub const DEFAULT_LOCK_METHOD: &str = "swipe";
+pub const DEFAULT_LOCKSCREEN_NOTIFICATIONS: &str = "show_all";
+
+/// Supported `Prefs::lock_method` values (`docs/DE-KEYGUARD-AUTH.md` §3).
+pub const VALID_LOCK_METHODS: &[&str] = &["swipe", "pin", "passphrase", "biometric"];
+/// Supported `Prefs::lockscreen_notifications` values (`docs/DE-NOTIFICATIONS-SERVICES.md` §2.4).
+pub const VALID_LOCKSCREEN_NOTIFICATIONS: &[&str] = &["show_all", "hide_sensitive", "hide_all"];
+
+fn default_lock_method() -> String {
+    DEFAULT_LOCK_METHOD.into()
+}
+
+fn default_lockscreen_notifications() -> String {
+    DEFAULT_LOCKSCREEN_NOTIFICATIONS.into()
+}
 
 /// Shell-owned preferences persisted as flat JSON keys (`deAccent`, ...).
 ///
@@ -51,6 +66,12 @@ pub struct Prefs {
     /// Whether 3rd-party / market keyboards are permitted in Settings and policy.
     #[serde(rename = "deAllowThirdPartyKeyboards")]
     pub allow_third_party_keyboards: bool,
+    /// Keyguard authentication method (`swipe` | `pin` | `passphrase` | `biometric`).
+    #[serde(default = "default_lock_method")]
+    pub lock_method: String,
+    /// Lockscreen notification privacy (`show_all` | `hide_sensitive` | `hide_all`).
+    #[serde(default = "default_lockscreen_notifications")]
+    pub lockscreen_notifications: String,
 }
 
 impl Default for Prefs {
@@ -66,6 +87,8 @@ impl Default for Prefs {
             screen_timeout_sec: 600,
             keyboard_id: DEFAULT_KEYBOARD.into(),
             allow_third_party_keyboards: true,
+            lock_method: default_lock_method(),
+            lockscreen_notifications: default_lockscreen_notifications(),
         }
     }
 }
@@ -251,6 +274,77 @@ impl Prefs {
         })
     }
 
+    /// Returns `true` when `method` is a valid Keyguard authentication mode.
+    #[must_use]
+    pub fn is_valid_lock_method(method: &str) -> bool {
+        VALID_LOCK_METHODS.contains(&method)
+    }
+
+    /// Returns `true` when `mode` is a valid lockscreen notification privacy mode.
+    #[must_use]
+    pub fn is_valid_lockscreen_notifications(mode: &str) -> bool {
+        VALID_LOCKSCREEN_NOTIFICATIONS.contains(&mode)
+    }
+
+    /// Validate and atomically persist `lock_method` to `path`; failed
+    /// validation or I/O leaves `self` unchanged.
+    pub fn set_lock_method_to(
+        &mut self,
+        path: &std::path::Path,
+        method: &str,
+    ) -> Result<(), String> {
+        if !Self::is_valid_lock_method(method) {
+            return Err(format!(
+                "invalid lock_method '{method}'; expected one of: {}",
+                VALID_LOCK_METHODS.join(", ")
+            ));
+        }
+        if self.lock_method == method {
+            return Ok(());
+        }
+        let mut next = self.clone();
+        next.lock_method = method.to_string();
+        next.save_to(path)
+            .map_err(|e| format!("failed to persist lock_method: {e}"))?;
+        *self = next;
+        Ok(())
+    }
+
+    /// Validate and atomically persist `lock_method` to the default prefs path.
+    pub fn set_lock_method(&mut self, method: &str) -> Result<(), String> {
+        self.set_lock_method_to(&Self::path(), method)
+    }
+
+    /// Validate and atomically persist `lockscreen_notifications` to `path`;
+    /// failed validation or I/O leaves `self` unchanged.
+    pub fn set_lockscreen_notifications_to(
+        &mut self,
+        path: &std::path::Path,
+        mode: &str,
+    ) -> Result<(), String> {
+        if !Self::is_valid_lockscreen_notifications(mode) {
+            return Err(format!(
+                "invalid lockscreen_notifications '{mode}'; expected one of: {}",
+                VALID_LOCKSCREEN_NOTIFICATIONS.join(", ")
+            ));
+        }
+        if self.lockscreen_notifications == mode {
+            return Ok(());
+        }
+        let mut next = self.clone();
+        next.lockscreen_notifications = mode.to_string();
+        next.save_to(path)
+            .map_err(|e| format!("failed to persist lockscreen_notifications: {e}"))?;
+        *self = next;
+        Ok(())
+    }
+
+    /// Validate and atomically persist `lockscreen_notifications` to the
+    /// default prefs path.
+    pub fn set_lockscreen_notifications(&mut self, mode: &str) -> Result<(), String> {
+        self.set_lockscreen_notifications_to(&Self::path(), mode)
+    }
+
     /// Serialise (pretty so `git diff`/debugging stays readable).
     #[must_use]
     pub fn to_json(&self) -> String {
@@ -411,5 +505,96 @@ mod drop_tests {
         let mut p = Prefs::default();
         p.drop_on_grid("w", 99, &ids(&["w", "x", "y"]));
         assert_eq!(p.home_order, ids(&["x", "y", "w"]));
+    }
+}
+
+#[cfg(test)]
+mod keyguard_privacy_tests {
+    use super::*;
+
+    #[test]
+    fn missing_json_fields_fall_back_to_defaults() {
+        let legacy_json = r#"{"deAccent":"copper","deWallpaperId":"ember","deTheme":"light"}"#;
+        let parsed = Prefs::from_json(legacy_json).expect("legacy prefs json must parse");
+        assert_eq!(parsed.lock_method, DEFAULT_LOCK_METHOD);
+        assert_eq!(parsed.lock_method, "swipe");
+        assert_eq!(
+            parsed.lockscreen_notifications,
+            DEFAULT_LOCKSCREEN_NOTIFICATIONS
+        );
+        assert_eq!(parsed.lockscreen_notifications, "show_all");
+    }
+
+    #[test]
+    fn set_lock_method_accepts_valid_values_and_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prefs.json");
+        let mut prefs = Prefs::default();
+
+        for method in ["pin", "passphrase", "biometric", "swipe"] {
+            prefs
+                .set_lock_method_to(&path, method)
+                .expect("valid lock_method must succeed");
+            assert_eq!(prefs.lock_method, method);
+
+            let reloaded =
+                Prefs::from_json(&std::fs::read_to_string(&path).unwrap()).expect("valid json");
+            assert_eq!(reloaded.lock_method, method);
+        }
+    }
+
+    #[test]
+    fn set_lock_method_rejects_invalid_values_without_mutating() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prefs.json");
+        let mut prefs = Prefs::default();
+        prefs.set_lock_method_to(&path, "pin").unwrap();
+
+        for invalid in ["", "pattern", "PIN", "face", "none"] {
+            let err = prefs
+                .set_lock_method_to(&path, invalid)
+                .expect_err("invalid lock_method must be rejected");
+            assert!(err.contains("invalid lock_method"), "unexpected err: {err}");
+            assert_eq!(prefs.lock_method, "pin");
+        }
+    }
+
+    #[test]
+    fn set_lockscreen_notifications_accepts_valid_values_and_persists() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prefs.json");
+        let mut prefs = Prefs::default();
+
+        for mode in ["hide_sensitive", "hide_all", "show_all"] {
+            prefs
+                .set_lockscreen_notifications_to(&path, mode)
+                .expect("valid lockscreen_notifications must succeed");
+            assert_eq!(prefs.lockscreen_notifications, mode);
+
+            let reloaded =
+                Prefs::from_json(&std::fs::read_to_string(&path).unwrap()).expect("valid json");
+            assert_eq!(reloaded.lockscreen_notifications, mode);
+        }
+    }
+
+    #[test]
+    fn set_lockscreen_notifications_rejects_invalid_values_without_mutating() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("prefs.json");
+        let mut prefs = Prefs::default();
+        prefs
+            .set_lockscreen_notifications_to(&path, "hide_sensitive")
+            .unwrap();
+
+        for invalid in ["", "hide", "ShowAll", "redact_all"] {
+            let err = prefs
+                .set_lockscreen_notifications_to(&path, invalid)
+                .expect_err("invalid lockscreen_notifications must be rejected");
+            assert!(
+                err.contains("invalid lockscreen_notifications"),
+                "unexpected err: {err}"
+            );
+            assert_eq!(prefs.lockscreen_notifications, "hide_sensitive");
+        }
     }
 }
