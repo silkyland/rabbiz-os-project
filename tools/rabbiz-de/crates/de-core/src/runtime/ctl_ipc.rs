@@ -419,6 +419,15 @@ impl De {
         }
     }
 
+    /// Frame size changed (rotation): the next viewer poll must re-encode.
+    pub(crate) fn on_emu_resize(&mut self) {
+        if let Some(server) = self.emu_server.as_mut() {
+            server.cached_px = None;
+            server.dirty = true;
+            server.seq = server.seq.wrapping_add(1);
+        }
+    }
+
     fn composite_emu_pixels(&mut self) -> de_api::Pixels {
         let now = Instant::now();
         let size = Size::new(self.output.width as i32, self.output.height as i32);
@@ -660,6 +669,21 @@ impl De {
                 self.needs_present = true;
                 IpcResponse::ok(id, None)
             }
+            IpcCommand::SetRotation { mode } => match self.set_rotation_mode(&mode) {
+                Ok(()) => IpcResponse::ok(
+                    id,
+                    Some(serde_json::json!({ "orientation": self.rotation.current.name() })),
+                ),
+                Err(e) => IpcResponse::err(id, e),
+            },
+            IpcCommand::SetAppOrientation { app_id, request } => {
+                self.rotation.app_requests.insert(app_id, request);
+                self.reevaluate_orientation();
+                IpcResponse::ok(
+                    id,
+                    Some(serde_json::json!({ "orientation": self.rotation.current.name() })),
+                )
+            }
             IpcCommand::SetMock { key, value } => match de_system::mock::apply(&key, &value) {
                 Ok(state_json) => {
                     self.poll_mock_system();
@@ -748,6 +772,8 @@ impl De {
                 ime_bottom: self.insets.ime.bottom,
             },
             windows,
+            orientation: self.rotation.current.name().to_string(),
+            auto_rotate: self.rotation.policy.auto,
         }
     }
 }
@@ -768,6 +794,8 @@ fn command_allowed_while_locked(cmd: &IpcCommand) -> bool {
             | IpcCommand::InjectKey { .. }
             | IpcCommand::InjectHwButton { .. }
             | IpcCommand::SetMock { .. }
+            | IpcCommand::SetRotation { .. }
+            | IpcCommand::SetAppOrientation { .. }
     )
 }
 

@@ -388,7 +388,7 @@ impl De {
         c.blit(&l.base, Point::ZERO);
         for (p, px) in &l.pages {
             let x = ((*p as f32 - pos) * size.w as f32).round() as i32;
-            c.blit(px, Point::new(x, home::grid_band_y()));
+            c.blit(px, Point::new(x, home::grid_band_y(size)));
         }
         let near = pos.round().max(0.0) as usize;
         if let Some(d) = l.dots.get(&near) {
@@ -504,5 +504,19 @@ impl De {
                 px
             }
         }
+    }
+}
+
+impl HomeUi {
+    /// Output size changed (rotation): drop layers and every uploaded texture.
+    pub(crate) fn on_resize(&mut self) {
+        self.layers = None;
+        self.drag = None;
+        self.drag_tex = None;
+        self.hl_tex = None;
+        self.tex_key = 0;
+        self.base_tex = None;
+        self.page_tex.clear();
+        self.dots_tex.clear();
     }
 }

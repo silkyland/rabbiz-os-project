@@ -7,17 +7,14 @@ use smithay::backend::input::{
 };
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotion, UpEvent};
 use smithay::reexports::wayland_server::Resource;
-use smithay::utils::{Logical, Point, Size, SERIAL_COUNTER as SCOUNTER};
+use smithay::utils::{Logical, Point, SERIAL_COUNTER as SCOUNTER};
 
 use super::{api_point, SurfaceHit};
 use crate::state::De;
 
 impl De {
     pub(super) fn on_touch_down<B: InputBackend>(&mut self, evt: &B::TouchDownEvent) {
-        let pos = evt.position_transformed(Size::from((
-            self.output.width as i32,
-            self.output.height as i32,
-        )));
+        let pos = self.hw_point(evt.position_transformed(self.rotation.native_size()));
         self.inject_touch_down(i32::from(evt.slot()), pos, evt.time_msec());
     }
 
@@ -135,10 +132,7 @@ impl De {
     }
 
     pub(super) fn on_touch_motion<B: InputBackend>(&mut self, evt: &B::TouchMotionEvent) {
-        let pos = evt.position_transformed(Size::from((
-            self.output.width as i32,
-            self.output.height as i32,
-        )));
+        let pos = self.hw_point(evt.position_transformed(self.rotation.native_size()));
         self.inject_touch_motion(i32::from(evt.slot()), pos, evt.time_msec());
     }
 

@@ -8,12 +8,12 @@ use de_api::{Pixels, Point, Rect, Size};
 use de_design::tokens::{self, Theme};
 use de_paint::{text, Canvas};
 
-use crate::chrome::{self, style};
+use crate::notification_card::{self, CardContent, Ink};
 
 /// Banner height without action buttons (logical px).
-pub const BANNER_H_PLAIN: i32 = 124;
+pub const BANNER_H_PLAIN: i32 = notification_card::CONTENT_H;
 /// Banner height with action pill buttons (logical px).
-pub const BANNER_H_ACTIONS: i32 = 168;
+pub const BANNER_H_ACTIONS: i32 = notification_card::CONTENT_H + 72;
 /// Vertical gap below `top_inset` (status bar / cutout safe area).
 pub const BANNER_TOP_GAP: i32 = 12;
 /// Maximum number of action pill buttons displayed on a HUN banner.
@@ -21,9 +21,9 @@ pub const MAX_ACTIONS: usize = 3;
 
 const BANNER_MARGIN_X: i32 = tokens::PAGE_MARGIN;
 const BANNER_MAX_W: i32 = 672;
-const PAD_X: i32 = 20;
-const PAD_BOTTOM: i32 = 14;
-const ACTION_H: i32 = 36;
+const PAD_X: i32 = notification_card::PAD;
+const PAD_BOTTOM: i32 = 20;
+const ACTION_H: i32 = 48;
 const ACTION_GAP: i32 = 10;
 
 /// Data rendered on a Heads-Up Notification banner.
@@ -86,58 +86,39 @@ pub fn render(theme: &Theme, m: &HunBannerModel<'_>, size: Size) -> Pixels {
     let mut c = Canvas::filled(size, [0, 0, 0, 0]);
     let bounds = Rect::new(0, 0, size.w, size.h);
 
-    // Outer border (critical accent or subtle divider) + inner surface card.
+    // Rim (critical = danger) + surface; the text column is the shared
+    // notification card painter so the shade and the banner read as one.
     let border = if m.critical { 3 } else { 1 };
     let border_col = if m.critical { theme.danger } else { theme.line };
-    c.fill_rounded_rect(bounds, tokens::RADIUS_CARD, border_col);
-
+    c.fill_rounded_rect(bounds, tokens::RADIUS_SHEET, border_col);
     let inner = Rect::new(
         border,
         border,
         (size.w - border * 2).max(0),
         (size.h - border * 2).max(0),
     );
-    let inner_radius = (tokens::RADIUS_CARD - border as f32).max(0.0);
-    c.fill_rounded_rect(inner, inner_radius, theme.surface2);
-
-    let text_w = Some((size.w - PAD_X * 2).max(1));
-
-    // App name header.
-    let app_color = if m.critical {
-        theme.danger
-    } else {
-        theme.accent
-    };
-    let app_style = text::LabelStyle {
-        size: 18.0,
-        line_height: 22.0,
-        weight: 600,
-        color: app_color,
-        ..text::LabelStyle::default()
-    };
-    chrome::draw(&mut c, m.app, &app_style, PAD_X, 14, text_w);
-
-    // Notification title.
-    let title_style = text::LabelStyle {
-        size: 24.0,
-        line_height: 30.0,
-        weight: 600,
-        color: theme.text,
-        ..text::LabelStyle::default()
-    };
-    chrome::draw(&mut c, m.title, &title_style, PAD_X, 40, text_w);
-
-    // Optional body line.
-    if !m.body.is_empty() {
-        chrome::draw(
-            &mut c,
-            m.body,
-            &style::caption(theme.text2),
-            PAD_X,
-            74,
-            text_w,
-        );
+    c.fill_rounded_rect(
+        inner,
+        (tokens::RADIUS_SHEET - border as f32).max(0.0),
+        theme.surface2,
+    );
+    let mut ink = Ink::on(theme);
+    if m.critical {
+        ink.badge_fill = [theme.danger[0], theme.danger[1], theme.danger[2], 0x40];
+        ink.badge_ink = theme.danger;
     }
+    notification_card::paint(
+        &mut c,
+        Rect::new(0, 0, size.w, notification_card::CONTENT_H),
+        &ink,
+        &CardContent {
+            app: m.app,
+            title: m.title,
+            body: m.body,
+            when: "",
+            icon: None,
+        },
+    );
 
     // Action pill buttons (up to MAX_ACTIONS).
     let pills = action_rects(bounds, m.actions.len());
@@ -149,10 +130,12 @@ pub fn render(theme: &Theme, m: &HunBannerModel<'_>, size: Size) -> Pixels {
         let primary_critical = m.critical && idx == 0;
         let fill = if primary_critical {
             theme.danger
+        } else if idx == 0 {
+            theme.accent
         } else {
             theme.surface3
         };
-        let fg = if primary_critical {
+        let fg = if primary_critical || idx == 0 {
             theme.text_on_accent
         } else {
             theme.text
@@ -165,8 +148,8 @@ pub fn render(theme: &Theme, m: &HunBannerModel<'_>, size: Size) -> Pixels {
             label.as_str()
         };
         let pill_style = text::LabelStyle {
-            size: 18.0,
-            line_height: 22.0,
+            size: 22.0,
+            line_height: 28.0,
             weight: 600,
             color: fg,
             ..text::LabelStyle::default()

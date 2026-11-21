@@ -11,6 +11,7 @@ pub mod input;
 pub mod launch;
 pub(crate) mod osk;
 pub(crate) mod power;
+pub(crate) mod rotation;
 pub(crate) mod shortcuts;
 pub mod snapshots;
 pub mod state;

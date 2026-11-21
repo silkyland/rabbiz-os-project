@@ -345,6 +345,23 @@ fn parse_ctl<I: Iterator<Item = String>>(
             };
             Ok(IpcCommand::InjectHwButton { button })
         }
+        "rotate" | "rotation" => {
+            let mode = it
+                .next()
+                .ok_or("ctl rotate needs auto|portrait|landscape_ccw|portrait_flipped|landscape_cw")?;
+            let mode = mode.replace('-', "_");
+            if mode != "auto" && de_api::Orientation::parse(&mode).is_none() {
+                return Err(format!("unknown rotation '{mode}'"));
+            }
+            Ok(IpcCommand::SetRotation { mode })
+        }
+        "app-orientation" | "app_orientation" => {
+            let app_id = it.next().ok_or("ctl app-orientation needs <app-id> <request>")?;
+            let req = it.next().ok_or("ctl app-orientation needs <app-id> <request>")?;
+            let request = de_api::OrientationRequest::parse(&req)
+                .ok_or_else(|| format!("unknown orientation request '{req}'"))?;
+            Ok(IpcCommand::SetAppOrientation { app_id, request })
+        }
         "mock" => {
             let key = it.next().ok_or("ctl mock needs <key> <value>")?;
             let value = match it.next() {
@@ -370,12 +387,26 @@ fn help() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ipc::IpcCommand;
 
     fn argv(v: &[&str]) -> impl Iterator<Item = String> {
         v.iter()
             .map(|s| (*s).to_string())
             .collect::<Vec<_>>()
             .into_iter()
+    }
+
+    #[test]
+    fn ctl_rotate_parses() {
+        assert_eq!(
+            parse(argv(&["ctl", "rotate", "landscape-cw"]))
+                .unwrap()
+                .command,
+            Command::Ctl(IpcCommand::SetRotation {
+                mode: "landscape_cw".into()
+            })
+        );
+        assert!(parse(argv(&["ctl", "rotate", "sideways"])).is_err());
     }
 
     #[test]

@@ -58,6 +58,11 @@ impl AppPrefs {
         self.prefs.set_do_not_disturb(on)
     }
 
+    /// Persist the rotation policy; delegates to [`Prefs::set_rotation`].
+    pub fn set_rotation(&mut self, auto: bool, lock: &str) -> bool {
+        self.prefs.set_rotation(auto, lock)
+    }
+
     /// Select active keyboard id; delegates to [`Prefs::set_keyboard`].
     pub fn set_keyboard(&mut self, id: &str) -> bool {
         self.prefs.set_keyboard(id)

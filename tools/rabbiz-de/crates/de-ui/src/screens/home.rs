@@ -27,8 +27,78 @@ const DOCK_ICON: i32 = 100;
 const LEFT: i32 = 44;
 const SEARCH_CARD_Y: i32 = 414;
 const SEARCH_CARD_H: i32 = 124;
-/// Icons per home page (4×4).
+/// Icons per home page: 4×4 portrait, 8×2 landscape (same count, so page
+/// membership never changes when the device is turned).
 pub const PAGE_SIZE: usize = 16;
+
+/// Everything the layout depends on the output shape for. Portrait is the
+/// original design (the constants above); landscape moves the clock, search
+/// card and drawer pill into one header row, lays the 16 icons out 8×2 and
+/// shrinks the dock so everything fits a ~720 px tall panel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Geo {
+    landscape: bool,
+    cols: i32,
+    cell_w: i32,
+    cell_h: i32,
+    grid_x: i32,
+    grid_y: i32,
+    icon: i32,
+    dock_icon: i32,
+    dock: Rect,
+    dock_radius: f32,
+    search: Rect,
+    pill: Rect,
+    clock_xy: (i32, i32),
+    clock_size: f32,
+    date_xy: (i32, i32),
+    charging_xy: (i32, i32),
+}
+
+fn geo(size: Size) -> Geo {
+    if size.w > size.h {
+        let cell_w = 150;
+        let cols = 8;
+        let search = Rect::new(520, 78, (size.w - 520 - 260 - LEFT - 16).max(200), 92);
+        Geo {
+            landscape: true,
+            cols,
+            cell_w,
+            cell_h: 160,
+            grid_x: (size.w - cell_w * cols) / 2,
+            grid_y: 220,
+            icon: 104,
+            dock_icon: 84,
+            dock: Rect::new(16, size.h - 156, size.w - 32, 112),
+            dock_radius: 48.0,
+            search,
+            pill: Rect::new(search.x + search.w + 16, search.y + 18, 220, 56),
+            clock_xy: (LEFT - 2, 60),
+            clock_size: 96.0,
+            date_xy: (LEFT, 164),
+            charging_xy: (LEFT, 204),
+        }
+    } else {
+        Geo {
+            landscape: false,
+            cols: 4,
+            cell_w: CELL_W,
+            cell_h: CELL_H,
+            grid_x: (size.w - CELL_W * 4) / 2,
+            grid_y: GRID_Y,
+            icon: ICON,
+            dock_icon: DOCK_ICON,
+            dock: Rect::new(16, size.h - 220, size.w - 32, 150),
+            dock_radius: 60.0,
+            search: Rect::new(LEFT, SEARCH_CARD_Y, size.w - LEFT * 2, SEARCH_CARD_H),
+            pill: Rect::new((size.w - 200) / 2, size.h - 308, 200, 56),
+            clock_xy: (LEFT - 4, 118),
+            clock_size: 156.0,
+            date_xy: (LEFT, 318),
+            charging_xy: (LEFT, 360),
+        }
+    }
+}
 
 /// Everything the home screen paints.
 pub struct HomeModel<'a> {
@@ -103,46 +173,44 @@ pub enum HomeHit {
 }
 
 fn grid_cell(size: Size, index: usize) -> Rect {
-    let x = (size.w - CELL_W * 4) / 2 + (index % 4) as i32 * CELL_W;
-    let y = GRID_Y + (index / 4) as i32 * CELL_H;
-    Rect::new(x, y, CELL_W, CELL_H)
+    let g = geo(size);
+    let x = g.grid_x + (index as i32 % g.cols) * g.cell_w;
+    let y = g.grid_y + (index as i32 / g.cols) * g.cell_h;
+    Rect::new(x, y, g.cell_w, g.cell_h)
 }
 
 pub fn dock_shelf(size: Size) -> Rect {
-    Rect::new(16, size.h - 220, size.w - 32, 150)
+    geo(size).dock
 }
 
 fn search_card(size: Size) -> Rect {
-    Rect::new(LEFT, SEARCH_CARD_Y, size.w - LEFT * 2, SEARCH_CARD_H)
+    geo(size).search
 }
 
 /// The small "Search" pill above the dock: opens the app drawer.
 fn drawer_pill(size: Size) -> Rect {
-    Rect::new((size.w - 200) / 2, size.h - 308, 200, 56)
+    geo(size).pill
 }
 
-fn grid_icon(cell: Rect) -> Rect {
-    Rect::new(cell.x + (CELL_W - ICON) / 2, cell.y + 6, ICON, ICON)
+fn grid_icon(size: Size, cell: Rect) -> Rect {
+    let g = geo(size);
+    Rect::new(cell.x + (g.cell_w - g.icon) / 2, cell.y + 6, g.icon, g.icon)
 }
 
-pub fn dock_icon(dock: Rect, index: usize, slots: usize) -> Rect {
+pub fn dock_icon(size: Size, dock: Rect, index: usize, slots: usize) -> Rect {
+    let d = geo(size).dock_icon;
     let slots = slots.clamp(1, 6) as i32;
     let cell = dock.w as f32 / slots as f32;
     let cx = dock.x as f32 + cell * (index.min(slots as usize - 1) as f32 + 0.5);
-    Rect::new(
-        cx.round() as i32 - DOCK_ICON / 2,
-        dock.y + (dock.h - DOCK_ICON) / 2,
-        DOCK_ICON,
-        DOCK_ICON,
-    )
+    Rect::new(cx.round() as i32 - d / 2, dock.y + (dock.h - d) / 2, d, d)
 }
 
 /// Exact painted icon bounds for a launch from a grid cell or dock slot.
 #[must_use]
 pub fn icon_rect(size: Size, hit: HomeHit, dock_len: usize) -> Option<Rect> {
     match hit {
-        HomeHit::Grid(i) => Some(grid_icon(grid_cell(size, i))),
-        HomeHit::Dock(i) => Some(dock_icon(dock_shelf(size), i, dock_len.clamp(1, 6))),
+        HomeHit::Grid(i) => Some(grid_icon(size, grid_cell(size, i))),
+        HomeHit::Dock(i) => Some(dock_icon(size, dock_shelf(size), i, dock_len.clamp(1, 6))),
         HomeHit::Search | HomeHit::Drawer => None,
     }
 }
@@ -165,7 +233,7 @@ pub fn hit_test(size: Size, pos: Point, apps_on_page: usize, dock_len: usize) ->
     }
     let slots = dock_slots(dock_len);
     for i in 0..dock_len.min(slots) {
-        if dock_icon(dock_shelf(size), i, slots).contains(pos) {
+        if dock_icon(size, dock_shelf(size), i, slots).contains(pos) {
             return Some(HomeHit::Dock(i));
         }
     }
@@ -203,18 +271,19 @@ pub fn drop_target(size: Size, pos: Point, dock_len: usize) -> Option<DropTarget
     if catch.contains(pos) {
         let best = (0..slots)
             .min_by_key(|&i| {
-                let r = dock_icon(shelf, i, slots);
+                let r = dock_icon(size, shelf, i, slots);
                 (pos.x - (r.x + r.w / 2)).abs()
             })
             .unwrap_or(0);
         return Some(DropTarget::Dock(best));
     }
-    let gx = (size.w - CELL_W * 4) / 2;
-    let area = Rect::new(gx, GRID_Y, CELL_W * 4, CELL_H * 4);
+    let g = geo(size);
+    let rows = PAGE_SIZE as i32 / g.cols;
+    let area = Rect::new(g.grid_x, g.grid_y, g.cell_w * g.cols, g.cell_h * rows);
     if area.contains(pos) {
-        let col = ((pos.x - gx) / CELL_W).clamp(0, 3) as usize;
-        let row = ((pos.y - GRID_Y) / CELL_H).clamp(0, 3) as usize;
-        return Some(DropTarget::Grid(row * 4 + col));
+        let col = ((pos.x - g.grid_x) / g.cell_w).clamp(0, g.cols - 1) as usize;
+        let row = ((pos.y - g.grid_y) / g.cell_h).clamp(0, rows - 1) as usize;
+        return Some(DropTarget::Grid(row * g.cols as usize + col));
     }
     None
 }
@@ -223,8 +292,8 @@ pub fn drop_target(size: Size, pos: Point, dock_len: usize) -> Option<DropTarget
 #[must_use]
 pub fn drop_rect(size: Size, target: DropTarget, dock_len: usize) -> Rect {
     match target {
-        DropTarget::Grid(i) => grid_icon(grid_cell(size, i)),
-        DropTarget::Dock(i) => dock_icon(dock_shelf(size), i, (dock_len + 1).clamp(1, 6)),
+        DropTarget::Grid(i) => grid_icon(size, grid_cell(size, i)),
+        DropTarget::Dock(i) => dock_icon(size, dock_shelf(size), i, (dock_len + 1).clamp(1, 6)),
     }
 }
 
@@ -258,14 +327,15 @@ pub fn render_dots(size: Size, t: &Theme, count: usize, page: usize) -> Pixels {
 /// pager slides while the rest of the home screen stays put.
 #[must_use]
 pub fn render_grid(size: Size, t: &Theme, apps: &[IconEntry]) -> Pixels {
-    let mut c = Canvas::new(Size::new(size.w, grid_band_h()));
+    let mut c = Canvas::new(Size::new(size.w, grid_band_h(size)));
+    let top = grid_band_y(size);
     for (i, e) in apps.iter().take(PAGE_SIZE).enumerate() {
         let mut cell = grid_cell(size, i);
-        cell.y -= GRID_Y;
+        cell.y -= top;
         if e.id == GAP_ID {
-            draw_gap(&mut c, t, grid_icon(cell));
+            draw_gap(&mut c, t, grid_icon(size, cell));
         } else {
-            draw_icon(&mut c, t, e, cell);
+            draw_icon(&mut c, t, size, e, cell);
         }
     }
     c.into_pixels()
@@ -273,14 +343,15 @@ pub fn render_grid(size: Size, t: &Theme, apps: &[IconEntry]) -> Pixels {
 
 /// Height of the strip [`render_grid`] returns (it is blitted at [`grid_band_y`]).
 #[must_use]
-pub const fn grid_band_h() -> i32 {
-    CELL_H * 4
+pub fn grid_band_h(size: Size) -> i32 {
+    let g = geo(size);
+    g.cell_h * (PAGE_SIZE as i32 / g.cols)
 }
 
 /// Top of the grid strip on screen.
 #[must_use]
-pub const fn grid_band_y() -> i32 {
-    GRID_Y
+pub fn grid_band_y(size: Size) -> i32 {
+    geo(size).grid_y
 }
 
 /// Render the home screen.
@@ -314,15 +385,16 @@ pub fn render_with_hidden(
     // Clock and date, left-aligned, cream on wallpaper (matching status bar).
     let on_wp = [0xFF, 0xF8, 0xF0, 0xFF];
     let on_wp_sub = [0xFF, 0xF8, 0xF0, 0xD8];
+    let g = geo(size);
     let clock_style = text::LabelStyle {
-        size: 156.0,
-        line_height: 164.0,
+        size: g.clock_size,
+        line_height: g.clock_size + 8.0,
         weight: 400,
         tnum: true,
         color: on_wp,
         ..text::LabelStyle::default()
     };
-    chrome::draw(&mut c, m.clock, &clock_style, LEFT - 4, 118, None);
+    chrome::draw(&mut c, m.clock, &clock_style, g.clock_xy.0, g.clock_xy.1, None);
     if !m.date.is_empty() {
         let date_style = text::LabelStyle {
             size: 30.0,
@@ -331,22 +403,22 @@ pub fn render_with_hidden(
             color: on_wp_sub,
             ..text::LabelStyle::default()
         };
-        chrome::draw(&mut c, m.date, &date_style, LEFT, 318, None);
+        chrome::draw(&mut c, m.date, &date_style, g.date_xy.0, g.date_xy.1, None);
     }
     if !m.charging.is_empty() {
         chrome::draw(
             &mut c,
             m.charging,
             &style::caption(on_wp_sub),
-            LEFT,
-            360,
+            g.charging_xy.0,
+            g.charging_xy.1,
             None,
         );
     }
 
     // Search card: glass + search glyph + hint text (single tap target).
     let card = search_card(size);
-    c.fill_rounded_rect(card, 44.0, t.glass);
+    c.fill_rounded_rect(card, (card.h as f32 / 2.0).min(44.0), t.glass);
     chrome::draw_ink_centered(
         &mut c,
         "\u{e8b6}",
@@ -366,7 +438,7 @@ pub fn render_with_hidden(
     for (i, e) in m.apps.iter().take(PAGE_SIZE).enumerate() {
         let cell = grid_cell(size, i);
         if e.id == GAP_ID {
-            draw_gap(&mut c, t, grid_icon(cell));
+            draw_gap(&mut c, t, grid_icon(size, cell));
         } else if hidden == Some(e.id.as_str()) {
             let mut entry = e.clone();
             entry.icon = None;
@@ -378,13 +450,13 @@ pub fn render_with_hidden(
                         px.data().to_vec(),
                     ),
                     Point::new(
-                        cell.x + (CELL_W - px.width() as i32) / 2,
-                        cell.y + ICON + 14,
+                        cell.x + (g.cell_w - px.width() as i32) / 2,
+                        cell.y + g.icon + 14,
                     ),
                 );
             }
         } else {
-            draw_icon(&mut c, t, e, cell);
+            draw_icon(&mut c, t, size, e, cell);
         }
     }
 
@@ -416,10 +488,10 @@ pub fn render_with_hidden(
 
     if !hide_dock {
         let dock = dock_shelf(size);
-        c.fill_rounded_rect(dock, 60.0, t.glass);
+        c.fill_rounded_rect(dock, g.dock_radius, t.glass);
         let slots = dock_slots(m.dock.len());
         for (i, e) in m.dock.iter().take(slots).enumerate() {
-            let r = dock_icon(dock, i, slots);
+            let r = dock_icon(size, dock, i, slots);
             if e.id == GAP_ID {
                 draw_gap(&mut c, t, r);
             } else if hidden != Some(e.id.as_str()) {
@@ -440,13 +512,14 @@ fn draw_gap(c: &mut Canvas, t: &Theme, r: Rect) {
     c.fill_rounded_rect(inner, 25.0, t.scrim);
 }
 
-fn draw_icon(c: &mut Canvas, t: &Theme, e: &IconEntry, cell: Rect) {
-    chrome::draw_app_icon(c, t, e, grid_icon(cell));
+fn draw_icon(c: &mut Canvas, t: &Theme, size: Size, e: &IconEntry, cell: Rect) {
+    let g = geo(size);
+    chrome::draw_app_icon(c, t, e, grid_icon(size, cell));
     if let Some(px) = text::label_clamped(&e.label, style::label(t.text), 150, 1) {
         let (w, h) = (px.width() as i32, px.height() as i32);
         c.blit(
             &Pixels::new(Size::new(w, h), px.data().to_vec()),
-            Point::new(cell.x + (CELL_W - w) / 2, cell.y + ICON + 14),
+            Point::new(cell.x + (g.cell_w - w) / 2, cell.y + g.icon + 14),
         );
     }
 }
@@ -460,16 +533,48 @@ mod tests {
         let shelf = dock_shelf(Size::new(720, 1600));
         for n in 1..=6 {
             assert_eq!(dock_slots(n), n);
-            let first = dock_icon(shelf, 0, n);
-            let last = dock_icon(shelf, n - 1, n);
+            let first = dock_icon(Size::new(720, 1600), shelf, 0, n);
+            let last = dock_icon(Size::new(720, 1600), shelf, n - 1, n);
             assert!((first.x - shelf.x - (shelf.x + shelf.w - last.x - last.w)).abs() <= 1);
             for i in 0..n {
-                assert!(shelf.contains(dock_icon(shelf, i, n).origin()));
+                assert!(shelf.contains(dock_icon(Size::new(720, 1600), shelf, i, n).origin()));
             }
         }
         assert_eq!(dock_slots(0), 0);
         assert_eq!(dock_slots(7), 6);
-        assert_eq!(dock_icon(shelf, 0, 1).x + DOCK_ICON / 2, 360);
+        assert_eq!(dock_icon(Size::new(720, 1600), shelf, 0, 1).x + DOCK_ICON / 2, 360);
+    }
+
+    #[test]
+    fn landscape_geometry_fits_and_hit_tests() {
+        let size = Size::new(1600, 720);
+        let screen = Rect::new(0, 0, size.w, size.h);
+        let dock = dock_shelf(size);
+        let band_end = grid_band_y(size) + grid_band_h(size);
+        assert!(band_end <= dock.y, "grid {band_end} must clear the dock {}", dock.y);
+        assert!(dots_y(size) + 12 <= size.h);
+        for i in 0..PAGE_SIZE {
+            let cell = grid_cell(size, i);
+            assert!(screen.contains(cell.origin()) && cell.x + cell.w <= size.w);
+            let c = cell.center();
+            assert_eq!(hit_test(size, c, PAGE_SIZE, 4), Some(HomeHit::Grid(i)), "cell {i}");
+            let icon = icon_rect(size, HomeHit::Grid(i), 4).unwrap();
+            assert_eq!(drop_target(size, icon.center(), 4), Some(DropTarget::Grid(i)));
+        }
+        let (card, pill) = (search_card(size), drawer_pill(size));
+        assert_eq!(hit_test(size, card.center(), 16, 4), Some(HomeHit::Search));
+        assert_eq!(hit_test(size, pill.center(), 16, 4), Some(HomeHit::Drawer));
+        assert!(card.x + card.w < pill.x && pill.x + pill.w <= size.w);
+        for n in 1..=6 {
+            for i in 0..n {
+                let r = dock_icon(size, dock, i, n);
+                assert!(dock.contains(r.origin()) && r.x + r.w <= dock.x + dock.w);
+                let c = r.center();
+                assert_eq!(hit_test(size, c, 16, n), Some(HomeHit::Dock(i)));
+            }
+        }
+        let px = render(size, &Strings::default(), &tokens::DEFAULT, &HomeModel::demo("09:41", &[]));
+        assert_eq!(px.size, size);
     }
 
     #[test]
@@ -531,7 +636,7 @@ mod tests {
         let size = Size::new(720, 1600);
         let apps = vec![IconEntry::new("a", "A")];
         let px = render_grid(size, &tokens::DEFAULT, &apps);
-        assert_eq!(px.size, Size::new(720, grid_band_h()));
+        assert_eq!(px.size, Size::new(720, grid_band_h(Size::new(720, 1600))));
         // The strip corner away from the first icon is untouched.
         assert_eq!(
             &px.data[(px.size.w as usize - 1) * 4..px.size.w as usize * 4],
@@ -580,7 +685,7 @@ mod tests {
             Some(HomeHit::Drawer)
         );
         // First dock slot centre.
-        let d0 = dock_icon(dock_shelf(size), 0, 4);
+        let d0 = dock_icon(size, dock_shelf(size), 0, 4);
         assert_eq!(
             hit_test(size, Point::new(d0.x + d0.w / 2, d0.y + d0.h / 2), 16, 4),
             Some(HomeHit::Dock(0))

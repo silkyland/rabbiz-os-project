@@ -15,8 +15,16 @@ pub struct MockNotification {
     pub body: String,
 }
 
-/// Complete snapshot of mocked hardware/service state.
+/// Synthetic now-playing track (`ctl mock media "Title|Artist|playing"`).
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MockMedia {
+    pub title: String,
+    pub artist: String,
+    pub playing: bool,
+}
+
+/// Complete snapshot of mocked hardware/service state.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct MockState {
     pub enabled: bool,
     pub battery_pct: Option<u8>,
@@ -34,12 +42,24 @@ pub struct MockState {
     pub psi_pressure: bool,
     pub fingerprint_ok: Option<bool>,
     pub pending_notifications: Vec<MockNotification>,
+    /// Injected accelerometer reading, m/s^2 (`ctl mock accel x,y,z`).
+    pub accel: Option<(f32, f32, f32)>,
+    /// Synthetic now-playing track; wins over the session-bus player.
+    pub media: Option<MockMedia>,
 }
 
 static STORE: OnceLock<Mutex<MockState>> = OnceLock::new();
 
 fn store() -> &'static Mutex<MockState> {
     STORE.get_or_init(|| Mutex::new(MockState::default()))
+}
+
+/// Apply a transport command to the mock track (play/pause toggles).
+pub fn media_toggle_playing() {
+    let mut guard = store().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(m) = guard.media.as_mut() {
+        m.playing = !m.playing;
+    }
 }
 
 /// Read the current mock state snapshot.
@@ -161,6 +181,47 @@ fn apply_in(state: &mut MockState, key: &str, value: &str) -> Result<(), String>
             };
             state.pending_notifications.push(notif);
         }
+        "accel" => {
+            state.accel = if v.is_empty() || v.eq_ignore_ascii_case("none") {
+                None
+            } else {
+                let p: Vec<f32> = v
+                    .split(',')
+                    .map(|t| t.trim().parse::<f32>())
+                    .collect::<Result<_, _>>()
+                    .map_err(|_| format!("mock accel expects x,y,z in m/s^2, got '{v}'"))?;
+                let [x, y, z] = p[..] else {
+                    return Err(format!("mock accel expects x,y,z in m/s^2, got '{v}'"));
+                };
+                Some((x, y, z))
+            };
+        }
+        "media" => {
+            state.media = if v.is_empty() || v.eq_ignore_ascii_case("none") {
+                None
+            } else {
+                let mut it = v.splitn(3, '|').map(str::trim);
+                let title = it.next().unwrap_or_default().to_string();
+                let artist = it.next().unwrap_or_default().to_string();
+                let playing = !matches!(it.next(), Some("paused" | "pause" | "false" | "0"));
+                Some(MockMedia {
+                    title,
+                    artist,
+                    playing,
+                })
+            };
+        }
+        "orientation" | "rotate" => {
+            state.accel = if v.is_empty() || v.eq_ignore_ascii_case("none") {
+                None
+            } else {
+                let o = de_api::Orientation::parse(v).ok_or_else(|| {
+                    format!("mock orientation expects portrait|landscape_ccw|portrait_flipped|landscape_cw|none, got '{v}'")
+                })?;
+                let s = de_api::AccelSample::at_rest(o);
+                Some((s.x, s.y, s.z))
+            };
+        }
         other => return Err(format!("unknown mock key '{other}'")),
     }
     state.enabled = true;
@@ -198,6 +259,30 @@ mod tests {
     use super::*;
 
     static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn sensor_and_media_keys() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        apply("reset", "").unwrap();
+        apply("orientation", "landscape_cw").unwrap();
+        let (x, y, _) = snapshot().accel.unwrap();
+        assert!(x < -9.0 && y.abs() < 1e-3);
+        apply("accel", "0, 9.8, 0").unwrap();
+        assert_eq!(snapshot().accel, Some((0.0, 9.8, 0.0)));
+        assert!(apply("accel", "1,2").is_err());
+        assert!(apply("orientation", "sideways").is_err());
+        apply("orientation", "none").unwrap();
+        assert_eq!(snapshot().accel, None);
+
+        apply("media", "Midnight Signal|Devded|paused").unwrap();
+        let m = snapshot().media.unwrap();
+        assert_eq!((m.title.as_str(), m.artist.as_str(), m.playing), ("Midnight Signal", "Devded", false));
+        media_toggle_playing();
+        assert!(snapshot().media.unwrap().playing);
+        apply("media", "none").unwrap();
+        assert!(snapshot().media.is_none());
+        apply("reset", "").unwrap();
+    }
 
     #[test]
     fn apply_all_keys_and_reset() {

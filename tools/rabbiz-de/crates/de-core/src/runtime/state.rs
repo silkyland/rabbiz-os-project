@@ -107,6 +107,10 @@ pub struct De {
     pub popups: PopupManager,
     /// smithay Output object (for `send_frame`/globals).
     pub output_obj: Output,
+    /// Orientation policy + sensor (`runtime/rotation.rs`).
+    pub(crate) rotation: crate::rotation::Rotation,
+    /// Now-playing (pill + shade card).
+    pub(crate) media: crate::media_ui::MediaFx,
 
     pub compositor_state: CompositorState,
     pub shm_state: ShmState,
@@ -286,8 +290,6 @@ pub struct De {
     pub(crate) osd_fx: crate::osd_ui::OsdFx,
     /// Heads-up notification banner controller (`hun_ui.rs`).
     pub(crate) hun_fx: crate::hun_ui::HunFx,
-    /// MPRIS "now playing" status-bar pill (`media_ui.rs`).
-    pub(crate) media_fx: crate::media_ui::MediaFx,
     /// Last notification ID forwarded to `hun_fx` (prevents duplicate enqueue).
     pub(crate) last_hun_notif_id: u32,
     /// Pure app lifecycle & freeze-timer state machine (`de_system::lifecycle`).
@@ -625,6 +627,10 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         Some((0, 0).into()),
     );
 
+    let rotation = crate::rotation::Rotation::new(
+        de_api::Size::new(output.width as i32, output.height as i32),
+        crate::rotation::policy_from_prefs(app_prefs.prefs()),
+    );
     let mut space = Space::default();
     space.map_output(&output_obj, (0, 0));
 
@@ -660,6 +666,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         },
         navigation: crate::navigation::Navigation::new(),
         output_obj,
+        rotation,
+        media: crate::media_ui::MediaFx::new(),
 
         compositor_state,
         shm_state,
@@ -757,7 +765,6 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         shot_fx: crate::shot_ui::ShotFx::default(),
         osd_fx: crate::osd_ui::OsdFx::default(),
         hun_fx: crate::hun_ui::HunFx::default(),
-        media_fx: crate::media_ui::MediaFx::new(),
         last_hun_notif_id: 0,
         lifecycle: de_system::lifecycle::LifecycleManager::default(),
         insets: de_api::WindowInsets {

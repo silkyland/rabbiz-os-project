@@ -638,6 +638,15 @@ fn dirs_config() -> PathBuf {
         .join("rabbiz-de")
 }
 
+impl Power {
+    /// Output size changed (rotation): re-raster the locked power menu.
+    pub(crate) fn on_resize(&mut self) {
+        self.menu_px = None;
+        self.menu_tex = None;
+        self.menu_stale = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

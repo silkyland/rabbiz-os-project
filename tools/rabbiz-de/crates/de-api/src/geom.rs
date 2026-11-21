@@ -117,6 +117,11 @@ impl Rect {
     }
 
     #[must_use]
+    pub const fn center(self) -> Point {
+        Point::new(self.x + self.w / 2, self.y + self.h / 2)
+    }
+
+    #[must_use]
     pub const fn contains(self, p: Point) -> bool {
         p.x >= self.x && p.x < self.right() && p.y >= self.y && p.y < self.bottom()
     }

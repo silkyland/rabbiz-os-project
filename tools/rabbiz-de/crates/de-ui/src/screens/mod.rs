@@ -10,6 +10,7 @@ pub mod launch_morph;
 pub mod lock;
 pub mod lock_bouncer;
 pub mod media_card;
+pub mod notification_card;
 pub mod notification_groups;
 pub mod osd;
 pub mod panels;

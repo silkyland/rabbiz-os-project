@@ -12,7 +12,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use de_api::Size;
+use de_api::{OrientationRequest, Size};
 use serde::{Deserialize, Serialize};
 
 /// Hard upper bound on a single IPC line (16 KiB) to prevent unbounded reads.
@@ -86,6 +86,15 @@ pub enum IpcCommand {
     InjectHwButton { button: HwButtonKind },
     /// Update a synthetic system/hardware state entry in `de_system::mock`.
     SetMock { key: String, value: String },
+    /// Screen rotation: `"auto"` follows the sensor, an orientation name
+    /// (`portrait|landscape_ccw|portrait_flipped|landscape_cw`) locks to it.
+    SetRotation { mode: String },
+    /// Orientation the app with `app_id` asks for while it is foreground
+    /// (runtime counterpart of `X-Rabbiz-Orientation=`).
+    SetAppOrientation {
+        app_id: String,
+        request: OrientationRequest,
+    },
 }
 
 const fn default_true() -> bool {
@@ -184,6 +193,12 @@ pub struct ShellStateSnapshot {
     pub output: Size,
     pub insets: InsetSummary,
     pub windows: Vec<WindowSummary>,
+    /// Applied screen orientation name (`portrait`, `landscape_cw`, ...).
+    #[serde(default)]
+    pub orientation: String,
+    /// User rotation policy: follow the sensor.
+    #[serde(default)]
+    pub auto_rotate: bool,
 }
 
 /// Decode a single IPC request line, enforcing [`MAX_MESSAGE_BYTES`].
@@ -474,6 +489,8 @@ mod tests {
             locked: false,
             output: Size::new(720, 1600),
             insets: InsetSummary { ime_bottom: 0 },
+            orientation: "portrait".into(),
+            auto_rotate: true,
             windows: vec![WindowSummary {
                 app_id: "org.kde.kalk".into(),
                 focused: false,

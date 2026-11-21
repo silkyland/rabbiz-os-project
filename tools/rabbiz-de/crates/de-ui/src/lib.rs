@@ -11,6 +11,6 @@ pub use chrome::{menu, nav_bar};
 pub use interaction::{gestures, hun, i18n, nav, pager, pull, transitions, universal_search};
 pub use screens::{
     boot, drawer, error, first_run, home, hun_banner, launch_morph, lock, lock_bouncer, media_card,
-    notification_groups, osd, panels, power, qs, recents, screenshot, search, settings, shade,
+    notification_card, notification_groups, osd, panels, power, qs, recents, screenshot, search, settings, shade,
     status,
 };

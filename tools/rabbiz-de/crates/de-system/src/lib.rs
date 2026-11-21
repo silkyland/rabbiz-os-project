@@ -1,5 +1,6 @@
 //! `de-system` — D-Bus service state + env contract (Linux + stubs).
 
+pub mod accel;
 pub mod auth;
 pub mod controls;
 pub mod env;

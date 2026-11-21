@@ -72,6 +72,12 @@ pub struct Prefs {
     /// Lockscreen notification privacy (`show_all` | `hide_sensitive` | `hide_all`).
     #[serde(default = "default_lockscreen_notifications")]
     pub lockscreen_notifications: String,
+    /// Follow the accelerometer for unconstrained screens (Quick Settings tile).
+    #[serde(rename = "deAutoRotate")]
+    pub auto_rotate: bool,
+    /// Orientation held while auto-rotate is off (`Orientation::name`).
+    #[serde(rename = "deRotationLock")]
+    pub rotation_lock: String,
 }
 
 impl Default for Prefs {
@@ -89,6 +95,8 @@ impl Default for Prefs {
             allow_third_party_keyboards: true,
             lock_method: default_lock_method(),
             lockscreen_notifications: default_lockscreen_notifications(),
+            auto_rotate: true,
+            rotation_lock: "portrait".into(),
         }
     }
 }
@@ -245,6 +253,18 @@ impl Prefs {
     pub fn set_do_not_disturb(&mut self, on: bool) -> bool {
         self.commit_to(&Self::path(), |p| {
             p.do_not_disturb = on;
+            true
+        })
+    }
+
+    /// Persist the rotation policy (`lock` is an `Orientation::name`).
+    pub fn set_rotation(&mut self, auto: bool, lock: &str) -> bool {
+        self.commit_to(&Self::path(), |p| {
+            if p.auto_rotate == auto && p.rotation_lock == lock {
+                return false;
+            }
+            p.auto_rotate = auto;
+            p.rotation_lock = lock.to_string();
             true
         })
     }

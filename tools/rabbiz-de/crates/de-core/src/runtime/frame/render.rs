@@ -55,7 +55,7 @@ pub(super) struct FrameParts<'a> {
     pub(super) shot_fx: &'a mut crate::shot_ui::ShotFx,
     pub(super) osd_fx: &'a mut crate::osd_ui::OsdFx,
     pub(super) hun_fx: &'a mut crate::hun_ui::HunFx,
-    pub(super) media_fx: &'a mut crate::media_ui::MediaFx,
+    pub(super) media: &'a mut crate::media_ui::MediaFx,
     pub(super) power: &'a mut crate::power::Power,
     /// Draw the home screen from `home` layers instead of `shell_tex`.
     pub(super) layered: bool,
@@ -270,30 +270,26 @@ where
         );
     }
 
-    // "Now playing" pill centred in the status-bar band — its own small
-    // texture so the marquee never re-rasters the whole shell frame.
-    if de.media_fx.tex.is_none() || de.media_fx.tex_generation != de.media_fx.generation {
-        if let Some(px) = de.media_fx.px.as_ref() {
-            de.media_fx.tex = upload_any(renderer, px);
-            de.media_fx.tex_generation = de.media_fx.generation;
-        } else {
-            de.media_fx.tex = None;
-            de.media_fx.tex_generation = de.media_fx.generation;
+    // Now-playing pill centred in the status band (below the shade/lock).
+    if de.media.pill_tex.is_none() || de.media.pill_tex_generation != de.media.pill_generation {
+        if let Some(px) = de.media.pill_px.as_ref() {
+            de.media.pill_tex = upload_any(renderer, px);
+            de.media.pill_tex_generation = de.media.pill_generation;
         }
     }
-    if let (Some(tex), Some(r)) = (
-        texture_buffer::<R>(de.media_fx.tex.as_ref()),
-        de.media_fx.rect(de.output.width as i32),
+    if let (Some(tex), Some(px)) = (
+        texture_buffer::<R>(de.media.pill_tex.as_ref()),
+        de.media.pill_px.as_ref(),
     ) {
+        let r = de_ui::media::pill_rect(
+            de_api::Size::new(de.output.width as i32, de.output.height as i32),
+            px.size.w,
+        );
         stack.push(
             de_api::DisplayArea::SystemBars,
-            DeElement::from(TextureRenderElement::from_texture_buffer(
-                Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
+            DeElement::from(tex_el::<R>(
                 tex,
-                Some(1.0),
-                None,
-                None,
-                Kind::Unspecified,
+                Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
             )),
         );
     }
@@ -1011,7 +1007,7 @@ fn push_home_layers<R: ImportAll>(
         if let Some(tex) = texture_buffer::<R>(h.page_tex.get(&p)) {
             elements.push(DeElement::from(tex_el::<R>(
                 tex,
-                Point::<f64, Physical>::from((f64::from(x), f64::from(de_ui::home::grid_band_y()))),
+                Point::<f64, Physical>::from((f64::from(x), f64::from(de_ui::home::grid_band_y(size)))),
             )));
         }
     }
