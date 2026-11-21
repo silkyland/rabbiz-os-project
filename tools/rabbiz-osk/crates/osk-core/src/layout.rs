@@ -51,6 +51,10 @@ impl Key {
     }
 }
 
+/// Bottom accessory bar height below the key rows (dismiss chevron on the
+/// left, language switch globe on the right — matching Android/Gboard).
+pub const BOTTOM_BAR_HEIGHT_PX: f32 = 48.0;
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rect {
     pub x: f32,
@@ -261,6 +265,7 @@ impl Layout {
             + rows as f32 * g.key_height_px
             + rows.saturating_sub(1) as f32 * g.gap_px
             + g.gap_px
+            + BOTTOM_BAR_HEIGHT_PX
     }
 
     /// Key rectangles for one layer, in surface coordinates.
@@ -295,7 +300,11 @@ impl Layout {
             }
             let unit_px = usable / units;
             let rows_n = layer.rows.len() as f32;
-            let row_h = (self.height_px() - g.strip_height_px - g.gap_px * (rows_n + 1.0)) / rows_n;
+            let row_h = (self.height_px()
+                - g.strip_height_px
+                - BOTTOM_BAR_HEIGHT_PX
+                - g.gap_px * (rows_n + 1.0))
+                / rows_n;
             if row_h <= 0.0 {
                 return Err(LayoutError::Invalid(format!(
                     "layer {layer_name} has too many rows for the surface height"

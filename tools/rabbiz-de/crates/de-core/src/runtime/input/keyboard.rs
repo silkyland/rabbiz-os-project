@@ -65,6 +65,15 @@ impl De {
                     return FilterResult::Intercept(());
                 }
                 if de.locked() {
+                    // Volume buttons stay usable on the lock screen (with OSD).
+                    if let Some(sym) = raw {
+                        if matches!(
+                            sym,
+                            Keysym::XF86_AudioRaiseVolume | Keysym::XF86_AudioLowerVolume
+                        ) {
+                            let _ = de.keyboard_shortcut(mods, sym, state, u64::from(time));
+                        }
+                    }
                     return FilterResult::Intercept(());
                 }
                 // Shell keybindings (shortcuts.rs): chords and the bare

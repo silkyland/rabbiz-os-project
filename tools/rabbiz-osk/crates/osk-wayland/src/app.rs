@@ -24,6 +24,7 @@ use smithay_client_toolkit::{
 use wayland_protocols_misc::zwp_input_method_v2::client::zwp_input_method_v2::ZwpInputMethodV2;
 use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboard_v1::ZwpVirtualKeyboardV1;
 
+use crate::feedback::Feedback;
 use crate::shell_bridge::ShellImClient;
 use crate::touch::AltState;
 
@@ -52,6 +53,10 @@ pub(crate) struct App {
     pub(crate) user_visible: bool,
     pub(crate) configured: bool,
     pub(crate) visible: bool,
+    /// Set when the user explicitly tapped the dismiss button; suppresses
+    /// immediate post-resize `Done` commits for a brief grace window while
+    /// allowing any subsequent input tap to re-open the keyboard.
+    pub(crate) dismissed_at: Option<Instant>,
     /// Set when we asked the compositor for a fresh configure after being unmapped or resized.
     pub(crate) draw_pending: bool,
     pub(crate) w: u32,
@@ -71,6 +76,7 @@ pub(crate) struct App {
     pub(crate) clipboard: Arc<Mutex<Vec<String>>>,
     pub(crate) clipboard_changed: Arc<AtomicBool>,
     pub(crate) sheet: Option<Vec<String>>,
+    pub(crate) feedback: Feedback,
 }
 
 impl App {

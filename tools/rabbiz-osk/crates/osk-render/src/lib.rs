@@ -213,6 +213,7 @@ impl Renderer {
                 }
             }
         }
+        self.bottom_bar(&mut pixmap, layout, theme, scale);
         pixmap
     }
 
@@ -343,8 +344,23 @@ impl Renderer {
                 pixmap,
                 icon,
                 rect,
-                rect.h * 0.55,
+                rect.h * 0.62,
                 theme.label,
+                cosmic_text::Family::Name(ICON_FAMILY),
+            );
+        }
+    }
+
+    /// Bottom accessory bar: dismiss keyboard chevron (left) and language globe (right).
+    fn bottom_bar(&mut self, pixmap: &mut Pixmap, layout: &Layout, theme: &Theme, scale: f32) {
+        for (index, icon) in BOTTOM_ICONS.iter().enumerate() {
+            let rect = bottom_button_rect(index, layout, scale);
+            self.text_in_family(
+                pixmap,
+                icon,
+                rect,
+                30.0 * scale,
+                theme.label_dim,
                 cosmic_text::Family::Name(ICON_FAMILY),
             );
         }
@@ -360,13 +376,13 @@ impl Renderer {
     ) {
         let g = &layout.geometry;
         let row_h = g.strip_height_px * scale;
-        let y = row_h * 0.18;
-        let slot_h = row_h * 0.64;
+        let y = row_h * 0.14;
+        let slot_h = row_h * 0.72;
         // Gboard layout: [left action] [three suggestions] [right action].
         let left = toolbar_button_rect(0, layout, scale);
         let right = toolbar_button_rect(1, layout, scale);
-        let strip_x = left.x + left.w + 6.0 * scale;
-        let strip_w = (right.x - 6.0 * scale) - strip_x;
+        let strip_x = left.x + left.w + 8.0 * scale;
+        let strip_w = (right.x - 8.0 * scale) - strip_x;
         let slot_w = strip_w / 3.0;
         for i in 0..3 {
             let x = strip_x + i as f32 * slot_w;
@@ -374,9 +390,9 @@ impl Renderer {
                 self.rect(
                     pixmap,
                     x,
-                    y + 4.0 * scale,
+                    y + 6.0 * scale,
                     1.0 * scale,
-                    slot_h - 8.0 * scale,
+                    slot_h - 12.0 * scale,
                     theme.label_dim,
                     0.0,
                 );
@@ -387,7 +403,7 @@ impl Renderer {
                 continue;
             }
             let rect = suggestion_rect(i, layout, scale);
-            self.text_centered(pixmap, suggestion, rect, slot_h * 0.42, theme.label);
+            self.text_centered(pixmap, suggestion, rect, slot_h * 0.46, theme.label);
         }
     }
 
@@ -514,7 +530,26 @@ impl Renderer {
 
 /// Toolbar buttons drawn in the suggestion strip and hit-tested by the Wayland client.
 pub const TOOLBAR_ICONS: [&str; 2] = ["content_paste", "mic"];
-const TOOLBAR_BUTTON: f32 = 34.0;
+const TOOLBAR_BUTTON: f32 = 46.0;
+
+/// Bottom accessory bar buttons: left = dismiss keyboard, right = cycle language.
+pub const BOTTOM_ICONS: [&str; 2] = ["keyboard_arrow_down", "language"];
+const BOTTOM_BUTTON_W: f32 = 72.0;
+
+/// Rect of bottom accessory bar button `index` (0 = left dismiss, 1 = right language),
+/// in surface pixels.
+pub fn bottom_button_rect(index: usize, layout: &Layout, scale: f32) -> Rect {
+    let bar_h = osk_core::layout::BOTTOM_BAR_HEIGHT_PX * scale;
+    let bar_y = layout.height_px() * scale - bar_h;
+    let w = BOTTOM_BUTTON_W * scale;
+    let h = bar_h;
+    let x = if index == 0 {
+        16.0 * scale
+    } else {
+        layout.geometry.width_px * scale - w - 16.0 * scale
+    };
+    Rect { x, y: bar_y, w, h }
+}
 
 /// Height of one row in a sheet (clipboard history), in surface pixels.
 pub const SHEET_ROW_H: f32 = 52.0;
@@ -533,11 +568,11 @@ pub fn sheet_row_rect(index: usize, layout: &Layout, scale: f32) -> Rect {
 pub fn suggestion_rect(index: usize, layout: &Layout, scale: f32) -> Rect {
     let left = toolbar_button_rect(0, layout, scale);
     let right = toolbar_button_rect(1, layout, scale);
-    let strip_x = left.x + left.w + 6.0 * scale;
-    let strip_w = (right.x - 6.0 * scale) - strip_x;
+    let strip_x = left.x + left.w + 8.0 * scale;
+    let strip_w = (right.x - 8.0 * scale) - strip_x;
     let slot_w = strip_w / 3.0;
-    let y = (layout.geometry.strip_height_px * scale) * 0.18;
-    let h = (layout.geometry.strip_height_px * scale) * 0.64;
+    let y = (layout.geometry.strip_height_px * scale) * 0.14;
+    let h = (layout.geometry.strip_height_px * scale) * 0.72;
     Rect {
         x: strip_x + index as f32 * slot_w + 4.0 * scale,
         y,
@@ -548,13 +583,13 @@ pub fn suggestion_rect(index: usize, layout: &Layout, scale: f32) -> Rect {
 
 /// Rect of toolbar button `index` (0 = left action, 1 = right action), in surface pixels.
 pub fn toolbar_button_rect(index: usize, layout: &Layout, scale: f32) -> Rect {
-    let h = (layout.geometry.strip_height_px - 8.0) * scale;
+    let h = (layout.geometry.strip_height_px - 10.0) * scale;
     let w = TOOLBAR_BUTTON * scale;
-    let y = 4.0 * scale;
+    let y = 5.0 * scale;
     let x = if index == 0 {
-        6.0 * scale
+        8.0 * scale
     } else {
-        layout.geometry.width_px * scale - w - 6.0 * scale
+        layout.geometry.width_px * scale - w - 8.0 * scale
     };
     Rect { x, y, w, h }
 }

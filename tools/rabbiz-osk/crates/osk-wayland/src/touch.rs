@@ -1,8 +1,10 @@
 //! Touch handling, toolbar/suggestion/sheet hit-testing, alternates chooser, and gesture dispatch.
 
 use osk_core::gesture::{GestureEvent, TouchEvent};
-use osk_core::layout::{KeyAction, KeyPos};
-use osk_render::{sheet_row_rect, suggestion_rect, toolbar_button_rect, TOOLBAR_ICONS};
+use osk_core::layout::{KeyAction, KeyPos, BOTTOM_BAR_HEIGHT_PX};
+use osk_render::{
+    bottom_button_rect, sheet_row_rect, suggestion_rect, toolbar_button_rect, TOOLBAR_ICONS,
+};
 
 use smithay_client_toolkit::reexports::client::{
     protocol::{wl_surface, wl_touch},
@@ -11,6 +13,7 @@ use smithay_client_toolkit::reexports::client::{
 use smithay_client_toolkit::{delegate_touch, seat::touch::TouchHandler};
 
 use crate::app::App;
+use crate::feedback::FeedbackKind;
 
 pub(crate) struct AltState {
     pub(crate) key: KeyPos,
@@ -61,6 +64,22 @@ impl App {
         }
     }
 
+    /// Bottom accessory bar: left = dismiss keyboard, right = cycle language.
+    fn on_bottom_bar_tap(&mut self, x: f32, y: f32) {
+        let layout = self.keyboard.layout();
+        if bottom_button_rect(0, layout, 1.0).contains(x, y) {
+            self.feedback.trigger(FeedbackKind::Mod);
+            self.dismissed_at = Some(std::time::Instant::now());
+            self.hide();
+        } else if bottom_button_rect(1, layout, 1.0).contains(x, y) {
+            self.feedback.trigger(FeedbackKind::Mod);
+            let commands = self.keyboard.cycle_language();
+            self.send_commands(commands);
+            self.sync_size();
+            self.draw();
+        }
+    }
+
     fn apply_tap(&mut self, pos: KeyPos) {
         let commands = self.keyboard.press(pos, self.now_ms());
         self.send_commands(commands);
@@ -94,6 +113,20 @@ impl App {
                 GestureEvent::Press(pos) => {
                     if !self.pressed.contains(&pos) {
                         self.pressed.push(pos);
+                        let kind = match self.keyboard.key(pos).map(|k| &k.action) {
+                            Some(
+                                KeyAction::Backspace
+                                | KeyAction::Return
+                                | KeyAction::Space
+                                | KeyAction::Shift
+                                | KeyAction::Layer(_)
+                                | KeyAction::Language
+                                | KeyAction::Panel(_)
+                                | KeyAction::PanelBack,
+                            ) => FeedbackKind::Mod,
+                            _ => FeedbackKind::Key,
+                        };
+                        self.feedback.trigger(kind);
                     }
                     self.draw();
                 }
@@ -114,6 +147,7 @@ impl App {
                     if items.is_empty() {
                         continue;
                     }
+                    self.feedback.trigger(FeedbackKind::Mod);
                     self.alt = Some(AltState {
                         key: pos,
                         items,
@@ -131,6 +165,7 @@ impl App {
                     );
                     if backspace && (!self.has_surrounding_text || !self.keyboard.text().is_empty())
                     {
+                        self.feedback.trigger(FeedbackKind::Repeat);
                         let commands = self.keyboard.backspace();
                         self.send_commands(commands);
                         self.draw();
@@ -191,6 +226,12 @@ impl TouchHandler for App {
         if (pos.1 as f32) <= strip_h {
             self.strip_touches.insert(id);
             self.on_toolbar_tap(pos.0 as f32, pos.1 as f32);
+            return;
+        }
+        let bottom_y = self.keyboard.layout().height_px() - BOTTOM_BAR_HEIGHT_PX;
+        if (pos.1 as f32) >= bottom_y {
+            self.strip_touches.insert(id);
+            self.on_bottom_bar_tap(pos.0 as f32, pos.1 as f32);
             return;
         }
         let hit = self

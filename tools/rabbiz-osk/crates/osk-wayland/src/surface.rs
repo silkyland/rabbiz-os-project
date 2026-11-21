@@ -23,8 +23,11 @@ use smithay_client_toolkit::{
 
 use crate::app::App;
 
-/// Matches `de_design::tokens::GESTURE_BAR_HEIGHT` so the bottom key row sits cleanly above `Zone::NavBar`.
-pub(crate) const NAV_BAR_H: i32 = 32;
+/// The OSK extends flush to the bottom edge: its bottom accessory bar hosts the
+/// left dismiss chevron and right language globe while `rabbiz-de` composites
+/// the centered gesture pill between them (with `Zone::NavBar` scoped to the
+/// pill's horizontal span).
+pub(crate) const NAV_BAR_H: i32 = 0;
 
 impl App {
     /// Surface height follows the active layout's base layer; the emoji/numbers rows stretch.

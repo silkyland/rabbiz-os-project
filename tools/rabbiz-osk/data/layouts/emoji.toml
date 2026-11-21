@@ -11,7 +11,7 @@ width_px = 720.0
 key_height_px = 62.0
 gap_px = 5.0
 margin_px = 5.0
-strip_height_px = 40.0
+strip_height_px = 56.0
 
 [keys.abc]
 action = "panel_back"

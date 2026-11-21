@@ -416,7 +416,7 @@ impl Run {
             self.de.lock_wake_at(interval),
             self.de.power.wake_at(now),
             self.de.shot_fx.wake_at(now),
-            self.de.osd_fx.wake_at(now),
+            self.de.osd_fx.wake_at(now, interval),
             search_blink,
             recents_wake,
             self.de

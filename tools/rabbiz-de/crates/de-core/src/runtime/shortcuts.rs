@@ -251,21 +251,45 @@ impl De {
 
     /// Brightness/volume keys drive the same `Controls` channel the
     /// quick-settings sliders use (`request_control` marks the panel
-    /// rasters stale; `poll_panels` snaps the knob to the real level).
-    /// When the controls backend has no snapshot yet the step is taken
-    /// from mid-scale — repeated presses still converge once it reports.
+    /// rasters stale; `poll_panels` snaps the knob to the real level),
+    /// update the local level optimistically so rapid presses step cleanly,
+    /// and pop the GPU-composited OSD pill immediately.
     fn adjust_level(&mut self, level: Level, delta: f32) {
+        use de_config::ipc::OsdKind;
         use de_system::controls::Action;
         let cur = match level {
-            Level::Brightness => self.panels.control_state.brightness,
-            Level::Volume => self.panels.control_state.volume,
-        }
-        .unwrap_or(0.5);
+            Level::Brightness => self
+                .panels
+                .control_state
+                .brightness
+                .unwrap_or(self.panels.brightness),
+            Level::Volume => self
+                .panels
+                .control_state
+                .volume
+                .unwrap_or(self.panels.volume),
+        };
         let next = (cur + delta).clamp(0.0, 1.0);
-        self.panels.request_control(match level {
-            Level::Brightness => Action::Brightness(next),
-            Level::Volume => Action::Volume(next),
-        });
+        let (kind, action) = match level {
+            Level::Brightness => {
+                self.panels.brightness = next;
+                self.panels.control_state.brightness = Some(next);
+                (OsdKind::Brightness, Action::Brightness(next))
+            }
+            Level::Volume => {
+                self.panels.volume = next;
+                self.panels.control_state.volume = Some(next);
+                (OsdKind::Volume, Action::Volume(next))
+            }
+        };
+        self.panels.request_control(action);
+        let pct = (next * 100.0).round() as u8;
+        self.osd_fx.show(
+            kind,
+            pct,
+            kind == OsdKind::Volume && pct == 0,
+            std::time::Instant::now(),
+        );
         self.needs_present = true;
     }
 }

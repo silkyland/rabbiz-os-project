@@ -176,6 +176,7 @@ impl Dispatch<ZwpInputMethodV2, ()> for App {
                 state.keyboard.reset_for_activation();
                 state.has_surrounding_text = false;
                 state.active = true;
+                state.dismissed_at = None;
                 if state.user_visible {
                     state.show();
                 }
@@ -183,6 +184,7 @@ impl Dispatch<ZwpInputMethodV2, ()> for App {
             ImEvent::Deactivate => {
                 state.active = false;
                 state.has_surrounding_text = false;
+                state.dismissed_at = None;
                 if !state.shell_active {
                     state.hide();
                 }
@@ -212,8 +214,18 @@ impl Dispatch<ZwpInputMethodV2, ()> for App {
             ImEvent::Done => {
                 state.done_count += 1;
                 if state.active && state.user_visible {
-                    state.sync_size();
-                    state.draw();
+                    if !state.visible {
+                        let grace_passed = state.dismissed_at.is_none_or(|t| {
+                            t.elapsed() >= std::time::Duration::from_millis(350)
+                        });
+                        if grace_passed {
+                            state.dismissed_at = None;
+                            state.show();
+                        }
+                    } else {
+                        state.sync_size();
+                        state.draw();
+                    }
                 }
             }
             ImEvent::Unavailable => {

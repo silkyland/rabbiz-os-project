@@ -154,7 +154,7 @@ pub struct MediaSnapshot {
 
 - Rendered in `Shade` (above notification list) and optionally on `LockScreen` (when `playing == true`).
 - Commands (`PlayPause`, `Next`, `Previous`) sent asynchronously via `de-system` worker channel.
-- Security rule: `mpris:artUrl` only accepts local `file://` paths under `$XDG_CACHE_HOME` or `$XDG_RUNTIME_DIR` (max 2 MiB); remote `http(s)://` URLs are ignored to prevent compositor SSRF/network stalls.
+- Security rule: `mpris:artUrl` only accepts local `file://` regular files under `$XDG_CACHE_HOME`, `$XDG_RUNTIME_DIR`, or `$TMPDIR`/`/tmp` (max 2 MiB; covers Chromium/Chrome `.com.google.Chrome.*` temp artwork); remote `http(s)://` URLs are ignored to prevent compositor SSRF/network stalls.
 
 ---
 

@@ -143,14 +143,6 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
         }
     }
 
-    // SystemBars: gesture bar sits above App/Shell and below ABOVE_WINDOWS/OSK/Panels.
-    let bar = de_ui::nav_bar::gesture_bar_at(
-        canvas.size(),
-        &de.theme,
-        de.navigation.nav_bar_active.value,
-    );
-    canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
-
     // Overlays the renderer draws as textures: the paging home layers, the
     // notification/quick panel. Captures must show what is on the display.
     if de.home_layers_active() {
@@ -169,6 +161,13 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
         &map,
         de_protocols::layer_shell::ABOVE_WINDOWS.iter().rev(),
     );
+    // SystemBars: centered gesture pill sits above App/OSK and below Panels.
+    let bar = de_ui::nav_bar::gesture_bar_at(
+        canvas.size(),
+        &de.theme,
+        de.navigation.nav_bar_active.value,
+    );
+    canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
     if let (true, Some(px)) = (de.panels.pull.shown(), de.panels.active_pixels()) {
         let f = de.panels.pull.frac().clamp(0.0, 1.0);
         let y = (-(1.0 - f) * px.size.h as f32).round() as i32;
@@ -204,7 +203,14 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     if de.osd_fx.active(now) {
         if let Some(px) = de.osd_fx.px.as_ref() {
             let r = crate::osd_ui::OsdFx::rect(out_size);
-            canvas.blit(px, ApiPoint::new(r.x, r.y));
+            let (dx, alpha) = de.osd_fx.transform(now);
+            if alpha > 0.004 {
+                canvas.blit_scaled(
+                    px,
+                    de_api::Rect::new(r.x + dx.round() as i32, r.y, px.size.w, px.size.h),
+                    alpha,
+                );
+            }
         }
     }
     if de.hun_fx.is_visible() {

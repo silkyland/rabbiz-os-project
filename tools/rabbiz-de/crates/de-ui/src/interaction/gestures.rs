@@ -257,10 +257,22 @@ impl GestureTracker {
         Self { cfg, track: None }
     }
 
+    /// Horizontal span of the bottom gesture-bar pill (+40 px touch padding
+    /// on each side) so the left/right corners at the bottom edge stay free
+    /// for OSK accessory buttons (dismiss chevron / language globe).
+    fn in_nav_pill_x(&self, x: i32) -> bool {
+        let w = self.cfg.output_w as f32;
+        let pill_w = 200.0_f32.min((w * 0.45).max(80.0));
+        let hit_w = (pill_w + 80.0).min(w);
+        let left = ((w - hit_w) * 0.5).round() as i32;
+        let right = left + hit_w.round() as i32;
+        x >= left && x < right
+    }
+
     /// Which zone `pos` falls in.
     #[must_use]
     pub fn zone(&self, pos: Point) -> Zone {
-        if pos.y >= self.cfg.output_h - self.cfg.nav_h {
+        if pos.y >= self.cfg.output_h - self.cfg.nav_h && self.in_nav_pill_x(pos.x) {
             Zone::NavBar
         } else if pos.y < self.cfg.top_h {
             Zone::TopEdge

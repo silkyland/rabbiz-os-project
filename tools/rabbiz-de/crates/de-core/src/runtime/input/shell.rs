@@ -131,6 +131,8 @@ impl De {
                 let rows = self.search_row_ids(&ids);
                 if let Some(i) = de_ui::search::hit_test(size, &rows, pos) {
                     self.try_launch(&rows[i].id, de_ui::search::icon_rect(size, &rows, i));
+                } else if pos.y < 180 {
+                    self.shell_im.set_visible(true);
                 }
             }
             Screen::Drawer => {

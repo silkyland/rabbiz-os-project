@@ -10,6 +10,7 @@
 mod app;
 mod clipboard;
 mod dbus;
+mod feedback;
 mod input_method;
 mod shell_bridge;
 mod surface;
@@ -49,6 +50,7 @@ use wayland_protocols_misc::zwp_virtual_keyboard_v1::client::zwp_virtual_keyboar
 use app::App;
 use clipboard::spawn_clipboard_watch;
 use dbus::spawn_dbus;
+use feedback::Feedback;
 use input_method::upload_keymap;
 use shell_bridge::ShellImClient;
 use surface::NAV_BAR_H;
@@ -167,6 +169,7 @@ fn main() {
         draw_pending: false,
         configured: false,
         visible: false,
+        dismissed_at: None,
         w: 720,
         h,
         held: None,
@@ -182,6 +185,7 @@ fn main() {
         clipboard: clipboard.clone(),
         clipboard_changed: clipboard_changed.clone(),
         sheet: None,
+        feedback: Feedback::start(),
     };
     eprintln!(
         "rabbiz-osk: up, layout {} ({}x{}), waiting for text-input activation",
@@ -214,6 +218,7 @@ fn main() {
                         app.keyboard.reset_for_activation();
                         app.has_surrounding_text = false;
                         app.shell_active = true;
+                        app.dismissed_at = None;
                         if app.user_visible {
                             app.show();
                         }

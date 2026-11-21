@@ -95,7 +95,7 @@ pub fn validate_art_url(url: &str, allowed_roots: &[&Path]) -> Option<PathBuf> {
         ) {
             if canon_path.starts_with(&canon_root) && canon_path != canon_root {
                 if let Ok(meta) = std::fs::metadata(&canon_path) {
-                    if meta.is_file() && meta.len() > MAX_ART_BYTES {
+                    if !meta.is_file() || meta.len() > MAX_ART_BYTES {
                         return None;
                     }
                 }
@@ -303,16 +303,44 @@ impl Mpris {
     }
 }
 
+/// Directories from which `mpris:artUrl` `file://` artwork may be read:
+/// `$XDG_CACHE_HOME` (or `$HOME/.cache`), `$XDG_RUNTIME_DIR`, and the system
+/// temp directory (where Chromium/Chrome writes `.com.google.Chrome.*` covers).
+#[must_use]
+pub fn default_art_roots() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(cache) = std::env::var_os("XDG_CACHE_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .filter(|v| !v.is_empty())
+                .map(|h| PathBuf::from(h).join(".cache"))
+        })
+    {
+        roots.push(cache);
+    }
+    if let Some(runtime) = std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+    {
+        if !roots.contains(&runtime) {
+            roots.push(runtime);
+        }
+    }
+    let tmp = std::env::temp_dir();
+    if !roots.contains(&tmp) {
+        roots.push(tmp);
+    }
+    roots
+}
+
 fn worker(
     tracker: &Mutex<MprisTracker>,
     generation: &AtomicU64,
     rx: &mpsc::Receiver<(String, MediaCommand)>,
 ) {
-    let roots: Vec<PathBuf> = std::env::var_os("XDG_CACHE_HOME")
-        .map(PathBuf::from)
-        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
-        .into_iter()
-        .collect();
+    let roots = default_art_roots();
     let roots: Vec<&Path> = roots.iter().map(PathBuf::as_path).collect();
     let mut conn: Option<blocking::Connection> = None;
     let mut known: Vec<String> = Vec::new();
@@ -535,6 +563,27 @@ mod tests {
             validate_art_url("file:///home/rabbiz/.cache/nul%00.png", &[root]),
             None
         );
+    }
+
+    #[test]
+    fn default_art_roots_accepts_chromium_tmp_cover() {
+        let roots = default_art_roots();
+        let root_refs: Vec<&Path> = roots.iter().map(PathBuf::as_path).collect();
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let cover = tmp_dir.path().join(".com.google.Chrome.Q4VP8k");
+        std::fs::write(&cover, b"\x89PNG\r\n\x1a\n").expect("write cover");
+        let url = format!("file://{}", cover.display());
+        let expected = std::fs::canonicalize(&cover).expect("canonical cover");
+        assert_eq!(validate_art_url(&url, &root_refs), Some(expected));
+    }
+
+    #[test]
+    fn validate_art_url_rejects_directory_in_root() {
+        let tmp_dir = tempfile::tempdir().expect("tempdir");
+        let sub = tmp_dir.path().join("subdir");
+        std::fs::create_dir(&sub).expect("mkdir");
+        let url = format!("file://{}", sub.display());
+        assert_eq!(validate_art_url(&url, &[tmp_dir.path()]), None);
     }
 
     #[test]

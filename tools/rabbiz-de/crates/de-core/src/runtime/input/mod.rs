@@ -116,20 +116,12 @@ impl De {
     /// Track hot-plugged input devices and maintain `hw_keyboard` /
     /// `hw_pointer` (OSK suppression, cursor policy). libinput reports the
     /// platform button devices (power/volume keys) with keyboard
-    /// capability too, so "hardware" means a real bus identity: a non-zero
-    /// USB VID:PID, or a `uhid` path (Bluetooth HID — the kernel has no
-    /// native BT HID, everything arrives via uhid). Virtual/test devices
-    /// (`/devices/virtual/` without uhid, e.g. the a21s touch injector or a
-    /// wayvnc uinput node) never count — same rule as
-    /// `de_system::input_devices`, which udev classifies the same way.
+    /// capability too, and its `usb_id()` returns non-zero `0001:0001` for
+    /// platform `gpio-keys`, so "hardware" requires an external bus in
+    /// sysfs (`/usb<N>/` with non-zero VID:PID, or `/uhid/` / `/bluetooth/`).
     fn input_device<B: InputBackend>(&mut self, device: &B::Device, added: bool) {
-        let real_bus = device
-            .usb_id()
-            .is_some_and(|(vid, pid)| vid != 0 && pid != 0)
-            || device
-                .syspath()
-                .is_some_and(|p| p.to_string_lossy().contains("/uhid/"));
-        if !real_bus {
+        let syspath = device.syspath();
+        if !is_external_bus(syspath.as_deref(), device.usb_id()) {
             return;
         }
         let id = device.id();
@@ -225,6 +217,27 @@ fn variant_name<B: InputBackend>(e: &InputEvent<B>) -> &'static str {
     }
 }
 
+/// Classify whether a libinput device comes from an external USB or Bluetooth
+/// bus rather than built-in platform buttons (`gpio-keys` reports `0001:0001`
+/// through `libinput::Device::id_vendor`/`id_product`) or virtual uinput nodes.
+fn is_external_bus(syspath: Option<&std::path::Path>, usb_id: Option<(u32, u32)>) -> bool {
+    let Some(path) = syspath else {
+        return false;
+    };
+    let s = path.to_string_lossy();
+    if s.contains("/uhid/") || s.contains("/bluetooth/") {
+        return true;
+    }
+    let on_usb = path.components().any(|c| {
+        c.as_os_str().to_str().is_some_and(|seg| {
+            seg.len() > 3
+                && seg.starts_with("usb")
+                && seg[3..].bytes().all(|b| b.is_ascii_digit())
+        })
+    });
+    on_usb && usb_id.is_some_and(|(vid, pid)| vid != 0 && pid != 0)
+}
+
 #[cfg(test)]
 mod tests {
     use de_ui::gestures::Zone;
@@ -273,5 +286,40 @@ mod tests {
         assert!(!pointer_bridge_app("rabbiz-sms", list));
         assert!(!pointer_bridge_app("sun-awt-X11-XFramePeer", ""));
         assert!(!pointer_bridge_app("", list));
+    }
+
+    #[test]
+    fn external_bus_rejects_platform_gpio_keys_and_accepts_usb_and_bt() {
+        use std::path::Path;
+        use super::is_external_bus;
+
+        // A21s volume buttons: platform bus with non-zero vendor/product 0001:0001.
+        assert!(!is_external_bus(
+            Some(Path::new("/sys/devices/platform/gpio-keys/input/input2/event2")),
+            Some((1, 1)),
+        ));
+        // A21s power key & virtual uinput.
+        assert!(!is_external_bus(
+            Some(Path::new("/sys/devices/platform/s2mpu12-power-keys/input/input1/event1")),
+            Some((0, 0)),
+        ));
+        assert!(!is_external_bus(
+            Some(Path::new("/sys/devices/virtual/input/input7/event7")),
+            Some((1, 1)),
+        ));
+        // Real USB keyboard over OTG.
+        assert!(is_external_bus(
+            Some(Path::new(
+                "/sys/devices/platform/soc@0/13600000.usb/xhci-hcd.0.auto/usb1/1-1/1-1:1.0/0003:046D:C52B.0001/input/input5/event5"
+            )),
+            Some((0xC52B, 0x046D)),
+        ));
+        // Bluetooth HID keyboard over uhid.
+        assert!(is_external_bus(
+            Some(Path::new(
+                "/sys/devices/virtual/misc/uhid/0005:05AC:024F.0001/input/input6/event6"
+            )),
+            Some((0x024F, 0x05AC)),
+        ));
     }
 }

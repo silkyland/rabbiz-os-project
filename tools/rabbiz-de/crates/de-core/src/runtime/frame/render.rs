@@ -894,17 +894,20 @@ fn push_osd<R>(
             output.width as i32,
             output.height as i32,
         ));
-        elements.insert(
-            0,
-            DeElement::from(TextureRenderElement::from_texture_buffer(
-                Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
-                tex,
-                Some(1.0),
-                None,
-                None,
-                Kind::Unspecified,
-            )),
-        );
+        let (dx, alpha) = osd.transform(now);
+        if alpha > 0.004 {
+            elements.insert(
+                0,
+                DeElement::from(TextureRenderElement::from_texture_buffer(
+                    Point::<f64, Physical>::from((f64::from(r.x) + f64::from(dx), f64::from(r.y))),
+                    tex,
+                    Some(alpha),
+                    None,
+                    None,
+                    Kind::Unspecified,
+                )),
+            );
+        }
     }
 }
 

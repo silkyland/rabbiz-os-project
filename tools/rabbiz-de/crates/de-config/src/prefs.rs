@@ -22,6 +22,10 @@ pub const VALID_LOCK_METHODS: &[&str] = &["swipe", "pin", "passphrase", "biometr
 /// Supported `Prefs::lockscreen_notifications` values (`docs/DE-NOTIFICATIONS-SERVICES.md` §2.4).
 pub const VALID_LOCKSCREEN_NOTIFICATIONS: &[&str] = &["show_all", "hide_sensitive", "hide_all"];
 
+fn default_true() -> bool {
+    true
+}
+
 fn default_lock_method() -> String {
     DEFAULT_LOCK_METHOD.into()
 }
@@ -66,6 +70,12 @@ pub struct Prefs {
     /// Whether 3rd-party / market keyboards are permitted in Settings and policy.
     #[serde(rename = "deAllowThirdPartyKeyboards")]
     pub allow_third_party_keyboards: bool,
+    /// Haptic feedback on OSK key presses (on by default; read live by `rabbiz-osk`).
+    #[serde(rename = "deOskHaptic", default = "default_true")]
+    pub osk_haptic: bool,
+    /// Key-click sound on OSK key presses (on by default; read live by `rabbiz-osk`).
+    #[serde(rename = "deOskSound", default = "default_true")]
+    pub osk_sound: bool,
     /// Keyguard authentication method (`swipe` | `pin` | `passphrase` | `biometric`).
     #[serde(default = "default_lock_method")]
     pub lock_method: String,
@@ -93,6 +103,8 @@ impl Default for Prefs {
             screen_timeout_sec: 600,
             keyboard_id: DEFAULT_KEYBOARD.into(),
             allow_third_party_keyboards: true,
+            osk_haptic: true,
+            osk_sound: true,
             lock_method: default_lock_method(),
             lockscreen_notifications: default_lockscreen_notifications(),
             auto_rotate: true,

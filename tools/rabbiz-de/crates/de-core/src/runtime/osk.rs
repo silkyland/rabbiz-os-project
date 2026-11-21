@@ -80,7 +80,9 @@ impl ShellImBridge {
     }
 
     pub(crate) fn set_visible(&mut self, show: bool) {
-        if self.shown == show {
+        // Always forward `SHOW` even when `self.shown` is already true so a
+        // tap on the shell search field re-opens an OSK the user dismissed.
+        if !show && !self.shown {
             return;
         }
         self.shown = show;
