@@ -1,10 +1,10 @@
 //! Telephony backend detection and ModemManager (`mmcli`) bridge.
 //!
 //! Reality on the A21s today (devices/samsung/a21s/docs/HANDOFF-MODEM.md,
-//! shell/Rabbiz/Services/Telephony.qml, shell/apps/dialer/mm-backend.sh):
-//! the Shannon s318ap CP sits behind the `cpif` kernel driver and exposes
-//! `/dev/umts_*` nodes, but there is no telephony stack yet — no
-//! ModemManager plugin, no oFono. `mm-backend.sh` documents `mmcli` as the
+//! shell/Rabbiz/Services/Telephony.qml): the Shannon s318ap CP sits behind
+//! the `cpif` kernel driver and exposes `/dev/umts_*` nodes, but there is
+//! no telephony stack yet — no ModemManager plugin, no oFono. The removed
+//! QML dialer's mm-backend.sh (git history) documented `mmcli` as the
 //! *intended* privileged path once a modem object exists.
 //!
 //! So this module probes once at startup:

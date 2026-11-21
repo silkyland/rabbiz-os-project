@@ -105,9 +105,17 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     let bar = de_ui::nav_bar::gesture_bar(canvas.size());
     canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
     if de.foreground == Foreground::Shell {
-        if let Some(px) = de.media.pill_px.as_ref() {
-            let r = de_ui::media::pill_rect(canvas.size(), px.size.w);
-            canvas.blit(px, ApiPoint::new(r.x, r.y));
+        if de.media.open_t <= 0.0 {
+            if let Some(px) = de.media.pill_px.as_ref() {
+                let r = de_ui::media::pill_rect(canvas.size(), px.size.w);
+                canvas.blit(px, ApiPoint::new(r.x, r.y));
+            }
+        }
+        if de.media.open_t > 0.0 {
+            if let Some(px) = de.media.card_px.as_ref() {
+                let r = de_ui::media::morph_rect(canvas.size(), de.media.open_t);
+                canvas.blit_scaled(px, r, de.media.open_t);
+            }
         }
     }
 
@@ -167,9 +175,17 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
         }
     }
     if de.foreground == Foreground::Shell {
-        if let Some(px) = de.media.pill_px.as_ref() {
-            let r = de_ui::media::pill_rect(out_size, px.size.w);
-            canvas.blit(px, ApiPoint::new(r.x, r.y));
+        if de.media.open_t <= 0.0 {
+            if let Some(px) = de.media.pill_px.as_ref() {
+                let r = de_ui::media::pill_rect(out_size, px.size.w);
+                canvas.blit(px, ApiPoint::new(r.x, r.y));
+            }
+        }
+        if de.media.open_t > 0.0 {
+            if let Some(px) = de.media.card_px.as_ref() {
+                let r = de_ui::media::morph_rect(out_size, de.media.open_t);
+                canvas.blit_scaled(px, r, de.media.open_t);
+            }
         }
     }
     if de.lock.shown() {

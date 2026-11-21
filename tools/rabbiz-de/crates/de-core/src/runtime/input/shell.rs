@@ -65,6 +65,11 @@ impl De {
         if !matches!(self.foreground, Foreground::Shell) {
             return;
         }
+        // The media island owns taps in its band (expand / transport / collapse).
+        if self.media_tap(pos) {
+            self.needs_present = true;
+            return;
+        }
         let size = de_api::Size::new(self.output.width as i32, self.output.height as i32);
         match self.nav.current {
             Screen::Home => {

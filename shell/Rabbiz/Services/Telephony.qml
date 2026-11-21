@@ -11,11 +11,13 @@ import Qt.labs.folderlistmodel
 // devices/samsung/a21s/docs/a21s-power-battery-modem-plan.md), so demoMode stays true until a
 // modem node appears under /dev AND a real `backend` is plugged in.
 //
-// PURE QtQuick ONLY — this singleton is also imported by standalone qml6
-// apps (apps/dialer) where Quickshell modules do not exist. Detection
-// therefore probes /dev with FolderListModel instead of `mmcli -L`.
-// A later phase wires `backend` to mmcli / D-Bus — the target call flow is
-// documented in apps/dialer/mm-backend.sh.
+// PURE QtQuick ONLY — this singleton may also be imported by standalone
+// qml6 apps where Quickshell modules do not exist (the QML dialer/sms apps
+// were removed 2026-11-20; the live dialer is the Rust app in
+// tools/rabbiz-apps/crates/rabbiz-dialer). Detection therefore probes /dev
+// with FolderListModel instead of `mmcli -L`. A later phase wires
+// `backend` to mmcli / D-Bus — the target call flow is documented in
+// tools/rabbiz-apps/crates/rabbiz-dialer/src/backend.rs.
 //
 // Contract — do not rename members (extend only):
 QtObject {

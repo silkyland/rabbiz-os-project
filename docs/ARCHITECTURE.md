@@ -67,7 +67,7 @@ Dependency direction is enforced by `scripts/check_shell_seams.mjs` (run `script
 | `Widgets` | small shared controls (tile, slider, icon) | `Theme`, `Services` | exists (M7.0 done) |
 | `Desktop` | wallpaper (`~/Desktop` view), icon grid, dock, app drawer, icon editing UI | `Theme`, `Services`, `Widgets`, `Windowing` | exists (`DesktopView`, `AppDrawer`, `DesktopLayout`, `AppIcon`) |
 | `Panels` | status bar, nav/gesture bar, shade, quick settings, lock screen, power menu, HUD, notifications UI | `Theme`, `Services`, `Widgets`, `Windowing` | exists |
-| `shell/apps/*` | **legacy** home-grown apps, deleted in M7.4 (Dialer/SMS last, after M6) | `Theme`, `Services`, `Widgets`, `Windowing` | exists, shrinking |
+| `shell/apps/*` | former home-grown QML apps (Dialer/SMS/Settings) | — | **removed 2026-11-20** — apps are native Rust (`tools/rabbiz-apps/`) |
 
 Not checked (stated gap): `Loader { source: }` / `Qt.createComponent` paths and runtime string imports.
 Currently none exist in `shell/`. Deferred decisions: widget API, gamepad bridge location, Settings split (spike S2).
@@ -135,16 +135,24 @@ Invariants:
 - **Decision:** `handset` maximizes, `tablet`/`desktop` float (only `handset` built now; Pad 7 Pro deferred); the shell and apps are identical across modes.
 - **Why:** 720x1600 cannot host floating windows; Pad 7 Pro (phase 2) can. Rejected: separate phone/desktop shells.
 
-### 10. Base apps are first-party QML again (2026-11-16)
-- **Decision (owner):** the six base apps — photos, music, notes, clock, calculator, terminal — are written in-house under
-  `apps/<name>/` and share `apps/RabbizKit` (one tone, Theme tokens only), instead of KDE/Maui apps pulled from Arch.
-- **Why:** reduce third-party dependence and get one consistent, phone-first UI (the KDE apps each bring their own
-  desktop assumptions); this narrows D2 rather than reversing it — Settings/Dialer/SMS were already ours, and
+### 10. Base apps are first-party native Rust (supersedes 2026-11-16 QML decision)
+- **Decision (owner, updated 2026-11-20):** the in-house app family — calculator, clock, contacts, dialer,
+  files, music, notes, pdf, photos, settings, sms, store, terminal — lives in `tools/rabbiz-apps/crates/`
+  as pure-Rust Wayland apps built on the shared `rabbiz-app-kit`, instead of KDE/Maui apps pulled from
+  Arch. The earlier in-house QML apps (`apps/`, `apps/RabbizKit/`, `shell/apps/`) and their quickshell
+  wrappers were removed in the same cut-over (see git history).
+- **Why:** reduce third-party dependence and get one consistent, phone-first UI (the KDE apps each bring
+  their own desktop assumptions); this narrows D2 rather than reversing it — and Rust gives the apps the
+  same headless testability (`TestHarness`, `--cli`, `--mcp`) as the rest of the DE.
   GTK/Chromium/Steam stay third-party.
-- **How:** each app is one `ApplicationWindow` QML file launched by `quickshell -p /usr/share/rabbiz-apps/<app>/<App>.qml`
-  through an `rabbiz-<app>` wrapper; pure logic lives in a plain `.js` with a node test (e.g. `apps/calculator/Calc.js`);
-  deployed by `scripts/deploy_shell.sh`. Tone rules and per-app MVP live in [BASE-APPS.md](BASE-APPS.md).
-- **Rejected:** patching/upstreaming the KDE apps (not our code, slow), a single monolithic "apps" QML file (no ownership).
+- **How:** each app is one crate producing a `rabbiz-<app>` binary — a native Wayland xdg toplevel via
+  `rabbiz-app-kit` (`wl_shm` + `xdg_toplevel` + `wl_touch` + `zwp_text_input_v3`, host-simulator backend
+  off Linux) — installed to `/usr/local/bin/` by `scripts/de_apps_deploy.sh` and launched through
+  `Exec=rabbiz-<app>` `.desktop` entries. Theme/accent come from `de-design`/`de-config` tokens shared
+  with `rabbiz-de`. Tone rules and per-app MVP live in [BASE-APPS.md](BASE-APPS.md).
+- **Rejected:** patching/upstreaming the KDE apps (not our code, slow), keeping the QML app tree
+  (two UI stacks to maintain; quickshell wrappers hid the apps from normal process/tooling paths),
+  a single monolithic "apps" file (no ownership).
 
 ### 9. Polkit: the single phone user may control NetworkManager without auth (2026-11-16)
 - **Decision:** `/etc/polkit-1/rules.d/51-rabbiz-shell.rules` returns `YES` for subject `rabbiz` on every

@@ -1,7 +1,9 @@
 # rabbiz-shell — Android-like launcher DE for Galaxy A21s (SM-A217F)
 
 Stack: **labwc** (wlroots compositor, layer-shell + XWayland) + **Quickshell 0.3.2**
-(QML shell surfaces) + **quickshell-hosted apps** (real xdg toplevels). Target:
+(QML shell surfaces) + **native apps** (real xdg toplevels — the in-house apps are
+pure-Rust Wayland binaries in `tools/rabbiz-apps/`; the QML app tree was removed
+2026-11-20). Target:
 Exynos 850 / 2.8GB RAM / Mali-G52 Panfrost (GLES only — `QSG_RHI_BACKEND=opengl`).
 
 ## Architecture
@@ -13,7 +15,7 @@ rabbiz-session.service ─ labwc (compositor)
   │    ├─ DesktopView  WlrLayer.Background  ~/Desktop: wallpaper+icons+dock+drawer
   │    ├─ Shade       WlrLayer.Top     pull-down notifications+quick settings
   │    └─ NavBar      WlrLayer.Top     bottom 48px gesture strip
-  ├─ app windows (quickshell -p / XWayland) — labwc window-rule: always maximize,
+  ├─ app windows (native Wayland / XWayland) — labwc window-rule: always maximize,
   │    no decorations → Android-style fullscreen single-tasking
   └─ steam → `gamescope -- steam -gamepadui` nested in a labwc window
 ```
@@ -25,6 +27,13 @@ rabbiz-session.service ─ labwc (compositor)
 - `Rabbiz.Services` — singletons: `ShellState` (UI state), `Network` (nmcli),
   `Bluetooth` (bluetoothctl), `Brightness` (logind busctl), `Telephony`
   (ModemManager→demo fallback). **Contracts are frozen — extend, don't rename.**
+
+## Apps
+
+The in-house app family is native Rust (`tools/rabbiz-apps/crates/`, binaries
+`rabbiz-<app>` installed to `/usr/local/bin/` by `scripts/de_apps_deploy.sh`) —
+no QML apps remain under `shell/`. Third-party apps run as normal Wayland/X11
+toplevels.
 
 ## `~/Desktop` (home) icon surface
 
@@ -62,7 +71,7 @@ rabbiz-session.service ─ labwc (compositor)
 |---|---|
 | `shell/` | `/usr/share/rabbiz-shell/` |
 | `rootfs-overlay/` | `/` (scp -r overlay/*) |
-| app launchers | `/usr/local/bin/rabbiz-<app>` → `QML_IMPORT_PATH=… exec quickshell -p …` |
+| app binaries (`tools/rabbiz-apps`) | `/usr/local/bin/rabbiz-<app>` (via `scripts/de_apps_deploy.sh`) |
 
 Deploy: `./scripts/deploy_shell.sh` (scp to root@172.16.42.1).
 

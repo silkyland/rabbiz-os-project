@@ -23,7 +23,7 @@ QT_SCALE_FACTOR=1
 QT_QPA_PLATFORMTHEME=kde
 PLASMA_PLATFORM=phone:handset
 
-# rabbiz-shell QML modules (Rabbiz.Theme, Rabbiz.Services, apps).
+# rabbiz-shell QML modules (Rabbiz.Theme, Rabbiz.Services).
 QML_IMPORT_PATH=/usr/share/rabbiz-shell
 QML2_IMPORT_PATH=/usr/share/rabbiz-shell
 

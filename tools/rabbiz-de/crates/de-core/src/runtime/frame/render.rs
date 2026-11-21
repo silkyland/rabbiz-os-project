@@ -279,21 +279,52 @@ where
                 de.media.pill_tex_generation = de.media.pill_generation;
             }
         }
-        if let (Some(tex), Some(px)) = (
-            texture_buffer::<R>(de.media.pill_tex.as_ref()),
-            de.media.pill_px.as_ref(),
-        ) {
-            let r = de_ui::media::pill_rect(
-                de_api::Size::new(de.output.width as i32, de.output.height as i32),
-                px.size.w,
-            );
-            stack.push(
-                de_api::DisplayArea::SystemBars,
-                DeElement::from(tex_el::<R>(
-                    tex,
-                    Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
-                )),
-            );
+        // The card texture morphs out of the pill's slot; while it is on the
+        // way the standalone pill is hidden so the two don't double-draw.
+        if de.media.open_t <= 0.0 {
+            if let (Some(tex), Some(px)) = (
+                texture_buffer::<R>(de.media.pill_tex.as_ref()),
+                de.media.pill_px.as_ref(),
+            ) {
+                let r = de_ui::media::pill_rect(
+                    de_api::Size::new(de.output.width as i32, de.output.height as i32),
+                    px.size.w,
+                );
+                stack.push(
+                    de_api::DisplayArea::SystemBars,
+                    DeElement::from(tex_el::<R>(
+                        tex,
+                        Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
+                    )),
+                );
+            }
+        }
+        if de.media.open_t > 0.0 {
+            if de.media.card_tex.is_none()
+                || de.media.card_tex_generation != de.media.card_generation
+            {
+                if let Some(px) = de.media.card_px.as_ref() {
+                    de.media.card_tex = upload_any(renderer, px);
+                    de.media.card_tex_generation = de.media.card_generation;
+                }
+            }
+            if let Some(tex) = texture_buffer::<R>(de.media.card_tex.as_ref()) {
+                let r = de_ui::media::morph_rect(
+                    de_api::Size::new(de.output.width as i32, de.output.height as i32),
+                    de.media.open_t,
+                );
+                stack.push(
+                    de_api::DisplayArea::SystemBars,
+                    DeElement::from(TextureRenderElement::from_texture_buffer(
+                        Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
+                        tex,
+                        Some(de.media.open_t),
+                        None,
+                        Some(smithay::utils::Size::from((r.w, r.h))),
+                        smithay::backend::renderer::element::Kind::Unspecified,
+                    )),
+                );
+            }
         }
     }
 

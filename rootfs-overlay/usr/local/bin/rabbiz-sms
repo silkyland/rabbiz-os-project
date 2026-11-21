@@ -1,6 +1,0 @@
-#!/bin/sh
-# rabbiz-sms — launch the rabbiz-shell Sms app via quickshell (services need
-# Quickshell.Io / Quickshell.Services — plain qml6 cannot load them).
-# Deployed to /usr/local/bin/ by scripts/deploy_shell.sh, which sets +x.
-export QML_IMPORT_PATH=/usr/share/rabbiz-shell
-exec a21s-qt-render quickshell -p /usr/share/rabbiz-shell/apps/sms/Sms.qml "$@"

@@ -26,10 +26,16 @@ pub struct MediaSnapshot {
     pub title: String,
     pub artist: String,
     pub playing: bool,
+    /// Player position at snapshot time (ms).
+    pub position_ms: u64,
+    /// Track length (ms), 0 when unknown.
+    pub duration_ms: u64,
     pub can_go_next: bool,
     pub can_go_previous: bool,
     /// Validated local `file://` path to album artwork; never a remote URL.
     pub art_path: Option<String>,
+    /// Desktop entry name the player advertises (for "open the app").
+    pub desktop_entry: Option<String>,
 }
 
 /// Transport command sent asynchronously to the active MPRIS player.
@@ -381,6 +387,12 @@ fn read_player(
         .ok()
         .and_then(|v| str_of(&v))
         .unwrap_or_else(|| bus.trim_start_matches(MPRIS_PREFIX).to_owned());
+    let desktop_entry = props
+        .call::<_, _, OwnedValue>("Get", &(ROOT_IFACE, "DesktopEntry"))
+        .ok()
+        .and_then(|v| str_of(&v))
+        .map(|s| s.trim_end_matches(".desktop").to_owned())
+        .filter(|s| !s.is_empty());
     Some(MediaSnapshot {
         bus_name: bus.to_owned(),
         player_name,
@@ -391,6 +403,18 @@ fn read_player(
             .unwrap_or_default()
             .join(", "),
         playing: all.get("PlaybackStatus").and_then(str_of).as_deref() == Some("Playing"),
+        position_ms: all
+            .get("Position")
+            .and_then(|v| i64::try_from(v.clone()).ok())
+            .unwrap_or(0)
+            .max(0) as u64
+            / 1_000,
+        duration_ms: meta
+            .get("mpris:length")
+            .and_then(|v| i64::try_from(v.clone()).ok())
+            .unwrap_or(0)
+            .max(0) as u64
+            / 1_000,
         can_go_next: flag("CanGoNext"),
         can_go_previous: flag("CanGoPrevious"),
         art_path: meta
@@ -398,6 +422,7 @@ fn read_player(
             .and_then(str_of)
             .and_then(|u| validate_art_url(&u, roots))
             .map(|p| p.to_string_lossy().into_owned()),
+        desktop_entry,
     })
 }
 
@@ -430,9 +455,12 @@ mod tests {
             title: title.into(),
             artist: "Artist".into(),
             playing,
+            position_ms: 0,
+            duration_ms: 0,
             can_go_next: true,
             can_go_previous: true,
             art_path: None,
+            desktop_entry: None,
         }
     }
 

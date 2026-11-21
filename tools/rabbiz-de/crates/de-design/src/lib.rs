@@ -10,6 +10,6 @@ pub mod theme;
 pub mod tokens;
 pub mod type_scale;
 
-pub use theme::{theme_for, Mode};
+pub use theme::{accent_colors, theme_for, theme_with, AccentColors, Mode, ACCENT_IDS};
 pub use tokens::Theme;
 pub use tokens::{DARK, DEFAULT, LIGHT};

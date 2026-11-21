@@ -10,7 +10,8 @@ import { fileURLToPath } from "node:url";
 const root = process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), "..", "shell");
 
 // module -> Rabbiz modules it may import. Anything else is a violation.
-// `apps` is legacy (deleted by M7.4 as base apps become real Linux apps).
+// The QML app family was removed 2026-11-20 — apps are native Rust Wayland
+// binaries in tools/rabbiz-apps/, not shell modules, so there is no `apps` row.
 const ALLOWED = {
   Theme: [],
   Services: ["Theme"],
@@ -18,7 +19,6 @@ const ALLOWED = {
   Windowing: ["Theme", "Services", "Widgets"],
   Desktop: ["Theme", "Services", "Widgets", "Windowing"],
   Panels: ["Theme", "Services", "Widgets", "Windowing"],
-  apps: ["Theme", "Services", "Widgets", "Windowing"],
 };
 
 function* qmlFiles(dir) {
@@ -31,7 +31,6 @@ function* qmlFiles(dir) {
 
 function moduleOf(file) {
   const parts = relative(root, file).split(sep);
-  if (parts[0] === "apps") return "apps";
   if (parts[0] === "Rabbiz") return parts[1];
   return null; // shell.qml: wiring, may import anything
 }

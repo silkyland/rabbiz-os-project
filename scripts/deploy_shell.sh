@@ -124,12 +124,15 @@ ssh "${TARGET}" "mkdir -p /usr/share/rabbiz-shell"
 COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/shell" -cf - . \
   | ssh "${TARGET}" "tar -C /usr/share/rabbiz-shell -xf -"
 
-# --- prune files that were replaced by real Linux apps (tar never deletes) ---
-echo ">> pruning replaced apps"
-# calculator, clock and notes are in-house base apps again (apps/), so only the really removed
-# wrappers are pruned here.
-ssh "${TARGET}" "rm -rf /usr/share/rabbiz-shell/apps/{calculator,clock,notes,gallery,files,spotify} \
+# --- prune trees that were removed from the repo (tar never deletes) ---
+echo ">> pruning removed QML apps + superseded shell dirs"
+# The QML app family is gone: shell/apps/ and apps/ were deleted 2026-11-20 —
+# the app family is now pure-Rust Wayland binaries (tools/rabbiz-apps/,
+# installed to /usr/local/bin by scripts/de_apps_deploy.sh). Prune the QML
+# trees and their quickshell launcher wrappers so stale copies can't run.
+ssh "${TARGET}" "rm -rf /usr/share/rabbiz-shell/apps /usr/share/rabbiz-apps \
   /usr/share/rabbiz-shell/Rabbiz/Components \
+  /usr/local/bin/rabbiz-{calculator,clock,dialer,music,notes,photos,settings,sms,terminal} \
   /usr/local/bin/a21s-{gallery,files,spotify} \
   /usr/share/applications/a21s-{gallery,files,spotify}.desktop"
 
@@ -150,12 +153,6 @@ ssh "${TARGET}" "
   find /usr/share/icons -name 'a21s-*.svg' -delete 2>/dev/null || true
   rm -rf /usr/share/a21s-shell /usr/share/a21s-apps /usr/share/a21s
 "
-
-# --- deploy the in-house base apps (docs/BASE-APPS.md) --------------------
-echo ">> apps/ -> /usr/share/rabbiz-apps/"
-ssh "${TARGET}" "mkdir -p /usr/share/rabbiz-apps"
-COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/apps" -cf - . \
-  | ssh "${TARGET}" "tar -C /usr/share/rabbiz-apps --no-same-owner -xf - && chmod -R a+rX /usr/share/rabbiz-apps"
 
 # --- deploy rootfs overlay (merge into /) --------------------------------
 echo ">> rootfs-overlay/ -> /"

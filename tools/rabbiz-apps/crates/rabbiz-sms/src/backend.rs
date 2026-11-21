@@ -1,6 +1,7 @@
 //! SMS send backend. The A21s modem is Exynos CP via `cpif` — `device.toml`
-//! marks `modem = "planned"` and `shell/apps/dialer/mm-backend.sh` is an
-//! unwired reference, so ModemManager may not even be installed. This seam
+//! marks `modem = "planned"` and the QML dialer's mm-backend.sh reference
+//! was removed with shell/apps (see git history), so ModemManager may not
+//! even be installed. This seam
 //! therefore probes for `mmcli` once at startup: when present we attempt a
 //! real `--messaging-create-sms`; when absent every outgoing message stays
 //! honestly `Queued` and is still persisted locally.

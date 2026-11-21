@@ -103,7 +103,7 @@ keeps native pad handling. Shell QML uses `KeyNavigation`/`activeFocus`, never t
 | M7.1 | **Launch slice**: tap dock icon → starting-window morph → real Kalk window → home | works on device; `LaunchFlow` test green on host |
 | M7.2 | Desktop Contract v1: Appearance service + env unification + portals | change dark/accent once → Kalk, Dolphin, Chrome all follow (screenshots) |
 | M7.3 | Desktop surface: wallpaper, icon grid, widgets, dock, drawer | home screen is a desktop, 60 fps-ish on software Qt Quick (**H5**, measure) |
-| M7.4 | Replace base apps (Calc, Files, Notes, Clock, Gallery, Music) and delete their QML | `verify_apps.sh` green; `shell/apps/*` removed except Dialer/SMS |
+| M7.4 | Replace base apps (Calc, Files, Notes, Clock, Gallery, Music) and delete their QML | `verify_apps.sh` green; **done 2026-11-20: all QML apps removed** (`shell/apps/*` incl. Dialer/SMS/Settings + `apps/*` + `RabbizKit`) — the app family is native Rust in `tools/rabbiz-apps/` |
 | M7.5 | Form-factor seam, `handset` only (tablet/desktop deferred, D3) | one `formFactor` property drives window rules |
 | M7.6 | Close morph via snapshot (S1) | window shrinks to its icon, fallback works |
 | M7.7 | Mouse/keyboard + gamepad navigation; Steam as a normal drawer app (D4) | whole shell usable without touch; Steam launches via the morph path |

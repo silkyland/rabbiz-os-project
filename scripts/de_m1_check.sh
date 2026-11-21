@@ -171,14 +171,14 @@ else
   done
 
   # --- launch path (M1-T7): `rabbiz-de launch <desktop-id>` must spawn the
-  # app with the contract env. rabbiz-clock is a quickshell wrapper; match its
-  # script arg, not the process name.
+  # app with the contract env. rabbiz-clock is a native Rust binary now
+  # (tools/rabbiz-apps); match the process name exactly.
   # HOME must point at rabbiz's home: runuser keeps the caller's HOME, and the
   # launch helper derives XDG_STATE_HOME from it for the app log file.
   runuser -u rabbiz -- env HOME=/home/rabbiz XDG_RUNTIME_DIR="$RT" WAYLAND_DISPLAY=wayland-0 \
     "$DE" launch rabbiz-clock >>"$LOG" 2>&1
   sleep 5
-  CLOCK_PID="$(pgrep -f 'rabbiz-apps/clock' | head -1)"
+  CLOCK_PID="$(pgrep -x rabbiz-clock | head -1)"
   if [ -n "$CLOCK_PID" ] \
      && [ -f "/home/rabbiz/.local/state/rabbiz-de/apps/rabbiz-clock.log" ] \
      && tr '\0' '\n' <"/proc/$CLOCK_PID/environ" 2>/dev/null | grep -q '^RABBIZ_FORCE_SOFTWARE=1$'; then
@@ -259,7 +259,7 @@ PYEOF
 fi
 
 wait $DEPID 2>/dev/null
-pkill -f 'rabbiz-apps/clock' 2>/dev/null || true
+pkill -x rabbiz-clock 2>/dev/null || true
 
 if [[ -s "$SUMMARY" ]] && grep -q '"primary_composite":[1-9]' "$SUMMARY"; then
   record primary_composite 0

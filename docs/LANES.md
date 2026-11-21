@@ -5,8 +5,8 @@ work runs. Every change and every finding names both (`device: any` when it is d
 
 ## `de` — desktop environment
 
-Scope: `tools/rabbiz-de/`, `shell/` (legacy QML, being replaced), `apps/`, `tools/rabbiz-osk/`,
-design tokens and assets.
+Scope: `tools/rabbiz-de/`, `shell/` (legacy QML, being replaced), `tools/rabbiz-apps/`,
+`tools/rabbiz-camera/`, `tools/rabbiz-osk/`, design tokens and assets.
 
 - Develops and verifies on a host: `./scripts/de_test_host.sh` (cargo tests + golden images),
   `de-sim` for visual runs. No hardware required.
@@ -45,7 +45,7 @@ Scope: `docs/`, `findings/`, `devices/*/findings/`. No code changes. Same eviden
 
 | Path | Lane | Notes |
 |---|---|---|
-| `tools/rabbiz-de/`, `tools/rabbiz-osk/`, `tools/rabbiz-mirror/`, `shell/`, `apps/`, `assets/` | `de` | `shell/` is legacy QML, being replaced by `rabbiz-de` |
+| `tools/rabbiz-de/`, `tools/rabbiz-osk/`, `tools/rabbiz-apps/`, `tools/rabbiz-camera/`, `tools/rabbiz-mirror/`, `shell/`, `assets/` | `de` | `shell/` is legacy QML, being replaced by `rabbiz-de` |
 | `socs/<soc>/drivers/` | `kernel` | shared by every device on that SoC |
 | `devices/<vendor>/<codename>/kernel/` | `kernel` | defconfig, DTS patches for one device |
 | `devices/<vendor>/<codename>/docs/`, `findings/` | `docs` | hardware notes and evidence for one device |

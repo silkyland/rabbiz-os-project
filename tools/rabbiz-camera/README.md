@@ -7,7 +7,7 @@ Install Rust and make FFmpeg available on `PATH`. To try the viewfinder
 with an animated test pattern from the repository root:
 
 ```sh
-cargo run --manifest-path apps/camera/Cargo.toml
+cargo run --manifest-path tools/rabbiz-camera/Cargo.toml
 ```
 
 Tap the round shutter or press **Space** to save the framed image.

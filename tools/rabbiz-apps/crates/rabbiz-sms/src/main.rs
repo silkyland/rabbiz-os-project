@@ -6,8 +6,9 @@
 //! (Queued/Sent/Failed). Messages persist to
 //! `~/.local/share/rabbiz-sms/messages.json` (atomic tmp+rename).
 //!
-//! Telephony reality (device.toml `modem = "planned"`, mm-backend.sh is an
-//! unwired reference): sends go through `backend::Backend`, which probes for
+//! Telephony reality (device.toml `modem = "planned"`; the removed QML
+//! dialer's mm-backend.sh was an unwired reference): sends go through
+//! `backend::Backend`, which probes for
 //! `mmcli` once. No modem → messages stay `Queued` and are still saved —
 //! nothing is faked as delivered.
 

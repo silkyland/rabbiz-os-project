@@ -6,7 +6,7 @@ import { dirname, join, resolve } from "node:path";
 
 const root = new URL("..", import.meta.url).pathname;
 const files = execFileSync("git", ["ls-files", "*.md"], { cwd: root, encoding: "utf8" }).split("\n").filter(Boolean);
-const PREFIXES = ["docs/", "devices/", "socs/", "scripts/", "drivers/", "patches/", "configs/", "tools/", "shell/", "apps/", "rootfs-overlay/"];
+const PREFIXES = ["docs/", "devices/", "socs/", "scripts/", "drivers/", "patches/", "configs/", "tools/", "shell/", "rootfs-overlay/"];
 const bad = [];
 for (const f of files) {
   const text = readFileSync(join(root, f), "utf8").replace(/```[\s\S]*?```/g, "");

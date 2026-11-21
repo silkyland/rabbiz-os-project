@@ -1,7 +1,7 @@
 //! rabbiz-dialer — Phone app for RabbizOS (Rust/native Wayland build).
 //!
-//! Layout and behaviour mirror the shell-owned QML dialer
-//! (`shell/apps/dialer/Dialer.qml`): Keypad / Recents / Contacts tabs,
+//! Layout and behaviour mirror the removed shell-owned QML dialer
+//! (`shell/apps/dialer/Dialer.qml`, git history): Keypad / Recents / Contacts tabs,
 //! T9 sub-labels, `3-3-4` number grouping, caller-ID matching, and the
 //! same simulated call progression until a real telephony backend exists
 //! (`backend.rs` documents the ModemManager/`mmcli` path).

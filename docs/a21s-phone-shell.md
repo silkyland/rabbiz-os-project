@@ -26,12 +26,12 @@ systemd
          │       ├─ quickshell -p /usr/share/rabbiz-shell/shell.qml   (shell)
          │       └─ squeekboard (OSK, only if installed)
          ├─ apps: /usr/local/bin/rabbiz-<app>
-         │    └─ export QML_IMPORT_PATH + exec quickshell -p .../apps/<app>/<App>.qml
+         │    └─ native Rust Wayland binaries (tools/rabbiz-apps, via scripts/de_apps_deploy.sh)
          └─ a21s-steam → gamescope -W 720 -H 1600 -f --steam -- steam ...
               (a normal maximized labwc window, not a separate session)
 ```
 
-- `/usr/share/rabbiz-shell/` ← `shell/` (QML modules `Rabbiz.Theme`, `Rabbiz.Services`, `apps/`)
+- `/usr/share/rabbiz-shell/` ← `shell/` (QML modules `Rabbiz.Theme`, `Rabbiz.Services`; the `apps/` QML tree was removed 2026-11-20 — apps are native Rust now)
 - `.desktop` files in `/usr/share/applications/` feed Quickshell's `DesktopEntries` → home-screen grid
 - Seat/device access: `seatd` (`LIBSEAT_BACKEND=seatd`), `rabbiz` must be in `seat` group — the unit also sets `SupplementaryGroups=seat input video render audio` as a safety net
 - `XDG_RUNTIME_DIR` is provided by `pam_systemd` via `PAMName=login`; the unit also sets it explicitly as a fallback

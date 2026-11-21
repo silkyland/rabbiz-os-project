@@ -2,8 +2,9 @@
 //! recents model and the simulated call state machine. No I/O, no Wayland;
 //! everything here is unit-tested.
 //!
-//! Conventions mirror `shell/apps/dialer/Dialer.qml` (the shell-owned QML
-//! dialer) so both dialers behave identically for the user.
+//! Conventions mirror the removed shell-owned QML dialer
+//! (`shell/apps/dialer/Dialer.qml`, git history) so behaviour stayed
+//! identical for the user across the port.
 
 use serde::{Deserialize, Serialize};
 
