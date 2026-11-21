@@ -18,7 +18,9 @@
 #include <linux/minmax.h>
 #include <linux/module.h>
 #include <linux/of.h>
+#include <linux/platform_device.h>
 #include <linux/power_supply.h>
+#include <linux/usb/gadget.h>
 #include <linux/workqueue.h>
 
 #define S2MU106_CHG_STATUS0	0x0e
@@ -135,6 +137,41 @@ static void s2mu106_program(struct s2mu106_charger *chg)
 	s2mu106_update(c, S2MU106_CHG_CTRL0, REG_MODE_CHG, REG_MODE_MASK);
 }
 
+static int s2mu106_match_gadget(struct device *dev, const void *data)
+{
+	return strncmp(dev_name(dev), "gadget", 6) == 0;
+}
+
+static void s2mu106_notify_udc(bool online, bool force_rebind)
+{
+	struct device *dwc_dev;
+	struct device *gdev;
+	struct usb_gadget *gadget;
+
+	dwc_dev = bus_find_device_by_name(&platform_bus_type, NULL, "13600000.usb");
+	if (!dwc_dev)
+		return;
+	gdev = device_find_child(dwc_dev, NULL, s2mu106_match_gadget);
+	put_device(dwc_dev);
+	if (!gdev)
+		return;
+
+	gadget = dev_to_usb_gadget(gdev);
+	if (force_rebind && online && gadget->state != USB_STATE_CONFIGURED) {
+		/*
+		 * UDC starts with udc->vbus=true at boot; if the cable was
+		 * attached after initramfs or enumeration was missed, bounce
+		 * pullup once so dwc3 re-triggers D+ connect.
+		 */
+		usb_gadget_disconnect(gadget);
+		msleep(50);
+		usb_gadget_connect(gadget);
+	} else {
+		usb_udc_vbus_handler(gadget, online);
+	}
+	put_device(gdev);
+}
+
 static void s2mu106_wdog(struct work_struct *work)
 {
 	struct s2mu106_charger *chg =
@@ -154,6 +191,7 @@ static void s2mu106_wdog(struct work_struct *work)
 	if (online >= 0 && online != chg->last_online) {
 		chg->last_online = online;
 		power_supply_changed(chg->psy);
+		s2mu106_notify_udc(chg->last_online, false);
 	}
 	schedule_delayed_work(&chg->wdog, msecs_to_jiffies(WD_KICK_MS));
 }
@@ -296,6 +334,8 @@ static int s2mu106_probe(struct i2c_client *client)
 
 	INIT_DELAYED_WORK(&chg->wdog, s2mu106_wdog);
 	schedule_delayed_work(&chg->wdog, msecs_to_jiffies(WD_KICK_MS));
+	if (online >= 0)
+		s2mu106_notify_udc(chg->last_online, true);
 
 	dev_info(&client->dev, "s2mu106 charger enabled (chg=%d)\n",
 		chg->last_online);
