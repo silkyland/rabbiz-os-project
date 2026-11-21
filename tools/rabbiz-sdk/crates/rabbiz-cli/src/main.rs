@@ -411,10 +411,77 @@ fn cmd_emu(args: &[String]) -> Result<(), String> {
             }
             Ok(())
         }
-        "start" | "viewer" | "stop" | "mock" => {
+        "start" | "viewer" => {
+            let viewer_bin = find_emu_viewer_bin().ok_or_else(|| {
+                "rabbiz-emu-viewer binary not found (build with `cargo build --release --manifest-path tools/rabbiz-sdk/Cargo.toml -p rabbiz-emu-viewer`)".to_string()
+            })?;
+            let status = Command::new(&viewer_bin)
+                .args(&args[1..])
+                .status()
+                .map_err(|e| format!("launch {}: {e}", viewer_bin.display()))?;
+            if !status.success() {
+                return Err(format!(
+                    "rabbiz-emu-viewer exited with status {}",
+                    status.code().unwrap_or(-1)
+                ));
+            }
+            Ok(())
+        }
+        "stop" => {
+            stop_emu_backend();
+            println!("rabbiz emu stop: OK");
+            Ok(())
+        }
+        "mock" => {
             println!("rabbiz emu {sub}: OK");
             Ok(())
         }
         other => Err(format!("unknown `rabbiz emu` action: {other:?}")),
     }
+}
+
+fn find_emu_viewer_bin() -> Option<PathBuf> {
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sibling = dir.join("rabbiz-emu-viewer");
+            if sibling.is_file() {
+                return Some(sibling);
+            }
+        }
+    }
+    if let Ok(mut cur) = std::env::current_dir() {
+        for _ in 0..5 {
+            for rel in [
+                "tools/rabbiz-sdk/target/release/rabbiz-emu-viewer",
+                "tools/rabbiz-sdk/target/debug/rabbiz-emu-viewer",
+            ] {
+                let candidate = cur.join(rel);
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+            if !cur.pop() {
+                break;
+            }
+        }
+    }
+    std::env::var_os("PATH").and_then(|paths| {
+        std::env::split_paths(&paths)
+            .map(|dir| dir.join("rabbiz-emu-viewer"))
+            .find(|p| p.is_file())
+    })
+}
+
+fn stop_emu_backend() {
+    let pid_file = std::env::temp_dir().join("rabbiz-emu-live/rabbiz-de.pid");
+    if let Ok(raw) = std::fs::read_to_string(&pid_file) {
+        let pid = raw.trim();
+        if !pid.is_empty() && pid.chars().all(|c| c.is_ascii_digit()) {
+            let _ = Command::new("kill").arg(pid).output();
+        }
+        let _ = std::fs::remove_file(&pid_file);
+    }
+    let _ = Command::new("docker")
+        .args(["rm", "-f", "rabbiz-emu-live"])
+        .output();
 }

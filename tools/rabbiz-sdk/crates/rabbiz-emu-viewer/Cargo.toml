@@ -21,7 +21,5 @@ rabbiz-app-kit.workspace = true
 rabbiz-emu-proto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-
-[target.'cfg(not(target_os = "linux"))'.dependencies]
-winit.workspace = true
 softbuffer.workspace = true
+winit.workspace = true

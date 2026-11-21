@@ -2,7 +2,7 @@
 
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use rabbiz_emu_viewer::ViewerState;
@@ -49,8 +49,9 @@ fn main() {
         i += 1;
     }
 
+    let mut spawned_backend = None;
     if !self_test && !demo_only {
-        ensure_linux_backend_running(&emu_addr);
+        spawned_backend = ensure_linux_backend_running(&emu_addr, &ctl_addr);
     }
 
     let mut state = ViewerState::new(emu_addr, ctl_addr);
@@ -80,6 +81,11 @@ fn main() {
     }
 
     run_viewer_window(state);
+
+    if let Some(mut child) = spawned_backend {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
 }
 
 /// Find the workspace root containing `tools/rabbiz-de` and `rootfs-overlay`.
@@ -107,20 +113,31 @@ fn find_repo_root() -> Option<PathBuf> {
     None
 }
 
-/// Automatically ensure the background ARM64 Linux container (`rabbiz-emu-live`)
-/// is running with all 12 real `rabbiz-apps`, `rabbiz-osk`, `.desktop` files, and
-/// SVG icons staged when `127.0.0.1:5910` is not yet listening.
-fn ensure_linux_backend_running(emu_addr: &str) {
+/// Automatically ensure the background Linux compositor (`rabbiz-de --backend=virtual`)
+/// is running with `rabbiz-apps`, `rabbiz-osk`, `.desktop` files, and SVG icons staged
+/// when `emu_addr` (`127.0.0.1:5910`) is not yet listening.
+///
+/// On Linux hosts, prefers running the native host `rabbiz-de` binary directly with an
+/// isolated runtime/data directory (`/tmp/rabbiz-emu-live`), falling back to the
+/// `rabbiz-de-build:arm64` Docker container if only ARM64 container artifacts exist.
+fn ensure_linux_backend_running(emu_addr: &str, ctl_addr: &str) -> Option<Child> {
     if let Ok(sock) = emu_addr.parse::<SocketAddr>() {
         if TcpStream::connect_timeout(&sock, Duration::from_millis(80)).is_ok() {
-            return;
+            return None;
         }
     } else {
-        return;
+        return None;
     }
 
-    let Some(repo) = find_repo_root() else {
-        return;
+    let repo = find_repo_root();
+
+    #[cfg(target_os = "linux")]
+    if let Some(child) = start_native_linux_backend(repo.as_deref(), emu_addr, ctl_addr) {
+        return Some(child);
+    }
+
+    let Some(repo) = repo else {
+        return None;
     };
     let rel_bin = repo.join(
         "tools/rabbiz-de/target-linux-arm64/aarch64-unknown-linux-gnu/release/rabbiz-de",
@@ -133,7 +150,7 @@ fn ensure_linux_backend_running(emu_addr: &str) {
     } else if Path::new(&dbg_bin).is_file() {
         "/src/tools/rabbiz-de/target-linux-arm64/aarch64-unknown-linux-gnu/debug/rabbiz-de"
     } else {
-        return;
+        return None;
     };
 
     let mount_arg = format!("{}:/src", repo.display());
@@ -179,28 +196,150 @@ fn ensure_linux_backend_running(emu_addr: &str) {
         .output();
 
     if status.is_ok() {
-        if let Ok(sock) = emu_addr.parse::<SocketAddr>() {
-            for _ in 0..30 {
-                if TcpStream::connect_timeout(&sock, Duration::from_millis(80)).is_ok() {
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(100));
+        wait_for_tcp(emu_addr);
+    }
+    None
+}
+
+fn wait_for_tcp(emu_addr: &str) {
+    if let Ok(sock) = emu_addr.parse::<SocketAddr>() {
+        for _ in 0..40 {
+            if TcpStream::connect_timeout(&sock, Duration::from_millis(80)).is_ok() {
+                break;
             }
+            std::thread::sleep(Duration::from_millis(100));
         }
     }
 }
 
 #[cfg(target_os = "linux")]
-fn run_viewer_window(state: ViewerState) {
-    let out = std::env::temp_dir().join("rabbiz-emu-viewer-linux.png");
-    if let Err(err) = state.save_viewer_png(&out) {
-        eprintln!("rabbiz-emu-viewer error: {err}");
-        std::process::exit(1);
+fn start_native_linux_backend(
+    repo: Option<&Path>,
+    emu_addr: &str,
+    ctl_addr: &str,
+) -> Option<Child> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let de_bin = repo
+        .and_then(|r| {
+            [
+                r.join("tools/rabbiz-de/target/release/rabbiz-de"),
+                r.join("tools/rabbiz-de/target/debug/rabbiz-de"),
+            ]
+            .into_iter()
+            .find(|p| p.is_file())
+        })
+        .or_else(|| {
+            std::env::var_os("PATH").and_then(|paths| {
+                std::env::split_paths(&paths)
+                    .map(|dir| dir.join("rabbiz-de"))
+                    .find(|p| p.is_file())
+            })
+        })?;
+
+    let live_root = std::env::temp_dir().join("rabbiz-emu-live");
+    let rt_dir = live_root.join("rt");
+    let home_dir = live_root.join("home");
+    let bin_dir = live_root.join("bin");
+    let apps_dir = live_root.join("share/applications");
+    let icons_dir = live_root.join("share/icons/hicolor/scalable/apps");
+
+    for dir in [&rt_dir, &home_dir, &bin_dir, &apps_dir, &icons_dir] {
+        let _ = std::fs::create_dir_all(dir);
     }
-    println!("rabbiz-emu-viewer rendered frame to {}", out.display());
+    let _ = std::fs::set_permissions(&rt_dir, std::fs::Permissions::from_mode(0o700));
+
+    if let Some(repo) = repo {
+        // Stage built rabbiz-apps and rabbiz-osk binaries into bin_dir
+        let bin_sources = [
+            repo.join("tools/rabbiz-apps/target/release"),
+            repo.join("tools/rabbiz-apps/target/debug"),
+            repo.join("tools/rabbiz-osk/target/release"),
+            repo.join("tools/rabbiz-osk/target/debug"),
+        ];
+        for src_dir in bin_sources {
+            if let Ok(entries) = std::fs::read_dir(&src_dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                        if name.starts_with("rabbiz-")
+                            && !name.contains('.')
+                            && path.is_file()
+                        {
+                            let dst = bin_dir.join(name);
+                            if !dst.exists() {
+                                let _ = std::os::unix::fs::symlink(&path, &dst);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stage .desktop files and SVG icons
+        let src_apps = repo.join("rootfs-overlay/usr/share/applications");
+        if let Ok(entries) = std::fs::read_dir(&src_apps) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("desktop") {
+                    if let Some(name) = path.file_name() {
+                        let _ = std::fs::copy(&path, apps_dir.join(name));
+                    }
+                }
+            }
+        }
+        let src_icons = repo.join("rootfs-overlay/usr/share/icons/hicolor/scalable/apps");
+        if let Ok(entries) = std::fs::read_dir(&src_icons) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("svg") {
+                    if let Some(name) = path.file_name() {
+                        let _ = std::fs::copy(&path, icons_dir.join(name));
+                    }
+                }
+            }
+        }
+    }
+
+    let orig_path = std::env::var("PATH").unwrap_or_default();
+    let new_path = format!("{}:{orig_path}", bin_dir.display());
+    let data_dirs = format!(
+        "{}:/usr/local/share:/usr/share:/var/lib/flatpak/exports/share",
+        live_root.join("share").display()
+    );
+
+    let log_file = std::fs::File::create(live_root.join("rabbiz-de.log")).ok();
+    let stdout = log_file
+        .as_ref()
+        .and_then(|f| f.try_clone().ok())
+        .map_or_else(Stdio::null, Stdio::from);
+    let stderr = log_file.map_or_else(Stdio::null, Stdio::from);
+
+    let child = Command::new(&de_bin)
+        .args([
+            "run",
+            "--backend=virtual",
+            "--size=720x1600",
+            &format!("--emu-listen={emu_addr}"),
+            &format!("--ctl-listen={ctl_addr}"),
+        ])
+        .env("XDG_RUNTIME_DIR", &rt_dir)
+        .env("HOME", &home_dir)
+        .env("PATH", new_path)
+        .env("XDG_DATA_DIRS", data_dirs)
+        .env("LIBGL_ALWAYS_SOFTWARE", "1")
+        .env("RABBIZ_FORCE_SOFTWARE", "1")
+        .env("QT_QUICK_BACKEND", "software")
+        .stdout(stdout)
+        .stderr(stderr)
+        .spawn()
+        .ok()?;
+
+    let _ = std::fs::write(live_root.join("rabbiz-de.pid"), child.id().to_string());
+    wait_for_tcp(emu_addr);
+    Some(child)
 }
 
-#[cfg(not(target_os = "linux"))]
 fn run_viewer_window(state: ViewerState) {
     use std::num::NonZeroU32;
     use std::sync::Arc;
