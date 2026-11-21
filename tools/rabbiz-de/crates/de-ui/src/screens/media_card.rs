@@ -1,28 +1,37 @@
 //! Shade Now-Playing media card (`docs/DE-NOTIFICATIONS-SERVICES.md` §2.5).
 //!
-//! Pure geometry is shared by [`render_card`] and [`hit_card`] so touch targets
-//! always match what is painted.
+//! Artwork and track on top, transport centred below. Pure geometry is shared
+//! by [`render_card`]/[`render_card_contents`] and [`hit_card`] so touch
+//! targets always match what is painted. The card is size-agnostic: it fills
+//! whatever width the layout gives it (portrait full width, landscape column).
 
-use de_api::{Point, Rect};
+use de_api::{Pixels, Point, Rect};
 use de_design::tokens::{self, Theme};
 use de_paint::{text, Canvas};
 
 use crate::chrome::{self, style};
+use crate::media::art_tile;
 
-/// Standard height of the shade media card (matches `NOTIF_CARD_H` in `panels.rs`).
-pub const CARD_HEIGHT: i32 = 148;
+/// Height of the shade media card.
+pub const CARD_HEIGHT: i32 = 260;
 
-const PAD_L: i32 = 24;
-const PAD_R: i32 = 20;
-const BTN_SIZE: i32 = 52;
-const PLAY_SIZE: i32 = 60;
-const BTN_GAP: i32 = 10;
+const PAD: i32 = 24;
+const ART: i32 = 128;
+const BTN: i32 = 64;
+const PLAY_W: i32 = 96;
+const BTN_GAP: i32 = 20;
 
 // Material Icons codepoints.
 const GLYPH_PREV: &str = "\u{e045}";
 const GLYPH_PLAY: &str = "\u{e037}";
 const GLYPH_PAUSE: &str = "\u{e034}";
 const GLYPH_NEXT: &str = "\u{e044}";
+
+/// Text on the dimmed, frosted shade backdrop.
+const INK: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xFF];
+const INK_DIM: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xC0];
+const INK_FAINT: [u8; 4] = [0xFF, 0xF8, 0xF0, 0x80];
+const BTN_FILL: [u8; 4] = [0xFF, 0xF8, 0xF0, 0x24];
 
 /// Read-only view model rendered by the shade media card.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,131 +54,107 @@ pub enum MediaCardHit {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct TransportLayout {
+struct Layout {
+    art: Rect,
+    text_x: i32,
+    text_w: i32,
     prev: Rect,
     play_pause: Rect,
     next: Rect,
 }
 
-fn transport_layout(rect: Rect) -> TransportLayout {
-    let next_x = rect.x + rect.w - PAD_R - BTN_SIZE;
-    let play_x = next_x - BTN_GAP - PLAY_SIZE;
-    let prev_x = play_x - BTN_GAP - BTN_SIZE;
-    let side_y = rect.y + (rect.h - BTN_SIZE) / 2;
-    let play_y = rect.y + (rect.h - PLAY_SIZE) / 2;
-    TransportLayout {
-        prev: Rect::new(prev_x, side_y, BTN_SIZE, BTN_SIZE),
-        play_pause: Rect::new(play_x, play_y, PLAY_SIZE, PLAY_SIZE),
-        next: Rect::new(next_x, side_y, BTN_SIZE, BTN_SIZE),
+fn layout(rect: Rect) -> Layout {
+    let art = Rect::new(rect.x + PAD, rect.y + PAD, ART, ART);
+    let text_x = art.x + ART + 20;
+    let row_y = art.y + ART + 20;
+    let total = BTN + BTN_GAP + PLAY_W + BTN_GAP + BTN;
+    let x0 = rect.x + (rect.w - total) / 2;
+    Layout {
+        art,
+        text_x,
+        text_w: (rect.x + rect.w - PAD - text_x).max(0),
+        prev: Rect::new(x0, row_y, BTN, BTN),
+        play_pause: Rect::new(x0 + BTN + BTN_GAP, row_y, PLAY_W, BTN),
+        next: Rect::new(x0 + BTN + BTN_GAP + PLAY_W + BTN_GAP, row_y, BTN, BTN),
     }
 }
 
-fn dim_color(color: [u8; 4]) -> [u8; 4] {
-    [
-        color[0],
-        color[1],
-        color[2],
-        (u16::from(color[3]) * 2 / 5) as u8,
-    ]
+fn dim(color: [u8; 4]) -> [u8; 4] {
+    [color[0], color[1], color[2], (u16::from(color[3]) * 2 / 5) as u8]
 }
 
-/// Paint the media control card inside `rect`.
-pub fn render_card(canvas: &mut Canvas, rect: Rect, theme: &Theme, m: &MediaCardModel<'_>) {
-    canvas.fill_rounded_rect(rect, tokens::RADIUS_CARD, theme.surface1);
+/// Paint the card contents (no background) inside `rect`; the caller lays
+/// down the frosted surface first.
+pub fn render_card_contents(
+    canvas: &mut Canvas,
+    rect: Rect,
+    theme: &Theme,
+    m: &MediaCardModel<'_>,
+    art: Option<&Pixels>,
+) {
+    let l = layout(rect);
+    canvas.blit(&art_tile(theme, art, ART, 28.0), l.art.origin());
 
-    let layout = transport_layout(rect);
-    let text_x = rect.x + PAD_L;
-    let text_max_w = (layout.prev.x - 16 - text_x).max(0);
-
-    if text_max_w > 0 {
-        // Player badge pill at top-left.
-        if !m.player_name.is_empty() {
-            let badge_max = (text_max_w - 20).max(0);
-            if let Some(px) =
-                text::label(m.player_name, style::caption(theme.text2), Some(badge_max))
-            {
-                let bw = px.width() as i32;
-                let pill_w = (bw + 20).min(text_max_w);
-                canvas.fill_rounded_rect(
-                    Rect::new(text_x, rect.y + 16, pill_w, 28),
-                    tokens::RADIUS_PILL,
-                    theme.surface3,
-                );
-                chrome::draw(
-                    canvas,
-                    m.player_name,
-                    &style::caption(theme.text2),
-                    text_x + 10,
-                    rect.y + 18,
-                    Some(badge_max),
-                );
-            }
+    if l.text_w > 0 {
+        chrome::draw(
+            canvas,
+            m.player_name,
+            &style::caption(INK_FAINT),
+            l.text_x,
+            l.art.y,
+            Some(l.text_w),
+        );
+        let title_style = text::LabelStyle {
+            size: 32.0,
+            line_height: 40.0,
+            weight: 600,
+            color: INK,
+            ..text::LabelStyle::default()
+        };
+        if let Some(px) = text::label_clamped(m.title, title_style, l.text_w, 1) {
+            let h = px.height() as i32;
+            canvas.blit(
+                &Pixels::new(
+                    de_api::Size::new(px.width() as i32, h),
+                    px.data().to_vec(),
+                ),
+                Point::new(l.text_x, l.art.y + 34),
+            );
+            chrome::draw(
+                canvas,
+                m.artist,
+                &style::label(INK_DIM),
+                l.text_x,
+                l.art.y + 34 + h + 10,
+                Some(l.text_w),
+            );
         }
-
-        // Track title and artist.
-        chrome::draw(
-            canvas,
-            m.title,
-            &style::h2(theme.text),
-            text_x,
-            rect.y + 52,
-            Some(text_max_w),
-        );
-        chrome::draw(
-            canvas,
-            m.artist,
-            &style::body(theme.text2),
-            text_x,
-            rect.y + 98,
-            Some(text_max_w),
-        );
     }
 
-    // Transport buttons: prev, play/pause, next.
-    let prev_bg = if m.can_go_previous {
-        theme.surface3
-    } else {
-        dim_color(theme.surface3)
+    let ctl = |canvas: &mut Canvas, r: Rect, glyph: &str, enabled: bool| {
+        let (fill, ink) = if enabled {
+            (BTN_FILL, INK)
+        } else {
+            (dim(BTN_FILL), dim(INK))
+        };
+        canvas.fill_rounded_rect(r, tokens::RADIUS_PILL, fill);
+        chrome::draw_ink_centered(canvas, glyph, &text::LabelStyle::icon(36.0, ink), r);
     };
-    let prev_fg = if m.can_go_previous {
-        theme.text
-    } else {
-        dim_color(theme.text3)
-    };
-    canvas.fill_rounded_rect(layout.prev, tokens::RADIUS_PILL, prev_bg);
+    ctl(canvas, l.prev, GLYPH_PREV, m.can_go_previous);
+    ctl(canvas, l.next, GLYPH_NEXT, m.can_go_next);
+    canvas.fill_rounded_rect(l.play_pause, tokens::RADIUS_PILL, theme.accent);
     chrome::draw_ink_centered(
         canvas,
-        GLYPH_PREV,
-        &text::LabelStyle::icon(28.0, prev_fg),
-        layout.prev,
+        if m.playing { GLYPH_PAUSE } else { GLYPH_PLAY },
+        &text::LabelStyle::icon(42.0, theme.text_on_accent),
+        l.play_pause,
     );
+}
 
-    canvas.fill_rounded_rect(layout.play_pause, tokens::RADIUS_PILL, theme.accent);
-    let play_glyph = if m.playing { GLYPH_PAUSE } else { GLYPH_PLAY };
-    chrome::draw_ink_centered(
-        canvas,
-        play_glyph,
-        &text::LabelStyle::icon(32.0, theme.text_on_accent),
-        layout.play_pause,
-    );
-
-    let next_bg = if m.can_go_next {
-        theme.surface3
-    } else {
-        dim_color(theme.surface3)
-    };
-    let next_fg = if m.can_go_next {
-        theme.text
-    } else {
-        dim_color(theme.text3)
-    };
-    canvas.fill_rounded_rect(layout.next, tokens::RADIUS_PILL, next_bg);
-    chrome::draw_ink_centered(
-        canvas,
-        GLYPH_NEXT,
-        &text::LabelStyle::icon(28.0, next_fg),
-        layout.next,
-    );
+/// Opaque variant (own surface) for contexts without a frosted backdrop.
+pub fn render_card(canvas: &mut Canvas, rect: Rect, theme: &Theme, m: &MediaCardModel<'_>) {
+    canvas.fill_rounded_rect(rect, tokens::RADIUS_SHEET, [0x24, 0x1A, 0x2A, 0xFF]);
+    render_card_contents(canvas, rect, theme, m, None);
 }
 
 /// Hit-test a tap `p` against the media card at `rect`.
@@ -181,14 +166,14 @@ pub fn hit_card(rect: Rect, p: Point, m: &MediaCardModel<'_>) -> Option<MediaCar
     if !rect.contains(p) {
         return None;
     }
-    let layout = transport_layout(rect);
-    if layout.play_pause.contains(p) {
+    let l = layout(rect);
+    if l.play_pause.contains(p) {
         return Some(MediaCardHit::PlayPause);
     }
-    if layout.prev.contains(p) {
+    if l.prev.contains(p) {
         return m.can_go_previous.then_some(MediaCardHit::Previous);
     }
-    if layout.next.contains(p) {
+    if l.next.contains(p) {
         return m.can_go_next.then_some(MediaCardHit::Next);
     }
     Some(MediaCardHit::Body)
@@ -222,24 +207,26 @@ mod tests {
     }
 
     #[test]
+    fn transport_fits_inside_card_at_any_width() {
+        for w in [520, 664, 880] {
+            let rect = Rect::new(0, 0, w, CARD_HEIGHT);
+            let l = layout(rect);
+            for r in [l.prev, l.play_pause, l.next, l.art] {
+                assert!(rect.contains(r.origin()) && r.x + r.w <= rect.w && r.y + r.h <= rect.h);
+            }
+            assert_eq!(l.prev.x - rect.x, rect.x + rect.w - (l.next.x + l.next.w));
+        }
+    }
+
+    #[test]
     fn hit_card_maps_buttons_and_body() {
         let m = sample_model();
-        let layout = transport_layout(CARD);
-
+        let l = layout(CARD);
+        assert_eq!(hit_card(CARD, center(l.prev), &m), Some(MediaCardHit::Previous));
+        assert_eq!(hit_card(CARD, center(l.play_pause), &m), Some(MediaCardHit::PlayPause));
+        assert_eq!(hit_card(CARD, center(l.next), &m), Some(MediaCardHit::Next));
         assert_eq!(
-            hit_card(CARD, center(layout.prev), &m),
-            Some(MediaCardHit::Previous)
-        );
-        assert_eq!(
-            hit_card(CARD, center(layout.play_pause), &m),
-            Some(MediaCardHit::PlayPause)
-        );
-        assert_eq!(
-            hit_card(CARD, center(layout.next), &m),
-            Some(MediaCardHit::Next)
-        );
-        assert_eq!(
-            hit_card(CARD, Point::new(CARD.x + 60, CARD.y + CARD.h / 2), &m),
+            hit_card(CARD, Point::new(CARD.x + 60, CARD.y + 60), &m),
             Some(MediaCardHit::Body)
         );
     }
@@ -249,51 +236,35 @@ mod tests {
         let mut m = sample_model();
         m.can_go_previous = false;
         m.can_go_next = false;
-        let layout = transport_layout(CARD);
-
-        assert_eq!(hit_card(CARD, center(layout.prev), &m), None);
-        assert_eq!(hit_card(CARD, center(layout.next), &m), None);
-        assert_eq!(
-            hit_card(CARD, center(layout.play_pause), &m),
-            Some(MediaCardHit::PlayPause)
-        );
+        let l = layout(CARD);
+        assert_eq!(hit_card(CARD, center(l.prev), &m), None);
+        assert_eq!(hit_card(CARD, center(l.next), &m), None);
+        assert_eq!(hit_card(CARD, center(l.play_pause), &m), Some(MediaCardHit::PlayPause));
     }
 
     #[test]
     fn hit_card_outside_rect_returns_none() {
         let m = sample_model();
         assert_eq!(hit_card(CARD, Point::new(0, 0), &m), None);
-        assert_eq!(
-            hit_card(CARD, Point::new(CARD.x - 1, CARD.y + 10), &m),
-            None
-        );
-        assert_eq!(
-            hit_card(CARD, Point::new(CARD.x + CARD.w, CARD.y + 10), &m),
-            None
-        );
-        assert_eq!(
-            hit_card(CARD, Point::new(CARD.x + 10, CARD.y + CARD.h), &m),
-            None
-        );
+        assert_eq!(hit_card(CARD, Point::new(CARD.x - 1, CARD.y + 10), &m), None);
+        assert_eq!(hit_card(CARD, Point::new(CARD.x + CARD.w, CARD.y + 10), &m), None);
+        assert_eq!(hit_card(CARD, Point::new(CARD.x + 10, CARD.y + CARD.h), &m), None);
     }
 
     #[test]
     fn render_card_smoke() {
         let theme = &tokens::DEFAULT;
         let m = sample_model();
-        let mut c = Canvas::filled(Size::new(720, 400), theme.bg);
+        let mut c = Canvas::filled(Size::new(720, 520), theme.bg);
         render_card(&mut c, CARD, theme, &m);
         let playing_px = c.into_pixels();
-
         let mut paused = m;
         paused.playing = false;
         paused.can_go_previous = false;
-        let mut c2 = Canvas::filled(Size::new(720, 400), theme.bg);
+        let mut c2 = Canvas::filled(Size::new(720, 520), theme.bg);
         render_card(&mut c2, CARD, theme, &paused);
-        let paused_px = c2.into_pixels();
-
-        let blank = Canvas::filled(Size::new(720, 400), theme.bg).into_pixels();
+        let blank = Canvas::filled(Size::new(720, 520), theme.bg).into_pixels();
         assert_ne!(playing_px.data, blank.data);
-        assert_ne!(playing_px.data, paused_px.data);
+        assert_ne!(playing_px.data, c2.into_pixels().data);
     }
 }

@@ -31,6 +31,8 @@ pub struct AppEntry {
     pub categories: Vec<String>,
     pub keywords: Vec<String>,
     pub actions: Vec<AppAction>,
+    /// `X-Rabbiz-Orientation=` — screen orientation the app asks for.
+    pub orientation: de_api::OrientationRequest,
 }
 
 /// Scanned, sorted application set.
@@ -240,6 +242,10 @@ fn entry_from(de: &DesktopEntry, id: String, locales: &[String]) -> AppEntry {
             .map(std::string::ToString::to_string)
             .collect(),
         actions,
+        orientation: de
+            .desktop_entry("X-Rabbiz-Orientation")
+            .and_then(de_api::OrientationRequest::parse)
+            .unwrap_or_default(),
     }
 }
 
@@ -299,6 +305,26 @@ mod tests {
         write_desktop(&d1, "dupe", "[Desktop Entry]\nName=First\nExec=first\n");
         write_desktop(&d2, "dupe", "[Desktop Entry]\nName=Second\nExec=second\n");
         (base, [d1, d2])
+    }
+
+    #[test]
+    fn orientation_key_parsed() {
+        let base = tempfile::tempdir().unwrap();
+        write_desktop(
+            base.path(),
+            "game",
+            "[Desktop Entry]\nName=Game\nExec=game\nX-Rabbiz-Orientation=sensor-landscape\n",
+        );
+        write_desktop(base.path(), "plain", "[Desktop Entry]\nName=Plain\nExec=plain\n");
+        let cat = Catalog::scan_dirs(&[base.path().to_path_buf()], &["en".to_string()]);
+        assert_eq!(
+            cat.find("game").unwrap().orientation,
+            de_api::OrientationRequest::SensorLandscape
+        );
+        assert_eq!(
+            cat.find("plain").unwrap().orientation,
+            de_api::OrientationRequest::Unspecified
+        );
     }
 
     #[test]

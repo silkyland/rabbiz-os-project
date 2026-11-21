@@ -215,6 +215,8 @@ impl De {
         }
         self.panels.on[3] = self.app_prefs.prefs().do_not_disturb;
         self.panels.available[3] = true;
+        self.panels.on[5] = self.rotation.policy.auto;
+        self.panels.available[5] = true;
         for (i, value) in [
             (0, state.wifi),
             (1, state.bluetooth),
@@ -225,7 +227,7 @@ impl De {
             self.panels.available[i] = value.is_some();
             self.panels.on[i] = value.unwrap_or(false);
         }
-        // Auto-rotation, GNSS/location, hotspot, recording and NFC stay
+        // GNSS/location, hotspot, recording and NFC stay
         // unavailable until their own providers expose a working contract.
         let lock_b = self.panels.slider_drag == Some(0)
             || self.panels.slider_lock_until[0].is_some_and(|t| now < t);
@@ -472,6 +474,26 @@ impl De {
         (p.animating() && !p.dragging()).then(|| Instant::now() + interval)
     }
 
+    /// Route a tap on the shade media card to the player.
+    fn media_card_tap(&mut self, size: Size, pos: Point) {
+        let count = self.panels.notifications.len();
+        let (Some(rect), Some(view)) = (
+            panels::notif_layout(size, count, true).media,
+            media_view(self.media.snap.as_ref(), None),
+        ) else {
+            return;
+        };
+        use de_system::mpris::MediaCommand;
+        use de_ui::media_card::{hit_card, MediaCardHit};
+        let cmd = match hit_card(rect, pos, &view.model) {
+            Some(MediaCardHit::Previous) => MediaCommand::Previous,
+            Some(MediaCardHit::PlayPause) => MediaCommand::PlayPause,
+            Some(MediaCardHit::Next) => MediaCommand::Next,
+            _ => return,
+        };
+        self.media.request(cmd);
+    }
+
     /// A tap while a panel is up. Always consumed.
     pub(crate) fn panel_tap(&mut self, pos: Point) {
         let size = Size::new(self.output.width as i32, self.output.height as i32);
@@ -480,7 +502,9 @@ impl De {
         }
         match self.panels.kind {
             PanelKind::Notifications => {
-                match panels::notif_hit(size, pos, self.panels.notifications.len()) {
+                let has_media = self.media.snap.is_some();
+                match panels::notif_hit(size, pos, self.panels.notifications.len(), has_media) {
+                    Some(NotifHit::Media) => self.media_card_tap(size, pos),
                     Some(NotifHit::ClearAll) => {
                         self.panels.server.dismiss(0);
                         self.panels.notifications.clear();
@@ -511,6 +535,13 @@ impl De {
                         2 => Some(Action::Airplane(on)),
                         4 => Some(Action::Flashlight(on)),
                         6 => Some(Action::BatterySaver(on)),
+                        5 => {
+                            self.toggle_auto_rotate();
+                            self.panels.on[i] = self.rotation.policy.auto;
+                            self.panels.stale = [true; 2];
+                            self.panels.content_gen += 1;
+                            None
+                        }
                         3 => {
                             if self.app_prefs.set_do_not_disturb(on) {
                                 self.panels.on[i] = on;
@@ -676,6 +707,8 @@ impl De {
         let (status, date) = self.shell_meta();
         let strings = self.strings.clone();
         let notifications = self.panels.notifications.clone();
+        let media = self.media.snap.clone();
+        let media_art = self.media.art().cloned();
         let quick = matches!(kind, PanelKind::Quick).then(|| self.quick_model());
         let (tx, rx) = std::sync::mpsc::channel();
         let theme = self.theme;
@@ -697,6 +730,7 @@ impl De {
                         &status.clock,
                         &date,
                         &notifications,
+                        media_view(media.as_ref(), media_art.as_ref()),
                     ),
                 };
                 let _ = tx.send(px);
@@ -730,6 +764,7 @@ impl De {
                         &status.clock,
                         &date,
                         &notifications,
+                        media_view(media.as_ref(), media_art.as_ref()),
                     ),
                 };
                 let _ = tx.send(px);
@@ -749,5 +784,48 @@ impl De {
         self.nav.current = screen;
         self.shell_dirty = true;
         self.needs_present = true;
+    }
+}
+
+/// Panel media card data for a snapshot (borrowing it).
+fn media_view<'a>(
+    snap: Option<&'a de_system::mpris::MediaSnapshot>,
+    art: Option<&'a de_api::Pixels>,
+) -> Option<panels::MediaView<'a>> {
+    snap.map(|s| panels::MediaView {
+        model: de_ui::media_card::MediaCardModel {
+            player_name: &s.player_name,
+            title: &s.title,
+            artist: &s.artist,
+            playing: s.playing,
+            can_go_previous: s.can_go_previous,
+            can_go_next: s.can_go_next,
+        },
+        art,
+    })
+}
+
+impl PanelUi {
+    /// Panel content (notifications, media card) changed: re-raster.
+    pub(crate) fn mark_content_stale(&mut self) {
+        self.stale = [true; 2];
+        self.content_gen += 1;
+    }
+
+    /// Output size changed (rotation): drop every cached raster/blur.
+    pub(crate) fn on_resize(&mut self, output_h: i32) {
+        self.pixels = [None, None];
+        self.tex = None;
+        self.tex_generation = u64::MAX;
+        self.stale = [true; 2];
+        self.blur = None;
+        self.blur_rx = None;
+        self.render_rx = None;
+        self.capture_pending = false;
+        self.gpu_blur = None;
+        self.scrim_buf = None;
+        self.content_gen += 1;
+        self.generation += 1;
+        self.pull.set_reach(de_ui::pull::reach_for(output_h));
     }
 }

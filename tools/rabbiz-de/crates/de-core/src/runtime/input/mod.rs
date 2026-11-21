@@ -24,7 +24,7 @@ use smithay::backend::input::{
 use smithay::desktop::WindowSurfaceType;
 use smithay::input::pointer::AxisFrame;
 use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
-use smithay::utils::{Logical, Point, Size};
+use smithay::utils::{Logical, Point};
 
 use crate::state::De;
 
@@ -63,10 +63,7 @@ impl De {
                 self.pointer_motion(event.time_msec(), pos, event.delta());
             }
             InputEvent::PointerMotionAbsolute { event } => {
-                let pos = event.position_transformed(Size::from((
-                    self.output.width as i32,
-                    self.output.height as i32,
-                )));
+                let pos = self.hw_point(event.position_transformed(self.rotation.native_size()));
                 let delta = pos - self.pointer.current_location();
                 self.pointer_motion(event.time_msec(), pos, delta);
             }

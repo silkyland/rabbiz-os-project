@@ -104,6 +104,10 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     // SystemBars: gesture bar sits above App/Shell and below ABOVE_WINDOWS/OSK/Panels.
     let bar = de_ui::nav_bar::gesture_bar(canvas.size());
     canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
+    if let Some(px) = de.media.pill_px.as_ref() {
+        let r = de_ui::media::pill_rect(canvas.size(), px.size.w);
+        canvas.blit(px, ApiPoint::new(r.x, r.y));
+    }
 
     blit_layers(
         &mut canvas,

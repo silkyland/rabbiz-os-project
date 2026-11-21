@@ -515,3 +515,18 @@ impl De {
         }
     }
 }
+
+impl Navigation {
+    /// Output size changed (rotation): drop every size-bound cache.
+    pub(crate) fn on_resize(&mut self) {
+        self.back = None;
+        self.back_texture = None;
+        self.back_key = None;
+        self.recents_backdrop = None;
+        self.recents_blur_rx = None;
+        self.home_underlay_px = None;
+        self.home_underlay_tex = None;
+        self.drawer_pull_y = 0.0;
+        self.drawer_dragging = false;
+    }
+}

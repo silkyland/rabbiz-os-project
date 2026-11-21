@@ -157,3 +157,13 @@ impl De {
         self.shot_fx.stale = false;
     }
 }
+
+impl ShotFx {
+    /// Output size changed (rotation): drop the raster and re-render.
+    pub(crate) fn on_resize(&mut self) {
+        self.px = None;
+        self.tex = None;
+        self.stale = true;
+        self.generation = self.generation.wrapping_add(1);
+    }
+}

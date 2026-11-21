@@ -216,6 +216,17 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
                         "16:11",
                         "Mon, 16 Nov",
                         &items,
+                        Some(de_ui::panels::MediaView {
+                            model: de_ui::media_card::MediaCardModel {
+                                player_name: "Rabbiz Music",
+                                title: "Midnight Signal",
+                                artist: "Devded Collective",
+                                playing: true,
+                                can_go_previous: true,
+                                can_go_next: true,
+                            },
+                            art: None,
+                        }),
                     )
                 }
             };

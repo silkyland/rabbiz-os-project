@@ -98,6 +98,10 @@ pub struct De {
     pub popups: PopupManager,
     /// smithay Output object (for `send_frame`/globals).
     pub output_obj: Output,
+    /// Orientation policy + sensor (`runtime/rotation.rs`).
+    pub(crate) rotation: crate::rotation::Rotation,
+    /// Now-playing (pill + shade card).
+    pub(crate) media: crate::media_ui::MediaFx,
 
     pub compositor_state: CompositorState,
     pub shm_state: ShmState,
@@ -573,6 +577,10 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         Some((0, 0).into()),
     );
 
+    let rotation = crate::rotation::Rotation::new(
+        de_api::Size::new(output.width as i32, output.height as i32),
+        crate::rotation::policy_from_prefs(app_prefs.prefs()),
+    );
     let mut space = Space::default();
     space.map_output(&output_obj, (0, 0));
 
@@ -608,6 +616,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         },
         navigation: crate::navigation::Navigation::new(),
         output_obj,
+        rotation,
+        media: crate::media_ui::MediaFx::new(),
 
         compositor_state,
         shm_state,

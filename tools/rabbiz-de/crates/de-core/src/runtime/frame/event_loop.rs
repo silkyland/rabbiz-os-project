@@ -97,6 +97,18 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         })
         .map_err(|e| format!("gesture timer: {e}"))?;
 
+    // Accelerometer -> auto-rotate (the poll rate-limits itself to ~5 Hz).
+    handle
+        .insert_source(Timer::immediate(), |_, (), run: &mut Run| {
+            run.de.poll_orientation();
+            run.de.media_tick(Instant::now());
+            if run.de.needs_present {
+                run.pump();
+            }
+            TimeoutAction::ToDuration(Duration::from_millis(100))
+        })
+        .map_err(|e| format!("orientation timer: {e}"))?;
+
     // Clock tick — re-raster the shell frame each minute.
     let timer = Timer::immediate();
     handle
