@@ -103,6 +103,9 @@ impl WindowMorph {
             .replace(now)
             .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
         if self.phase == Phase::Dragging {
+            if self.peek == Peek::Holding {
+                self.drag_offset_x *= (-15.0 * delta.max(0.0)).exp();
+            }
             if self.peek != Peek::Off {
                 self.animator.advance(delta, clock);
             }
@@ -131,12 +134,28 @@ impl WindowMorph {
         let progress = self.animator.progress();
         let mut pose = MorphPose::at(progress, self.origin.rect, dst, self.content_ready(now));
         if self.navigation {
-            pose.card = de_ui::launch_morph::navigation_card(progress, self.origin.rect, dst);
-            pose.card.x += self.drag_offset_x.round() as i32;
+            let overview = de_ui::recents::card_rect(dst.size());
+            if progress >= 0.5 {
+                pose.card = de_ui::launch_morph::navigation_card(progress, self.origin.rect, dst);
+            } else {
+                // Keep closing/minimizing centered around the overview card rather
+                // than separating off toward the home-screen icon rect.
+                let t = (progress * 2.0).clamp(0.0, 1.0);
+                let scale = 0.72 + 0.28 * t;
+                let w = ((overview.w as f32) * scale).round().max(1.0) as i32;
+                let h = ((overview.h as f32) * scale).round().max(1.0) as i32;
+                let cx = overview.x + overview.w / 2;
+                let cy = overview.y + overview.h / 2;
+                pose.card = Rect::new(cx - w / 2, cy - h / 2, w, h);
+            }
             pose.icon.x = pose.card.x + (pose.card.w - pose.icon.w) / 2;
             pose.icon.y = pose.card.y + (pose.card.h - pose.icon.h) / 2;
-            pose.app_alpha = (progress * 2.0).clamp(0.0, 1.0);
-            pose.icon_alpha = 1.0 - pose.app_alpha;
+            pose.icon_alpha = 0.0;
+            if self.phase == Phase::Dragging {
+                pose.app_alpha = 1.0;
+            } else {
+                pose.app_alpha = (progress * 2.0).clamp(0.0, 1.0);
+            }
         }
         if self.phase == Phase::Restoring {
             pose.icon_alpha = 0.0;
@@ -345,7 +364,7 @@ impl De {
         }
     }
 
-    pub(crate) fn follow_home_drag(&mut self, dx: f32, dy: f32, time_ms: u64) {
+    pub(crate) fn follow_home_drag(&mut self, _dx: f32, dy: f32, time_ms: u64) {
         if self.motion_clock.motion_restricted() || self.panels.shown() || self.locked() {
             return;
         }
@@ -388,11 +407,12 @@ impl De {
         }
         if let Some(morph) = self.morph.as_mut().filter(|m| m.phase == Phase::Dragging) {
             // Pulling up ~35% of screen height shrinks the card smoothly to
-            // the mid-screen Recents overview size (progress = 0.5).
+            // the centered Recents overview size (progress = 0.5). Clamp at 0.5
+            // so over-dragging never separates off toward the closing icon, and
+            // keep horizontal position centered (`drag_offset_x = 0.0`).
             let travel = (self.output.height.max(1) as f32 * 0.70).max(1.0);
-            let progress = (1.0 + dy / travel).clamp(0.32, 1.0);
-            let lift = ((1.0 - progress) * 2.0).clamp(0.0, 1.0);
-            morph.drag_offset_x = dx * 0.45 * lift;
+            let progress = (1.0 + dy / travel).clamp(0.50, 1.0);
+            morph.drag_offset_x = 0.0;
             morph.drag(progress, time_ms);
             self.needs_present = true;
         }

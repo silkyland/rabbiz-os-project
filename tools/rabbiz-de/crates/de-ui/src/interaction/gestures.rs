@@ -327,7 +327,7 @@ impl GestureTracker {
                         }
                     } else if tr.dy > -(self.cfg.output_h as f32 * 0.15)
                         || tr.stall_y == 0.0
-                        || (tr.dy - tr.stall_y).abs() >= self.cfg.slop
+                        || (tr.dy - tr.stall_y).abs() >= self.cfg.slop * 2.0
                     {
                         tr.stall_y = tr.dy;
                         tr.stall_ms = ev.time_ms;

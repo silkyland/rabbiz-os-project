@@ -38,6 +38,26 @@ pub(crate) struct Navigation {
     pub card_dismiss: Option<CardDismiss>,
     /// Whether `Screen::Settings` is currently showing the Keyboard subpage.
     pub settings_keyboard: bool,
+    /// GPU-cached static backdrop + per-card textures for 60 FPS Recents scrolling.
+    pub recents_layers: Option<RecentsLayers>,
+    /// Bottom gesture-bar touch glow/expand spring (`0.0` rest → `1.0` touched).
+    pub nav_bar_active: SpringValue,
+    pub nav_bar_last_tick: Option<Instant>,
+    pub nav_bar_last_drawn: f32,
+}
+
+pub(crate) struct RecentsCardCache {
+    pub id: String,
+    pub snap_ptr: Option<usize>,
+    pub px: Option<Pixels>,
+    pub tex: Option<Box<dyn std::any::Any>>,
+}
+
+pub(crate) struct RecentsLayers {
+    pub bg_key: (Size, bool, bool, u64),
+    pub bg_px: Option<Pixels>,
+    pub bg_tex: Option<Box<dyn std::any::Any>>,
+    pub cards: Vec<RecentsCardCache>,
 }
 
 /// Swipe-up-to-close on a Recents card. Tracked by window, not index, so the
@@ -78,7 +98,50 @@ impl Navigation {
             recents_from_app: false,
             card_dismiss: None,
             settings_keyboard: false,
+            recents_layers: None,
+            nav_bar_active: SpringValue::new(0.0, SpringPreset::Snappy, MotionKind::Effects),
+            nav_bar_last_tick: None,
+            nav_bar_last_drawn: -1.0,
         }
+    }
+}
+
+impl De {
+    /// Highlight/expand the bottom gesture pill on touch and emit a light haptic.
+    pub(crate) fn set_nav_bar_active(&mut self, active: bool) {
+        let target = if active { 1.0 } else { 0.0 };
+        if (self.navigation.nav_bar_active.target - target).abs() < f32::EPSILON {
+            return;
+        }
+        if active {
+            crate::haptics::pulse(crate::haptics::HapticKind::NavTouch);
+        }
+        self.navigation.nav_bar_active.retarget(target);
+        self.navigation.nav_bar_last_tick = Some(Instant::now());
+        self.needs_present = true;
+    }
+
+    /// Advance the bottom gesture-bar glow/expand spring.
+    pub(crate) fn advance_nav_bar(&mut self, now: Instant) {
+        if self.navigation.nav_bar_active.settled() {
+            self.navigation.nav_bar_last_tick = None;
+            return;
+        }
+        let dt = self
+            .navigation
+            .nav_bar_last_tick
+            .replace(now)
+            .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
+        self.navigation
+            .nav_bar_active
+            .advance(dt, &self.motion_clock);
+        if (self.navigation.nav_bar_active.target - self.navigation.nav_bar_active.value).abs()
+            < 0.005
+            && self.navigation.nav_bar_active.velocity.abs() < 0.05
+        {
+            self.navigation.nav_bar_active.snap();
+        }
+        self.needs_present = true;
     }
 }
 
@@ -209,7 +272,9 @@ impl De {
             d.offset.target = y;
             d.offset.velocity = 0.0;
         }
-        self.shell_dirty = true;
+        if !self.recents_layers_active() {
+            self.shell_dirty = true;
+        }
         self.needs_present = true;
         true
     }
@@ -266,7 +331,9 @@ impl De {
                 self.show_shell(de_ui::nav::Screen::Home);
             }
         }
-        self.shell_dirty = true;
+        if !self.recents_layers_active() {
+            self.shell_dirty = true;
+        }
         self.needs_present = true;
     }
 
@@ -496,6 +563,78 @@ impl De {
         self.navigation.recents_backdrop = Some(home);
     }
 
+    pub(crate) fn recents_layers_active(&self) -> bool {
+        self.foreground == Foreground::Shell
+            && self.nav.current == de_ui::nav::Screen::Recents
+            && self.morph.is_none()
+            && self.navigation.recents_fade.is_none()
+    }
+
+    /// Prepare cached GPU textures for the Recents carousel so horizontal swipes
+    /// and card-dismiss drags composite at 60 FPS with zero per-frame CPU raster.
+    pub(crate) fn recents_layers_prepare(&mut self, size: Size, minute: u64) {
+        let windows = self.recent_windows();
+        let model = self.recents_model(&windows);
+        let entries = model.entries();
+        let count = entries.len();
+        self.navigation.recents_pager.set_pages(count.max(1));
+
+        let bg_key = (size, count == 0, count > 1, minute);
+        let mut old_cards = self
+            .navigation
+            .recents_layers
+            .as_mut()
+            .map(|l| std::mem::take(&mut l.cards))
+            .unwrap_or_default();
+
+        let card_size = de_ui::recents::card_rect(size).size();
+        let mut cards = Vec::with_capacity(count);
+        for e in entries {
+            let snap_ptr = e.snapshot.as_ref().map(|a| std::sync::Arc::as_ptr(a) as usize);
+            if let Some(pos) = old_cards
+                .iter()
+                .position(|c| c.id == e.id && c.snap_ptr == snap_ptr)
+            {
+                cards.push(old_cards.swap_remove(pos));
+            } else {
+                let px = de_ui::recents::render_card_tile(&self.theme, e, card_size);
+                cards.push(RecentsCardCache {
+                    id: e.id.clone(),
+                    snap_ptr,
+                    px: Some(px),
+                    tex: None,
+                });
+            }
+        }
+
+        let need_bg = match self.navigation.recents_layers.as_ref() {
+            Some(l) => l.bg_key != bg_key || (l.bg_px.is_none() && l.bg_tex.is_none()),
+            None => true,
+        };
+        if need_bg {
+            let (status, _) = self.shell_meta();
+            let bg_px = de_ui::recents::render_backdrop(
+                size,
+                &self.strings,
+                &self.theme,
+                &status,
+                self.navigation.recents_backdrop.as_ref(),
+                count == 0,
+                count > 1,
+            );
+            self.navigation.recents_layers = Some(RecentsLayers {
+                bg_key,
+                bg_px: Some(bg_px),
+                bg_tex: None,
+                cards,
+            });
+        } else if let Some(l) = self.navigation.recents_layers.as_mut() {
+            l.cards = cards;
+        }
+        self.shell_minute = minute;
+        self.shell_dirty = false;
+    }
+
     pub(crate) fn poll_recents_backdrop(&mut self) {
         let Some(rx) = self.navigation.recents_blur_rx.take() else {
             return;
@@ -503,6 +642,10 @@ impl De {
         match rx.try_recv() {
             Ok(px) => {
                 self.navigation.recents_backdrop = Some(px);
+                if let Some(layers) = self.navigation.recents_layers.as_mut() {
+                    layers.bg_px = None;
+                    layers.bg_tex = None;
+                }
                 if self.nav.current == de_ui::nav::Screen::Recents {
                     self.shell_dirty = true;
                     self.needs_present = true;
@@ -526,6 +669,7 @@ impl Navigation {
         self.recents_blur_rx = None;
         self.home_underlay_px = None;
         self.home_underlay_tex = None;
+        self.recents_layers = None;
         self.drawer_pull_y = 0.0;
         self.drawer_dragging = false;
     }

@@ -102,7 +102,11 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     }
 
     // SystemBars: gesture bar sits above App/Shell and below ABOVE_WINDOWS/OSK/Panels.
-    let bar = de_ui::nav_bar::gesture_bar(canvas.size());
+    let bar = de_ui::nav_bar::gesture_bar_at(
+        canvas.size(),
+        &de.theme,
+        de.navigation.nav_bar_active.value,
+    );
     canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
 
     // Overlays the renderer draws as textures: the paging home layers, the

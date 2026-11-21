@@ -18,6 +18,8 @@ pub(crate) enum HapticKind {
     GestureArm,
     /// Edge-back pulled back below `BACK_COMMIT_PX` (`GESTURE_THRESHOLD_DEACTIVATE`).
     GestureDisarm,
+    /// Bottom-bar touched (light tactile acknowledgment).
+    NavTouch,
     /// Bottom-bar swipe-up paused to enter Recents preview.
     RecentsHold,
     /// Bottom-bar swipe committed Home / Drawer.
@@ -37,6 +39,7 @@ impl HapticKind {
         match self {
             Self::GestureArm => 38,
             Self::GestureDisarm => 28,
+            Self::NavTouch => 26,
             Self::RecentsHold => 48,
             Self::NavCommit => 35,
             Self::QuickSwitch => 35,

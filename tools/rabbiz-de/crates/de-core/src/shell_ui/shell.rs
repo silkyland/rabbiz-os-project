@@ -300,7 +300,7 @@ impl De {
         }
     }
 
-    fn recents_model(&mut self, windows: &[smithay::desktop::Window]) -> RecentsModel {
+    pub(crate) fn recents_model(&mut self, windows: &[smithay::desktop::Window]) -> RecentsModel {
         RecentsModel::new(
             windows
                 .iter()

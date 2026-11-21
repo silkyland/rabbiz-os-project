@@ -384,12 +384,10 @@ fn status_bar_fg(c: &mut Canvas, t: &Theme, info: &StatusInfo, fg: [u8; 4]) {
     }
 }
 
-/// 200×8 nav pill at the bottom (y = h - 24).
-pub fn nav_pill(c: &mut Canvas, t: &Theme) {
-    let size = c.size();
-    let r = Rect::new((size.w - 200) / 2, size.h - 24, 200, 8);
-    c.fill_rounded_rect(r, 4.0, t.text3);
-}
+/// Bottom nav pill hook kept for screen renderers; the single interactive
+/// gesture bar is composited live in `DisplayArea::SystemBars` by
+/// `nav_bar::gesture_bar_at` so shell screens never show a duplicate bar.
+pub fn nav_pill(_c: &mut Canvas, _t: &Theme) {}
 
 /// An app tile for home/drawer/search/recents: icon pixels when the
 /// compositor resolved them (`de-apps::icons`), else the shell draws the

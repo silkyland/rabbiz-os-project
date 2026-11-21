@@ -153,7 +153,113 @@ pub fn render_with_backdrop(
     render_at_pos(size, s, t, status, m, backdrop, m.focus as f32, None, None)
 }
 
-/// Render Recents at a continuous fractional card index `pos` (for 1:1 drag + spring snap).
+/// Vertical space reserved above each card for its icon + app title.
+pub const CARD_HEADER_H: i32 = 52;
+
+fn draw_card_header(c: &mut Canvas, t: &Theme, e: &RecentEntry, x: i32, y: i32, card_w: i32) {
+    let tile = Rect::new(x, y, 36, 36);
+    let ie = IconEntry {
+        id: e.id.clone(),
+        label: e.title.clone(),
+        icon: e.icon.clone(),
+    };
+    chrome::draw_app_icon(c, t, &ie, tile);
+    chrome::draw(
+        c,
+        &e.title,
+        &style::label(t.text2),
+        x + 44,
+        y + 6,
+        Some(card_w - 44),
+    );
+}
+
+fn draw_card_body(c: &mut Canvas, t: &Theme, e: &RecentEntry, card: Rect, alpha: f32) {
+    if let Some(px) = &e.snapshot {
+        c.blit_scaled(px, card, alpha);
+    } else {
+        let mut fill = t.surface2;
+        fill[3] = (f32::from(fill[3]) * alpha).round() as u8;
+        c.fill_rounded_rect(card, tokens::RADIUS_CARD, fill);
+        let ie2 = IconEntry {
+            id: e.id.clone(),
+            label: e.title.clone(),
+            icon: e.icon.clone(),
+        };
+        chrome::draw_app_icon(
+            c,
+            t,
+            &ie2,
+            Rect::new(
+                card.x + (card.w - 96) / 2,
+                card.y + (card.h - 96) / 2,
+                96,
+                96,
+            ),
+        );
+    }
+}
+
+/// Static Recents backdrop (blurred wallpaper/home + veil + status bar + clear-all + nav pill).
+/// Cached as a single GPU texture so horizontal card swipes do zero full-screen CPU blits.
+#[must_use]
+pub fn render_backdrop(
+    size: Size,
+    s: &Strings,
+    t: &Theme,
+    status: &StatusInfo,
+    backdrop: Option<&Pixels>,
+    empty: bool,
+    show_clear_all: bool,
+) -> Pixels {
+    let mut c = Canvas::filled(size, t.bg);
+    if let Some(px) = backdrop {
+        c.blit(px, de_api::Point::ZERO);
+        let mut veil = t.bg;
+        veil[3] = BACKDROP_VEIL_ALPHA;
+        c.fill_rect(Rect::new(0, 0, size.w, size.h), veil);
+    }
+    chrome::status_bar(&mut c, t, status);
+    if empty {
+        chrome::draw_centered(
+            &mut c,
+            s.get("recents.empty"),
+            &style::body(t.text3),
+            size.h / 2,
+        );
+    } else if show_clear_all {
+        let r = clear_all_rect(size);
+        c.fill_rounded_rect(r, tokens::RADIUS_PILL, t.glass);
+        chrome::draw_centered_x(
+            &mut c,
+            s.get("recents.clear_all"),
+            &style::label(t.text),
+            r.x + r.w / 2,
+            r.y + 20,
+        );
+    }
+    chrome::nav_pill(&mut c, t);
+    c.into_pixels()
+}
+
+/// One pre-rasterized Recents card (`card_size.w × (card_size.h + CARD_HEADER_H)`)
+/// containing its icon + title header and scaled snapshot/placeholder.
+#[must_use]
+pub fn render_card_tile(t: &Theme, e: &RecentEntry, card_size: Size) -> Pixels {
+    let mut c = Canvas::new(Size::new(card_size.w, card_size.h + CARD_HEADER_H));
+    draw_card_header(&mut c, t, e, 0, 0, card_size.w);
+    draw_card_body(
+        &mut c,
+        t,
+        e,
+        Rect::new(0, CARD_HEADER_H, card_size.w, card_size.h),
+        1.0,
+    );
+    c.into_pixels()
+}
+
+/// Carousel positioned at continuous `pos` (in card-stride units); `morphing_card`
+/// omits that card's body while the compositor animates it separately.
 #[must_use]
 pub fn render_at_pos(
     size: Size,
@@ -197,44 +303,12 @@ pub fn render_at_pos(
         if x + card.w < 0 || x > size.w || y + card.h < 0 || alpha <= 0.0 {
             continue;
         }
-        // Label + icon above the card.
-        let tile = Rect::new(x, y - 52, 36, 36);
-        let ie = IconEntry {
-            id: e.id.clone(),
-            label: e.title.clone(),
-            icon: e.icon.clone(),
-        };
-        chrome::draw_app_icon(&mut c, t, &ie, tile);
-        chrome::draw(
-            &mut c,
-            &e.title,
-            &style::label(t.text2),
-            x + 44,
-            y - 46,
-            Some(card.w - 44),
-        );
+        draw_card_header(&mut c, t, e, x, y - CARD_HEADER_H, card.w);
         // The compositor draws the transitioning card in its own layer.
         if morphing_card == Some(i) {
             continue;
         }
-        if let Some(px) = &e.snapshot {
-            c.blit_scaled(px, card, alpha);
-        } else {
-            let mut fill = t.surface2;
-            fill[3] = (f32::from(fill[3]) * alpha).round() as u8;
-            c.fill_rounded_rect(card, tokens::RADIUS_CARD, fill);
-            let ie2 = IconEntry {
-                id: e.id.clone(),
-                label: e.title.clone(),
-                icon: e.icon.clone(),
-            };
-            chrome::draw_app_icon(
-                &mut c,
-                t,
-                &ie2,
-                Rect::new(x + (card.w - 96) / 2, y + (card.h - 96) / 2, 96, 96),
-            );
-        }
+        draw_card_body(&mut c, t, e, card, alpha);
     }
 
     // Clear-all pill (only when more than one card).

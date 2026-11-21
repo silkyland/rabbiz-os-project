@@ -11,6 +11,7 @@ use smithay::backend::renderer::element::surface::{
     render_elements_from_surface_tree, WaylandSurfaceRenderElement,
 };
 use smithay::backend::renderer::element::texture::TextureRenderElement;
+use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
 use smithay::desktop::utils::{
@@ -30,6 +31,7 @@ render_elements! {
     pub DeElement<R> where R: ImportAll + ImportMem, R::TextureId: Texture + Clone + 'static;
     Texture = TextureRenderElement<R::TextureId>,
     Surface = WaylandSurfaceRenderElement<R>,
+    RescaledSurface = RescaleRenderElement<WaylandSurfaceRenderElement<R>>,
     Solid = SolidColorRenderElement,
 }
 
@@ -41,6 +43,7 @@ pub(super) struct FrameParts<'a> {
     pub(super) shell_tex: &'a mut Option<Box<dyn std::any::Any>>,
     pub(super) shell_px: &'a mut Option<de_api::Pixels>,
     pub(super) gesture_bar: &'a mut Option<Box<dyn std::any::Any>>,
+    pub(super) theme: &'a de_design::tokens::Theme,
     pub(super) output: &'a de_backend::drm::OutputGeometry,
     pub(super) output_obj: &'a smithay::output::Output,
     pub(super) clock: &'a smithay::utils::Clock<smithay::utils::Monotonic>,
@@ -59,6 +62,9 @@ pub(super) struct FrameParts<'a> {
     pub(super) power: &'a mut crate::power::Power,
     /// Draw the home screen from `home` layers instead of `shell_tex`.
     pub(super) layered: bool,
+    /// Draw the Recents carousel from cached GPU layers instead of `shell_tex`.
+    pub(super) recents_layered: bool,
+    pub(super) recents_lift: Option<de_ui::recents::CardLift>,
     /// Pointer state for the on-screen cursor sprite (topmost element).
     pub(super) pointer: &'a smithay::input::pointer::PointerHandle<crate::state::De>,
     pub(super) pointer_active: bool,
@@ -168,12 +174,15 @@ where
             *de.shell_tex = upload_any(renderer, px);
         }
     }
-    if de.gesture_bar.is_none() {
-        let px = de_ui::nav_bar::gesture_bar(de_api::Size::new(
-            de.output.width as i32,
-            de.output.height as i32,
-        ));
+    let nav_active = de.navigation.nav_bar_active.value;
+    if de.gesture_bar.is_none() || (nav_active - de.navigation.nav_bar_last_drawn).abs() > 0.005 {
+        let px = de_ui::nav_bar::gesture_bar_at(
+            de_api::Size::new(de.output.width as i32, de.output.height as i32),
+            de.theme,
+            nav_active,
+        );
         *de.gesture_bar = upload_any(renderer, &px);
+        de.navigation.nav_bar_last_drawn = nav_active;
     }
 
     // 1. Assemble the backdrop/content slice (front-to-back) so GPU panel blur
@@ -211,6 +220,16 @@ where
             &mut backdrop,
             de.home,
             de_api::Size::new(de.output.width as i32, de.output.height as i32),
+        );
+    } else if de.recents_layered && de.navigation.recents_layers.is_some() {
+        if let Some(layers) = de.navigation.recents_layers.as_mut() {
+            sync_recents_textures(renderer, layers);
+        }
+        push_recents_layers::<R>(
+            &mut backdrop,
+            de.navigation,
+            de_api::Size::new(de.output.width as i32, de.output.height as i32),
+            de.recents_lift,
         );
     } else if let Some(tex) = texture_buffer::<R>(de.shell_tex.as_ref()) {
         let slide_y = if de.navigation.drawer_slide.value > 0.5 {
@@ -527,17 +546,27 @@ fn push_morph_elements<R: Renderer + ImportAll + ImportMem>(
         }
     }
     if let Some(window) = morph.window.as_ref().filter(|_| pose.app_alpha > 0.0) {
+        // `WaylandSurfaceRenderElement::geometry(output_scale)` sizes the
+        // surface using the compositor's output scale (1.0), ignoring the
+        // `scale` passed to `render_elements` (which only scales subsurface
+        // offsets). Wrap each surface element in `RescaleRenderElement` around
+        // `loc` so the live app actually shrinks into `pose.card` on DRM/GLES
+        // instead of sliding down-right at fullscreen size.
         let scale = Scale::from((
-            f64::from(pose.card.w) / f64::from(output.w),
-            f64::from(pose.card.h) / f64::from(output.h),
+            f64::from(pose.card.w) / f64::from(output.w.max(1)),
+            f64::from(pose.card.h) / f64::from(output.h.max(1)),
         ));
-        elements.extend(AsRenderElements::<R>::render_elements::<DeElement<R>>(
+        let raw = AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
             window,
             renderer,
             loc,
-            scale,
+            Scale::from(1.0),
             pose.app_alpha,
-        ));
+        );
+        elements.extend(
+            raw.into_iter()
+                .map(|el| DeElement::from(RescaleRenderElement::from_element(el, loc, scale))),
+        );
     }
     if pose.card_alpha > 0.0 {
         morph.backing.resize((pose.card.w, pose.card.h));
@@ -1002,6 +1031,71 @@ fn push_home_layers<R: ImportAll>(
         }
     }
     if let Some(tex) = texture_buffer::<R>(h.base_tex.as_ref()) {
+        elements.push(DeElement::from(tex_el::<R>(
+            tex,
+            Point::<f64, Physical>::from((0.0, 0.0)),
+        )));
+    }
+}
+
+fn sync_recents_textures<R: ImportAll + ImportMem>(
+    renderer: &mut R,
+    layers: &mut crate::navigation::RecentsLayers,
+) where
+    R::TextureId: Texture + 'static,
+{
+    if layers.bg_tex.is_none() {
+        if let Some(px) = layers.bg_px.take() {
+            layers.bg_tex = upload_any(renderer, &px);
+        }
+    }
+    for card in &mut layers.cards {
+        if card.tex.is_none() {
+            if let Some(px) = card.px.take() {
+                card.tex = upload_any(renderer, &px);
+            }
+        }
+    }
+}
+
+fn push_recents_layers<R: ImportAll>(
+    elements: &mut Vec<DeElement<R>>,
+    nav: &crate::navigation::Navigation,
+    size: de_api::Size,
+    lift: Option<de_ui::recents::CardLift>,
+) where
+    R::TextureId: smithay::backend::renderer::Texture + Clone + 'static,
+{
+    let Some(layers) = nav.recents_layers.as_ref() else {
+        return;
+    };
+    let pos = nav.recents_pager.pos();
+    // Smithay consumes front-to-back: cards first, then static backdrop behind them.
+    for (i, cache) in layers.cards.iter().enumerate() {
+        let mut card = de_ui::recents::card_at(size, i, pos);
+        let mut alpha = 1.0;
+        if let Some(l) = lift.filter(|l| l.index == i) {
+            card.y += l.dy.round() as i32;
+            alpha = l.alpha(size);
+        }
+        if card.x + card.w < 0 || card.x > size.w || card.y + card.h < 0 || alpha <= 0.0 {
+            continue;
+        }
+        if let Some(tex) = texture_buffer::<R>(cache.tex.as_ref()) {
+            elements.push(DeElement::from(TextureRenderElement::from_texture_buffer(
+                Point::<f64, Physical>::from((
+                    f64::from(card.x),
+                    f64::from(card.y - de_ui::recents::CARD_HEADER_H),
+                )),
+                tex,
+                Some(alpha),
+                None,
+                None,
+                Kind::Unspecified,
+            )));
+        }
+    }
+    if let Some(tex) = texture_buffer::<R>(layers.bg_tex.as_ref()) {
         elements.push(DeElement::from(tex_el::<R>(
             tex,
             Point::<f64, Physical>::from((0.0, 0.0)),

@@ -125,6 +125,7 @@ impl Run {
         self.de.advance_morph(t0);
         self.de.advance_home(t0);
         self.de.advance_recents_fade(t0);
+        self.de.advance_nav_bar(t0);
         if self.de.foreground == crate::state::Foreground::Shell
             && self.de.nav.current == de_ui::nav::Screen::Drawer
             && !self.de.navigation.drawer_dragging
@@ -189,7 +190,9 @@ impl Run {
                 .navigation
                 .recents_pager
                 .advance(dt, &self.de.motion_clock);
-            self.de.shell_dirty = true;
+            if !self.de.recents_layers_active() {
+                self.de.shell_dirty = true;
+            }
             self.de.needs_present = true;
         } else {
             self.de.navigation.recents_last_tick = None;
@@ -240,7 +243,18 @@ impl Run {
         if layered {
             self.de.home_layers_frame();
         }
+        let recents_layered = self.de.recents_layers_active();
+        if recents_layered {
+            self.de.recents_layers_prepare(size, minute);
+        }
+        let recents_lift = if recents_layered {
+            let windows = self.de.recent_windows();
+            self.de.card_lift(&windows)
+        } else {
+            None
+        };
         if !layered
+            && !recents_layered
             && (matches!(self.de.foreground, crate::state::Foreground::Shell)
                 || self.de.morph.is_some())
             && (self.de.shell_dirty || self.de.shell_minute != minute || self.de.shell_px.is_none())
@@ -265,6 +279,7 @@ impl Run {
             shell_tex,
             shell_px,
             gesture_bar,
+            theme,
             output,
             output_obj,
             clock,
@@ -294,6 +309,7 @@ impl Run {
             shell_tex,
             shell_px,
             gesture_bar,
+            theme,
             output,
             output_obj,
             clock,
@@ -316,6 +332,8 @@ impl Run {
             cursor_tex,
             present_seq,
             layered,
+            recents_layered,
+            recents_lift,
             now: t0,
         };
         let queued = match renderer {
@@ -384,9 +402,11 @@ impl Run {
             && !self.de.navigation.drawer_dragging
             && !self.de.navigation.drawer_slide.settled())
         .then_some(now + interval);
+        let nav_bar_wake = (!self.de.navigation.nav_bar_active.settled()).then_some(now + interval);
         let shell_im_wake = run_de_shell_im_wake(self).then_some(now + Duration::from_millis(16));
         [
             shell_im_wake,
+            nav_bar_wake,
             self.de.media.wake_at(interval),
             self.de.launch.deadline(),
             self.de

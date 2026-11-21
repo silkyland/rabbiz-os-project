@@ -593,6 +593,7 @@ impl De {
                 };
                 self.osd_fx.mark_stale();
                 self.hun_fx.mark_stale();
+                self.gesture_bar = None;
                 self.shell_dirty = true;
                 self.needs_present = true;
                 IpcResponse::ok(id, None)

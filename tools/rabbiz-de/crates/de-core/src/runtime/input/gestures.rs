@@ -19,6 +19,17 @@ impl De {
         {
             eprintln!("gesture: {ev:?}");
         }
+        // Bottom gesture-bar touch feedback (glow + subtle expand + light haptic).
+        match ev {
+            GestureEvent::Started {
+                zone: Zone::NavBar, ..
+            } => self.set_nav_bar_active(true),
+            GestureEvent::NavReleased { .. }
+            | GestureEvent::Released { .. }
+            | GestureEvent::Cancelled
+            | GestureEvent::Recognized(_) => self.set_nav_bar_active(false),
+            _ => {}
+        }
         // The lock overlay owns every gesture while it covers the screen
         // (until an unlock has been committed).
         if self.lock.shown() && !self.lock.is_unlocking() {
@@ -99,7 +110,9 @@ impl De {
                             self.navigation
                                 .recents_pager
                                 .drag(dx, de_ui::recents::card_stride(size) as f32);
-                            self.shell_dirty = true;
+                            if !self.recents_layers_active() {
+                                self.shell_dirty = true;
+                            }
                             self.needs_present = true;
                         }
                     } else if self.foreground == Foreground::Shell
