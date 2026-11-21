@@ -103,21 +103,13 @@ impl De {
                                 de.navigation.search_query.clear();
                                 de.show_shell(de_ui::nav::Screen::Home);
                             }
-                            // Enter opens the top search hit — the
-                            // keyboard twin of tapping the first row (and
-                            // the same path the shell IM's Enter takes).
+                            // Enter on global Search launches the default search engine.
                             Some(Keysym::Return) | Some(Keysym::KP_Enter)
                                 if de.nav.current == de_ui::nav::Screen::Search =>
                             {
-                                let rows = de.search_rows();
-                                if let Some(first) = rows.first() {
-                                    let id = first.id.clone();
-                                    let size = de_api::Size::new(
-                                        de.output.width as i32,
-                                        de.output.height as i32,
-                                    );
-                                    let rect = de_ui::search::icon_rect(size, &rows, 0);
-                                    de.try_launch(&id, rect);
+                                let query = de.navigation.search_query.clone();
+                                if !query.trim().is_empty() {
+                                    de.open_web_search(&query);
                                 }
                             }
                             _ => {

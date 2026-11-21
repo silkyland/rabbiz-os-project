@@ -174,12 +174,23 @@ pub fn render_with_caret(
             }
             let card = rects[i];
             c.fill_rounded_rect(card, tokens::RADIUS_ROW, t.surface1);
-            let e = IconEntry {
-                id: row.id.clone(),
-                label: row.title.clone(),
-                icon: row.icon.clone(),
-            };
-            chrome::draw_app_icon(&mut c, t, &e, row_icon(card));
+            let icon_r = row_icon(card);
+            if row.kind == SearchKind::Action && row.icon.is_none() {
+                c.fill_rounded_rect(icon_r, tokens::RADIUS_PILL, t.accent_dim);
+                chrome::draw_ink_centered(
+                    &mut c,
+                    "\u{e8b6}",
+                    &text::LabelStyle::icon(26.0, t.text_on_accent),
+                    icon_r,
+                );
+            } else {
+                let e = IconEntry {
+                    id: row.id.clone(),
+                    label: row.title.clone(),
+                    icon: row.icon.clone(),
+                };
+                chrome::draw_app_icon(&mut c, t, &e, icon_r);
+            }
             chrome::draw(
                 &mut c,
                 &row.title,

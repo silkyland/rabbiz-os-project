@@ -331,26 +331,49 @@ impl De {
         r
     }
 
-    /// Search rows: every visible app (the query field is static until the
-    /// on-screen keyboard/search input lands in M4 — tapping a row launches).
+    /// Search rows: empty until the user types; once typing, matching apps
+    /// appear first (prefix matches ahead of substring matches), followed by a
+    /// web-search action for the configured default search engine.
     pub(crate) fn search_rows(&mut self) -> Vec<SearchRow> {
-        let q = self.navigation.search_query.trim().to_lowercase();
+        let raw = self.navigation.search_query.trim().to_string();
+        if raw.is_empty() {
+            return Vec::new();
+        }
+        let q = raw.to_lowercase();
         let ids = self.visible_ids();
-        self.app_icons(&ids)
+        let mut apps: Vec<(bool, SearchRow)> = self
+            .app_icons(&ids)
             .into_iter()
-            .filter(|i| {
-                q.is_empty()
-                    || i.label.to_lowercase().contains(&q)
-                    || i.id.to_lowercase().contains(&q)
+            .filter_map(|i| {
+                let label_l = i.label.to_lowercase();
+                let id_l = i.id.to_lowercase();
+                if !label_l.contains(&q) && !id_l.contains(&q) {
+                    return None;
+                }
+                let prefix = label_l.starts_with(&q) || id_l.starts_with(&q);
+                Some((
+                    prefix,
+                    SearchRow {
+                        kind: SearchKind::App,
+                        id: i.id,
+                        title: i.label,
+                        subtitle: String::new(),
+                        icon: i.icon,
+                    },
+                ))
             })
-            .map(|i| SearchRow {
-                kind: SearchKind::App,
-                id: i.id,
-                title: i.label,
-                subtitle: String::new(),
-                icon: i.icon,
-            })
-            .collect()
+            .collect();
+        apps.sort_by(|a, b| b.0.cmp(&a.0));
+        let mut rows: Vec<SearchRow> = apps.into_iter().map(|(_, r)| r).collect();
+        let engine = de_config::prefs::search_engine_label(&self.app_prefs.prefs().search_engine);
+        rows.push(SearchRow {
+            kind: SearchKind::Action,
+            id: "web-search".into(),
+            title: format!("Search {engine} for \"{raw}\""),
+            subtitle: format!("Open in {engine}"),
+            icon: None,
+        });
+        rows
     }
 
     /// Status bar data from the live sysfs/procfs pollers + `panels.control_state`

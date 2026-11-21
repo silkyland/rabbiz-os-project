@@ -269,13 +269,9 @@ fn poll_shell_im_bridge(de: &mut De) {
             crate::osk::ShellImEvent::Enter => {
                 de.shell_im.set_visible(false);
                 if de.nav.current == de_ui::nav::Screen::Search {
-                    let rows = de.search_rows();
-                    if let Some(first) = rows.first() {
-                        let id = first.id.clone();
-                        let size =
-                            de_api::Size::new(de.output.width as i32, de.output.height as i32);
-                        let rect = de_ui::search::icon_rect(size, &rows, 0);
-                        de.try_launch(&id, rect);
+                    let query = de.navigation.search_query.clone();
+                    if !query.trim().is_empty() {
+                        de.open_web_search(&query);
                     }
                 }
                 de.needs_present = true;

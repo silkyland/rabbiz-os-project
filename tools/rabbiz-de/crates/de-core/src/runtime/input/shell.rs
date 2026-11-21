@@ -114,6 +114,7 @@ impl De {
                         self.open_drawer_animated(None, 0.0);
                     }
                     Some(de_ui::home::HomeHit::Search) => {
+                        self.navigation.search_query.clear();
                         self.nav.go(Screen::Search);
                         self.shell_im.set_visible(true);
                         self.shell_dirty = true;
@@ -123,14 +124,18 @@ impl De {
                 }
             }
             Screen::Search => {
-                let ids = self
-                    .catalog
-                    .visible(self.app_prefs.prefs())
-                    .map(|e| e.id.clone())
-                    .collect::<Vec<_>>();
-                let rows = self.search_row_ids(&ids);
-                if let Some(i) = de_ui::search::hit_test(size, &rows, pos) {
-                    self.try_launch(&rows[i].id, de_ui::search::icon_rect(size, &rows, i));
+                let query = self.navigation.search_query.clone();
+                let rows = self.search_rows();
+                if let Some(i) = de_ui::search::hit_test_for_query(size, &query, &rows, pos) {
+                    if let Some(row) = rows.get(i) {
+                        if row.id == "web-search" {
+                            self.open_web_search(&query);
+                        } else {
+                            let rect =
+                                de_ui::search::icon_rect_for_query(size, &query, &rows, i);
+                            self.try_launch(&row.id, rect);
+                        }
+                    }
                 } else if pos.y < 180 {
                     self.shell_im.set_visible(true);
                 }
@@ -270,20 +275,57 @@ impl De {
         }
     }
 
-    /// `SearchRow` ids only (icon pixels are a render concern).
-    fn search_row_ids(&self, ids: &[String]) -> Vec<de_ui::search::SearchRow> {
-        ids.iter()
-            .map(|id| de_ui::search::SearchRow {
-                kind: de_ui::search::SearchKind::App,
-                id: id.clone(),
-                title: self
-                    .catalog
-                    .find(id)
-                    .map_or_else(|| id.clone(), |e| e.name.clone()),
-                subtitle: String::new(),
-                icon: None,
+    /// Open `query` in the configured default search engine (Google by default)
+    /// using the browser, then bring Chrome to the foreground if already open.
+    pub(crate) fn open_web_search(&mut self, query: &str) {
+        let q = query.trim();
+        if q.is_empty() {
+            return;
+        }
+        let url = de_config::prefs::search_url(&self.app_prefs.prefs().search_engine, q);
+        self.shell_im.set_visible(false);
+        self.navigation.search_query.clear();
+        self.shell_dirty = true;
+        self.needs_present = true;
+
+        let chrome = std::path::Path::new("/opt/google/chrome/google-chrome");
+        let mut cmd = if chrome.exists() {
+            let mut c = std::process::Command::new("setsid");
+            c.arg(chrome)
+                .args([
+                    "--disable-gpu",
+                    "--ozone-platform=wayland",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    "--touch-events=enabled",
+                    "--enable-pinch",
+                    "--force-device-scale-factor=1.25",
+                    "--disable-component-update",
+                    "--password-store=basic",
+                    "--enable-wayland-ime",
+                ])
+                .arg(&url);
+            c
+        } else {
+            let mut c = std::process::Command::new("setsid");
+            c.arg("xdg-open").arg(&url);
+            c
+        };
+        let _ = cmd
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn();
+
+        // If Chrome is already running, raise its existing window immediately.
+        if let Some(window) = self.recent_windows().into_iter().find(|w| {
+            w.toplevel().is_some_and(|t| {
+                let id = crate::snapshots::window_app_id(t).to_lowercase();
+                id.contains("chrome") || id.contains("browser")
             })
-            .collect()
+        }) {
+            self.show_app_window(&window);
+        }
     }
 
     /// Spawn an app through the launch contract; failures go to the error

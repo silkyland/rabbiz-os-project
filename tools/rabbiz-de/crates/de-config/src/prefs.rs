@@ -26,6 +26,53 @@ fn default_true() -> bool {
     true
 }
 
+fn default_search_engine() -> String {
+    "google".into()
+}
+
+/// Supported web search engines: `(id, display_name, query_url_prefix)`.
+pub const SEARCH_ENGINES: &[(&str, &str, &str)] = &[
+    ("google", "Google", "https://www.google.com/search?q="),
+    ("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q="),
+    ("yahoo", "Yahoo", "https://search.yahoo.com/search?p="),
+    ("live", "Live", "https://www.bing.com/search?q="),
+];
+
+/// Display name for a configured search engine id (falls back to Google).
+#[must_use]
+pub fn search_engine_label(id: &str) -> &'static str {
+    SEARCH_ENGINES
+        .iter()
+        .find(|(k, _, _)| k.eq_ignore_ascii_case(id))
+        .map_or("Google", |(_, name, _)| *name)
+}
+
+/// Build a properly percent-encoded search URL for `engine_id` and `query`.
+#[must_use]
+pub fn search_url(engine_id: &str, query: &str) -> String {
+    let prefix = SEARCH_ENGINES
+        .iter()
+        .find(|(k, _, _)| k.eq_ignore_ascii_case(engine_id))
+        .map_or("https://www.google.com/search?q=", |(_, _, url)| *url);
+    let mut out = String::with_capacity(prefix.len() + query.len() * 3);
+    out.push_str(prefix);
+    for &b in query.trim().as_bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(b as char);
+            }
+            b' ' => out.push('+'),
+            _ => {
+                const HEX: &[u8; 16] = b"0123456789ABCDEF";
+                out.push('%');
+                out.push(HEX[(b >> 4) as usize] as char);
+                out.push(HEX[(b & 0x0F) as usize] as char);
+            }
+        }
+    }
+    out
+}
+
 fn default_lock_method() -> String {
     DEFAULT_LOCK_METHOD.into()
 }
@@ -76,6 +123,9 @@ pub struct Prefs {
     /// Key-click sound on OSK key presses (on by default; read live by `rabbiz-osk`).
     #[serde(rename = "deOskSound", default = "default_true")]
     pub osk_sound: bool,
+    /// Default web search engine for global search (`google` | `duckduckgo` | `yahoo` | `live`).
+    #[serde(rename = "deSearchEngine", default = "default_search_engine")]
+    pub search_engine: String,
     /// Keyguard authentication method (`swipe` | `pin` | `passphrase` | `biometric`).
     #[serde(default = "default_lock_method")]
     pub lock_method: String,
@@ -105,6 +155,7 @@ impl Default for Prefs {
             allow_third_party_keyboards: true,
             osk_haptic: true,
             osk_sound: true,
+            search_engine: default_search_engine(),
             lock_method: default_lock_method(),
             lockscreen_notifications: default_lockscreen_notifications(),
             auto_rotate: true,
