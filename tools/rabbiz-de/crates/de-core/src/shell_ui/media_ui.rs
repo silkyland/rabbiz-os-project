@@ -122,8 +122,6 @@ impl De {
             return;
         }
         let model = de_ui::media::PillModel {
-            title: &snap.title,
-            artist: &snap.artist,
             playing: snap.playing,
             art: self.media.art(),
         };

@@ -271,27 +271,30 @@ where
     }
 
     // Now-playing pill centred in the status band (below the shade/lock).
-    if de.media.pill_tex.is_none() || de.media.pill_tex_generation != de.media.pill_generation {
-        if let Some(px) = de.media.pill_px.as_ref() {
-            de.media.pill_tex = upload_any(renderer, px);
-            de.media.pill_tex_generation = de.media.pill_generation;
+    // Shell surface only — the island must never float over an app's content.
+    if de.foreground == crate::state::Foreground::Shell {
+        if de.media.pill_tex.is_none() || de.media.pill_tex_generation != de.media.pill_generation {
+            if let Some(px) = de.media.pill_px.as_ref() {
+                de.media.pill_tex = upload_any(renderer, px);
+                de.media.pill_tex_generation = de.media.pill_generation;
+            }
         }
-    }
-    if let (Some(tex), Some(px)) = (
-        texture_buffer::<R>(de.media.pill_tex.as_ref()),
-        de.media.pill_px.as_ref(),
-    ) {
-        let r = de_ui::media::pill_rect(
-            de_api::Size::new(de.output.width as i32, de.output.height as i32),
-            px.size.w,
-        );
-        stack.push(
-            de_api::DisplayArea::SystemBars,
-            DeElement::from(tex_el::<R>(
-                tex,
-                Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
-            )),
-        );
+        if let (Some(tex), Some(px)) = (
+            texture_buffer::<R>(de.media.pill_tex.as_ref()),
+            de.media.pill_px.as_ref(),
+        ) {
+            let r = de_ui::media::pill_rect(
+                de_api::Size::new(de.output.width as i32, de.output.height as i32),
+                px.size.w,
+            );
+            stack.push(
+                de_api::DisplayArea::SystemBars,
+                DeElement::from(tex_el::<R>(
+                    tex,
+                    Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
+                )),
+            );
+        }
     }
 
     // Back-edge indicator and screenshot feedback in Overlay.

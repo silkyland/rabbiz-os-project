@@ -15,15 +15,19 @@ use crate::chrome;
 
 /// Capsule height inside the 56 px status band.
 pub const PILL_H: i32 = 40;
-const PILL_MIN_W: i32 = 200;
+/// Compact island: artwork left, equalizer right — no text, so the pill never
+/// outgrows the status band or collides with the clock/indicators.
+pub const PILL_W: i32 = 148;
 const ART: i32 = 30;
-const PAD: i32 = 6;
-const GAP: i32 = 12;
-const EQ_W: i32 = 28;
+const ART_PAD: i32 = 7;
+const EQ_BARS: usize = 5;
+const EQ_BAR_W: i32 = 5;
+const EQ_GAP: i32 = 5;
+const EQ_W: i32 = EQ_BARS as i32 * EQ_BAR_W + (EQ_BARS as i32 - 1) * EQ_GAP;
+const EQ_PAD: i32 = 14;
 
 const FILL: [u8; 4] = [0x0E, 0x0A, 0x12, 0xF2];
 const RIM: [u8; 4] = [0xFF, 0xFF, 0xFF, 0x22];
-const INK: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xFF];
 const INK_DIM: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xA8];
 
 // Material Icons codepoints.
@@ -32,18 +36,9 @@ const GLYPH_NOTE: &str = "\u{e405}";
 /// What the pill shows.
 #[derive(Debug, Clone, Copy)]
 pub struct PillModel<'a> {
-    pub title: &'a str,
-    pub artist: &'a str,
     pub playing: bool,
     /// Decoded album art (any size; scaled to the badge).
     pub art: Option<&'a Pixels>,
-}
-
-/// Widest the pill may grow on this output.
-#[must_use]
-pub fn pill_max_w(output: Size) -> i32 {
-    let side = if output.w > output.h { 560 } else { 420 };
-    side.min(output.w - 2 * tokens::PAGE_MARGIN).max(PILL_MIN_W)
 }
 
 /// Where a pill `width` px wide sits: horizontally centred in the status band.
@@ -57,37 +52,21 @@ pub fn pill_rect(output: Size, width: i32) -> Rect {
     )
 }
 
-/// Ping-pong marquee: dwell, scroll `overflow` px at 45 px/s, dwell, return.
+/// Equalizer bar heights (px, 5 bars) at `t_ms`; `max_h` is the tallest bar.
 #[must_use]
-pub fn marquee_offset(overflow: i32, t_ms: u64) -> i32 {
-    if overflow <= 0 {
-        return 0;
-    }
-    const DWELL: u64 = 1400;
-    let travel = (overflow as u64 * 1000 / 45).max(1);
-    let cycle = 2 * (DWELL + travel);
-    let t = t_ms % cycle;
-    let frac = if t < DWELL {
-        0.0
-    } else if t < DWELL + travel {
-        (t - DWELL) as f32 / travel as f32
-    } else if t < 2 * DWELL + travel {
-        1.0
-    } else {
-        1.0 - (t - 2 * DWELL - travel) as f32 / travel as f32
-    };
-    (overflow as f32 * frac).round() as i32
-}
-
-/// Equalizer bar heights (px, 4 bars) at `t_ms`; `max_h` is the tallest bar.
-#[must_use]
-pub fn eq_heights(t_ms: u64, max_h: i32) -> [i32; 4] {
+pub fn eq_heights(t_ms: u64, max_h: i32) -> [i32; EQ_BARS] {
     let t = t_ms as f32 / 1000.0;
     let bar = |speed: f32, off: f32| {
         let v = 0.5 + 0.5 * (t * speed + off).sin();
         (4.0 + (max_h - 4) as f32 * v).round() as i32
     };
-    [bar(7.1, 0.0), bar(9.3, 1.7), bar(6.2, 3.1), bar(8.4, 4.6)]
+    [
+        bar(7.1, 0.0),
+        bar(9.3, 1.7),
+        bar(5.7, 2.4),
+        bar(8.4, 3.8),
+        bar(6.6, 5.1),
+    ]
 }
 
 /// Crop-to-fill `art` into a `side`×`side` tile with `radius` corners.
@@ -134,78 +113,30 @@ pub fn art_tile(theme: &Theme, art: Option<&Pixels>, side: i32, radius: f32) -> 
     c.into_pixels()
 }
 
-fn line(m: &PillModel<'_>) -> String {
-    if m.artist.is_empty() {
-        m.title.to_string()
-    } else if m.title.is_empty() {
-        m.artist.to_string()
-    } else {
-        format!("{} \u{b7} {}", m.title, m.artist)
-    }
-}
-
-/// Render the pill at time `t_ms` (drives marquee + equalizer). Width adapts
-/// to the text up to [`pill_max_w`].
+/// Render the pill at time `t_ms` (drives the equalizer). Fixed [`PILL_W`]
+/// wide — artwork on the left, equalizer (or pause bars) on the right.
 #[must_use]
-pub fn render_pill(theme: &Theme, output: Size, m: &PillModel<'_>, t_ms: u64) -> Pixels {
-    let label_style = text::LabelStyle {
-        size: 20.0,
-        line_height: 26.0,
-        weight: 600,
-        color: INK,
-        ..text::LabelStyle::default()
-    };
-    let label = text::label(&line(m), label_style, None).map(|p| {
-        Pixels::new(
-            Size::new(p.width() as i32, p.height() as i32),
-            p.data().to_vec(),
-        )
-    });
-    let text_w = label.as_ref().map_or(0, |p| p.size.w);
-    let fixed = PAD + ART + GAP + GAP + EQ_W + GAP;
-    let w = (fixed + text_w)
-        .clamp(PILL_MIN_W, pill_max_w(output))
-        .max(PILL_MIN_W);
-    let view_w = w - fixed;
-
-    let mut c = Canvas::new(Size::new(w, PILL_H));
-    let body = Rect::new(0, 0, w, PILL_H);
+pub fn render_pill(theme: &Theme, _output: Size, m: &PillModel<'_>, t_ms: u64) -> Pixels {
+    let mut c = Canvas::new(Size::new(PILL_W, PILL_H));
+    let body = Rect::new(0, 0, PILL_W, PILL_H);
     c.fill_rounded_rect(body, tokens::RADIUS_PILL, RIM);
     c.fill_rounded_rect(
-        Rect::new(1, 1, w - 2, PILL_H - 2),
+        Rect::new(1, 1, PILL_W - 2, PILL_H - 2),
         tokens::RADIUS_PILL,
         FILL,
     );
 
-    let art_y = (PILL_H - ART) / 2;
     c.blit(
         &art_tile(theme, m.art, ART, ART as f32 / 2.0),
-        Point::new(PAD, art_y),
+        Point::new(ART_PAD, (PILL_H - ART) / 2),
     );
 
-    if let Some(label) = label {
-        let tx = PAD + ART + GAP;
-        let overflow = (text_w - view_w).max(0);
-        let off = marquee_offset(overflow, t_ms);
-        let ty = (PILL_H - label.size.h) / 2 + 2;
-        c.blit_region(
-            &label,
-            Rect::new(off, 0, view_w.min(text_w), label.size.h),
-            Point::new(tx, ty),
-        );
-        if overflow > 0 {
-            // Soft edge so clipped text fades instead of being sliced.
-            let edge = Rect::new(tx + view_w - 14, 3, 14, PILL_H - 6);
-            c.fill_rect(edge, [FILL[0], FILL[1], FILL[2], 0x90]);
-        }
-    }
-
-    let eq_x = w - PAD - GAP - EQ_W + 2;
-    let base_y = PILL_H / 2 + 9;
+    let eq_x = PILL_W - EQ_PAD - EQ_W;
+    let base_y = PILL_H / 2 + 10;
     if m.playing {
-        for (i, h) in eq_heights(t_ms, 18).into_iter().enumerate() {
+        for (i, h) in eq_heights(t_ms, 20).into_iter().enumerate() {
             c.fill_rounded_rect(
-                Rect::new(eq_x + i as i32 * 7, base_y - h, 4, h),
+                Rect::new(eq_x + i as i32 * (EQ_BAR_W + EQ_GAP), base_y - h, EQ_BAR_W, h),
                 2.0,
                 theme.accent_hi,
             );
@@ -213,7 +144,7 @@ pub fn render_pill(theme: &Theme, output: Size, m: &PillModel<'_>, t_ms: u64) ->
     } else {
         for i in 0..2 {
             c.fill_rounded_rect(
-                Rect::new(eq_x + 6 + i * 10, PILL_H / 2 - 8, 5, 16),
+                Rect::new(eq_x + EQ_W / 2 - 8 + i * 11, PILL_H / 2 - 10, 6, 20),
                 2.0,
                 INK_DIM,
             );
@@ -229,52 +160,36 @@ mod tests {
     const OUT: Size = Size::new(720, 1600);
 
     #[test]
-    fn marquee_dwells_then_ping_pongs() {
-        assert_eq!(marquee_offset(0, 123_456), 0);
-        assert_eq!(marquee_offset(90, 0), 0);
-        assert_eq!(marquee_offset(90, 1_000), 0);
-        // 90 px at 45 px/s = 2 s of travel after the 1.4 s dwell.
-        assert_eq!(marquee_offset(90, 1_400 + 1_000), 45);
-        assert_eq!(marquee_offset(90, 1_400 + 2_000 + 500), 90);
-        assert_eq!(marquee_offset(90, 1_400 + 2_000 + 1_400 + 1_000), 45);
-    }
-
-    #[test]
     fn eq_bars_stay_in_range_and_move() {
-        let a = eq_heights(0, 18);
-        let b = eq_heights(333, 18);
+        let a = eq_heights(0, 20);
+        let b = eq_heights(333, 20);
         assert_ne!(a, b);
         for h in a.into_iter().chain(b) {
-            assert!((4..=18).contains(&h));
+            assert!((4..=20).contains(&h));
         }
     }
 
     #[test]
-    fn pill_width_tracks_text_and_output() {
+    fn pill_is_compact_and_animates_only_while_playing() {
         let theme = &tokens::DARK;
-        let short = PillModel {
-            title: "A",
-            artist: "",
+        let playing = PillModel {
             playing: true,
             art: None,
         };
-        let long = PillModel {
-            title: "A very long song title that cannot possibly fit in the capsule",
-            artist: "Some Artist With A Long Name",
+        let paused = PillModel {
             playing: false,
             art: None,
         };
-        let s = render_pill(theme, OUT, &short, 0);
-        let l = render_pill(theme, OUT, &long, 0);
-        assert_eq!(s.size.h, PILL_H);
-        assert_eq!(s.size.w, PILL_MIN_W);
-        assert_eq!(l.size.w, pill_max_w(OUT));
-        // Landscape allows a wider capsule.
-        assert!(pill_max_w(Size::new(1600, 720)) > pill_max_w(OUT));
+        let p = render_pill(theme, OUT, &playing, 0);
+        assert_eq!(p.size, Size::new(PILL_W, PILL_H));
+        // Paused: static (no re-raster churn); playing: the eq moves.
+        assert_eq!(
+            render_pill(theme, OUT, &paused, 0).data,
+            render_pill(theme, OUT, &paused, 2_400).data
+        );
         assert_ne!(
-            render_pill(theme, OUT, &long, 0).data,
-            render_pill(theme, OUT, &long, 2_400).data,
-            "overflowing text scrolls"
+            render_pill(theme, OUT, &playing, 0).data,
+            render_pill(theme, OUT, &playing, 2_400).data
         );
     }
 
