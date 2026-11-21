@@ -69,7 +69,49 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
         } else {
             de.navigation.drawer_pull_y
         };
-        if de.nav.current == de_ui::nav::Screen::Drawer && slide_y > 0.5 {
+        if de.recents_layers_active() {
+            let pull = if de.navigation.nav_recents_active {
+                de.navigation.nav_recents_pull.value.clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            if pull < 0.999 {
+                if let Some(under) = de.navigation.home_underlay_px.as_ref() {
+                    canvas.blit(under, ApiPoint::ZERO);
+                } else {
+                    canvas.blit(shell, ApiPoint::ZERO);
+                }
+            }
+            if let Some(layers) = de.navigation.recents_layers.as_ref() {
+                let out_size = canvas.size();
+                let card_rise = ((1.0 - pull) * (out_size.h as f32 * 0.22)).round() as i32;
+                if pull > 0.0 {
+                    if let Some(bg) = layers.bg_px.as_ref() {
+                        canvas.blit_scaled(
+                            bg,
+                            de_api::Rect::new(0, 0, bg.size.w, bg.size.h),
+                            pull,
+                        );
+                    }
+                    let pos = de.navigation.recents_pager.pos();
+                    for (i, cache) in layers.cards.iter().enumerate() {
+                        let card = de_ui::recents::card_at(out_size, i, pos);
+                        if let Some(px) = cache.px.as_ref() {
+                            canvas.blit_scaled(
+                                px,
+                                de_api::Rect::new(
+                                    card.x,
+                                    card.y - de_ui::recents::CARD_HEADER_H + card_rise,
+                                    px.size.w,
+                                    px.size.h,
+                                ),
+                                pull,
+                            );
+                        }
+                    }
+                }
+            }
+        } else if de.nav.current == de_ui::nav::Screen::Drawer && slide_y > 0.5 {
             if let Some(under) = de.navigation.home_underlay_px.as_ref() {
                 canvas.blit(under, ApiPoint::ZERO);
             }

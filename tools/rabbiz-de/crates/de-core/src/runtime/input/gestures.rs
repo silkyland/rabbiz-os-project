@@ -47,7 +47,11 @@ impl De {
                 if dx.abs() > dy.abs() * 1.5 && dy > -24.0 {
                     return;
                 }
-                self.follow_home_drag(dx, dy, time_ms);
+                if self.foreground == Foreground::Shell && self.nav.current == Screen::Home {
+                    self.follow_nav_recents_drag(dy);
+                } else {
+                    self.follow_home_drag(dx, dy, time_ms);
+                }
                 return;
             }
             GestureEvent::Progress { zone, dx, dy } if zone != Zone::NavBar => {
@@ -159,7 +163,9 @@ impl De {
             }
             GestureEvent::NavPaused => {
                 crate::haptics::pulse(crate::haptics::HapticKind::RecentsHold);
-                if self.foreground == Foreground::Shell && self.nav.current == Screen::Home {
+                if self.navigation.nav_recents_active {
+                    self.hold_nav_recents_drag();
+                } else if self.foreground == Foreground::Shell && self.nav.current == Screen::Home {
                     self.show_shell(Screen::Recents);
                 } else {
                     self.nav_preview(true);
@@ -167,7 +173,9 @@ impl De {
                 return;
             }
             GestureEvent::NavResumed => {
-                if self.foreground == Foreground::Shell && self.nav.current == Screen::Recents {
+                if self.navigation.nav_recents_active {
+                    self.resume_nav_recents_drag();
+                } else if self.foreground == Foreground::Shell && self.nav.current == Screen::Recents {
                     self.show_shell(Screen::Home);
                 } else {
                     self.nav_preview(false);
@@ -182,6 +190,7 @@ impl De {
                         crate::haptics::pulse(crate::haptics::HapticKind::NavCommit);
                         if self.foreground == Foreground::Shell && self.nav.current == Screen::Home
                         {
+                            self.cancel_nav_recents_drag();
                             self.open_drawer_animated(None, vy);
                         } else if self.foreground == Foreground::App {
                             self.minimize_foreground();
@@ -190,10 +199,14 @@ impl De {
                         }
                     }
                     NavDestination::Recents => {
-                        self.show_shell(Screen::Recents);
+                        if !self.commit_nav_recents_drag() {
+                            self.show_shell(Screen::Recents);
+                        }
                     }
                     NavDestination::Cancel => {
-                        if self.foreground == Foreground::Shell
+                        if self.dismiss_nav_recents_drag() {
+                            // Sprung smoothly back to Home.
+                        } else if self.foreground == Foreground::Shell
                             && self.nav.current == Screen::Recents
                         {
                             self.show_shell(Screen::Home);
@@ -285,6 +298,7 @@ impl De {
                     self.card_dismiss_release(0.0, 0.0);
                     self.release_recents_pager(0.0);
                 }
+                self.dismiss_nav_recents_drag();
                 self.release_home_drag(false);
                 return;
             }

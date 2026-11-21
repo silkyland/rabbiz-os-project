@@ -125,6 +125,7 @@ impl Run {
         self.de.advance_morph(t0);
         self.de.advance_home(t0);
         self.de.advance_recents_fade(t0);
+        self.de.advance_nav_recents_drag(t0);
         self.de.advance_nav_bar(t0);
         if self.de.foreground == crate::state::Foreground::Shell
             && self.de.nav.current == de_ui::nav::Screen::Drawer
@@ -394,10 +395,15 @@ impl Run {
             && !self.de.navigation.drawer_dragging
             && !self.de.navigation.drawer_slide.settled())
         .then_some(now + interval);
+        let nav_recents_wake = (self.de.navigation.nav_recents_active
+            && !self.de.navigation.nav_recents_dragging
+            && !self.de.navigation.nav_recents_pull.settled())
+        .then_some(now + interval);
         let nav_bar_wake = (!self.de.navigation.nav_bar_active.settled()).then_some(now + interval);
         let shell_im_wake = run_de_shell_im_wake(self).then_some(now + Duration::from_millis(16));
         [
             shell_im_wake,
+            nav_recents_wake,
             nav_bar_wake,
             self.de.media.wake_at(interval),
             self.de.launch.deadline(),

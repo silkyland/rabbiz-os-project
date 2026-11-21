@@ -225,6 +225,11 @@ where
         if let Some(layers) = de.navigation.recents_layers.as_mut() {
             sync_recents_textures(renderer, layers);
         }
+        if de.navigation.nav_recents_active && de.navigation.home_underlay_tex.is_none() {
+            if let Some(px) = de.navigation.home_underlay_px.as_ref() {
+                de.navigation.home_underlay_tex = upload_any(renderer, px);
+            }
+        }
         push_recents_layers::<R>(
             &mut backdrop,
             de.navigation,
@@ -1070,14 +1075,21 @@ fn push_recents_layers<R: ImportAll>(
         return;
     };
     let pos = nav.recents_pager.pos();
+    let pull = if nav.nav_recents_active {
+        nav.nav_recents_pull.value.clamp(0.0, 1.0)
+    } else {
+        1.0
+    };
+    let card_rise = ((1.0 - pull) * (size.h as f32 * 0.22)).round() as i32;
     // Smithay consumes front-to-back: cards first, then static backdrop behind them.
     for (i, cache) in layers.cards.iter().enumerate() {
         let mut card = de_ui::recents::card_at(size, i, pos);
-        let mut alpha = 1.0;
+        let mut alpha = pull;
         if let Some(l) = lift.filter(|l| l.index == i) {
             card.y += l.dy.round() as i32;
-            alpha = l.alpha(size);
+            alpha *= l.alpha(size);
         }
+        card.y += card_rise;
         if card.x + card.w < 0 || card.x > size.w || card.y + card.h < 0 || alpha <= 0.0 {
             continue;
         }
@@ -1095,10 +1107,24 @@ fn push_recents_layers<R: ImportAll>(
             )));
         }
     }
-    if let Some(tex) = texture_buffer::<R>(layers.bg_tex.as_ref()) {
-        elements.push(DeElement::from(tex_el::<R>(
-            tex,
-            Point::<f64, Physical>::from((0.0, 0.0)),
-        )));
+    if pull > 0.0 {
+        if let Some(tex) = texture_buffer::<R>(layers.bg_tex.as_ref()) {
+            elements.push(DeElement::from(TextureRenderElement::from_texture_buffer(
+                Point::<f64, Physical>::from((0.0, 0.0)),
+                tex,
+                Some(pull),
+                None,
+                None,
+                Kind::Unspecified,
+            )));
+        }
+    }
+    if pull < 0.999 {
+        if let Some(home_tex) = texture_buffer::<R>(nav.home_underlay_tex.as_ref()) {
+            elements.push(DeElement::from(tex_el::<R>(
+                home_tex,
+                Point::<f64, Physical>::from((0.0, 0.0)),
+            )));
+        }
     }
 }

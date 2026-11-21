@@ -44,6 +44,12 @@ pub(crate) struct Navigation {
     pub nav_bar_active: SpringValue,
     pub nav_bar_last_tick: Option<Instant>,
     pub nav_bar_last_drawn: f32,
+    /// Finger-tracked Recents pull from Home (`0.0` Home → `1.0` Recents).
+    pub nav_recents_pull: SpringValue,
+    pub nav_recents_active: bool,
+    pub nav_recents_dragging: bool,
+    pub nav_recents_commit: bool,
+    pub nav_recents_last_tick: Option<Instant>,
 }
 
 pub(crate) struct RecentsCardCache {
@@ -102,6 +108,11 @@ impl Navigation {
             nav_bar_active: SpringValue::new(0.0, SpringPreset::Snappy, MotionKind::Effects),
             nav_bar_last_tick: None,
             nav_bar_last_drawn: -1.0,
+            nav_recents_pull: SpringValue::new(0.0, SpringPreset::Smooth, MotionKind::Spatial),
+            nav_recents_active: false,
+            nav_recents_dragging: false,
+            nav_recents_commit: false,
+            nav_recents_last_tick: None,
         }
     }
 }
@@ -142,6 +153,139 @@ impl De {
             self.navigation.nav_bar_active.snap();
         }
         self.needs_present = true;
+    }
+
+    /// Track an upward bottom-bar drag from Home so Recents rises live under
+    /// the finger instead of waiting for hold/release to appear.
+    pub(crate) fn follow_nav_recents_drag(&mut self, dy: f32) {
+        if self.motion_clock.motion_restricted() || self.panels.shown() || self.locked() {
+            return;
+        }
+        if !self.navigation.nav_recents_active {
+            if dy >= -12.0 {
+                return;
+            }
+            self.navigation.nav_recents_active = true;
+            self.navigation.nav_recents_dragging = true;
+            self.navigation.nav_recents_commit = false;
+            self.navigation.nav_recents_last_tick = None;
+            self.reset_recents_pager();
+            self.prepare_recents_backdrop();
+            self.navigation.recents_layers = None;
+        }
+        if !self.navigation.nav_recents_dragging {
+            return;
+        }
+        let travel = (self.output.height.max(1) as f32 * 0.24).max(1.0);
+        let progress = (-dy / travel).clamp(0.0, 1.0);
+        self.navigation.nav_recents_pull.value = progress;
+        self.navigation.nav_recents_pull.target = progress;
+        self.navigation.nav_recents_pull.velocity = 0.0;
+        self.needs_present = true;
+    }
+
+    /// Finger paused during Home→Recents drag: settle preview to 1.0 while held.
+    pub(crate) fn hold_nav_recents_drag(&mut self) {
+        if !self.navigation.nav_recents_active {
+            return;
+        }
+        self.navigation.nav_recents_dragging = false;
+        self.navigation.nav_recents_pull.retarget(1.0);
+        self.navigation.nav_recents_last_tick = Some(Instant::now());
+        self.needs_present = true;
+    }
+
+    /// Finger resumed moving after pause: hand tracking back to the finger.
+    pub(crate) fn resume_nav_recents_drag(&mut self) {
+        if !self.navigation.nav_recents_active {
+            return;
+        }
+        self.navigation.nav_recents_dragging = true;
+        self.navigation.nav_recents_commit = false;
+        self.navigation.nav_recents_last_tick = None;
+        self.needs_present = true;
+    }
+
+    /// Finger lifted with Recents destination: spring to 1.0 and commit Screen::Recents.
+    pub(crate) fn commit_nav_recents_drag(&mut self) -> bool {
+        if !self.navigation.nav_recents_active {
+            return false;
+        }
+        self.navigation.nav_recents_dragging = false;
+        self.navigation.nav_recents_commit = true;
+        self.navigation.nav_recents_pull.retarget(1.0);
+        self.navigation.nav_recents_last_tick = Some(Instant::now());
+        self.needs_present = true;
+        true
+    }
+
+    /// Finger lifted with Cancel destination: spring back to Home.
+    pub(crate) fn dismiss_nav_recents_drag(&mut self) -> bool {
+        if !self.navigation.nav_recents_active {
+            return false;
+        }
+        self.navigation.nav_recents_dragging = false;
+        self.navigation.nav_recents_commit = false;
+        self.navigation.nav_recents_pull.retarget(0.0);
+        self.navigation.nav_recents_last_tick = Some(Instant::now());
+        self.needs_present = true;
+        true
+    }
+
+    /// Immediately clear an in-flight Home→Recents drag (e.g. fast fling to Drawer).
+    pub(crate) fn cancel_nav_recents_drag(&mut self) {
+        self.navigation.nav_recents_active = false;
+        self.navigation.nav_recents_dragging = false;
+        self.navigation.nav_recents_commit = false;
+        self.navigation.nav_recents_last_tick = None;
+        self.navigation.nav_recents_pull.value = 0.0;
+        self.navigation.nav_recents_pull.target = 0.0;
+        self.navigation.nav_recents_pull.velocity = 0.0;
+    }
+
+    /// Advance the Home→Recents pull spring and finalize the screen handoff.
+    pub(crate) fn advance_nav_recents_drag(&mut self, now: Instant) {
+        if !self.navigation.nav_recents_active || self.navigation.nav_recents_dragging {
+            self.navigation.nav_recents_last_tick = None;
+            return;
+        }
+        if !self.navigation.nav_recents_pull.settled() {
+            let dt = self
+                .navigation
+                .nav_recents_last_tick
+                .replace(now)
+                .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
+            self.navigation
+                .nav_recents_pull
+                .advance(dt, &self.motion_clock);
+            if (self.navigation.nav_recents_pull.target - self.navigation.nav_recents_pull.value)
+                .abs()
+                < 0.005
+                && self.navigation.nav_recents_pull.velocity.abs() < 0.05
+            {
+                self.navigation.nav_recents_pull.snap();
+            }
+            self.needs_present = true;
+        }
+        if self.navigation.nav_recents_pull.settled() {
+            self.navigation.nav_recents_last_tick = None;
+            if self.navigation.nav_recents_pull.target >= 0.5 {
+                if self.navigation.nav_recents_commit {
+                    self.navigation.nav_recents_active = false;
+                    self.navigation.nav_recents_commit = false;
+                    self.navigation.recents_from_app = false;
+                    self.foreground = Foreground::Shell;
+                    self.nav.current = de_ui::nav::Screen::Recents;
+                    self.focus_foreground();
+                    self.shell_dirty = true;
+                    self.needs_present = true;
+                }
+            } else {
+                self.navigation.nav_recents_active = false;
+                self.navigation.nav_recents_commit = false;
+                self.needs_present = true;
+            }
+        }
     }
 }
 
@@ -564,10 +708,11 @@ impl De {
     }
 
     pub(crate) fn recents_layers_active(&self) -> bool {
-        self.foreground == Foreground::Shell
+        (self.foreground == Foreground::Shell
             && self.nav.current == de_ui::nav::Screen::Recents
             && self.morph.is_none()
-            && self.navigation.recents_fade.is_none()
+            && self.navigation.recents_fade.is_none())
+            || self.navigation.nav_recents_active
     }
 
     /// Prepare cached GPU textures for the Recents carousel so horizontal swipes
