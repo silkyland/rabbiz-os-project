@@ -594,20 +594,63 @@ impl De {
         self.panel_touch();
     }
 
+    /// Long-press on a Quick Settings tile (Wi-Fi / Bluetooth) opens Settings
+    /// directly to that connectivity section.
+    pub(crate) fn panel_long_press(&mut self, pos: de_api::Point) {
+        if self.panels.kind != PanelKind::Quick {
+            return;
+        }
+        let size = de_api::Size::new(self.output.width as i32, self.output.height as i32);
+        let section = match de_ui::panels::quick_hit(size, pos) {
+            Some(QuickHit::Tile(0)) => Some("wifi"),
+            Some(QuickHit::Tile(1)) => Some("bluetooth"),
+            _ => None,
+        };
+        if let Some(sec) = section {
+            self.panel_close();
+            let _ = std::process::Command::new("setsid")
+                .args(["rabbiz-settings", "--open", sec])
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn();
+            self.needs_present = true;
+        }
+    }
+
     fn quick_model(&self) -> QuickModel {
         let s = &self.strings;
         let tiles = TILES
             .iter()
             .enumerate()
-            .map(|(i, d)| QuickTile {
-                id: d.id,
-                label: s.get(d.label).to_owned(),
-                glyph: d.glyph,
-                on: self.panels.on[i],
-                available: self.panels.available[i],
-                detail: s
-                    .get(if self.panels.on[i] { "qs.on" } else { "qs.off" })
-                    .to_owned(),
+            .map(|(i, d)| {
+                let detail = if self.panels.on[i] {
+                    match d.id {
+                        "wifi" => self
+                            .panels
+                            .control_state
+                            .wifi_ssid
+                            .clone()
+                            .unwrap_or_else(|| s.get("qs.on").to_owned()),
+                        "bluetooth" => self
+                            .panels
+                            .control_state
+                            .bt_device
+                            .clone()
+                            .unwrap_or_else(|| s.get("qs.on").to_owned()),
+                        _ => s.get("qs.on").to_owned(),
+                    }
+                } else {
+                    s.get("qs.off").to_owned()
+                };
+                QuickTile {
+                    id: d.id,
+                    label: s.get(d.label).to_owned(),
+                    glyph: d.glyph,
+                    on: self.panels.on[i],
+                    available: self.panels.available[i],
+                    detail,
+                }
             })
             .collect();
         QuickModel {

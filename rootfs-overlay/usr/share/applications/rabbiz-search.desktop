@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Search
+Comment=Search apps and the web
+Exec=rabbiz-search
+Icon=system-search
+Categories=Utility;
+StartupNotify=false

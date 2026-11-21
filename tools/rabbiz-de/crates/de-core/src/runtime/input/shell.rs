@@ -114,11 +114,24 @@ impl De {
                         self.open_drawer_animated(None, 0.0);
                     }
                     Some(de_ui::home::HomeHit::Search) => {
-                        self.navigation.search_query.clear();
-                        self.nav.go(Screen::Search);
-                        self.shell_im.set_visible(true);
-                        self.shell_dirty = true;
-                        self.needs_present = true;
+                        if self.catalog.find("rabbiz-search").is_some() {
+                            self.try_launch("rabbiz-search", None);
+                        } else if std::process::Command::new("setsid")
+                            .arg("rabbiz-search")
+                            .stdin(std::process::Stdio::null())
+                            .stdout(std::process::Stdio::null())
+                            .stderr(std::process::Stdio::null())
+                            .spawn()
+                            .is_ok()
+                        {
+                            self.needs_present = true;
+                        } else {
+                            self.navigation.search_query.clear();
+                            self.nav.go(Screen::Search);
+                            self.shell_im.set_visible(true);
+                            self.shell_dirty = true;
+                            self.needs_present = true;
+                        }
                     }
                     None => {}
                 }

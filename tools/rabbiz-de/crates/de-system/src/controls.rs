@@ -11,7 +11,9 @@ use std::{
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Snapshot {
     pub wifi: Option<bool>,
+    pub wifi_ssid: Option<String>,
     pub bluetooth: Option<bool>,
+    pub bt_device: Option<String>,
     pub airplane: Option<bool>,
     pub flashlight: Option<bool>,
     pub battery_saver: Option<bool>,
@@ -154,10 +156,36 @@ fn poll() -> Snapshot {
             "disabled" => Some(false),
             _ => None,
         });
+    let wifi_ssid = if wifi == Some(true) {
+        output("nmcli", &["-t", "-f", "active,ssid", "dev", "wifi"])
+            .ok()
+            .and_then(|s| {
+                s.lines()
+                    .find_map(|l| l.strip_prefix("yes:"))
+                    .map(|ssid| ssid.trim().to_string())
+                    .filter(|ssid| !ssid.is_empty())
+            })
+    } else {
+        None
+    };
     let bluetooth = output("bluetoothctl", &["show"]).ok().and_then(|s| {
         s.lines()
             .find_map(|l| l.trim().strip_prefix("Powered:").map(|v| v.trim() == "yes"))
     });
+    let bt_device = if bluetooth == Some(true) {
+        output("bluetoothctl", &["devices", "Connected"])
+            .ok()
+            .and_then(|s| {
+                s.lines().find_map(|l| {
+                    let rest = l.trim().strip_prefix("Device ")?;
+                    let (_, name) = rest.split_once(' ')?;
+                    let name = name.trim();
+                    (!name.is_empty()).then(|| name.to_string())
+                })
+            })
+    } else {
+        None
+    };
     let airplane = match (rfkill("wlan"), rfkill("bluetooth")) {
         (Some(w), Some(b)) => Some(w && b),
         _ => None,
@@ -211,7 +239,9 @@ fn poll() -> Snapshot {
     };
     Snapshot {
         wifi,
+        wifi_ssid,
         bluetooth,
+        bt_device,
         airplane,
         flashlight,
         battery_saver,

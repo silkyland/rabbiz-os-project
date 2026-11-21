@@ -33,6 +33,7 @@ fn default_search_engine() -> String {
 /// Supported web search engines: `(id, display_name, query_url_prefix)`.
 pub const SEARCH_ENGINES: &[(&str, &str, &str)] = &[
     ("google", "Google", "https://www.google.com/search?q="),
+    ("perplexity", "Perplexity", "https://www.perplexity.ai/search?q="),
     ("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/?q="),
     ("yahoo", "Yahoo", "https://search.yahoo.com/search?p="),
     ("live", "Live", "https://www.bing.com/search?q="),

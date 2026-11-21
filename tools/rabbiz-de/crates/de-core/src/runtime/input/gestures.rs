@@ -406,7 +406,9 @@ impl De {
             // until the drawer action sheet lands.
             Gesture::LongPress { pos } => {
                 crate::haptics::pulse(crate::haptics::HapticKind::LongPress);
-                if !self.home_lift_icon(pos) {
+                if self.panels.shown() {
+                    self.panel_long_press(pos);
+                } else if !self.home_lift_icon(pos) {
                     self.open_home_menu(pos);
                 }
             }
