@@ -1,0 +1,116 @@
+Subject: [PATCH] drm/exynos850-decon: keep win0 mapcolor on disable and start DECON before DSIM
+
+On compositor teardown (e.g. systemctl restart rabbiz-session.service),
+drm_fb_release() disables attached planes via decon850_disable_plane().
+Clearing WIN_EN(0) leaves DECON with zero active windows, starving the
+video-mode DSIM link (DSIM_INT_UNDER_RUN -> vblank wait timed out ->
+DECON timeout -> permanent black screen until reboot).
+
+Also, on cold enable, deferring decon850_start() until atomic_flush()
+lets dsim850_atomic_enable() start HS video mode before DECON outputs
+any pixels.
+
+Fix both:
+1. Keep window 0 enabled with WIN_MAPCOLOR_EN(0) (solid black fill, no
+   IDMA reads) when plane 0 is disabled, so DECON continues feeding
+   valid frames to DSIM.
+2. Start DECON at the end of decon850_atomic_enable() on cold start.
+
+diff --git a/drivers/gpu/drm/exynos/exynos850_drm_decon.c b/drivers/gpu/drm/exynos/exynos850_drm_decon.c
+index c00ce7b702..0e01620b01 100644
+--- a/drivers/gpu/drm/exynos/exynos850_drm_decon.c
++++ b/drivers/gpu/drm/exynos/exynos850_drm_decon.c
+@@ -85,8 +85,6 @@ struct decon850_context {
+ 
+ 	/* left running by the bootloader, adopt it on the first enable */
+ 	bool				boot_on;
+-	/* configured but not started, start it on the next flush */
+-	bool				start_pending;
+ };
+ 
+ /*
+@@ -410,7 +408,20 @@ static void decon850_disable_plane(struct exynos_drm_crtc *crtc,
+ {
+ 	struct decon850_context *ctx = crtc->ctx;
+ 
+-	decon_set_bits(ctx, DECON_DATA_PATH_CONTROL_0, WIN_EN(plane->index), 0);
++	if (plane->index == 0) {
++		/*
++		 * Keep window 0 active with MAPCOLOR (solid fill, no IDMA
++		 * reads) so DECON never runs with zero enabled windows and
++		 * starves the video-mode DSIM link on compositor teardown.
++		 */
++		decon_set_bits(ctx, DECON_DATA_PATH_CONTROL_0,
++			       WIN_EN(0) | WIN_MAPCOLOR_EN(0),
++			       WIN_EN(0) | WIN_MAPCOLOR_EN(0));
++	} else {
++		decon_set_bits(ctx, DECON_DATA_PATH_CONTROL_0,
++			       WIN_EN(plane->index) |
++			       WIN_MAPCOLOR_EN(plane->index), 0);
++	}
+ }
+ 
+ /* bring-up: remove */
+@@ -440,13 +451,6 @@ static void decon850_atomic_flush(struct exynos_drm_crtc *crtc)
+ 	struct drm_crtc *drm_crtc = &crtc->base;
+ 	unsigned long flags;
+ 
+-	if (ctx->start_pending) {
+-		/* The windows are configured now, DECON may start. */
+-		ctx->start_pending = false;
+-		decon850_start(ctx);
+-		decon850_dump(ctx, "cold");
+-	}
+-
+ 	spin_lock_irqsave(&ctx->lock, flags);
+ 
+ 	decon_set_bits(ctx, DECON_SHADOW_REG_UPDATE_REQ,
+@@ -467,12 +471,13 @@ static void decon850_atomic_enable(struct exynos_drm_crtc *crtc)
+ {
+ 	struct decon850_context *ctx = crtc->ctx;
+ 	const struct drm_display_mode *mode = &crtc->base.state->adjusted_mode;
++	bool boot_was_on = ctx->boot_on;
+ 	unsigned int win;
+ 	int ret;
+ 
+ 	dev_info(ctx->dev, "bring-up: atomic_enable: %s\n",
+-		 ctx->boot_on ? "adopting boot state" : "cold start");
+-	if (ctx->boot_on) {
++		 boot_was_on ? "adopting boot state" : "cold start");
++	if (boot_was_on) {
+ 		/* Clocks and the runtime PM reference are held since probe. */
+ 		ctx->boot_on = false;
+ 		decon850_set_size(ctx, mode);
+@@ -483,7 +488,6 @@ static void decon850_atomic_enable(struct exynos_drm_crtc *crtc)
+ 			return;
+ 		}
+ 		decon850_init(ctx, mode);
+-		ctx->start_pending = true;
+ 	}
+ 
+ 	for (win = 0; win < DECON_WINDOWS_NR; win++)
+@@ -499,6 +503,16 @@ static void decon850_atomic_enable(struct exynos_drm_crtc *crtc)
+ 		       DPU_INT_EN | DPU_EXTRA_INT_EN, ~0);
+ 	enable_irq(ctx->irq_frame_start);
+ 	enable_irq(ctx->irq_extra);
++
++	if (!boot_was_on) {
++		/*
++		 * Start DECON before dsim850_atomic_enable() turns on HS video
++		 * mode, so DSIM sees a continuous pixel stream (black
++		 * background while windows are off) instead of an underrun.
++		 */
++		decon850_start(ctx);
++		decon850_dump(ctx, "cold");
++	}
+ }
+ 
+ static void decon850_atomic_disable(struct exynos_drm_crtc *crtc)
+@@ -515,7 +529,6 @@ static void decon850_atomic_disable(struct exynos_drm_crtc *crtc)
+ 	decon_write(ctx, DECON_DATA_PATH_CONTROL_0, 0);
+ 
+ 	decon850_stop(ctx);
+-	ctx->start_pending = false;
+ 
+ 	spin_lock_irqsave(&ctx->lock, flags);
+ 	if (ctx->event) {
