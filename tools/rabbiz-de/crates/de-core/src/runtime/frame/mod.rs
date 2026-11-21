@@ -198,14 +198,6 @@ impl Run {
             self.de.navigation.recents_last_tick = None;
         }
         self.de.advance_card_dismiss(t0);
-        if self.de.foreground == crate::state::Foreground::Shell
-            && self.de.nav.current == de_ui::nav::Screen::Recents
-            && self.de.morph.is_none()
-            && self.de.navigation.card_dismiss.is_none()
-            && self.de.recent_windows().is_empty()
-        {
-            self.de.show_shell(de_ui::nav::Screen::Home);
-        }
         self.de.advance_panel(t0);
         self.de.power.advance(t0);
         self.de.advance_lock(t0);
