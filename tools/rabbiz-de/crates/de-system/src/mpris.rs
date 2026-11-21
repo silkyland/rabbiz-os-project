@@ -44,6 +44,7 @@ pub enum MediaCommand {
     PlayPause,
     Next,
     Previous,
+    Raise,
 }
 
 /// Validate an `mpris:artUrl` value against `allowed_roots`.
@@ -253,7 +254,7 @@ const ROOT_IFACE: &str = "org.mpris.MediaPlayer2";
 pub struct Mpris {
     tracker: Arc<Mutex<MprisTracker>>,
     generation: Arc<AtomicU64>,
-    commands: mpsc::Sender<MediaCommand>,
+    commands: mpsc::Sender<(String, MediaCommand)>,
 }
 
 impl Mpris {
@@ -291,14 +292,21 @@ impl Mpris {
 
     /// Forward a transport command to the active player, asynchronously.
     pub fn request(&self, command: MediaCommand) {
-        let _ = self.commands.send(command);
+        if let Some(player) = self.active() {
+            self.request_for(&player.bus_name, command);
+        }
+    }
+
+    /// Address the player whose snapshot the user interacted with.
+    pub fn request_for(&self, bus: &str, command: MediaCommand) {
+        let _ = self.commands.send((bus.to_owned(), command));
     }
 }
 
 fn worker(
     tracker: &Mutex<MprisTracker>,
     generation: &AtomicU64,
-    rx: &mpsc::Receiver<MediaCommand>,
+    rx: &mpsc::Receiver<(String, MediaCommand)>,
 ) {
     let roots: Vec<PathBuf> = std::env::var_os("XDG_CACHE_HOME")
         .map(PathBuf::from)
@@ -311,9 +319,9 @@ fn worker(
     let mut last: Option<MediaSnapshot> = None;
     let mut tick: u64 = 0;
     loop {
-        while let Ok(cmd) = rx.try_recv() {
+        while let Ok((bus, cmd)) = rx.try_recv() {
             if let Some(c) = conn.as_ref() {
-                send_command(c, tracker, cmd);
+                send_command(c, &bus, cmd);
             }
         }
         if conn.is_none() {
@@ -426,21 +434,15 @@ fn read_player(
     })
 }
 
-fn send_command(conn: &blocking::Connection, tracker: &Mutex<MprisTracker>, cmd: MediaCommand) {
-    let bus = tracker
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .active()
-        .map(|s| s.bus_name.clone());
-    let Some(bus) = bus else { return };
-    let method = match cmd {
-        MediaCommand::PlayPause => "PlayPause",
-        MediaCommand::Next => "Next",
-        MediaCommand::Previous => "Previous",
+fn send_command(conn: &blocking::Connection, bus: &str, cmd: MediaCommand) {
+    let (iface, method) = match cmd {
+        MediaCommand::PlayPause => (PLAYER_IFACE, "PlayPause"),
+        MediaCommand::Next => (PLAYER_IFACE, "Next"),
+        MediaCommand::Previous => (PLAYER_IFACE, "Previous"),
+        MediaCommand::Raise => (ROOT_IFACE, "Raise"),
     };
-    let proxy = blocking::Proxy::new(conn, bus.as_str(), PLAYER_PATH, PLAYER_IFACE);
-    if let Ok(p) = proxy {
-        let _: Result<(), _> = p.call(method, &());
+    if let Ok(proxy) = blocking::Proxy::new(conn, bus, PLAYER_PATH, iface) {
+        let _: Result<(), _> = proxy.call(method, &());
     }
 }
 

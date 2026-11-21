@@ -37,7 +37,12 @@ impl std::error::Error for ImageError {}
 /// `de-api` contract.
 pub fn decode_png(bytes: &[u8]) -> Result<Pixels, ImageError> {
     let decoder = Decoder::new(std::io::Cursor::new(bytes));
-    let mut reader = decoder.read_info().map_err(ImageError::Png)?;
+    decode_png_pixels(decoder.read_info().map_err(ImageError::Png)?)
+}
+
+fn decode_png_pixels(
+    mut reader: png::Reader<std::io::Cursor<&[u8]>>,
+) -> Result<Pixels, ImageError> {
     let mut buf = vec![0; reader.output_buffer_size().unwrap_or(0)];
     let info = reader.next_frame(&mut buf).map_err(ImageError::Png)?;
     buf.truncate(info.buffer_size());
@@ -92,6 +97,36 @@ pub fn decode_png(bytes: &[u8]) -> Result<Pixels, ImageError> {
         }
     }
     Ok(Pixels { size, data })
+}
+
+/// Decode local album artwork, including JPEG covers and palette PNGs.
+#[must_use]
+pub fn decode_album_art(bytes: &[u8]) -> Option<Pixels> {
+    const MAX_SIDE: usize = 2048;
+    if bytes.starts_with(&[0xFF, 0xD8]) {
+        use zune_jpeg::zune_core::{colorspace::ColorSpace, options::DecoderOptions};
+        let options = DecoderOptions::default()
+            .set_max_width(MAX_SIDE)
+            .set_max_height(MAX_SIDE)
+            .jpeg_set_out_colorspace(ColorSpace::RGBA);
+        let mut decoder =
+            zune_jpeg::JpegDecoder::new_with_options(std::io::Cursor::new(bytes), options);
+        decoder.decode_headers().ok()?;
+        if decoder.output_colorspace()? != ColorSpace::RGBA {
+            return None;
+        }
+        let info = decoder.info()?;
+        let size = Size::new(i32::from(info.width), i32::from(info.height));
+        return Some(Pixels::new(size, decoder.decode().ok()?));
+    }
+    let mut decoder = Decoder::new(std::io::Cursor::new(bytes));
+    decoder.set_transformations(png::Transformations::normalize_to_color8());
+    let reader = decoder.read_info().ok()?;
+    let info = reader.info();
+    if info.width > MAX_SIDE as u32 || info.height > MAX_SIDE as u32 {
+        return None;
+    }
+    decode_png_pixels(reader).ok()
 }
 
 /// Encode premultiplied pixels to PNG (un-premultiplies alpha first).

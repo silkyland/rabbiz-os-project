@@ -104,26 +104,7 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
     // SystemBars: gesture bar sits above App/Shell and below ABOVE_WINDOWS/OSK/Panels.
     let bar = de_ui::nav_bar::gesture_bar(canvas.size());
     canvas.blit(&bar, ApiPoint::new(0, canvas.size().h - bar.size.h));
-    if de.foreground == Foreground::Shell {
-        if de.media.open_t <= 0.0 {
-            if let Some(px) = de.media.pill_px.as_ref() {
-                let r = de_ui::media::pill_rect(canvas.size(), px.size.w);
-                canvas.blit(px, ApiPoint::new(r.x, r.y));
-            }
-        }
-        if de.media.open_t > 0.0 {
-            if let Some(px) = de.media.card_px.as_ref() {
-                let r = de_ui::media::morph_rect(canvas.size(), de.media.open_t);
-                canvas.blit_scaled(px, r, de.media.open_t);
-            }
-        }
-    }
 
-    blit_layers(
-        &mut canvas,
-        &map,
-        de_protocols::layer_shell::ABOVE_WINDOWS.iter().rev(),
-    );
     // Overlays the renderer draws as textures: the paging home layers, the
     // notification/quick panel. Captures must show what is on the display.
     if de.home_layers_active() {
@@ -131,6 +112,17 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
             canvas.blit(&px, ApiPoint::ZERO);
         }
     }
+    if de.media_on_home() {
+        if let Some(px) = de.media.surface_px.as_ref() {
+            let r = de.media.rect(canvas.size());
+            canvas.blit(px, ApiPoint::new(r.x, r.y));
+        }
+    }
+    blit_layers(
+        &mut canvas,
+        &map,
+        de_protocols::layer_shell::ABOVE_WINDOWS.iter().rev(),
+    );
     if let (true, Some(px)) = (de.panels.pull.shown(), de.panels.active_pixels()) {
         let f = de.panels.pull.frac().clamp(0.0, 1.0);
         let y = (-(1.0 - f) * px.size.h as f32).round() as i32;
@@ -174,20 +166,7 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
             canvas.blit(px, ApiPoint::new(r.x, r.y));
         }
     }
-    if de.foreground == Foreground::Shell {
-        if de.media.open_t <= 0.0 {
-            if let Some(px) = de.media.pill_px.as_ref() {
-                let r = de_ui::media::pill_rect(out_size, px.size.w);
-                canvas.blit(px, ApiPoint::new(r.x, r.y));
-            }
-        }
-        if de.media.open_t > 0.0 {
-            if let Some(px) = de.media.card_px.as_ref() {
-                let r = de_ui::media::morph_rect(out_size, de.media.open_t);
-                canvas.blit_scaled(px, r, de.media.open_t);
-            }
-        }
-    }
+
     if de.lock.shown() {
         if let Some(px) = de.lock.px.as_ref() {
             let x = de.lock.shake_x(now).round() as i32;

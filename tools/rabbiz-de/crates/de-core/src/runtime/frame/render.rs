@@ -189,6 +189,20 @@ where
         let output = de_api::Rect::new(0, 0, de.output.width as i32, de.output.height as i32);
         push_morph_elements(&mut backdrop, renderer, morph, output, de.now);
     }
+    // Home status chrome is part of the shell backdrop, under layer-shell surfaces.
+    if let Some(px) = de.media.surface_px.as_ref() {
+        if de.media.surface_tex.is_none() || de.media.surface_tex_generation != de.media.surface_generation {
+            de.media.surface_tex = upload_any(renderer, px);
+            de.media.surface_tex_generation = de.media.surface_generation;
+        }
+        if let Some(tex) = texture_buffer::<R>(de.media.surface_tex.as_ref()) {
+            let r = de.media.rect(de_api::Size::new(de.output.width as i32, de.output.height as i32));
+            backdrop.push(DeElement::from(tex_el::<R>(
+                tex,
+                Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
+            )));
+        }
+    }
     if show_app {
         push_window_elements(&mut backdrop, renderer, de.space);
     } else if de.layered && de.home.layers_key().is_some() {
@@ -268,64 +282,6 @@ where
             de_api::DisplayArea::SystemBars,
             DeElement::from(tex_el::<R>(tex, Point::<f64, Physical>::from((0.0, bar_y)))),
         );
-    }
-
-    // Now-playing pill centred in the status band (below the shade/lock).
-    // Shell surface only — the island must never float over an app's content.
-    if de.foreground == crate::state::Foreground::Shell {
-        if de.media.pill_tex.is_none() || de.media.pill_tex_generation != de.media.pill_generation {
-            if let Some(px) = de.media.pill_px.as_ref() {
-                de.media.pill_tex = upload_any(renderer, px);
-                de.media.pill_tex_generation = de.media.pill_generation;
-            }
-        }
-        // The card texture morphs out of the pill's slot; while it is on the
-        // way the standalone pill is hidden so the two don't double-draw.
-        if de.media.open_t <= 0.0 {
-            if let (Some(tex), Some(px)) = (
-                texture_buffer::<R>(de.media.pill_tex.as_ref()),
-                de.media.pill_px.as_ref(),
-            ) {
-                let r = de_ui::media::pill_rect(
-                    de_api::Size::new(de.output.width as i32, de.output.height as i32),
-                    px.size.w,
-                );
-                stack.push(
-                    de_api::DisplayArea::SystemBars,
-                    DeElement::from(tex_el::<R>(
-                        tex,
-                        Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
-                    )),
-                );
-            }
-        }
-        if de.media.open_t > 0.0 {
-            if de.media.card_tex.is_none()
-                || de.media.card_tex_generation != de.media.card_generation
-            {
-                if let Some(px) = de.media.card_px.as_ref() {
-                    de.media.card_tex = upload_any(renderer, px);
-                    de.media.card_tex_generation = de.media.card_generation;
-                }
-            }
-            if let Some(tex) = texture_buffer::<R>(de.media.card_tex.as_ref()) {
-                let r = de_ui::media::morph_rect(
-                    de_api::Size::new(de.output.width as i32, de.output.height as i32),
-                    de.media.open_t,
-                );
-                stack.push(
-                    de_api::DisplayArea::SystemBars,
-                    DeElement::from(TextureRenderElement::from_texture_buffer(
-                        Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
-                        tex,
-                        Some(de.media.open_t),
-                        None,
-                        Some(smithay::utils::Size::from((r.w, r.h))),
-                        smithay::backend::renderer::element::Kind::Unspecified,
-                    )),
-                );
-            }
-        }
     }
 
     // Back-edge indicator and screenshot feedback in Overlay.

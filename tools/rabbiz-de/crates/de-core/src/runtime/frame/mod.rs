@@ -231,6 +231,7 @@ impl Run {
             self.de.needs_present = true;
         }
         self.de.hun_prepare(size);
+        self.de.media_frame(t0);
         // Shell surface: re-raster on dirty or when the clock minute rolls.
         let minute = minute_of_day();
         // While the pager moves the home screen is drawn from layers (see
@@ -386,6 +387,7 @@ impl Run {
         let shell_im_wake = run_de_shell_im_wake(self).then_some(now + Duration::from_millis(16));
         [
             shell_im_wake,
+            self.de.media.wake_at(interval),
             self.de.launch.deadline(),
             self.de
                 .morph

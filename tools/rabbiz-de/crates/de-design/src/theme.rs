@@ -91,62 +91,62 @@ const COPPER_DARK: AccentColors = AccentColors {
     text_on_accent: DARK.text_on_accent,
 };
 const MONO_LIGHT: AccentColors = AccentColors {
-    accent: [0x3F, 0x3F, 0x46, 0xFF],  // zinc-700
-    accent_hi: [0x71, 0x71, 0x7A, 0xFF], // zinc-500
+    accent: [0x3F, 0x3F, 0x46, 0xFF],     // zinc-700
+    accent_hi: [0x71, 0x71, 0x7A, 0xFF],  // zinc-500
     accent_dim: [0x27, 0x27, 0x2A, 0xFF], // zinc-800
     text_on_accent: ON_LIGHT,
 };
 const MONO_DARK: AccentColors = AccentColors {
-    accent: [0xE4, 0xE4, 0xE7, 0xFF],  // zinc-200 (legacy shell `mono` color)
+    accent: [0xE4, 0xE4, 0xE7, 0xFF], // zinc-200 (legacy shell `mono` color)
     accent_hi: [0xF4, 0xF4, 0xF5, 0xFF], // zinc-100
     accent_dim: [0xA1, 0xA1, 0xAA, 0xFF], // zinc-400
     text_on_accent: ON_DARK,
 };
 const BLUE_LIGHT: AccentColors = AccentColors {
-    accent: [0x1D, 0x4E, 0xD8, 0xFF],  // blue-700 (500 is under 4.5:1 on cream)
+    accent: [0x1D, 0x4E, 0xD8, 0xFF], // blue-700 (500 is under 4.5:1 on cream)
     accent_hi: [0x60, 0xA5, 0xFA, 0xFF], // blue-400
     accent_dim: [0x1E, 0x40, 0xAF, 0xFF], // blue-800
     text_on_accent: ON_LIGHT,
 };
 const BLUE_DARK: AccentColors = AccentColors {
-    accent: [0x60, 0xA5, 0xFA, 0xFF],  // blue-400
-    accent_hi: [0x93, 0xC5, 0xFD, 0xFF], // blue-300
+    accent: [0x60, 0xA5, 0xFA, 0xFF],     // blue-400
+    accent_hi: [0x93, 0xC5, 0xFD, 0xFF],  // blue-300
     accent_dim: [0x25, 0x63, 0xEB, 0xFF], // blue-600
     text_on_accent: ON_DARK,
 };
 const EMERALD_LIGHT: AccentColors = AccentColors {
-    accent: [0x15, 0x80, 0x3D, 0xFF],  // green-700
-    accent_hi: [0x4A, 0xDE, 0x80, 0xFF], // green-400
+    accent: [0x15, 0x80, 0x3D, 0xFF],     // green-700
+    accent_hi: [0x4A, 0xDE, 0x80, 0xFF],  // green-400
     accent_dim: [0x16, 0x65, 0x34, 0xFF], // green-800
     text_on_accent: ON_LIGHT,
 };
 const EMERALD_DARK: AccentColors = AccentColors {
-    accent: [0x4A, 0xDE, 0x80, 0xFF],  // green-400
-    accent_hi: [0x86, 0xEF, 0xAC, 0xFF], // green-300
+    accent: [0x4A, 0xDE, 0x80, 0xFF],     // green-400
+    accent_hi: [0x86, 0xEF, 0xAC, 0xFF],  // green-300
     accent_dim: [0x16, 0xA3, 0x4A, 0xFF], // green-600
     text_on_accent: ON_DARK,
 };
 const AMBER_LIGHT: AccentColors = AccentColors {
-    accent: [0xB4, 0x53, 0x09, 0xFF],  // amber-700 (500 is unreadable on cream)
+    accent: [0xB4, 0x53, 0x09, 0xFF], // amber-700 (500 is unreadable on cream)
     accent_hi: [0xFB, 0xBF, 0x24, 0xFF], // amber-400
     accent_dim: [0x92, 0x40, 0x0E, 0xFF], // amber-800
     text_on_accent: ON_LIGHT,
 };
 const AMBER_DARK: AccentColors = AccentColors {
-    accent: [0xFB, 0xBF, 0x24, 0xFF],  // amber-400
-    accent_hi: [0xFC, 0xD3, 0x4D, 0xFF], // amber-300
+    accent: [0xFB, 0xBF, 0x24, 0xFF],     // amber-400
+    accent_hi: [0xFC, 0xD3, 0x4D, 0xFF],  // amber-300
     accent_dim: [0xB4, 0x53, 0x09, 0xFF], // amber-700
     text_on_accent: ON_DARK,
 };
 const CRIMSON_LIGHT: AccentColors = AccentColors {
-    accent: [0xB9, 0x1C, 0x1C, 0xFF],  // red-700
-    accent_hi: [0xF8, 0x71, 0x71, 0xFF], // red-400
+    accent: [0xB9, 0x1C, 0x1C, 0xFF],     // red-700
+    accent_hi: [0xF8, 0x71, 0x71, 0xFF],  // red-400
     accent_dim: [0x7F, 0x1D, 0x1D, 0xFF], // red-900
     text_on_accent: ON_LIGHT,
 };
 const CRIMSON_DARK: AccentColors = AccentColors {
-    accent: [0xF8, 0x71, 0x71, 0xFF],  // red-400
-    accent_hi: [0xFC, 0xA5, 0xA5, 0xFF], // red-300
+    accent: [0xF8, 0x71, 0x71, 0xFF],     // red-400
+    accent_hi: [0xFC, 0xA5, 0xA5, 0xFF],  // red-300
     accent_dim: [0xB9, 0x1C, 0x1C, 0xFF], // red-700
     text_on_accent: ON_DARK,
 };
@@ -276,10 +276,7 @@ mod tests {
                     "{id}/{mode:?}: text_on_accent/accent = {on_accent:.2}"
                 );
                 let on_bg = contrast_ratio(a.accent, mode.theme().bg);
-                assert!(
-                    on_bg >= 4.0,
-                    "{id}/{mode:?}: accent/bg = {on_bg:.2}"
-                );
+                assert!(on_bg >= 4.0, "{id}/{mode:?}: accent/bg = {on_bg:.2}");
                 // The shipped contract only requires text_on_accent on
                 // accent_dim for LIGHT (contrast.rs `light_theme_pairs`) —
                 // dark-mode dims are deep pressed shades on plum surfaces.

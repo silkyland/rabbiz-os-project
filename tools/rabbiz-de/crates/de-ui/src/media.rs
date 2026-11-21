@@ -1,11 +1,4 @@
-//! Now-playing building blocks shared by the status-bar pill and the shade
-//! card: rounded artwork, equalizer, marquee, and the pill itself.
-//!
-//! The pill is a self-contained capsule texture (artwork, scrolling
-//! "title · artist", equalizer while playing / pause glyph when paused). The
-//! compositor re-rasters only this small texture while it animates, never the
-//! whole shell frame. Pure data in, pixels out; width adapts to the output so
-//! it works in portrait and landscape.
+//! Now-playing artwork, compact status pill and expanded player.
 
 use de_api::{Pixels, Point, Rect, Size};
 use de_design::tokens::{self, Theme};
@@ -14,19 +7,19 @@ use de_paint::{text, Canvas};
 use crate::chrome;
 
 /// Capsule height inside the 56 px status band.
-pub const PILL_H: i32 = 40;
+pub const PILL_H: i32 = 36;
 /// Compact island: artwork left, equalizer right — no text, so the pill never
 /// outgrows the status band or collides with the clock/indicators.
-pub const PILL_W: i32 = 148;
-const ART: i32 = 30;
-const ART_PAD: i32 = 7;
+pub const PILL_W: i32 = 104;
+const ART: i32 = 24;
+const ART_PAD: i32 = 8;
 const EQ_BARS: usize = 5;
-const EQ_BAR_W: i32 = 5;
-const EQ_GAP: i32 = 5;
+const EQ_BAR_W: i32 = 3;
+const EQ_GAP: i32 = 3;
 const EQ_W: i32 = EQ_BARS as i32 * EQ_BAR_W + (EQ_BARS as i32 - 1) * EQ_GAP;
-const EQ_PAD: i32 = 14;
+const EQ_PAD: i32 = 15;
 
-const FILL: [u8; 4] = [0x0E, 0x0A, 0x12, 0xF2];
+const FILL: [u8; 4] = [0x0E, 0x0A, 0x12, 0xFF];
 const RIM: [u8; 4] = [0xFF, 0xFF, 0xFF, 0x22];
 const INK_DIM: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xA8];
 
@@ -76,7 +69,10 @@ pub fn rounded_art(art: &Pixels, side: i32, radius: f32) -> Pixels {
     let (aw, ah) = (art.size.w.max(1), art.size.h.max(1));
     // Cover: scale the short edge to `side`, centre the long one.
     let scale = side as f32 / aw.min(ah) as f32;
-    let (dw, dh) = ((aw as f32 * scale).round() as i32, (ah as f32 * scale).round() as i32);
+    let (dw, dh) = (
+        (aw as f32 * scale).round() as i32,
+        (ah as f32 * scale).round() as i32,
+    );
     tile.blit_scaled(
         art,
         Rect::new((side - dw) / 2, (side - dh) / 2, dw, dh),
@@ -116,28 +112,32 @@ pub fn art_tile(theme: &Theme, art: Option<&Pixels>, side: i32, radius: f32) -> 
 // --- expanded island card --------------------------------------------------
 
 /// Height of the expanded media card.
-pub const CARD_H: i32 = 244;
+pub const CARD_H: i32 = 196;
 const CARD_SIDE: i32 = 28;
+const CARD_MAX_W: i32 = 576;
 const CARD_ART: i32 = 64;
-const TRANSP_Y: i32 = 168;
+const CARD_INSET: i32 = 24;
+const CARD_ART_RADIUS: i32 = 12;
+const TRANSP_Y: i32 = 124;
 const TRANSP_H: i32 = 56;
 
 const INK: [u8; 4] = [0xFF, 0xF8, 0xF0, 0xFF];
 const TRACK: [u8; 4] = [0xFF, 0xFF, 0xFF, 0x30];
-const SURF: [u8; 4] = [0xFF, 0xFF, 0xFF, 0x18];
+const TRANSPORT_DIM: [u8; 4] = [0xFF, 0xF8, 0xF0, 0x62];
 
 const GLYPH_PREV: &str = "\u{e045}";
 const GLYPH_PLAY: &str = "\u{e037}";
 const GLYPH_PAUSE: &str = "\u{e034}";
 const GLYPH_NEXT: &str = "\u{e044}";
 
-/// The expanded card: wide dark sheet directly under the status band.
+/// The expanded player shares the top edge of the status pill.
 #[must_use]
 pub fn card_rect(output: Size) -> Rect {
+    let width = (output.w - CARD_SIDE * 2).clamp(1, CARD_MAX_W);
     Rect::new(
-        CARD_SIDE,
-        tokens::STATUS_BAR_HEIGHT + 4,
-        output.w - CARD_SIDE * 2,
+        (output.w - width) / 2,
+        pill_rect(output, PILL_W).y,
+        width,
         CARD_H,
     )
 }
@@ -176,14 +176,15 @@ pub enum CardHit {
 }
 
 fn transport_rects(r: Rect) -> (Rect, Rect, Rect) {
-    let (pw, nw) = (48, 48);
-    let total = nw + 24 + TRANSP_H + 24 + nw;
-    let x0 = r.x + (r.w - total) / 2;
+    let side = 48;
+    let gap = 24;
+    let center = r.x + (r.w - TRANSP_H) / 2;
+    let side_y = r.y + TRANSP_Y + (TRANSP_H - side) / 2;
     let y = r.y + TRANSP_Y;
     (
-        Rect::new(x0, y + (TRANSP_H - pw) / 2, pw, pw),
-        Rect::new(x0 + nw + 24, y, TRANSP_H, TRANSP_H),
-        Rect::new(x0 + nw + 24 + TRANSP_H + 24, y + (TRANSP_H - nw) / 2, nw, nw),
+        Rect::new(center - gap - side, side_y, side, side),
+        Rect::new(center, y, TRANSP_H, TRANSP_H),
+        Rect::new(center + TRANSP_H + gap, side_y, side, side),
     )
 }
 
@@ -209,15 +210,30 @@ fn mmss(ms: u64) -> String {
 #[must_use]
 pub fn render_card(theme: &Theme, r: Rect, m: &CardModel<'_>, art: Option<&Pixels>) -> Pixels {
     let mut c = Canvas::new(Size::new(r.w, r.h));
-    c.fill_rounded_rect(Rect::new(0, 0, r.w, r.h), 44.0, RIM);
-    c.fill_rounded_rect(Rect::new(1, 1, r.w - 2, r.h - 2), 44.0, FILL);
-
+    let body = Rect::new(0, 0, r.w, r.h);
+    draw_body(&mut c, body, 32.0);
+    draw_card_controls(&mut c, theme, body, m);
     c.blit(
-        &art_tile(theme, art, CARD_ART, 16.0),
-        Point::new(20, 20),
+        &art_tile(theme, art, CARD_ART, CARD_ART_RADIUS as f32),
+        Point::new(CARD_INSET, CARD_INSET),
     );
-    let tx = 20 + CARD_ART + 18;
-    let tw = (r.w - tx - 20).max(0);
+    c.into_pixels()
+}
+
+fn draw_body(c: &mut Canvas, body: Rect, radius: f32) {
+    c.fill_rounded_rect(body, radius, RIM);
+    c.fill_rounded_rect(Rect::new(1, 1, body.w - 2, body.h - 2), radius - 1.0, FILL);
+}
+
+fn draw_card_controls(c: &mut Canvas, theme: &Theme, r: Rect, m: &CardModel<'_>) {
+    draw_card_title(c, r, m);
+    draw_card_transport(c, theme, r, m);
+}
+
+fn draw_card_title(c: &mut Canvas, r: Rect, m: &CardModel<'_>) {
+    let tx = CARD_INSET + CARD_ART + 16;
+    let tw = (r.w - tx - CARD_INSET).max(1);
+    let header_y = CARD_INSET + if m.artist.is_empty() { 16 } else { 2 };
     let title_style = text::LabelStyle {
         size: 26.0,
         line_height: 32.0,
@@ -229,67 +245,72 @@ pub fn render_card(theme: &Theme, r: Rect, m: &CardModel<'_>, art: Option<&Pixel
         let h = px.height() as i32;
         c.blit(
             &Pixels::new(de_api::Size::new(px.width() as i32, h), px.data().to_vec()),
-            Point::new(tx, 18),
-        );
-        chrome::draw(
-            &mut c,
-            m.artist,
-            &style_artist(),
-            tx,
-            18 + h + 6,
-            Some(tw),
+            Point::new(tx, header_y),
         );
     }
+    if let Some(px) = text::label_clamped(m.artist, style_artist(), tw, 1) {
+        c.blit(
+            &Pixels::new(
+                Size::new(px.width() as i32, px.height() as i32),
+                px.data().to_vec(),
+            ),
+            Point::new(tx, CARD_INSET + 34),
+        );
+    }
+}
 
-    // Progress: track + fill + mm:ss endpoints.
-    let bar_y = 118;
-    let bar = Rect::new(20, bar_y, r.w - 40, 6);
-    c.fill_rounded_rect(bar, 3.0, TRACK);
-    let frac = if m.duration_ms > 0 {
-        (m.position_ms as f32 / m.duration_ms as f32).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    let fw = (bar.w as f32 * frac).round() as i32;
-    if fw > 0 {
-        c.fill_rounded_rect(Rect::new(bar.x, bar.y, fw, bar.h), 3.0, INK);
-    }
-    let pos_s = mmss(m.position_ms.min(m.duration_ms.max(m.position_ms)));
-    let dur_s = mmss(m.duration_ms);
-    chrome::draw(&mut c, &pos_s, &style_time(), bar.x, bar_y + 12, Some(120));
-    let dw = dur_s.len() as i32 * 9 + 8;
-    chrome::draw(
-        &mut c,
-        &dur_s,
+fn draw_card_transport(c: &mut Canvas, theme: &Theme, r: Rect, m: &CardModel<'_>) {
+    // Time labels bookend the track on a common centerline.
+    let time_y = 98;
+    let left = chrome::draw(
+        c,
+        &mmss(m.position_ms),
         &style_time(),
-        bar.x + bar.w - dw,
-        bar_y + 12,
-        Some(dw),
+        CARD_INSET,
+        time_y,
+        None,
     );
+    let duration = if m.duration_ms > 0 {
+        mmss(m.duration_ms)
+    } else {
+        "–:––".into()
+    };
+    let mut right = r.w - CARD_INSET;
+    if let Some(px) = text::label(&duration, style_time(), None) {
+        let size = Size::new(px.width() as i32, px.height() as i32);
+        right -= size.w;
+        c.blit(
+            &Pixels::new(size, px.data().to_vec()),
+            Point::new(right, time_y),
+        );
+    }
+    let bar_x = left.x + left.w + 14;
+    let bar = Rect::new(bar_x, time_y + 7, (right - 14 - bar_x).max(0), 5);
+    c.fill_rounded_rect(bar, 2.5, TRACK);
+    if m.duration_ms > 0 {
+        let fraction = (m.position_ms as f32 / m.duration_ms as f32).clamp(0.0, 1.0);
+        let fill = (bar.w as f32 * fraction).round() as i32;
+        if fill > 0 {
+            c.fill_rounded_rect(Rect::new(bar.x, bar.y, fill, bar.h), 2.5, INK);
+        }
+    }
 
     let (prev, play, next) = transport_rects(Rect::new(0, 0, r.w, r.h));
-    let btn = |c: &mut Canvas, rr: Rect, glyph: &str, fill: [u8; 4], ink: [u8; 4], big: bool| {
-        c.fill_rounded_rect(rr, tokens::RADIUS_PILL, fill);
-        chrome::draw_ink_centered(
-            c,
-            glyph,
-            &text::LabelStyle::icon(if big { 40.0 } else { 34.0 }, ink),
-            rr,
-        );
-    };
-    let dim = if m.can_go_previous { INK } else { INK_DIM };
-    btn(&mut c, prev, GLYPH_PREV, SURF, dim, false);
-    btn(
-        &mut c,
+    for (button, glyph, enabled) in [
+        (prev, GLYPH_PREV, m.can_go_previous),
+        (next, GLYPH_NEXT, m.can_go_next),
+    ] {
+        let ink = if enabled { INK } else { TRANSPORT_DIM };
+        chrome::draw_ink_centered(c, glyph, &text::LabelStyle::icon(32.0, ink), button);
+    }
+    let play_glyph = if m.playing { GLYPH_PAUSE } else { GLYPH_PLAY };
+    c.fill_rounded_rect(play, tokens::RADIUS_PILL, theme.accent);
+    chrome::draw_ink_centered(
+        c,
+        play_glyph,
+        &text::LabelStyle::icon(36.0, theme.text_on_accent),
         play,
-        if m.playing { GLYPH_PAUSE } else { GLYPH_PLAY },
-        theme.accent,
-        theme.text_on_accent,
-        true,
     );
-    let dim = if m.can_go_next { INK } else { INK_DIM };
-    btn(&mut c, next, GLYPH_NEXT, SURF, dim, false);
-    c.into_pixels()
 }
 
 fn style_artist() -> text::LabelStyle {
@@ -307,6 +328,7 @@ fn style_time() -> text::LabelStyle {
         size: 15.0,
         line_height: 18.0,
         weight: 500,
+        tnum: true,
         color: INK_DIM,
         ..text::LabelStyle::default()
     }
@@ -318,24 +340,73 @@ fn style_time() -> text::LabelStyle {
 pub fn render_pill(theme: &Theme, _output: Size, m: &PillModel<'_>, t_ms: u64) -> Pixels {
     let mut c = Canvas::new(Size::new(PILL_W, PILL_H));
     let body = Rect::new(0, 0, PILL_W, PILL_H);
-    c.fill_rounded_rect(body, tokens::RADIUS_PILL, RIM);
-    c.fill_rounded_rect(
-        Rect::new(1, 1, PILL_W - 2, PILL_H - 2),
-        tokens::RADIUS_PILL,
-        FILL,
-    );
-
+    draw_body(&mut c, body, PILL_H as f32 / 2.0);
     c.blit(
-        &art_tile(theme, m.art, ART, ART as f32 / 2.0),
+        &art_tile(theme, m.art, ART, 7.0),
         Point::new(ART_PAD, (PILL_H - ART) / 2),
     );
+    draw_equalizer(&mut c, theme, m.playing, t_ms);
+    c.into_pixels()
+}
 
+/// Draw the morph at its actual size, keeping artwork square as it grows.
+pub fn render_morph(
+    theme: &Theme,
+    r: Rect,
+    model: &CardModel<'_>,
+    art: Option<&Pixels>,
+    open: f32,
+    t_ms: u64,
+) -> Pixels {
+    let t = ease_out_cubic(open);
+    let lerp = |a: i32, b: i32| (a as f32 + (b - a) as f32 * t).round() as i32;
+    let mut c = Canvas::new(Size::new(r.w, r.h));
+    let body = Rect::new(0, 0, r.w, r.h);
+    draw_body(&mut c, body, lerp(PILL_H / 2, 32) as f32);
+    let side = lerp(ART, CARD_ART);
+    c.blit(
+        &art_tile(theme, art, side, lerp(7, CARD_ART_RADIUS) as f32),
+        Point::new(
+            lerp(ART_PAD, CARD_INSET),
+            lerp((PILL_H - ART) / 2, CARD_INSET),
+        ),
+    );
+    if t < 0.4 {
+        let mut eq = Canvas::new(Size::new(PILL_W, PILL_H));
+        draw_equalizer(&mut eq, theme, model.playing, t_ms);
+        c.blit_scaled(
+            &eq.into_pixels(),
+            Rect::new(r.w - PILL_W, (r.h - PILL_H) / 2, PILL_W, PILL_H),
+            1.0 - t / 0.4,
+        );
+    }
+    // The header appears as the artwork approaches its final position.
+    if t > 0.6 {
+        let mut content = Canvas::new(Size::new(r.w, r.h));
+        draw_card_title(&mut content, body, model);
+        c.blit_scaled(&content.into_pixels(), body, ((t - 0.6) / 0.3).min(1.0));
+    }
+    if r.h >= TRANSP_Y + TRANSP_H {
+        let reveal = (r.h - TRANSP_Y - TRANSP_H) as f32 / (CARD_H - TRANSP_Y - TRANSP_H) as f32;
+        let mut controls = Canvas::new(Size::new(r.w, r.h));
+        draw_card_transport(&mut controls, theme, body, model);
+        c.blit_scaled(&controls.into_pixels(), body, reveal);
+    }
+    c.into_pixels()
+}
+
+fn draw_equalizer(c: &mut Canvas, theme: &Theme, playing: bool, t_ms: u64) {
     let eq_x = PILL_W - EQ_PAD - EQ_W;
     let base_y = PILL_H / 2 + 10;
-    if m.playing {
+    if playing {
         for (i, h) in eq_heights(t_ms, 20).into_iter().enumerate() {
             c.fill_rounded_rect(
-                Rect::new(eq_x + i as i32 * (EQ_BAR_W + EQ_GAP), base_y - h, EQ_BAR_W, h),
+                Rect::new(
+                    eq_x + i as i32 * (EQ_BAR_W + EQ_GAP),
+                    base_y - h,
+                    EQ_BAR_W,
+                    h,
+                ),
                 2.0,
                 theme.accent_hi,
             );
@@ -349,7 +420,6 @@ pub fn render_pill(theme: &Theme, _output: Size, m: &PillModel<'_>, t_ms: u64) -
             );
         }
     }
-    c.into_pixels()
 }
 
 #[cfg(test)]
@@ -419,7 +489,7 @@ mod tests {
         let mid = morph_rect(out, 0.5);
         assert!(mid.w > start.w && mid.w < end.w);
         assert!(mid.h > start.h && mid.h < end.h);
-        assert!(mid.y > start.y && mid.y < end.y);
+        assert_eq!(mid.y, start.y);
     }
 
     #[test]
@@ -460,6 +530,14 @@ mod tests {
         assert_eq!(px.size.h, card.h);
         // Centre of the card is opaque dark fill.
         let mid = ((card.h / 2 * card.w + card.w / 2) * 4) as usize;
-        assert!(px.data[mid + 3] > 0x80);
+        assert_eq!(px.data[mid + 3], 0xFF);
+
+        // During the morph the backdrop must stay opaque, just like the pill
+        // and card endpoints, so status text never shows through the player.
+        let mid_rect = morph_rect(OUT, 0.4);
+        let frame = render_morph(&theme, mid_rect, &m, None, 0.4, 0);
+        assert_eq!(frame.size, Size::new(mid_rect.w, mid_rect.h));
+        let centre = ((mid_rect.h / 2 * mid_rect.w + mid_rect.w / 2) * 4) as usize;
+        assert_eq!(frame.data[centre + 3], 0xFF);
     }
 }
