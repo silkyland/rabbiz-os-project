@@ -382,28 +382,67 @@ impl ViewportFit {
             return;
         }
 
-        // Precompute source X indices to avoid division in the inner row loop.
+        // Precompute bilinear source X coordinates and 8-bit fractional weights.
         let dw = self.dst_w as usize;
         let dh = self.dst_h as usize;
-        let sx_lut: Vec<usize> = (x0..x1)
+        let sx_lut: Vec<(usize, usize, u32)> = (x0..x1)
             .map(|dx| {
                 let rel_x = dx - self.dst_x as usize;
-                ((rel_x * sw) / dw).min(sw - 1)
+                let fx_256 = if dw > 1 && sw > 1 {
+                    ((rel_x * (sw - 1) * 256) + (dw / 2)) / (dw - 1)
+                } else {
+                    0
+                };
+                let sx0 = (fx_256 >> 8).min(sw - 1);
+                let sx1 = (sx0 + 1).min(sw - 1);
+                let wx = (fx_256 & 0xFF) as u32;
+                (sx0, sx1, wx)
             })
             .collect();
 
         for dy in y0..y1 {
             let rel_y = dy - self.dst_y as usize;
-            let sy = ((rel_y * sh) / dh).min(sh - 1);
-            let srow = sy * sw;
+            let fy_256 = if dh > 1 && sh > 1 {
+                ((rel_y * (sh - 1) * 256) + (dh / 2)) / (dh - 1)
+            } else {
+                0
+            };
+            let sy0 = (fy_256 >> 8).min(sh - 1);
+            let sy1 = (sy0 + 1).min(sh - 1);
+            let wy = (fy_256 & 0xFF) as u32;
+            let iwy = 256 - wy;
+            let srow0 = sy0 * sw;
+            let srow1 = sy1 * sw;
             let drow = dy * ww;
-            for (offset, &sx) in sx_lut.iter().enumerate() {
-                let si = (srow + sx) * 4;
-                dst[drow + x0 + offset] = rgba_to_xrgb(
-                    src.data[si],
-                    src.data[si + 1],
-                    src.data[si + 2],
-                );
+            for (offset, &(sx0, sx1, wx)) in sx_lut.iter().enumerate() {
+                let iwx = 256 - wx;
+                let w00 = iwx * iwy;
+                let w10 = wx * iwy;
+                let w01 = iwx * wy;
+                let w11 = wx * wy;
+                let i00 = (srow0 + sx0) * 4;
+                let i10 = (srow0 + sx1) * 4;
+                let i01 = (srow1 + sx0) * 4;
+                let i11 = (srow1 + sx1) * 4;
+                let r = ((src.data[i00] as u32 * w00
+                    + src.data[i10] as u32 * w10
+                    + src.data[i01] as u32 * w01
+                    + src.data[i11] as u32 * w11
+                    + 32768)
+                    >> 16) as u8;
+                let g = ((src.data[i00 + 1] as u32 * w00
+                    + src.data[i10 + 1] as u32 * w10
+                    + src.data[i01 + 1] as u32 * w01
+                    + src.data[i11 + 1] as u32 * w11
+                    + 32768)
+                    >> 16) as u8;
+                let b = ((src.data[i00 + 2] as u32 * w00
+                    + src.data[i10 + 2] as u32 * w10
+                    + src.data[i01 + 2] as u32 * w01
+                    + src.data[i11 + 2] as u32 * w11
+                    + 32768)
+                    >> 16) as u8;
+                dst[drow + x0 + offset] = rgba_to_xrgb(r, g, b);
             }
         }
     }

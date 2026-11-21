@@ -3,6 +3,7 @@
 /build/
 /src/
 /vendor/
+tools/rabbiz-de/vendor/
 /backups/
 
 # rabbiz-de worktrees and Rust build artifacts

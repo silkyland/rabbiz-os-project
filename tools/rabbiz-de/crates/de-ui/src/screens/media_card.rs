@@ -73,10 +73,20 @@ fn dim_color(color: [u8; 4]) -> [u8; 4] {
     ]
 }
 
-/// Paint the media control card inside `rect`.
+/// Paint the media control card inside `rect` including its background.
 pub fn render_card(canvas: &mut Canvas, rect: Rect, theme: &Theme, m: &MediaCardModel<'_>) {
     canvas.fill_rounded_rect(rect, tokens::RADIUS_CARD, theme.surface1);
+    render_card_contents(canvas, rect, theme, m);
+}
 
+/// Paint only the card's contents — the caller owns the background (the
+/// notification panel frosts it like every other card).
+pub fn render_card_contents(
+    canvas: &mut Canvas,
+    rect: Rect,
+    theme: &Theme,
+    m: &MediaCardModel<'_>,
+) {
     let layout = transport_layout(rect);
     let text_x = rect.x + PAD_L;
     let text_max_w = (layout.prev.x - 16 - text_x).max(0);

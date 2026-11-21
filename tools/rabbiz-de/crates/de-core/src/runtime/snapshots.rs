@@ -103,10 +103,7 @@ where
     R: ImportAll + Offscreen<T> + ExportMem,
     R::TextureId: Clone + 'static,
 {
-    let scale = Scale::from((
-        f64::from(size.w) / f64::from(output.w.max(1)),
-        f64::from(size.h) / f64::from(output.h.max(1)),
-    ));
+    let scale = Scale::from((1.0, 1.0));
     let root = AsRenderElements::<R>::render_elements::<WaylandSurfaceRenderElement<R>>(
         window,
         renderer,
@@ -132,7 +129,13 @@ where
         ));
     }
     elements.extend(root);
-    raster_snapshot::<R, T, _>(renderer, &elements, size).map(Some)
+    let full = raster_snapshot::<R, T, _>(renderer, &elements, output)?;
+    if size == output {
+        return Ok(Some(full));
+    }
+    let mut canvas = de_paint::Canvas::filled(size, de_design::DEFAULT.surface1);
+    canvas.blit_scaled(&full, de_api::Rect::new(0, 0, size.w, size.h), 1.0);
+    Ok(Some(canvas.into_pixels()))
 }
 
 fn raster_snapshot<R, T, E>(

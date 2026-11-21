@@ -26,16 +26,18 @@ impl IdleInhibitHandler for De {
 smithay::delegate_idle_inhibit!(De);
 
 impl De {
-    /// Whether any live, currently mapped toplevel holds an active idle inhibitor.
+    /// Whether any live, currently mapped toplevel holds an active idle inhibitor —
+    /// either via `zwp_idle_inhibit_v1` or a `org.freedesktop.ScreenSaver` cookie.
     #[must_use]
     pub(crate) fn idle_inhibited(&self) -> bool {
-        self.idle_inhibitors.iter().any(|surface| {
-            surface.is_alive()
-                && self
-                    .space
-                    .elements()
-                    .any(|w| w.wl_surface().is_some_and(|ws| &*ws == surface))
-        })
+        self.screensaver.inhibited()
+            || self.idle_inhibitors.iter().any(|surface| {
+                surface.is_alive()
+                    && self
+                        .space
+                        .elements()
+                        .any(|w| w.wl_surface().is_some_and(|ws| &*ws == surface))
+            })
     }
 
     /// Drop any inhibitor whose Wayland surface has been destroyed.

@@ -30,6 +30,8 @@ pub struct AppEntry {
     pub exec: Option<String>,
     pub categories: Vec<String>,
     pub keywords: Vec<String>,
+    /// `MimeType=` associations (for `mime.rs` default-app resolution).
+    pub mime_types: Vec<String>,
     pub actions: Vec<AppAction>,
 }
 
@@ -229,6 +231,12 @@ fn entry_from(de: &DesktopEntry, id: String, locales: &[String]) -> AppEntry {
         exec: de.exec().map(str::to_string),
         categories: de
             .categories()
+            .unwrap_or_default()
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
+        mime_types: de
+            .mime_type()
             .unwrap_or_default()
             .iter()
             .map(|s| (*s).to_string())

@@ -3,7 +3,7 @@
 
 use de_ui::gestures::Zone;
 use smithay::backend::input::{
-    AbsolutePositionEvent, Event, InputBackend, TouchEvent as _, TouchSlot,
+    AbsolutePositionEvent, ButtonState, Event, InputBackend, TouchEvent as _, TouchSlot,
 };
 use smithay::input::touch::{DownEvent, MotionEvent as TouchMotion, UpEvent};
 use smithay::reexports::wayland_server::Resource;
@@ -44,10 +44,7 @@ impl De {
         if !self.locked() && !self.is_session_locked() {
             let out = de_api::Size::new(self.output.width as i32, self.output.height as i32);
             let now_ms = self.uptime_ms(std::time::Instant::now());
-            if self
-                .hun_fx
-                .on_touch_down(slot, api_point(pos), out, now_ms)
-            {
+            if self.hun_fx.on_touch_down(slot, api_point(pos), out, now_ms) {
                 self.touch_claimed = true;
                 self.needs_present = true;
                 return;
@@ -85,12 +82,29 @@ impl De {
         ) || self.panel_wants_touch()
             || self.locked();
         if self.touch_claimed {
+            self.touch_as_pointer = false;
             return;
         }
         let serial = SCOUNTER.next_serial();
         if let Some(target) = hit.as_ref().and_then(|hit| hit.keyboard_target.clone()) {
             self.focus_surface(Some(target), serial);
         }
+        if slot == 0 && !layer_contact {
+            let app_id = self
+                .space
+                .element_under(pos)
+                .and_then(|(w, _)| w.toplevel().map(crate::snapshots::window_app_id))
+                .unwrap_or_default();
+            let pointer_list = std::env::var("DE_TOUCH_AS_POINTER").unwrap_or_default();
+            if pointer_bridge_app(&app_id, &pointer_list) {
+                self.touch_as_pointer = true;
+                let delta = pos - self.pointer.current_location();
+                self.pointer_motion(time_ms, pos, delta);
+                self.pointer_button(time_ms, 0x110, ButtonState::Pressed);
+                return;
+            }
+        }
+        self.touch_as_pointer = false;
         let under = hit.map(SurfaceHit::into_focus);
         if std::env::var_os("DE_INPUT_DEBUG").is_some() {
             let info = under.as_ref().map(|(s, l)| {
@@ -117,6 +131,7 @@ impl De {
                 time: time_ms,
             },
         );
+        touch.frame(self);
     }
 
     pub(super) fn on_touch_motion<B: InputBackend>(&mut self, evt: &B::TouchMotionEvent) {
@@ -144,6 +159,11 @@ impl De {
         if self.touch_claimed {
             return;
         }
+        if slot == 0 && self.touch_as_pointer {
+            let delta = pos - self.pointer.current_location();
+            self.pointer_motion(time_ms, pos, delta);
+            return;
+        }
         let under = self.surface_under(pos).map(SurfaceHit::into_focus);
         let touch = self.touch.clone();
         touch.motion(
@@ -155,6 +175,7 @@ impl De {
                 time: time_ms,
             },
         );
+        touch.frame(self);
     }
 
     pub(super) fn on_touch_up<B: InputBackend>(&mut self, evt: &B::TouchUpEvent) {
@@ -184,8 +205,18 @@ impl De {
                 crate::hun_ui::HunTouchAction::Dismissed(id) => {
                     self.dismiss_notification(id);
                 }
+                crate::hun_ui::HunTouchAction::TappedBody(id) => {
+                    let is_files = self
+                        .panels
+                        .notifications
+                        .iter()
+                        .any(|n| n.id == id && n.app == "Files");
+                    if is_files {
+                        let _ = self.launch.begin("rabbiz-files");
+                    }
+                    self.dismiss_notification(id);
+                }
                 crate::hun_ui::HunTouchAction::Snoozed(_)
-                | crate::hun_ui::HunTouchAction::TappedBody(_)
                 | crate::hun_ui::HunTouchAction::TappedAction { .. }
                 | crate::hun_ui::HunTouchAction::Released => {}
             }
@@ -194,7 +225,15 @@ impl De {
         }
         self.power_menu_release();
         self.feed_gesture(slot, de_api::input::TouchPhase::Up, pos, time_ms);
-        if std::mem::take(&mut self.touch_claimed) {
+        let claimed = std::mem::take(&mut self.touch_claimed);
+        if slot == 0 && std::mem::take(&mut self.touch_as_pointer) {
+            self.pointer_button(time_ms, 0x110, ButtonState::Released);
+            if claimed {
+                self.needs_present = true;
+            }
+            return;
+        }
+        if claimed {
             self.needs_present = true;
             return;
         }
@@ -208,6 +247,7 @@ impl De {
                 time: time_ms,
             },
         );
+        touch.frame(self);
     }
 
     pub(super) fn on_touch_cancel<B: InputBackend>(&mut self, evt: &B::TouchCancelEvent) {
@@ -238,8 +278,15 @@ impl De {
             self.last_touch_pos,
             time_ms,
         );
-        if !std::mem::take(&mut self.touch_claimed) {
-            self.touch.clone().cancel(self);
+        let claimed = std::mem::take(&mut self.touch_claimed);
+        if slot == 0 && std::mem::take(&mut self.touch_as_pointer) {
+            self.pointer_button(time_ms, 0x110, ButtonState::Released);
+            return;
+        }
+        if !claimed {
+            let touch = self.touch.clone();
+            touch.cancel(self);
+            touch.frame(self);
         }
     }
 
@@ -268,6 +315,18 @@ impl De {
             self.on_gesture_event(event, u64::from(now_ms));
         }
     }
+}
+
+/// `DE_TOUCH_AS_POINTER` holds comma-separated app_id prefixes for the rare
+/// client that cannot consume `wl_touch` (e.g. a pointer-only X11-style
+/// toolkit). Everything else gets real touch events — desktop-class clients
+/// that bind `wl_touch` (Chrome, GTK3+, Qt, Firefox) interpret a drag as a
+/// scroll, whereas bridging them to `wl_pointer` turns the same drag into
+/// button-held text selection.
+pub(super) fn pointer_bridge_app(app_id: &str, list: &str) -> bool {
+    list.split(',')
+        .map(str::trim)
+        .any(|p| !p.is_empty() && app_id.starts_with(p))
 }
 
 /// Should a new contact be claimed by the shell instead of the client?

@@ -7,9 +7,11 @@
 use std::time::Instant;
 
 use de_api::{Pixels, Point, Size};
+use de_system::mpris::{MediaCommand, MediaSnapshot};
 use de_ui::nav::Screen;
 use de_ui::panels::{self, NotifHit, Notification, QuickHit, QuickModel, QuickTile};
 use de_ui::pull::Pull;
+use de_ui::screens::media_card::{self, MediaCardHit, MediaCardModel};
 
 use crate::state::{De, Foreground};
 
@@ -17,6 +19,18 @@ use crate::state::{De, Foreground};
 pub(crate) enum PanelKind {
     Notifications,
     Quick,
+}
+
+/// Borrowed view of the live MPRIS snapshot for `de_ui`'s shade media card.
+fn media_card_model(snap: &MediaSnapshot) -> MediaCardModel<'_> {
+    MediaCardModel {
+        player_name: &snap.player_name,
+        title: &snap.title,
+        artist: &snap.artist,
+        playing: snap.playing,
+        can_go_previous: snap.can_go_previous,
+        can_go_next: snap.can_go_next,
+    }
 }
 
 /// One quick tile's identity; the first `WIDE_TILES` are the wide pills.
@@ -129,6 +143,9 @@ pub(crate) struct PanelUi {
     pub(crate) control_state: de_system::controls::Snapshot,
     server: de_system::notifications::Server,
     notification_generation: u64,
+    /// Last seen `media_fx.mpris` generation — marks the shade stale when
+    /// the active player/track changes.
+    media_generation: u64,
     pub(crate) brightness: f32,
     pub(crate) volume: f32,
     pub(crate) notifications: Vec<Notification>,
@@ -167,6 +184,7 @@ impl PanelUi {
             control_state: de_system::controls::Snapshot::default(),
             server: de_system::notifications::Server::start(),
             notification_generation: u64::MAX,
+            media_generation: u64::MAX,
             brightness: 0.6,
             volume: 0.5,
             notifications: Vec::new(),
@@ -209,10 +227,13 @@ impl De {
         let state = self.panels.controls.snapshot();
         let (generation, entries) = self.panels.server.snapshot();
         let notifs_changed = generation != self.panels.notification_generation;
-        let changed = self.panels.control_state != state || notifs_changed;
+        let media_gen = self.media_fx.mpris.generation();
+        let media_changed = media_gen != self.panels.media_generation;
+        let changed = self.panels.control_state != state || notifs_changed || media_changed;
         if !changed {
             return;
         }
+        self.panels.media_generation = media_gen;
         self.panels.on[3] = self.app_prefs.prefs().do_not_disturb;
         self.panels.available[3] = true;
         for (i, value) in [
@@ -480,7 +501,27 @@ impl De {
         }
         match self.panels.kind {
             PanelKind::Notifications => {
-                match panels::notif_hit(size, pos, self.panels.notifications.len()) {
+                match panels::notif_hit(
+                    size,
+                    pos,
+                    self.panels.notifications.len(),
+                    self.media_fx.snap.is_some(),
+                ) {
+                    Some(NotifHit::Media) => {
+                        if let Some(snap) = self.media_fx.snap.clone() {
+                            let model = media_card_model(&snap);
+                            let rect = panels::media_notif_rect(size);
+                            let cmd = match media_card::hit_card(rect, pos, &model) {
+                                Some(MediaCardHit::Previous) => Some(MediaCommand::Previous),
+                                Some(MediaCardHit::PlayPause) => Some(MediaCommand::PlayPause),
+                                Some(MediaCardHit::Next) => Some(MediaCommand::Next),
+                                Some(MediaCardHit::Body) | None => None,
+                            };
+                            if let Some(c) = cmd {
+                                self.media_fx.mpris.request(c);
+                            }
+                        }
+                    }
                     Some(NotifHit::ClearAll) => {
                         self.panels.server.dismiss(0);
                         self.panels.notifications.clear();
@@ -679,6 +720,7 @@ impl De {
         let quick = matches!(kind, PanelKind::Quick).then(|| self.quick_model());
         let (tx, rx) = std::sync::mpsc::channel();
         let theme = self.theme;
+        let media_snap = self.media_fx.snap.clone();
         if self.panels.use_gpu_blur {
             std::thread::spawn(move || {
                 let px = match quick {
@@ -697,6 +739,7 @@ impl De {
                         &status.clock,
                         &date,
                         &notifications,
+                        media_snap.as_ref().map(media_card_model),
                     ),
                 };
                 let _ = tx.send(px);
@@ -730,6 +773,7 @@ impl De {
                         &status.clock,
                         &date,
                         &notifications,
+                        media_snap.as_ref().map(media_card_model),
                     ),
                 };
                 let _ = tx.send(px);

@@ -160,16 +160,15 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
             canvas.blit(px, ApiPoint::new(r.x, r.y));
         }
     }
+    if let (Some(px), Some(r)) = (de.media_fx.px.as_ref(), de.media_fx.rect(out_size.w)) {
+        canvas.blit(px, ApiPoint::new(r.x, r.y));
+    }
     if de.lock.shown() {
         if let Some(px) = de.lock.px.as_ref() {
             let x = de.lock.shake_x(now).round() as i32;
             let y = -(de.lock.slide_px().round() as i32);
             let alpha = (1.0 - de.lock.progress() * 0.55).clamp(0.0, 1.0);
-            canvas.blit_scaled(
-                px,
-                de_api::Rect::new(x, y, px.size.w, px.size.h),
-                alpha,
-            );
+            canvas.blit_scaled(px, de_api::Rect::new(x, y, px.size.w, px.size.h), alpha);
         }
     }
     if de.power.menu_over_lock {
@@ -265,12 +264,7 @@ fn blit_surface(canvas: &mut Canvas, surface: &WlSurface, loc: ApiPoint) {
         if scale <= 1 {
             canvas.blit(&px, cur_loc);
         } else {
-            let dst = de_api::Rect::new(
-                cur_loc.x,
-                cur_loc.y,
-                px.size.w / scale,
-                px.size.h / scale,
-            );
+            let dst = de_api::Rect::new(cur_loc.x, cur_loc.y, px.size.w / scale, px.size.h / scale);
             canvas.blit_scaled(&px, dst, 1.0);
         }
     }

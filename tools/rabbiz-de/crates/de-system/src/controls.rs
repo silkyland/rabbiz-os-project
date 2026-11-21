@@ -181,13 +181,20 @@ fn poll() -> Snapshot {
                     .map(|v| v.clamp(0.0, 1.0))
             }
         });
-    let policies = devices("/sys/devices/system/cpu/cpufreq");
-    let governor: Vec<_> = policies
-        .iter()
-        .filter_map(|p| std::fs::read_to_string(p.join("scaling_governor")).ok())
-        .collect();
-    let battery_saver =
-        (!governor.is_empty()).then(|| governor.iter().all(|s| s.trim() == "powersave"));
+    // Power-profiles-daemon is the standard source (`org.freedesktop.UPower.
+    // PowerProfiles`); the cpufreq governor check is the fallback when the
+    // daemon isn't installed (dev hosts, minimal rootfs).
+    let battery_saver = output("powerprofilesctl", &["get"])
+        .ok()
+        .map(|s| s.trim() == "power-saver")
+        .or_else(|| {
+            let policies = devices("/sys/devices/system/cpu/cpufreq");
+            let governor: Vec<_> = policies
+                .iter()
+                .filter_map(|p| std::fs::read_to_string(p.join("scaling_governor")).ok())
+                .collect();
+            (!governor.is_empty()).then(|| governor.iter().all(|s| s.trim() == "powersave"))
+        });
     let m = crate::mock::snapshot();
     let (wifi, bluetooth, airplane, brightness, volume) = if m.enabled {
         (
@@ -284,6 +291,18 @@ fn apply(a: &Action, saved: &mut Option<(bool, bool)>) -> Result<(), ()> {
                 .map_err(|_| ())
         }
         Action::BatterySaver(on) => {
+            // Standard path first: `org.freedesktop.UPower.PowerProfiles` via
+            // `powerprofilesctl` — same effect, and other apps can read the
+            // active profile back over D-Bus. Fall back to a direct cpufreq
+            // governor write when the daemon is absent.
+            if output(
+                "powerprofilesctl",
+                &["set", if on { "power-saver" } else { "balanced" }],
+            )
+            .is_ok()
+            {
+                return Ok(());
+            }
             let paths = devices("/sys/devices/system/cpu/cpufreq");
             if paths.is_empty() {
                 return Err(());

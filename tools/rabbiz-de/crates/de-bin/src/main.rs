@@ -36,6 +36,23 @@ fn main() {
             print!("{}", de_system::env::shell_lines());
             0
         }
+        Command::Autostart => {
+            // XDG autostart — called by `rabbiz-session` once wayland-0 is up
+            // (agents like gnome-keyring/mako need the display + bus ready).
+            let desktop = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_else(|_| "Rabbiz".into());
+            let results = de_apps::autostart::launch_all(&desktop);
+            let mut rc = 0;
+            for (id, res) in &results {
+                match res {
+                    Ok(pid) => eprintln!("autostart: {id} → pid {pid}"),
+                    Err(e) => {
+                        eprintln!("autostart: {id} failed: {e}");
+                        rc = 1;
+                    }
+                }
+            }
+            rc
+        }
         Command::Probe => match de_backend::probe::run(cli.flags.require_gl) {
             Ok((json, ok)) => {
                 println!("{json}");

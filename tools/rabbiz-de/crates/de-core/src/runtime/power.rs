@@ -344,13 +344,37 @@ impl De {
             _ => {}
         }
 
+        // `org.freedesktop.ScreenSaver` pokes count as real activity; an
+        // explicit `SetActive(false)` blanks (same path as a power-key fade).
+        if self.screensaver.take_activity_pokes() > 0 {
+            self.power_note_activity();
+        }
+        if self.screensaver.take_sleep_requests() > 0
+            && self.compositor.is_some()
+            && !self.sleeping()
+        {
+            self.power_fade(now);
+        }
+
         // Idle chain — only while nothing covers the screen and no surface inhibits idle; 0 = never dim.
+        // Virtual emulator sessions (`self.compositor.is_none()`) never auto-sleep on idle so the
+        // viewer does not appear frozen after sitting idle (explicit Power button still sleeps).
         self.prune_idle_inhibitors();
         let idle = now.saturating_duration_since(self.power.last_activity);
-        let timeout_secs = self.app_prefs.prefs().screen_timeout_sec;
+        self.screensaver
+            .report(self.sleeping(), idle.as_millis() as u64);
+        let timeout_secs = if self.compositor.is_none() {
+            0
+        } else {
+            self.app_prefs.prefs().screen_timeout_sec
+        };
         let timeout = Duration::from_secs(u64::from(timeout_secs));
         match self.power.phase {
-            Phase::Awake if self.locked() && idle.as_millis() as u64 > LOCKED_IDLE_MS => {
+            Phase::Awake
+                if self.compositor.is_some()
+                    && self.locked()
+                    && idle.as_millis() as u64 > LOCKED_IDLE_MS =>
+            {
                 self.power_fade(now);
             }
             Phase::Awake

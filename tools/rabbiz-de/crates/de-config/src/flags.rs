@@ -31,6 +31,8 @@ pub enum Command {
     Probe,
     /// `env --shell`: print the app env contract.
     Env,
+    /// `autostart`: launch every eligible XDG `autostart/*.desktop` entry once.
+    Autostart,
     /// `launch <desktop-id>`: launch helper (M1 path, stub in M0).
     Launch(String),
     /// `ctl <subcommand>`: send a runtime control request over the IPC socket.
@@ -102,6 +104,7 @@ pub fn parse<I: Iterator<Item = String>>(args: I) -> Result<Cli, String> {
             "run" => command = Command::Run,
             "probe" => command = Command::Probe,
             "env" => command = Command::Env,
+            "autostart" => command = Command::Autostart,
             "launch" => {
                 let id = it.next().ok_or("launch needs a desktop-id")?;
                 command = Command::Launch(id);

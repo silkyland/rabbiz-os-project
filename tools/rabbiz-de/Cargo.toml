@@ -71,6 +71,17 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
 
+# Vendored smithay 0.7.0 with one upstream fix backported:
+# `ShmBufferUserData::remove_destruction_hook` used `hook.id != hook_id` as the
+# `position` predicate, so it removed the FIRST non-matching hook (or nothing
+# when only one hook exists) instead of the requested one. The stale
+# xdg-toplevel-icon buffer hook then posted `NoBuffer` and killed clients that
+# destroy the icon before its buffer — Chrome's exact startup pattern
+# (`findings/2026-11-21-layermap-mutex-self-deadlock.md` follow-up).
+# Fixed upstream on main; drop this patch when the pin moves past 0.7.0.
+[patch.crates-io]
+smithay = { path = "vendor/smithay" }
+
 [profile.release]
 lto = "thin"
 strip = "symbols"

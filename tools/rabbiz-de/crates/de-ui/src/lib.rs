@@ -3,6 +3,7 @@
 
 pub mod chrome;
 pub mod interaction;
+pub mod media;
 pub mod screens;
 
 // Re-export module paths at crate root so internal and downstream imports stay concise.

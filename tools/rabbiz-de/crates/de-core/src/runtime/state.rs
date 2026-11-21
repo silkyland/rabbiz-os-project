@@ -26,12 +26,16 @@ use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
 use smithay::reexports::wayland_server::{Display, DisplayHandle};
 use smithay::utils::{Clock, Monotonic};
 use smithay::wayland::compositor::{CompositorClientState, CompositorState};
+use smithay::wayland::content_type::ContentTypeState;
+use smithay::wayland::cursor_shape::CursorShapeManagerState;
 use smithay::wayland::dmabuf::{DmabufGlobal, DmabufState};
 use smithay::wayland::fractional_scale::FractionalScaleManagerState;
 use smithay::wayland::idle_inhibit::IdleInhibitManagerState;
 use smithay::wayland::input_method::InputMethodManagerState;
+use smithay::wayland::keyboard_shortcuts_inhibit::KeyboardShortcutsInhibitState;
 use smithay::wayland::output::OutputManagerState;
 use smithay::wayland::pointer_constraints::PointerConstraintsState;
+use smithay::wayland::presentation::PresentationState;
 use smithay::wayland::relative_pointer::RelativePointerManagerState;
 use smithay::wayland::selection::data_device::DataDeviceState;
 use smithay::wayland::selection::ext_data_control::DataControlState as ExtDataControlState;
@@ -42,10 +46,15 @@ use smithay::wayland::shell::wlr_layer::WlrLayerShellState;
 use smithay::wayland::shell::xdg::decoration::XdgDecorationState;
 use smithay::wayland::shell::xdg::XdgShellState;
 use smithay::wayland::shm::ShmState;
+use smithay::wayland::single_pixel_buffer::SinglePixelBufferState;
 use smithay::wayland::text_input::TextInputManagerState;
 use smithay::wayland::viewporter::ViewporterState;
 use smithay::wayland::virtual_keyboard::VirtualKeyboardManagerState;
 use smithay::wayland::xdg_activation::XdgActivationState;
+use smithay::wayland::xdg_foreign::XdgForeignState;
+use smithay::wayland::xdg_system_bell::XdgSystemBellState;
+use smithay::wayland::xdg_toplevel_icon::XdgToplevelIconManager;
+use smithay::wayland::xdg_toplevel_tag::XdgToplevelTagManager;
 
 /// Free CMA below which `auto` picks the software renderer (plan Decision 2).
 const CMA_FLOOR_KB: u64 = 96 * 1024;
@@ -128,9 +137,35 @@ pub struct De {
     pub(crate) session_lock_state: SessionLockManagerState,
     /// Single-lock and fail-closed recovery tracker for `ext-session-lock-v1`.
     pub(crate) session_lock_tracker: crate::protocols::session_lock::SessionLockTracker,
+
+    // --- standard extras (`protocols/standards.rs`, audit 2026-11-21) ---
+    #[allow(dead_code)]
+    pub(crate) single_pixel_buffer_state: SinglePixelBufferState,
+    #[allow(dead_code)]
+    pub(crate) cursor_shape_state: CursorShapeManagerState,
+    pub(crate) xdg_foreign_state: XdgForeignState,
+    #[allow(dead_code)]
+    pub(crate) content_type_state: ContentTypeState,
+    #[allow(dead_code)]
+    pub(crate) xdg_toplevel_icon_manager: XdgToplevelIconManager,
+    #[allow(dead_code)]
+    pub(crate) xdg_toplevel_tag_manager: XdgToplevelTagManager,
+    pub(crate) kbd_shortcuts_inhibit_state: KeyboardShortcutsInhibitState,
+    #[allow(dead_code)]
+    pub(crate) system_bell_state: XdgSystemBellState,
+    /// Kept alive for the `wp_presentation` global; feedback goes out beside
+    /// `send_frames_surface_tree` (`frame/render.rs`).
+    #[allow(dead_code)]
+    pub(crate) presentation_state: PresentationState,
+    /// Monotonic `wp_presentation` feedback sequence.
+    pub(crate) present_seq: u64,
+
     /// Surfaces currently holding a `zwp_idle_inhibitor_v1` (`protocols/idle_inhibit.rs`).
     pub(crate) idle_inhibitors:
         Vec<smithay::reexports::wayland_server::protocol::wl_surface::WlSurface>,
+    /// `org.freedesktop.ScreenSaver` service — cookies + activity pokes feed
+    /// the same idle-blank gate as `idle_inhibitors` (`de-system/screensaver.rs`).
+    pub(crate) screensaver: de_system::screensaver::ScreenSaver,
 
     pub seat: Seat<De>,
     pub seat_name: String,
@@ -198,6 +233,10 @@ pub struct De {
     pub gestures: de_ui::gestures::GestureTracker,
     /// The active touch is a shell gesture — never delivered to clients.
     pub touch_claimed: bool,
+    /// True when the active slot-0 touch is bridged to `wl_pointer` for a
+    /// client that cannot consume `wl_touch` — opt-in via the
+    /// `DE_TOUCH_AS_POINTER` app_id denylist, off by default.
+    pub touch_as_pointer: bool,
     /// Current home page index.
     pub home_page: usize,
     /// desktop-id → spawn → first toplevel bookkeeping + timeout.
@@ -247,6 +286,8 @@ pub struct De {
     pub(crate) osd_fx: crate::osd_ui::OsdFx,
     /// Heads-up notification banner controller (`hun_ui.rs`).
     pub(crate) hun_fx: crate::hun_ui::HunFx,
+    /// MPRIS "now playing" status-bar pill (`media_ui.rs`).
+    pub(crate) media_fx: crate::media_ui::MediaFx,
     /// Last notification ID forwarded to `hun_fx` (prevents duplicate enqueue).
     pub(crate) last_hun_notif_id: u32,
     /// Pure app lifecycle & freeze-timer state machine (`de_system::lifecycle`).
@@ -373,111 +414,109 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         de_design::theme::persisted_mode().theme()
     };
 
-    let (session, seat_notifier, setup, mut renderer, compositor, output, render_node) =
-        match flags.backend {
-            BackendSelect::Drm => {
-                let card = de_backend::drm::find_card()
-                    .ok_or_else(|| InitError::Compositor("no drm card".into()))?;
-                let (mut session, seat_notifier) = de_backend::session::activate()?;
-                let mut setup = de_backend::drm::open_drm(&mut session, &card)?;
+    let (session, seat_notifier, setup, mut renderer, compositor, output, render_node) = match flags
+        .backend
+    {
+        BackendSelect::Drm => {
+            let card = de_backend::drm::find_card()
+                .ok_or_else(|| InitError::Compositor("no drm card".into()))?;
+            let (mut session, seat_notifier) = de_backend::session::activate()?;
+            let mut setup = de_backend::drm::open_drm(&mut session, &card)?;
 
-                let drm_out = de_backend::drm::select_output(&mut setup.device)?
-                    .ok_or_else(|| InitError::Compositor("no connected connector".into()))?;
+            let drm_out = de_backend::drm::select_output(&mut setup.device)?
+                .ok_or_else(|| InitError::Compositor("no connected connector".into()))?;
 
-                // Renderer selection: explicit > auto (GL if it inits and CMA is healthy).
-                let want_gl = match flags.renderer {
-                    RendererSelect::Gl => true,
-                    RendererSelect::Soft => false,
-                    RendererSelect::Auto => cma_free_kb() >= CMA_FLOOR_KB,
-                };
-                let mut renderer: Option<DeRenderer> = None;
-                let mut gl_error: Option<String> = None;
-                if want_gl && de_backend::drm::init_egl(&mut setup).is_ok() {
-                    let display_egl: EGLDisplay = setup.egl_display.clone().expect("egl init");
-                    match de_render::gl::create(&display_egl) {
-                        Ok(r) => renderer = Some(DeRenderer::Gl(Box::new(r))),
-                        Err(e) => gl_error = Some(e.to_string()),
-                    }
-                } else if want_gl {
-                    gl_error = Some("egl init failed".to_string());
+            // Renderer selection: explicit > auto (GL if it inits and CMA is healthy).
+            let want_gl = match flags.renderer {
+                RendererSelect::Gl => true,
+                RendererSelect::Soft => false,
+                RendererSelect::Auto => cma_free_kb() >= CMA_FLOOR_KB,
+            };
+            let mut renderer: Option<DeRenderer> = None;
+            let mut gl_error: Option<String> = None;
+            if want_gl && de_backend::drm::init_egl(&mut setup).is_ok() {
+                let display_egl: EGLDisplay = setup.egl_display.clone().expect("egl init");
+                match de_render::gl::create(&display_egl) {
+                    Ok(r) => renderer = Some(DeRenderer::Gl(Box::new(r))),
+                    Err(e) => gl_error = Some(e.to_string()),
                 }
-                if renderer.is_none() {
-                    if flags.require_gl || flags.renderer == RendererSelect::Gl {
-                        return Err(InitError::GlRequired(
-                            gl_error.unwrap_or_else(|| "unavailable".into()),
-                        ));
-                    }
-                    let r = de_render::soft::create()
-                        .map_err(|e| InitError::Render(RenderError::Soft(format!("{e}"))))?;
-                    renderer = Some(DeRenderer::Soft(r));
-                }
-                let renderer = renderer.expect("renderer");
-
-                let surface = setup
-                    .device
-                    .create_surface(drm_out.crtc, drm_out.mode, &[drm_out.connector])
-                    .map_err(|e| InitError::Compositor(format!("surface: {e}")))?;
-                let planes = setup
-                    .device
-                    .planes(&drm_out.crtc)
-                    .map_err(|e| InitError::Compositor(format!("planes: {e}")))?;
-                let (allocator, exporter) = de_backend::drm::allocators(&setup);
-                let compositor = DeCompositor::new(
-                    smithay::output::OutputModeSource::Static {
-                        size: smithay::utils::Size::from((
-                            drm_out.width as i32,
-                            drm_out.height as i32,
-                        )),
-                        scale: smithay::utils::Scale::from(1.0),
-                        transform: smithay::utils::Transform::Normal,
-                    },
-                    surface,
-                    Some(planes),
-                    allocator,
-                    exporter,
-                    [
-                        smithay::backend::allocator::Fourcc::Argb8888,
-                        smithay::backend::allocator::Fourcc::Xrgb8888,
-                    ],
-                    renderer.renderer_formats(),
-                    smithay::utils::Size::<u32, smithay::utils::Buffer>::from((64, 64)),
-                    Some(setup.gbm.clone()),
-                )
-                .map_err(|e| InitError::Compositor(format!("{e:?}")))?;
-                let render_node = setup
-                    .device
-                    .device_fd()
-                    .dev_id()
-                    .ok()
-                    .and_then(|id| smithay::backend::drm::DrmNode::from_dev_id(id).ok());
-                let output = OutputGeometry::from(&drm_out);
-                (
-                    Some(session),
-                    Some(seat_notifier),
-                    Some(setup),
-                    renderer,
-                    Some(compositor),
-                    output,
-                    render_node,
-                )
+            } else if want_gl {
+                gl_error = Some("egl init failed".to_string());
             }
-            BackendSelect::Virtual => {
+            if renderer.is_none() {
                 if flags.require_gl || flags.renderer == RendererSelect::Gl {
                     return Err(InitError::GlRequired(
-                        "virtual backend uses software renderer".into(),
+                        gl_error.unwrap_or_else(|| "unavailable".into()),
                     ));
                 }
                 let r = de_render::soft::create()
                     .map_err(|e| InitError::Render(RenderError::Soft(format!("{e}"))))?;
-                let output = OutputGeometry {
-                    connector_name: "VIRTUAL-1".to_string(),
-                    width: flags.virtual_size.0,
-                    height: flags.virtual_size.1,
-                    refresh_hz: flags.virtual_refresh_hz,
-                };
-                (None, None, None, DeRenderer::Soft(r), None, output, None)
+                renderer = Some(DeRenderer::Soft(r));
             }
-        };
+            let renderer = renderer.expect("renderer");
+
+            let surface = setup
+                .device
+                .create_surface(drm_out.crtc, drm_out.mode, &[drm_out.connector])
+                .map_err(|e| InitError::Compositor(format!("surface: {e}")))?;
+            let planes = setup
+                .device
+                .planes(&drm_out.crtc)
+                .map_err(|e| InitError::Compositor(format!("planes: {e}")))?;
+            let (allocator, exporter) = de_backend::drm::allocators(&setup);
+            let compositor = DeCompositor::new(
+                smithay::output::OutputModeSource::Static {
+                    size: smithay::utils::Size::from((drm_out.width as i32, drm_out.height as i32)),
+                    scale: smithay::utils::Scale::from(1.0),
+                    transform: smithay::utils::Transform::Normal,
+                },
+                surface,
+                Some(planes),
+                allocator,
+                exporter,
+                [
+                    smithay::backend::allocator::Fourcc::Argb8888,
+                    smithay::backend::allocator::Fourcc::Xrgb8888,
+                ],
+                renderer.renderer_formats(),
+                smithay::utils::Size::<u32, smithay::utils::Buffer>::from((64, 64)),
+                Some(setup.gbm.clone()),
+            )
+            .map_err(|e| InitError::Compositor(format!("{e:?}")))?;
+            let render_node = setup
+                .device
+                .device_fd()
+                .dev_id()
+                .ok()
+                .and_then(|id| smithay::backend::drm::DrmNode::from_dev_id(id).ok());
+            let output = OutputGeometry::from(&drm_out);
+            (
+                Some(session),
+                Some(seat_notifier),
+                Some(setup),
+                renderer,
+                Some(compositor),
+                output,
+                render_node,
+            )
+        }
+        BackendSelect::Virtual => {
+            if flags.require_gl || flags.renderer == RendererSelect::Gl {
+                return Err(InitError::GlRequired(
+                    "virtual backend uses software renderer".into(),
+                ));
+            }
+            let r = de_render::soft::create()
+                .map_err(|e| InitError::Render(RenderError::Soft(format!("{e}"))))?;
+            let output = OutputGeometry {
+                connector_name: "VIRTUAL-1".to_string(),
+                width: flags.virtual_size.0,
+                height: flags.virtual_size.1,
+                refresh_hz: flags.virtual_refresh_hz,
+            };
+            (None, None, None, DeRenderer::Soft(r), None, output, None)
+        }
+    };
 
     // Rasterize + upload the brand frame once (P0 → shown until the stub is
     // first composed).
@@ -528,6 +567,19 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     });
     crate::screencopy::init(&dh);
     crate::virtual_pointer::init(&dh);
+
+    // Stock freedesktop globals (`protocols/standards.rs`) — each `new`
+    // registers its global immediately; nothing here is privileged.
+    let single_pixel_buffer_state = SinglePixelBufferState::new::<De>(&dh);
+    let cursor_shape_state = CursorShapeManagerState::new::<De>(&dh);
+    let xdg_foreign_state = XdgForeignState::new::<De>(&dh);
+    let content_type_state = ContentTypeState::new::<De>(&dh);
+    let xdg_toplevel_icon_manager = XdgToplevelIconManager::new::<De>(&dh);
+    let xdg_toplevel_tag_manager = XdgToplevelTagManager::new::<De>(&dh);
+    let kbd_shortcuts_inhibit_state = KeyboardShortcutsInhibitState::new::<De>(&dh);
+    let system_bell_state = XdgSystemBellState::new::<De>(&dh);
+    // `wp_presentation` clock id 1 = CLOCK_MONOTONIC (matches `Clock<Monotonic>`).
+    let presentation_state = PresentationState::new::<De>(&dh, 1);
     let mut dmabuf_state = DmabufState::new();
     let dmabuf_global = render_node
         .and_then(de_protocols::dmabuf_feedback)
@@ -631,7 +683,18 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         pointer_constraints_state,
         session_lock_state,
         session_lock_tracker: crate::protocols::session_lock::SessionLockTracker::new(),
+        single_pixel_buffer_state,
+        cursor_shape_state,
+        xdg_foreign_state,
+        content_type_state,
+        xdg_toplevel_icon_manager,
+        xdg_toplevel_tag_manager,
+        kbd_shortcuts_inhibit_state,
+        system_bell_state,
+        presentation_state,
+        present_seq: 0,
         idle_inhibitors: Vec::new(),
+        screensaver: de_system::screensaver::ScreenSaver::start(),
 
         seat,
         seat_name,
@@ -670,6 +733,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
             c
         }),
         touch_claimed: false,
+        touch_as_pointer: false,
         home_page: 0,
         launch: crate::launch::LaunchTracker::new(),
         morph: None,
@@ -693,6 +757,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         shot_fx: crate::shot_ui::ShotFx::default(),
         osd_fx: crate::osd_ui::OsdFx::default(),
         hun_fx: crate::hun_ui::HunFx::default(),
+        media_fx: crate::media_ui::MediaFx::new(),
         last_hun_notif_id: 0,
         lifecycle: de_system::lifecycle::LifecycleManager::default(),
         insets: de_api::WindowInsets {

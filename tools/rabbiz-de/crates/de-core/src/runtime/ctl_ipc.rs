@@ -646,6 +646,10 @@ impl De {
                 IpcResponse::ok(id, None)
             }
             IpcCommand::InjectKey { keycode, pressed } => {
+                if !self.hw_keyboard {
+                    self.hw_keyboard = true;
+                    self.osk = None;
+                }
                 let time_ms = std::time::Duration::from(self.clock.now()).as_millis() as u32;
                 self.inject_key(keycode, pressed, time_ms);
                 self.needs_present = true;

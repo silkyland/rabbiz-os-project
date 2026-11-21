@@ -351,6 +351,35 @@ When `rabbiz-de` spawns an application scope, it injects:
 | `ELECTRON_OZONE_PLATFORM_HINT` | `wayland` | Chromium/Electron Ozone Wayland |
 | `RABBIZ_FORCE_SOFTWARE` | `1` (Tier 2 / A21s fallback) | Instructs clients to use `wl_shm` software buffers |
 
+The full contract — not a subset — is pushed into the D-Bus activation
+environment (`dbus-update-activation-environment --systemd --all` in
+`rabbiz-session`), so D-Bus-activated helpers, GApplication instances and
+portal backends inherit it too.
+
+#### Session D-Bus Surface
+
+Standard Linux applications can rely on these names on the session bus — the
+same interfaces they probe for on GNOME/KDE (`AUDIT-DE-STANDARDS-2026-11-21`):
+
+| Well-known name | Provider | Apps get |
+|---|---|---|
+| `org.freedesktop.Notifications` | `rabbiz-de` (`de-system`) | Shade + heads-up notifications, actions, urgency, hints |
+| `org.freedesktop.ScreenSaver` | `rabbiz-de` (`de-system`) | Idle inhibit + activity pokes (video players, calls) |
+| `org.mpris.MediaPlayer2.*` | any MPRIS-capable app | Status-bar media pill + shade transport controls |
+| `org.freedesktop.UPower` / `.PowerProfiles` | `upower` / `power-profiles-daemon` | Battery state, battery-saver profile |
+| `org.freedesktop.portal.*` | `xdg-desktop-portal` + gtk backend (`rabbiz-portals.conf`) | FileChooser, OpenURI, Settings (color-scheme → dark mode), Inhibit, Wallpaper |
+| `org.freedesktop.secrets` | `gnome-keyring` (XDG Autostart) | Credential storage (Chromium password store) |
+| `org.freedesktop.impl.portal.Notifications` | portal → `rabbiz-de` | Sandboxed-app notifications |
+
+#### Wayland Globals Beyond Core Shell
+
+Besides `xdg_shell`, `layer_shell` (privileged), `text_input_v3`,
+`data_control` (privileged) and friends, `rabbiz-de` also advertises:
+`wp_single_pixel_buffer`, `wp_cursor_shape_v1`, `zxdg_foreign_v1` (portal
+parents), `wp_content_type_v1`, `xdg_toplevel_icon_v1`, `xdg_toplevel_tag_v1`,
+`zwp_keyboard_shortcuts_inhibit_v1`, `xdg_system_bell_v1`, and
+`wp_presentation` (frame feedback, CLOCK_MONOTONIC).
+
 #### Third-Party Branding Rule ([../AGENTS.md](../AGENTS.md))
 
 > **Never restyle a third-party app.** RabbizOS names and Cream Glass artwork are for first-party `rabbiz-*` apps only. Third-party packages keep the exact `Name=` and `Icon=` their upstream desktop entry ships (e.g., Google Chrome remains `"Google Chrome"` with the Chrome logo; KDE and GNOME apps keep their upstream branding). The only compositor presentation adjustment (`tools/rabbiz-de/crates/de-apps/src/icons.rs`) is seating non-tile icons at ~64% scale on the shared sand tile backdrop so the home grid reads as one cohesive family.

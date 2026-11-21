@@ -13,7 +13,9 @@ use smithay::backend::renderer::element::surface::{
 use smithay::backend::renderer::element::texture::TextureRenderElement;
 use smithay::backend::renderer::element::{AsRenderElements, Kind};
 use smithay::backend::renderer::{ImportAll, ImportMem, Renderer, Texture};
-use smithay::desktop::utils::send_frames_surface_tree;
+use smithay::desktop::utils::{
+    send_frames_surface_tree, take_presentation_feedback_surface_tree, OutputPresentationFeedback,
+};
 use smithay::desktop::{layer_map_for_output, LayerMap};
 use smithay::utils::{Physical, Point, Scale};
 use smithay::wayland::shell::wlr_layer::Layer;
@@ -53,6 +55,7 @@ pub(super) struct FrameParts<'a> {
     pub(super) shot_fx: &'a mut crate::shot_ui::ShotFx,
     pub(super) osd_fx: &'a mut crate::osd_ui::OsdFx,
     pub(super) hun_fx: &'a mut crate::hun_ui::HunFx,
+    pub(super) media_fx: &'a mut crate::media_ui::MediaFx,
     pub(super) power: &'a mut crate::power::Power,
     /// Draw the home screen from `home` layers instead of `shell_tex`.
     pub(super) layered: bool,
@@ -61,7 +64,56 @@ pub(super) struct FrameParts<'a> {
     pub(super) pointer_active: bool,
     pub(super) cursor_px: &'a mut Option<de_api::Pixels>,
     pub(super) cursor_tex: &'a mut Option<Box<dyn std::any::Any>>,
+    /// `wp_presentation` feedback sequence (incremented per presented frame).
+    pub(super) present_seq: &'a mut u64,
     pub(super) now: Instant,
+}
+
+/// `wp_presentation` feedback for every surface that just received a frame
+/// callback — browsers/mpv hold decoded frames until the feedback arrives.
+/// Runs beside `send_frame`/`send_frames_surface_tree` at both call sites
+/// (virtual fast path and the composited path).
+fn emit_presentation_feedback(
+    space: &smithay::desktop::Space<smithay::desktop::Window>,
+    out: &smithay::output::Output,
+    time: smithay::utils::Time<smithay::utils::Monotonic>,
+    seq: u64,
+) {
+    use smithay::reexports::wayland_protocols::wp::presentation_time::server::wp_presentation_feedback;
+    use smithay::reexports::wayland_server::protocol::wl_surface::WlSurface;
+    use smithay::wayland::presentation::Refresh;
+
+    fn take(
+        surface: &WlSurface,
+        out: &smithay::output::Output,
+        fb: &mut OutputPresentationFeedback,
+    ) {
+        take_presentation_feedback_surface_tree(
+            surface,
+            fb,
+            |_, _| Some(out.clone()),
+            |_, _| wp_presentation_feedback::Kind::empty(),
+        );
+    }
+
+    let mut fb = OutputPresentationFeedback::new(out);
+    for layer in layer_map_for_output(out).layers() {
+        take(layer.wl_surface(), out, &mut fb);
+    }
+    for window in space.elements() {
+        if let Some(toplevel) = window.toplevel() {
+            take(toplevel.wl_surface(), out, &mut fb);
+        }
+        for (popup, _) in crate::popups::popups_of(window) {
+            take(popup.wl_surface(), out, &mut fb);
+        }
+    }
+    fb.presented(
+        time,
+        Refresh::Fixed(Duration::from_millis(16)),
+        seq,
+        wp_presentation_feedback::Kind::Vsync,
+    );
 }
 
 pub(super) fn render_with<R>(de: &mut FrameParts<'_>, renderer: &mut R) -> Result<bool, String>
@@ -99,6 +151,12 @@ where
                 );
             }
         }
+        *de.present_seq += 1;
+        // `map` is a `MutexGuard` over the output's `LayerMap`; holding it while
+        // `emit_presentation_feedback` re-locks the same mutex self-deadlocks
+        // the event loop on the very first frame.
+        drop(map);
+        emit_presentation_feedback(de.space, &out, time, *de.present_seq);
         return Ok(true);
     }
 
@@ -209,6 +267,34 @@ where
         stack.push(
             de_api::DisplayArea::SystemBars,
             DeElement::from(tex_el::<R>(tex, Point::<f64, Physical>::from((0.0, bar_y)))),
+        );
+    }
+
+    // "Now playing" pill centred in the status-bar band — its own small
+    // texture so the marquee never re-rasters the whole shell frame.
+    if de.media_fx.tex.is_none() || de.media_fx.tex_generation != de.media_fx.generation {
+        if let Some(px) = de.media_fx.px.as_ref() {
+            de.media_fx.tex = upload_any(renderer, px);
+            de.media_fx.tex_generation = de.media_fx.generation;
+        } else {
+            de.media_fx.tex = None;
+            de.media_fx.tex_generation = de.media_fx.generation;
+        }
+    }
+    if let (Some(tex), Some(r)) = (
+        texture_buffer::<R>(de.media_fx.tex.as_ref()),
+        de.media_fx.rect(de.output.width as i32),
+    ) {
+        stack.push(
+            de_api::DisplayArea::SystemBars,
+            DeElement::from(TextureRenderElement::from_texture_buffer(
+                Point::<f64, Physical>::from((f64::from(r.x), f64::from(r.y))),
+                tex,
+                Some(1.0),
+                None,
+                None,
+                Kind::Unspecified,
+            )),
         );
     }
 
@@ -350,6 +436,9 @@ where
             );
         }
     }
+    *de.present_seq += 1;
+    drop(map);
+    emit_presentation_feedback(de.space, &out, time, *de.present_seq);
     Ok(true)
 }
 

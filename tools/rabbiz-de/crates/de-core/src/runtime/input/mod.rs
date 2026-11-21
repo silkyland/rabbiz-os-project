@@ -58,6 +58,14 @@ impl De {
             InputEvent::TouchMotion { event } => self.on_touch_motion::<B>(&event),
             InputEvent::TouchUp { event } => self.on_touch_up::<B>(&event),
             InputEvent::TouchCancel { event } => self.on_touch_cancel::<B>(&event),
+            // wl_touch.frame terminates a burst of touch events; clients like
+            // Chromium buffer touch points and only dispatch on frame, so
+            // hardware frames must reach the seat (injected events frame
+            // themselves per-burst in inject_touch_*).
+            InputEvent::TouchFrame { .. } => {
+                let touch = self.touch.clone();
+                touch.frame(self);
+            }
             InputEvent::PointerMotion { event } => {
                 let pos = self.pointer.current_location() + event.delta();
                 self.pointer_motion(event.time_msec(), pos, event.delta());
@@ -252,5 +260,21 @@ mod tests {
         // Content zone: reaches the client only while an app is foreground.
         assert!(!claim_touch(Zone::Content, false, false));
         assert!(claim_touch(Zone::Content, true, false));
+    }
+
+    /// The touch→pointer bridge is opt-in: only app_ids listed in
+    /// `DE_TOUCH_AS_POINTER` get emulated pointer events; everyone else
+    /// (including third-party touch-aware clients like Chrome) gets real
+    /// `wl_touch`.
+    #[test]
+    fn pointer_bridge_app_denylist() {
+        use super::touch::pointer_bridge_app;
+        let list = "sun-awt-X11, com.example.legacy";
+        assert!(pointer_bridge_app("sun-awt-X11-XFramePeer", list));
+        assert!(pointer_bridge_app("com.example.legacy", list));
+        assert!(!pointer_bridge_app("google-chrome", list));
+        assert!(!pointer_bridge_app("rabbiz-sms", list));
+        assert!(!pointer_bridge_app("sun-awt-X11-XFramePeer", ""));
+        assert!(!pointer_bridge_app("", list));
     }
 }

@@ -216,6 +216,7 @@ fn render_scene(name: &str, size: Size, s: &de_ui::i18n::Strings) -> Option<Pixe
                         "16:11",
                         "Mon, 16 Nov",
                         &items,
+                        None,
                     )
                 }
             };

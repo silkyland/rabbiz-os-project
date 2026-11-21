@@ -10,6 +10,7 @@ use de_paint::{glass, text, Canvas};
 
 use crate::chrome::{self, style};
 use crate::i18n::Strings;
+use crate::screens::media_card::{self, MediaCardModel};
 
 const SIDE: i32 = 28;
 const CARD_RADIUS: f32 = 44.0;
@@ -40,6 +41,8 @@ pub struct Notification {
 pub enum NotifHit {
     /// Index into the list.
     Card(usize),
+    /// The pinned Now-Playing media card on top.
+    Media,
     ClearAll,
 }
 
@@ -51,11 +54,23 @@ fn clear_all_rect(size: Size) -> Rect {
     Rect::new(size.w - SIDE - 96, 82, 96, 96)
 }
 
-/// Card rectangles for `count` notifications (stops at the screen bottom).
+/// The pinned Now-Playing media card occupies this rect when a player exists.
 #[must_use]
-pub fn notif_rects(size: Size, count: usize) -> Vec<Rect> {
+pub fn media_notif_rect(size: Size) -> Rect {
+    Rect::new(SIDE, NOTIF_TOP, size.w - SIDE * 2, media_card::CARD_HEIGHT)
+}
+
+/// Card rectangles for `count` notifications (stops at the screen bottom);
+/// `has_media` reserves the top slot for the pinned media card.
+#[must_use]
+pub fn notif_rects(size: Size, count: usize, has_media: bool) -> Vec<Rect> {
     let mut out = Vec::new();
-    let mut y = NOTIF_TOP;
+    let mut y = NOTIF_TOP
+        + if has_media {
+            media_card::CARD_HEIGHT + NOTIF_GAP
+        } else {
+            0
+        };
     for _ in 0..count {
         if y + NOTIF_CARD_H > size.h - 120 {
             break;
@@ -67,11 +82,14 @@ pub fn notif_rects(size: Size, count: usize) -> Vec<Rect> {
 }
 
 #[must_use]
-pub fn notif_hit(size: Size, pos: Point, count: usize) -> Option<NotifHit> {
+pub fn notif_hit(size: Size, pos: Point, count: usize, has_media: bool) -> Option<NotifHit> {
     if count > 0 && clear_all_rect(size).contains(pos) {
         return Some(NotifHit::ClearAll);
     }
-    notif_rects(size, count)
+    if has_media && media_notif_rect(size).contains(pos) {
+        return Some(NotifHit::Media);
+    }
+    notif_rects(size, count, has_media)
         .iter()
         .position(|r| r.contains(pos))
         .map(NotifHit::Card)
@@ -126,8 +144,9 @@ pub fn render_notifications(
     clock: &str,
     date: &str,
     items: &[Notification],
+    media: Option<MediaCardModel<'_>>,
 ) -> Pixels {
-    render_notifications_inner(size, s, t, Some(backdrop), clock, date, items)
+    render_notifications_inner(size, s, t, Some(backdrop), clock, date, items, media)
 }
 
 /// Notification panel controls only (transparent gaps for GPU-blurred sheet).
@@ -139,8 +158,9 @@ pub fn render_notifications_controls(
     clock: &str,
     date: &str,
     items: &[Notification],
+    media: Option<MediaCardModel<'_>>,
 ) -> Pixels {
-    render_notifications_inner(size, s, t, None, clock, date, items)
+    render_notifications_inner(size, s, t, None, clock, date, items, media)
 }
 
 fn render_notifications_inner(
@@ -151,6 +171,7 @@ fn render_notifications_inner(
     clock: &str,
     date: &str,
     items: &[Notification],
+    media: Option<MediaCardModel<'_>>,
 ) -> Pixels {
     let mut c = match backdrop {
         Some(b) => backdrop_with_veil(size, b, t.scrim),
@@ -162,7 +183,7 @@ fn render_notifications_inner(
         frost_card(&mut c, backdrop, r, 48.0, CARD_TINT);
         chrome::draw_ink_centered(&mut c, "\u{e0b8}", &text::LabelStyle::icon(38.0, ON_DIM), r);
     }
-    if items.is_empty() {
+    if items.is_empty() && media.is_none() {
         frost_card(
             &mut c,
             backdrop,
@@ -177,7 +198,16 @@ fn render_notifications_inner(
             size.h / 2 - 20,
         );
     }
-    for (n, r) in items.iter().zip(notif_rects(size, items.len())) {
+    // Pinned Now-Playing card on top — same cream frost as the cards below.
+    if let Some(m) = &media {
+        let r = media_notif_rect(size);
+        frost_card(&mut c, backdrop, r, CARD_RADIUS, CARD_TINT_ON);
+        media_card::render_card_contents(&mut c, r, &tokens::LIGHT, m);
+    }
+    for (n, r) in items
+        .iter()
+        .zip(notif_rects(size, items.len(), media.is_some()))
+    {
         frost_card(&mut c, backdrop, r, CARD_RADIUS, CARD_TINT_ON);
         let icon = Rect::new(r.x + 24, r.y + 26, 72, 72);
         if let Some(px) = &n.icon {
@@ -665,21 +695,53 @@ mod tests {
 
     #[test]
     fn notification_cards_stack_and_hit() {
-        let r = notif_rects(SIZE, 3);
+        let r = notif_rects(SIZE, 3, false);
         assert_eq!(r.len(), 3);
         assert!(r[1].y > r[0].y + r[0].h);
         assert_eq!(
-            notif_hit(SIZE, Point::new(100, r[1].y + 10), 3),
+            notif_hit(SIZE, Point::new(100, r[1].y + 10), 3, false),
             Some(NotifHit::Card(1))
         );
         assert_eq!(
-            notif_hit(SIZE, clear_all_rect(SIZE).origin(), 3),
+            notif_hit(SIZE, clear_all_rect(SIZE).origin(), 3, false),
             Some(NotifHit::ClearAll)
         );
-        assert_eq!(notif_hit(SIZE, clear_all_rect(SIZE).origin(), 0), None);
+        assert_eq!(
+            notif_hit(SIZE, clear_all_rect(SIZE).origin(), 0, false),
+            None
+        );
         assert!(
-            notif_rects(SIZE, 50).len() < 50,
+            notif_rects(SIZE, 50, false).len() < 50,
             "list stops above the bottom"
+        );
+    }
+
+    #[test]
+    fn media_card_shifts_cards_and_hits() {
+        let media_r = media_notif_rect(SIZE);
+        let r = notif_rects(SIZE, 2, true);
+        assert_eq!(r.len(), 2);
+        assert!(
+            r[0].y >= media_r.y + media_r.h,
+            "first card below media card"
+        );
+        assert_eq!(
+            notif_hit(
+                SIZE,
+                Point::new(media_r.x + media_r.w / 2, media_r.y + 10),
+                2,
+                true
+            ),
+            Some(NotifHit::Media)
+        );
+        assert_eq!(
+            notif_hit(SIZE, Point::new(100, r[0].y + 10), 2, true),
+            Some(NotifHit::Card(0))
+        );
+        // Without media the same point hits the first card, not Media.
+        assert_eq!(
+            notif_hit(SIZE, Point::new(100, media_r.y + 10), 2, false),
+            Some(NotifHit::Card(0))
         );
     }
 
@@ -697,9 +759,39 @@ mod tests {
             when: "now".into(),
             icon: None,
         }];
-        let n = render_notifications(SIZE, &s, &t, &backdrop(), "09:41", "Mon, 9 Jun", &items);
+        let n = render_notifications(
+            SIZE,
+            &s,
+            &t,
+            &backdrop(),
+            "09:41",
+            "Mon, 9 Jun",
+            &items,
+            None,
+        );
         assert_eq!(n.size, SIZE);
-        let empty = render_notifications(SIZE, &s, &t, &backdrop(), "09:41", "Mon, 9 Jun", &[]);
+        let empty =
+            render_notifications(SIZE, &s, &t, &backdrop(), "09:41", "Mon, 9 Jun", &[], None);
         assert_ne!(n.data, empty.data);
+        // The pinned media card paints ink where the empty state had none.
+        let media = media_card::MediaCardModel {
+            player_name: "Chrome",
+            title: "Track",
+            artist: "Artist",
+            playing: true,
+            can_go_previous: true,
+            can_go_next: true,
+        };
+        let with_media = render_notifications(
+            SIZE,
+            &s,
+            &t,
+            &backdrop(),
+            "09:41",
+            "Mon, 9 Jun",
+            &items,
+            Some(media),
+        );
+        assert_ne!(with_media.data, n.data);
     }
 }

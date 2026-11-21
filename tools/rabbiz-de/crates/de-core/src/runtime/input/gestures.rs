@@ -146,11 +146,19 @@ impl De {
             }
             GestureEvent::NavPaused => {
                 crate::haptics::pulse(crate::haptics::HapticKind::RecentsHold);
-                self.nav_preview(true);
+                if self.foreground == Foreground::Shell && self.nav.current == Screen::Home {
+                    self.show_shell(Screen::Recents);
+                } else {
+                    self.nav_preview(true);
+                }
                 return;
             }
             GestureEvent::NavResumed => {
-                self.nav_preview(false);
+                if self.foreground == Foreground::Shell && self.nav.current == Screen::Recents {
+                    self.show_shell(Screen::Home);
+                } else {
+                    self.nav_preview(false);
+                }
                 return;
             }
             GestureEvent::NavReleased { dy, vy, paused } => {
@@ -172,7 +180,13 @@ impl De {
                         self.show_shell(Screen::Recents);
                     }
                     NavDestination::Cancel => {
-                        self.release_home_drag(false);
+                        if self.foreground == Foreground::Shell
+                            && self.nav.current == Screen::Recents
+                        {
+                            self.show_shell(Screen::Home);
+                        } else {
+                            self.release_home_drag(false);
+                        }
                     }
                 }
                 return;

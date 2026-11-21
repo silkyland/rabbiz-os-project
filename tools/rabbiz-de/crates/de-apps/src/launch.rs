@@ -39,7 +39,25 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
     if argv.is_empty() {
         return Err(format!("empty exec for {desktop_id}"));
     }
+    spawn(&argv, desktop_id, &extra_env)
+}
 
+/// Spawn an already-resolved command line detached — the same env/log/plumbing
+/// as [`launch`] but without desktop-id or `launch.toml` resolution. Used by
+/// `autostart` entries and the `rabbiz-de autostart` session step.
+pub fn launch_command(cmdline: &str, log_name: &str) -> Result<i32, String> {
+    let argv = split_shellish(cmdline);
+    if argv.is_empty() {
+        return Err(format!("empty exec: {cmdline}"));
+    }
+    spawn(&argv, log_name, &BTreeMap::new())
+}
+
+fn spawn(
+    argv: &[String],
+    log_name: &str,
+    extra_env: &BTreeMap<String, String>,
+) -> Result<i32, String> {
     let state = std::env::var("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".local/state")))
@@ -49,7 +67,7 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
     let log = OpenOptions::new()
         .create(true)
         .append(true)
-        .open(logdir.join(format!("{desktop_id}.log")))
+        .open(logdir.join(format!("{log_name}.log")))
         .map_err(|e| format!("log open: {e}"))?;
     let log_err = log.try_clone().map_err(|e| format!("log clone: {e}"))?;
 
@@ -65,7 +83,7 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
     for name in de_system::env::unset_names() {
         cmd.env_remove(name);
     }
-    for (k, v) in &extra_env {
+    for (k, v) in extra_env {
         cmd.env(k, v);
     }
 

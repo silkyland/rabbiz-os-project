@@ -8,6 +8,12 @@
 
 use std::collections::HashMap;
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
+
+use zbus::blocking;
+use zbus::zvariant::OwnedValue;
 
 /// Maximum accepted size for local album-art files (2 MiB).
 pub const MAX_ART_BYTES: u64 = 2 * 1024 * 1024;
@@ -223,6 +229,226 @@ impl MprisTracker {
     pub fn player_count(&self) -> usize {
         self.players.len()
     }
+}
+
+// ---------------------------------------------------------------------------
+// Live session-bus watcher (worker thread; the compositor polls snapshots).
+// ---------------------------------------------------------------------------
+
+const MPRIS_POLL: Duration = Duration::from_millis(500);
+const MPRIS_PREFIX: &str = "org.mpris.MediaPlayer2.";
+const PLAYER_PATH: &str = "/org/mpris/MediaPlayer2";
+const PLAYER_IFACE: &str = "org.mpris.MediaPlayer2.Player";
+const ROOT_IFACE: &str = "org.mpris.MediaPlayer2";
+
+/// Live MPRIS tracker driven by a session-bus polling thread.
+///
+/// `active()`/`generation()` are cheap reads the compositor can call every
+/// frame; `request()` forwards transport commands to the worker so the
+/// frame loop never performs D-Bus calls itself.
+pub struct Mpris {
+    tracker: Arc<Mutex<MprisTracker>>,
+    generation: Arc<AtomicU64>,
+    commands: mpsc::Sender<MediaCommand>,
+}
+
+impl Mpris {
+    /// Spawn the watcher thread. When no session bus is reachable the worker
+    /// keeps retrying; [`active`](Self::active) simply stays `None`.
+    #[must_use]
+    pub fn start() -> Self {
+        let tracker = Arc::new(Mutex::new(MprisTracker::new()));
+        let generation = Arc::new(AtomicU64::new(0));
+        let (tx, rx) = mpsc::channel::<MediaCommand>();
+        let shared = tracker.clone();
+        let gen = generation.clone();
+        std::thread::spawn(move || worker_loop(shared, gen, rx));
+        Self {
+            tracker,
+            generation,
+            commands: tx,
+        }
+    }
+
+    /// Bumped whenever the selected active snapshot changes.
+    #[must_use]
+    pub fn generation(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
+    }
+
+    /// Currently selected player snapshot (prefers playing, else most recent).
+    #[must_use]
+    pub fn active(&self) -> Option<MediaSnapshot> {
+        self.tracker
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .active()
+            .cloned()
+    }
+
+    /// Forward a transport command to the active player, asynchronously.
+    pub fn request(&self, command: MediaCommand) {
+        let _ = self.commands.send(command);
+    }
+}
+
+fn worker_loop(
+    tracker: Arc<Mutex<MprisTracker>>,
+    generation: Arc<AtomicU64>,
+    rx: mpsc::Receiver<MediaCommand>,
+) {
+    let roots = art_roots();
+    let art_roots: Vec<&Path> = roots.iter().map(PathBuf::as_path).collect();
+    let mut conn = None;
+    let mut known: Vec<String> = Vec::new();
+    let mut last_active: Option<MediaSnapshot> = None;
+    let mut seq: u64 = 0;
+    loop {
+        while let Ok(cmd) = rx.try_recv() {
+            dispatch_command(conn.as_ref(), &tracker, cmd);
+        }
+        if conn.is_none() {
+            conn = blocking::Connection::session().ok();
+        }
+        if let Some(c) = conn.as_ref() {
+            match poll_players(c, &tracker, &art_roots, &mut known, &mut seq) {
+                Ok(active) => {
+                    if active != last_active {
+                        last_active = active;
+                        generation.fetch_add(1, Ordering::Relaxed);
+                    }
+                }
+                Err(_) => conn = None,
+            }
+        }
+        std::thread::sleep(MPRIS_POLL);
+    }
+}
+
+/// Local roots album art may resolve under: the user cache dir, where
+/// players typically download `mpris:artUrl` files.
+fn art_roots() -> Vec<PathBuf> {
+    std::env::var_os("XDG_CACHE_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".cache")))
+        .into_iter()
+        .collect()
+}
+
+/// One poll round: enumerate `org.mpris.MediaPlayer2.*` owners, refresh each
+/// player's properties, drop vanished ones. Returns the active snapshot so
+/// the caller can compare and bump the generation counter.
+fn poll_players(
+    conn: &blocking::Connection,
+    tracker: &Mutex<MprisTracker>,
+    art_roots: &[&Path],
+    known: &mut Vec<String>,
+    seq: &mut u64,
+) -> zbus::Result<Option<MediaSnapshot>> {
+    let dbus = blocking::Proxy::new(
+        conn,
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+    )?;
+    let names: Vec<String> = dbus.call("ListNames", &())?;
+    let names: Vec<String> = names
+        .into_iter()
+        .filter(|n| n.starts_with(MPRIS_PREFIX))
+        .collect();
+    *seq = seq.wrapping_add(1);
+    let mut t = tracker.lock().unwrap_or_else(|e| e.into_inner());
+    for name in &names {
+        if let Some(snap) = read_player(conn, name, art_roots) {
+            t.upsert(snap, *seq);
+        }
+    }
+    for gone in known.iter().filter(|o| !names.contains(o)) {
+        t.remove(gone);
+    }
+    *known = names;
+    Ok(t.active().cloned())
+}
+
+/// Read one player's `org.mpris.MediaPlayer2.Player` properties + root
+/// `Identity` into a [`MediaSnapshot`]; `None` when the player is unreachable.
+fn read_player(
+    conn: &blocking::Connection,
+    bus_name: &str,
+    art_roots: &[&Path],
+) -> Option<MediaSnapshot> {
+    let props = blocking::Proxy::new(
+        conn,
+        bus_name,
+        PLAYER_PATH,
+        "org.freedesktop.DBus.Properties",
+    )
+    .ok()?;
+    let all: HashMap<String, OwnedValue> = props.call("GetAll", &PLAYER_IFACE).ok()?;
+    let meta: HashMap<String, OwnedValue> = all
+        .get("Metadata")
+        .and_then(|v| v.clone().try_into().ok())
+        .unwrap_or_default();
+    let status: String = all
+        .get("PlaybackStatus")
+        .and_then(|v| <&str>::try_from(v).ok())
+        .unwrap_or_default()
+        .to_owned();
+    let player_name: String = props
+        .call("Get", &(ROOT_IFACE, "Identity"))
+        .ok()
+        .and_then(|v: OwnedValue| <&str>::try_from(&v).ok().map(str::to_owned))
+        .unwrap_or_else(|| bus_name.trim_start_matches(MPRIS_PREFIX).to_owned());
+    let art_path = meta
+        .get("mpris:artUrl")
+        .and_then(|v| <&str>::try_from(v).ok())
+        .and_then(|url| validate_art_url(url, art_roots))
+        .map(|p| p.to_string_lossy().into_owned());
+    Some(MediaSnapshot {
+        bus_name: bus_name.to_owned(),
+        player_name,
+        title: meta
+            .get("xesam:title")
+            .and_then(|v| <&str>::try_from(v).ok())
+            .unwrap_or_default()
+            .to_owned(),
+        artist: meta
+            .get("xesam:artist")
+            .and_then(|v| <Vec<String>>::try_from(v.clone()).ok())
+            .unwrap_or_default()
+            .join(", "),
+        playing: status == "Playing",
+        can_go_next: all
+            .get("CanGoNext")
+            .map_or(false, |v| <bool>::try_from(v).unwrap_or(false)),
+        can_go_previous: all
+            .get("CanGoPrevious")
+            .map_or(false, |v| <bool>::try_from(v).unwrap_or(false)),
+        art_path,
+    })
+}
+
+fn dispatch_command(
+    conn: Option<&blocking::Connection>,
+    tracker: &Mutex<MprisTracker>,
+    command: MediaCommand,
+) {
+    let Some(conn) = conn else { return };
+    let bus_name = tracker
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .active()
+        .map(|s| s.bus_name.clone());
+    let Some(bus_name) = bus_name else { return };
+    let method = match command {
+        MediaCommand::PlayPause => "PlayPause",
+        MediaCommand::Next => "Next",
+        MediaCommand::Previous => "Previous",
+    };
+    let Ok(p) = blocking::Proxy::new(conn, bus_name.as_str(), PLAYER_PATH, PLAYER_IFACE) else {
+        return;
+    };
+    let _: Result<(), _> = p.call(method, &());
 }
 
 #[cfg(test)]

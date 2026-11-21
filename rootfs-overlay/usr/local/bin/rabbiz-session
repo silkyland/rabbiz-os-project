@@ -152,11 +152,26 @@ if [ ! -f "$READY_FILE" ]; then
 fi
 READY_S=$(date +%s)
 
-# Propagate the session env to the D-Bus activation environment.
+# Propagate the full session env to D-Bus activation + systemd --user. `--all`
+# (not a hand-picked list) so D-Bus-activated apps, portal backends and
+# GApplication helpers inherit the whole `env::EXPORTS` contract
+# (QT_QPA_PLATFORM, MOZ_ENABLE_WAYLAND, GDK_DPI_SCALE, ELECTRON_OZONE_*, XKB_*)
+# instead of only the desktop name — audit 2026-11-21 P0.
 if command -v dbus-update-activation-environment >/dev/null 2>&1; then
-    dbus-update-activation-environment --systemd \
-        WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_SESSION_DESKTOP \
-        2>/dev/null || true
+    dbus-update-activation-environment --systemd --all 2>/dev/null || true
+fi
+
+# Standard XDG user dirs (Desktop/Documents/…) so portal FileChooser and GTK
+# dialogs land on real folders on first use.
+command -v xdg-user-dirs-update >/dev/null 2>&1 && xdg-user-dirs-update >/dev/null 2>&1 || true
+
+# XDG Autostart: user agents (gnome-keyring secrets, mako, kdeconnect, …)
+# launch like on every other desktop. Runs after ready so WAYLAND_DISPLAY +
+# the session bus are guaranteed; once per boot (compositor restarts must not
+# spawn duplicate agents).
+if [ ! -e "$XDG_RUNTIME_DIR/rabbiz-autostart.done" ]; then
+    touch "$XDG_RUNTIME_DIR/rabbiz-autostart.done"
+    "$DE_BIN" autostart >/dev/null 2>&1 &
 fi
 
 # Supervise until the compositor exits.

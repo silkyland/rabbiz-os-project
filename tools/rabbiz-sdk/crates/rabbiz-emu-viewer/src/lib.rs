@@ -112,6 +112,20 @@ fn parse_percent_in_text(s: &str) -> Option<u8> {
     None
 }
 
+fn host_desktop_dir() -> std::path::PathBuf {
+    if let Some(dir) = std::env::var_os("XDG_DESKTOP_DIR").filter(|v| !v.is_empty()) {
+        return std::path::PathBuf::from(dir);
+    }
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+        let desktop = std::path::PathBuf::from(&home).join("Desktop");
+        if desktop.is_dir() {
+            return desktop;
+        }
+        return std::path::PathBuf::from(home);
+    }
+    std::env::temp_dir()
+}
+
 /// Clickable actions in the 320 px studio dock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ControlButton {
@@ -427,8 +441,8 @@ impl ViewerState {
             let addr = self.emu_addr.parse::<SocketAddr>().ok()?;
             let stream = TcpStream::connect_timeout(&addr, Duration::from_millis(150)).ok()?;
             let _ = stream.set_nodelay(true);
-            let _ = stream.set_read_timeout(Some(Duration::from_millis(1200)));
-            let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+            let _ = stream.set_read_timeout(Some(Duration::from_millis(250)));
+            let _ = stream.set_write_timeout(Some(Duration::from_millis(250)));
             self.emu_stream = Some(stream);
         }
         self.emu_stream.as_mut()
@@ -471,10 +485,17 @@ impl ViewerState {
                 }
                 return false;
             };
-            client_poll_raw_if_newer(stream, last_seq).or_else(|_| {
-                client_poll_raw_frame(stream)
-                    .or_else(|_| client_poll_frame(stream))
-                    .map(Some)
+            client_poll_raw_if_newer(stream, last_seq).or_else(|err| {
+                if err.contains("timed out")
+                    || err.contains("WouldBlock")
+                    || err.contains("Resource temporarily unavailable")
+                {
+                    Err(err)
+                } else {
+                    client_poll_raw_frame(stream)
+                        .or_else(|_| client_poll_frame(stream))
+                        .map(Some)
+                }
             })
         };
 
@@ -713,15 +734,91 @@ impl ViewerState {
                 }));
             }
             ControlButton::SaveScreenshot => {
-                let path = std::env::temp_dir().join("rabbiz-emu-viewer-shot.png");
-                let _ = self.save_viewer_png(&path);
-                self.banner = Some(format!("Saved {}", path.display()));
+                let _ = self.save_phone_screenshot();
             }
         }
         let _ = self.poll_remote_frame();
         if !self.connected {
             self.render_offline_demo_phone();
         }
+    }
+
+    /// Save a PNG screenshot of just the phone screen (the device framebuffer
+    /// streamed from `rabbiz-de`, e.g. 720x1600) to the host Desktop.
+    pub fn save_phone_screenshot(&mut self) -> Result<std::path::PathBuf, String> {
+        let dir = host_desktop_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let path = dir.join(format!("rabbizos-phone-{ts}.png"));
+        let png = encode_png(&self.frame_pixels).map_err(|e| format!("encode phone PNG: {e}"))?;
+        std::fs::write(&path, png).map_err(|e| format!("write {}: {e}", path.display()))?;
+        self.banner = Some(format!("Saved {}", path.display()));
+        Ok(path)
+    }
+
+    /// Save a PNG screenshot of the emulator (phone + dock) to the host Desktop.
+    pub fn save_desktop_screenshot(&mut self) -> Result<std::path::PathBuf, String> {
+        let dir = host_desktop_dir();
+        let _ = std::fs::create_dir_all(&dir);
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        let path = dir.join(format!("rabbizos-emu-{ts}.png"));
+        self.save_viewer_png(&path)?;
+        self.banner = Some(format!("Saved {}", path.display()));
+        Ok(path)
+    }
+
+    /// Copy a host file into the emulator's `~/Downloads` directory and show a
+    /// toast notification inside the guest linking to the transferred file.
+    pub fn transfer_dropped_file(&mut self, src: &Path) -> Result<String, String> {
+        let file_name = src
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or_else(|| format!("invalid dropped path: {}", src.display()))?
+            .to_string();
+        if !src.is_file() {
+            return Err(format!("not a regular file: {}", src.display()));
+        }
+
+        let native_home = std::env::temp_dir().join("rabbiz-emu-live/home");
+        let guest_rel = format!("~/Downloads/{file_name}");
+        if native_home.is_dir() {
+            let downloads = native_home.join("Downloads");
+            std::fs::create_dir_all(&downloads)
+                .map_err(|e| format!("mkdir {}: {e}", downloads.display()))?;
+            let dst = downloads.join(&file_name);
+            std::fs::copy(src, &dst).map_err(|e| format!("copy to {}: {e}", dst.display()))?;
+        } else {
+            let _ = Command::new("docker")
+                .args(["exec", "rabbiz-emu-live", "mkdir", "-p", "/tmp/rabbiz-home/Downloads"])
+                .output();
+            let dst_arg = format!("rabbiz-emu-live:/tmp/rabbiz-home/Downloads/{file_name}");
+            let src_str = src.to_string_lossy().into_owned();
+            let out = Command::new("docker")
+                .args(["cp", &src_str, &dst_arg])
+                .output()
+                .map_err(|e| format!("docker cp: {e}"))?;
+            if !out.status.success() {
+                return Err(format!(
+                    "docker cp failed: {}",
+                    String::from_utf8_lossy(&out.stderr).trim()
+                ));
+            }
+        }
+
+        self.banner = Some(format!("Transferred {file_name}"));
+        let notif_val = format!("Files|Transferred {file_name}|Tap to open {guest_rel}");
+        let _ = self.send_fast_emu_cmd(&serde_json::json!({
+            "id": 1,
+            "cmd": "set_mock",
+            "key": "notif",
+            "value": notif_val,
+        }));
+        let _ = self.poll_remote_frame();
+        Ok(guest_rel)
     }
 
     /// Render the fallback phone preview only when no Linux backend is reachable (or `--self-test`).
@@ -944,7 +1041,10 @@ impl ViewerState {
         } else {
             canvas.blit_scaled(&self.frame_pixels, layout.phone_screen_rect, 1.0);
         }
-        canvas.into_pixels()
+        let mut px = canvas.into_pixels();
+        // Hardware bezel frame covers the 4 sharp corners of the screen (concentric radius 32px).
+        mask_screen_corners(&mut px, layout.phone_screen_rect, 32.0, [0x17, 0x12, 0x1B]);
+        px
     }
 
     /// Save the current full viewer frame (bezel + side panel) as a PNG image.
@@ -958,6 +1058,79 @@ impl ViewerState {
         }
         let png = encode_png(&px).map_err(|e| format!("encode viewer PNG: {e}"))?;
         std::fs::write(path, png).map_err(|e| format!("write {}: {e}", path.display()))
+    }
+}
+
+/// Mask the 4 corners of `rect` inside `px` with anti-aliased blending to `bezel_rgb`
+/// so the hardware phone bezel cleanly frames the rounded display.
+fn mask_screen_corners(px: &mut Pixels, rect: Rect, radius: f32, bezel_rgb: [u8; 3]) {
+    let r = (radius.ceil() as i32).min(rect.w / 2).min(rect.h / 2);
+    if r <= 0 || rect.w <= 0 || rect.h <= 0 {
+        return;
+    }
+    let pw = px.size.w;
+    let ph = px.size.h;
+    let rf = radius;
+
+    let corners = [
+        (rect.x, rect.y, rect.x as f32 + rf, rect.y as f32 + rf, true, true),
+        (
+            rect.right() - r,
+            rect.y,
+            rect.right() as f32 - rf,
+            rect.y as f32 + rf,
+            false,
+            true,
+        ),
+        (
+            rect.x,
+            rect.bottom() - r,
+            rect.x as f32 + rf,
+            rect.bottom() as f32 - rf,
+            true,
+            false,
+        ),
+        (
+            rect.right() - r,
+            rect.bottom() - r,
+            rect.right() as f32 - rf,
+            rect.bottom() as f32 - rf,
+            false,
+            false,
+        ),
+    ];
+
+    for (bx, by, cx, cy, left, top) in corners {
+        for py_idx in by..(by + r) {
+            if py_idx < 0 || py_idx >= ph {
+                continue;
+            }
+            for px_idx in bx..(bx + r) {
+                if px_idx < 0 || px_idx >= pw {
+                    continue;
+                }
+                let px_c = px_idx as f32 + 0.5;
+                let py_c = py_idx as f32 + 0.5;
+                let outside_x = if left { px_c < cx } else { px_c > cx };
+                let outside_y = if top { py_c < cy } else { py_c > cy };
+                if !outside_x || !outside_y {
+                    continue;
+                }
+                let dist = ((px_c - cx).powi(2) + (py_c - cy).powi(2)).sqrt();
+                let cov = (rf - dist + 0.5).clamp(0.0, 1.0);
+                if cov >= 1.0 {
+                    continue;
+                }
+                let i = ((py_idx * pw + px_idx) * 4) as usize;
+                let inv = 1.0 - cov;
+                px.data[i] = (px.data[i] as f32 * cov + bezel_rgb[0] as f32 * inv).round() as u8;
+                px.data[i + 1] =
+                    (px.data[i + 1] as f32 * cov + bezel_rgb[1] as f32 * inv).round() as u8;
+                px.data[i + 2] =
+                    (px.data[i + 2] as f32 * cov + bezel_rgb[2] as f32 * inv).round() as u8;
+                px.data[i + 3] = 0xFF;
+            }
+        }
     }
 }
 

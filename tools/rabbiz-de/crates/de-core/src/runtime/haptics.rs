@@ -26,6 +26,8 @@ pub(crate) enum HapticKind {
     QuickSwitch,
     /// Long-press on home icon / surface (`LONG_PRESS`).
     LongPress,
+    /// `xdg_system_bell_v1` ring — terminal/editor bell as a soft tick.
+    Bell,
 }
 
 impl HapticKind {
@@ -39,6 +41,7 @@ impl HapticKind {
             Self::NavCommit => 35,
             Self::QuickSwitch => 35,
             Self::LongPress => 55,
+            Self::Bell => 25,
         }
     }
 }
