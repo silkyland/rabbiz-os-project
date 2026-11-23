@@ -505,8 +505,10 @@ dependencies = [
  "de-config",
  "de-core",
  "de-system",
+ "serde_json",
  "smithay",
  "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]
