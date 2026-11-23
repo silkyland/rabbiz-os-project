@@ -23,27 +23,55 @@ OVL="$REPO_ROOT/rootfs-overlay"
 [[ -f "$BIN" ]] || { echo "no binary at $BIN — build first (de_build.sh --release)" >&2; exit 2; }
 for f in "$OVL/usr/local/bin/rabbiz-session" \
          "$OVL/usr/local/bin/a21s-power-key" \
-         "$OVL/etc/systemd/system/rabbiz-session.service"; do
+         "$OVL/etc/systemd/system/rabbiz-session.service" \
+         "$OVL/etc/systemd/system/rabbiz-auth-helper.service" \
+         "$OVL/usr/share/xdg-desktop-portal/rabbiz-portals.conf" \
+         "$OVL/etc/xdg/mimeapps.list" \
+         "$OVL/etc/xdg/autostart/rabbiz-keyring.desktop"; do
     [[ -f "$f" ]] || { echo "missing $f" >&2; exit 2; }
 done
 
 scp -q "$BIN" "$HOST:/tmp/rabbiz-de.new"
+HELPER_BIN="$(dirname "$BIN")/rabbiz-auth-helper"
+if [[ -f "$HELPER_BIN" ]]; then
+  scp -q "$HELPER_BIN" "$HOST:/tmp/rabbiz-auth-helper.new"
+fi
 scp -q "$OVL/usr/local/bin/rabbiz-session" "$HOST:/tmp/rabbiz-session.new"
 scp -q "$OVL/usr/local/bin/a21s-power-key" "$HOST:/tmp/a21s-power-key.new"
 scp -q "$OVL/etc/systemd/system/rabbiz-session.service" \
     "$HOST:/tmp/rabbiz-session.service.new"
+scp -q "$OVL/etc/systemd/system/rabbiz-auth-helper.service" \
+    "$HOST:/tmp/rabbiz-auth-helper.service.new"
+scp -q "$OVL/usr/share/xdg-desktop-portal/rabbiz-portals.conf" \
+    "$HOST:/tmp/rabbiz-portals.conf.new"
+scp -q "$OVL/etc/xdg/mimeapps.list" "$HOST:/tmp/rabbiz-mimeapps.list.new"
+scp -q "$OVL/etc/xdg/autostart/rabbiz-keyring.desktop" \
+    "$HOST:/tmp/rabbiz-keyring.desktop.new"
 
 REMOTE_SCRIPT=$(mktemp)
 trap 'rm -f "$REMOTE_SCRIPT"' EXIT
 cat > "$REMOTE_SCRIPT" <<'REMOTE'
 set -e
 install -m 0755 -o root -g root /tmp/rabbiz-de.new /usr/local/bin/rabbiz-de
+if [ -f /tmp/rabbiz-auth-helper.new ]; then
+  install -m 0755 -o root -g root /tmp/rabbiz-auth-helper.new /usr/local/bin/rabbiz-auth-helper
+fi
 install -m 0755 -o root -g root /tmp/rabbiz-session.new /usr/local/bin/rabbiz-session
 install -m 0755 -o root -g root /tmp/a21s-power-key.new /usr/local/bin/a21s-power-key
 install -m 0644 -o root -g root /tmp/rabbiz-session.service.new \
   /etc/systemd/system/rabbiz-session.service
-rm -f /tmp/rabbiz-de.new /tmp/rabbiz-session.new /tmp/a21s-power-key.new \
-      /tmp/rabbiz-session.service.new
+install -m 0644 -o root -g root /tmp/rabbiz-auth-helper.service.new \
+  /etc/systemd/system/rabbiz-auth-helper.service
+mkdir -p /usr/share/xdg-desktop-portal /etc/xdg/autostart
+install -m 0644 -o root -g root /tmp/rabbiz-portals.conf.new \
+  /usr/share/xdg-desktop-portal/rabbiz-portals.conf
+install -m 0644 -o root -g root /tmp/rabbiz-mimeapps.list.new /etc/xdg/mimeapps.list
+install -m 0644 -o root -g root /tmp/rabbiz-keyring.desktop.new \
+  /etc/xdg/autostart/rabbiz-keyring.desktop
+rm -f /tmp/rabbiz-de.new /tmp/rabbiz-auth-helper.new /tmp/rabbiz-session.new \
+      /tmp/a21s-power-key.new /tmp/rabbiz-session.service.new \
+      /tmp/rabbiz-auth-helper.service.new /tmp/rabbiz-portals.conf.new \
+      /tmp/rabbiz-mimeapps.list.new /tmp/rabbiz-keyring.desktop.new
 
 systemctl daemon-reload
 
