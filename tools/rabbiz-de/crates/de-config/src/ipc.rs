@@ -96,6 +96,10 @@ pub enum IpcCommand {
     },
     /// Enable or disable Desktop Mode (floating windows + auto-landscape on handset).
     SetDesktopMode { enabled: bool },
+    /// Enable or disable AOSP-style Immersive Mode (hides system bars).
+    SetImmersive { enabled: bool },
+    /// Resize the virtual output (e.g., 1920x1080 for `rabbiz-mirror` DeX-on-PC).
+    SetVirtualOutput { width: u32, height: u32 },
 }
 
 const fn default_true() -> bool {
@@ -206,6 +210,9 @@ pub struct ShellStateSnapshot {
     /// Active form factor (`handset`, `tablet`, `desktop`).
     #[serde(default)]
     pub form_factor: String,
+    /// Whether Immersive Mode (hidden system bars) is active.
+    #[serde(default)]
+    pub immersive: bool,
 }
 
 /// Decode a single IPC request line, enforcing [`MAX_MESSAGE_BYTES`].
@@ -500,6 +507,7 @@ mod tests {
             auto_rotate: true,
             desktop_mode: false,
             form_factor: "handset".into(),
+            immersive: false,
             windows: vec![WindowSummary {
                 app_id: "org.kde.kalk".into(),
                 focused: false,

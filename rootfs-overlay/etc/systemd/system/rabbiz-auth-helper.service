@@ -1,0 +1,16 @@
+[Unit]
+Description=RabbizOS Keyguard Authentication Helper (root-owned credential store)
+Before=rabbiz-session.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/rabbiz-auth-helper
+RuntimeDirectory=rabbiz-auth
+RuntimeDirectoryMode=0755
+StateDirectory=rabbiz-auth
+StateDirectoryMode=0700
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

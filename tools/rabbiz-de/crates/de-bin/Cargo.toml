@@ -18,9 +18,15 @@ de-backend.workspace = true
 de-config.workspace = true
 de-apps.workspace = true
 de-system.workspace = true
+serde_json.workspace = true
+zeroize.workspace = true
 smithay.workspace = true
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 
 [[bin]]
 name = "rabbiz-de"
 path = "src/main.rs"
+
+[[bin]]
+name = "rabbiz-auth-helper"
+path = "src/auth_helper.rs"

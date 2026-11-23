@@ -782,6 +782,27 @@ impl De {
                     })),
                 )
             }
+            IpcCommand::SetImmersive { enabled } => {
+                self.set_immersive(enabled);
+                IpcResponse::ok(
+                    id,
+                    Some(serde_json::json!({ "immersive": self.immersive })),
+                )
+            }
+            IpcCommand::SetVirtualOutput { width, height } => {
+                match self.set_virtual_output(width, height) {
+                    Ok(()) => IpcResponse::ok(
+                        id,
+                        Some(serde_json::json!({
+                            "width": self.output.width,
+                            "height": self.output.height,
+                            "desktop_mode": self.desktop_mode,
+                            "form_factor": self.form_factor_name(),
+                        })),
+                    ),
+                    Err(e) => IpcResponse::err(id, e),
+                }
+            }
             IpcCommand::SetMock { key, value } => self.dispatch_set_mock(id, &key, &value),
         }
     }
@@ -967,6 +988,7 @@ impl De {
             auto_rotate: self.rotation.policy.auto,
             desktop_mode: self.desktop_mode,
             form_factor: self.form_factor_name().to_string(),
+            immersive: self.immersive,
         }
     }
 }

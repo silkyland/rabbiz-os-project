@@ -383,6 +383,41 @@ fn parse_ctl<I: Iterator<Item = String>>(
             };
             Ok(IpcCommand::SetDesktopMode { enabled })
         }
+        "immersive" => {
+            let arg = it.next().ok_or("ctl immersive needs on|off")?;
+            let enabled = match arg.to_ascii_lowercase().as_str() {
+                "on" | "1" | "true" | "enable" => true,
+                "off" | "0" | "false" | "disable" => false,
+                _ => return Err(format!("unknown immersive mode '{arg}' (expected on|off)")),
+            };
+            Ok(IpcCommand::SetImmersive { enabled })
+        }
+        "mirror-desktop" | "mirror_desktop" => {
+            let arg = it.next().ok_or("ctl mirror-desktop needs on|off")?;
+            match arg.to_ascii_lowercase().as_str() {
+                "on" | "1" | "true" => Ok(IpcCommand::SetVirtualOutput {
+                    width: 1920,
+                    height: 1080,
+                }),
+                "off" | "0" | "false" => Ok(IpcCommand::SetVirtualOutput {
+                    width: 720,
+                    height: 1600,
+                }),
+                _ => Err(format!("unknown mirror-desktop '{arg}' (expected on|off)")),
+            }
+        }
+        "virtual-output" | "virtual_output" => {
+            let dim = it.next().ok_or("ctl virtual-output needs <W>x<H>")?;
+            let (w_s, h_s) = dim
+                .split_once('x')
+                .ok_or("ctl virtual-output needs <W>x<H>")?;
+            let width: u32 = w_s.parse().map_err(|_| "invalid width")?;
+            let height: u32 = h_s.parse().map_err(|_| "invalid height")?;
+            if !(320..=7680).contains(&width) || !(320..=4320).contains(&height) {
+                return Err("virtual-output dimensions out of range".into());
+            }
+            Ok(IpcCommand::SetVirtualOutput { width, height })
+        }
         "mock" => {
             let key = it.next().ok_or("ctl mock needs <key> <value>")?;
             let value = match it.next() {

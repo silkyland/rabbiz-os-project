@@ -12,5 +12,5 @@ pub use interaction::{gestures, hun, i18n, nav, pager, pull, transitions, univer
 pub use screens::{
     boot, desktop_chrome, drawer, error, first_run, home, hun_banner, launch_morph, lock,
     lock_bouncer, media_card, notification_card, notification_groups, osd, panels, power, qs,
-    recents, screenshot, search, settings, shade, status, taskbar,
+    recents, rotate_pill, screenshot, search, settings, shade, status, taskbar,
 };

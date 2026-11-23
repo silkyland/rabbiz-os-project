@@ -18,6 +18,7 @@ pub mod panels;
 pub mod power;
 pub mod qs;
 pub mod recents;
+pub mod rotate_pill;
 pub mod screenshot;
 pub mod search;
 pub mod settings;

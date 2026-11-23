@@ -113,6 +113,8 @@ pub struct De {
     pub(crate) rotation: crate::rotation::Rotation,
     /// Active Desktop Mode (floating windows + auto-landscape on handset).
     pub(crate) desktop_mode: bool,
+    /// AOSP-style Immersive Mode (hides status & gesture bars).
+    pub(crate) immersive: bool,
     /// Device's baseline form factor from `device.toml` (restored when exiting Desktop Mode).
     pub(crate) default_form_factor: de_design::motion::FormFactor,
     /// Saved rotation policy and orientation before entering Desktop Mode.
@@ -742,6 +744,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         presentation_state,
         present_seq: 0,
         desktop_mode: form_factor == de_design::motion::FormFactor::Desktop,
+        immersive: false,
         default_form_factor: form_factor,
         pre_desktop_rotation: None,
         idle_inhibitors: Vec::new(),
@@ -933,6 +936,90 @@ impl De {
         self.panels.invalidate();
         self.shell_dirty = true;
         self.needs_present = true;
+    }
+
+    /// Enable or disable AOSP-style Immersive Mode (hides system bars).
+    pub(crate) fn set_immersive(&mut self, enabled: bool) {
+        if self.immersive == enabled {
+            return;
+        }
+        self.immersive = enabled;
+        self.insets.system_bars = if enabled {
+            de_api::EdgeInsets::ZERO
+        } else {
+            de_api::EdgeInsets::new(
+                de_ui::chrome::STATUS_H,
+                0,
+                de_design::tokens::GESTURE_BAR_HEIGHT,
+                0,
+            )
+        };
+        self.reconfigure_windows_for_mode();
+        self.sync_layer_insets();
+        self.shell_dirty = true;
+        self.needs_present = true;
+    }
+
+    /// Resize the virtual output (e.g., 1920×1080 for `rabbiz-mirror` DeX-on-PC).
+    /// Only takes effect on the virtual backend (`self.compositor.is_none()`).
+    pub(crate) fn set_virtual_output(&mut self, width: u32, height: u32) -> Result<(), String> {
+        if self.compositor.is_some() {
+            return Err("virtual output resize is only supported on virtual backend".into());
+        }
+        let native = de_api::Size::new(width as i32, height as i32);
+        self.rotation.native = native;
+        self.output.width = width;
+        self.output.height = height;
+        let is_wide = width > height;
+        self.desktop_mode = is_wide;
+        self.motion_clock.set_form_factor(if is_wide {
+            de_design::motion::FormFactor::Desktop
+        } else {
+            self.default_form_factor
+        });
+        let target_orient = if is_wide {
+            de_api::Orientation::LandscapeCcw
+        } else {
+            de_api::Orientation::Portrait
+        };
+        self.rotation.current = target_orient;
+        let refresh = (self.output.refresh_hz * 1000.0) as i32;
+        self.output_obj.change_current_state(
+            Some(smithay::output::Mode {
+                size: (native.w, native.h).into(),
+                refresh,
+            }),
+            Some(smithay::utils::Transform::Normal),
+            None,
+            None,
+        );
+        smithay::desktop::layer_map_for_output(&self.output_obj).arrange();
+        let mut cfg = de_ui::gestures::GestureConfig::a21s();
+        cfg.output_w = native.w;
+        cfg.output_h = native.h;
+        self.gestures = de_ui::gestures::GestureTracker::new(cfg);
+        self.reconfigure_windows_for_mode();
+        self.sync_layer_insets();
+        self.shell_px = None;
+        self.shell_tex = None;
+        self.gesture_bar = None;
+        self.wallpaper = None;
+        self.meta_cache = None;
+        self.brand_px = de_ui::boot::brand_frame(native, 0.5);
+        self.panels.on_resize(native.h);
+        self.home_ui.on_resize();
+        self.lock.on_resize();
+        self.power.on_resize();
+        self.osd_fx.on_resize();
+        self.shot_fx.on_resize();
+        self.hun_fx.on_resize();
+        self.navigation.on_resize();
+        self.media.on_resize();
+        self.on_emu_resize();
+        self.panels.invalidate();
+        self.shell_dirty = true;
+        self.needs_present = true;
+        Ok(())
     }
 
     #[must_use]
