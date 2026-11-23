@@ -135,6 +135,25 @@ pub fn run_doctor() -> DoctorReport {
             &["--version"][..],
             false,
         ),
+        // Standard freedesktop runtime services (optional on macOS host, expected on Linux target).
+        (
+            "gnome-keyring-daemon",
+            "gnome-keyring-daemon",
+            &["--version"][..],
+            false,
+        ),
+        (
+            "upower",
+            "upower",
+            &["--version"][..],
+            false,
+        ),
+        (
+            "powerprofilesctl",
+            "powerprofilesctl",
+            &["--version"][..],
+            false,
+        ),
     ] {
         let (ok, detail) = probe_cmd(bin, args);
         checks.push(DoctorCheck {
@@ -208,7 +227,7 @@ categories = ["Utility"]
 [runtime]
 sdk_version = "0.1"
 arch = "aarch64"
-form_factors = ["handset", "tablet"]
+form_factors = ["handset", "tablet", "desktop"]
 
 [permissions]
 network = false
@@ -231,6 +250,55 @@ enabled = true
 </svg>
 "##;
     std::fs::write(dir.join("icon.svg"), svg).map_err(|e| format!("write icon.svg: {e}"))?;
+
+    // Standard XDG .desktop entry for launcher, MIME association, and Desktop Mode
+    let desktop_entry = format!(
+        r#"[Desktop Entry]
+Type=Application
+Name={title}
+Comment={title} for RabbizOS
+Exec={exec_name}
+Icon={app_id}
+Terminal=false
+Categories=Utility;
+StartupWMClass={app_id}
+X-Rabbiz-FormFactors=handset;tablet;desktop;
+X-Rabbiz-Orientation=unspecified
+"#
+    );
+    std::fs::write(dir.join(format!("{app_id}.desktop")), desktop_entry)
+        .map_err(|e| format!("write .desktop: {e}"))?;
+
+    // Standard .gitignore and README.md
+    std::fs::write(
+        dir.join(".gitignore"),
+        "target/\ndist/\nbuild/\n*.rbz\n*.png\n",
+    )
+    .map_err(|e| format!("write .gitignore: {e}"))?;
+
+    let readme = format!(
+        r#"# {title} (`{app_id}`)
+
+RabbizOS application scaffolded with `rabbiz-sdk`.
+
+## Commands
+
+```sh
+# 1. Check toolchain & target environment
+rabbiz doctor
+
+# 2. Run on Tier 1 host simulator (macOS/Linux)
+rabbiz run --target sim
+
+# 3. Run unit & headless tests
+cargo test
+
+# 4. Package as .rbz for device / Tier 2 emulator
+rabbiz pack
+```
+"#
+    );
+    std::fs::write(dir.join("README.md"), readme).map_err(|e| format!("write README.md: {e}"))?;
 
     match template {
         TemplateKind::Rust => scaffold_rust(dir, &stem, &app_id, &title)?,
@@ -261,7 +329,13 @@ edition = "2021"
         r#"//! {title} ({app_id}) — RabbizOS Rust SDK App.
 
 fn main() {{
-    println!("{title} ({app_id}) ready on RabbizOS");
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(String::as_str) {{
+        Some("--version") => println!("{app_id} 0.1.0"),
+        Some("--cli") => println!("{{{{\"app\":\"{app_id}\",\"status\":\"ok\"}}}}"),
+        Some("--mcp") => println!("{{{{\"tools\":[\"ping\"]}}}}"),
+        _ => println!("{title} ({app_id}) ready on RabbizOS (handset + tablet + desktop)"),
+    }}
 }}
 
 #[cfg(test)]

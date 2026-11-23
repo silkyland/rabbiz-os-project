@@ -36,8 +36,8 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         .map_err(|e| format!("auth channel source: {e}"))?;
 
     let (status_tx, status_rx) = smithay::reexports::calloop::channel::channel::<(
-        de_system::upower::BatteryState,
-        de_system::privacy::PrivacyState,
+        de_api::services::BatteryState,
+        de_api::services::PrivacyState,
     )>();
     handle
         .insert_source(status_rx, |event, (), run: &mut Run| {

@@ -95,8 +95,8 @@ Build, debug, and package RabbizOS apps on **macOS, Linux, or Windows** without 
   - **Tier 3 — Full OS QEMU VM (`rabbiz emu vm`):** Boots a full Arch Linux ARM64 + Mainline Linux `7.3.0` disk image (`scripts/build_emu_image.sh`) under `qemu-system-aarch64` with `hvf`/`kvm` acceleration.
 - **6 Language Templates in SDK v1 (`rabbiz new --template <tpl>`):**
   - **Rust (`rust`):** Native `rabbiz-sdk` (`RabbizApp` trait, widgets, intents, atomic JSON storage, `TestHarness<S>`).
-  - **C / C++ (`c`):** Stable C99 ABI (`librabbiz_sdk_c` + [`include/rabbiz_sdk.h`](tools/rabbiz-sdk/crates/rabbiz-sdk-c/include/rabbiz_sdk.h)).
-  - **WebAssembly (`wasm`):** Sandboxed `.wasm` bytecode runner (`rabbiz-wasm-runner` + [`wit/rabbiz-app.wit`](tools/rabbiz-sdk/crates/rabbiz-wasm-runner/wit/rabbiz-app.wit)) with fuel metering and capability checks.
+  - **C / C++ (`c`):** Stable C99 ABI (`librabbiz_sdk_c` + [`include/rabbiz_sdk.h`](tools/rabbiz-sdk/include/rabbiz_sdk.h)).
+  - **WebAssembly (`wasm`):** Sandboxed `.wasm` bytecode runner (`rabbiz-wasm-runner` + [`wit/rabbiz-app.wit`](tools/rabbiz-sdk/wit/rabbiz-app.wit)) with fuel metering and capability checks.
   - **Flutter / Dart (`flutter`):** `rabbiz-flutter-runner` embedder + Dart FFI package ([`packages/rabbiz_sdk_dart`](tools/rabbiz-sdk/packages/rabbiz_sdk_dart)).
   - **GTK4 (`gtk4`) & Qt6 (`qt6`):** Standard Wayland Desktop Contract templates.
 - **`.rbz` Packaging & AI Agent MCP (`rabbiz emu --mcp`):** Deterministic SHA-256 verified `.rbz` bundles (`rabbiz pack/verify/install`) and a 9-tool JSON-RPC 2.0 MCP server so AI coding agents can inspect, tap, swipe, type, and verify UI screenshots autonomously.

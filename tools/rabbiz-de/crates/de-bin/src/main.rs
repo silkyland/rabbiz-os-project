@@ -80,7 +80,7 @@ fn main() {
         Command::Ctl(cmd) => {
             let Some(path) = de_config::ipc::socket_path() else {
                 eprintln!("ctl: XDG_RUNTIME_DIR is unset; control IPC disabled");
-                return 2;
+                std::process::exit(2);
             };
             let req = de_config::ipc::IpcRequest {
                 id: 1,

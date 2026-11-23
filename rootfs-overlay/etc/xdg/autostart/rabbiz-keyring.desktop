@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=RabbizOS Secret Service
+Comment=Start GNOME Keyring Secrets component (org.freedesktop.secrets)
+Exec=gnome-keyring-daemon --start --components=secrets
+TryExec=gnome-keyring-daemon
+OnlyShowIn=Rabbiz;
+X-GNOME-Autostart-Phase=Initialization
+NoDisplay=true

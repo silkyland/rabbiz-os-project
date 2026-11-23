@@ -83,9 +83,9 @@ const TILES: [TileDef; 12] = [
         label: "qs.record",
     },
     TileDef {
-        id: "nfc",
-        glyph: "\u{e1bb}",
-        label: "NFC",
+        id: "desktop",
+        glyph: "\u{e30a}",
+        label: "Desktop",
     },
 ];
 
@@ -224,6 +224,8 @@ impl De {
         self.panels.available[3] = true;
         self.panels.on[5] = self.rotation.policy.auto;
         self.panels.available[5] = true;
+        self.panels.on[11] = self.desktop_mode;
+        self.panels.available[11] = true;
         for (i, value) in [
             (0, state.wifi),
             (1, state.bluetooth),
@@ -560,6 +562,11 @@ impl De {
                             self.shell_dirty = true;
                             None
                         }
+                        11 => {
+                            self.set_desktop_mode(on);
+                            self.panel_close();
+                            None
+                        }
                         _ => None,
                     };
                     if let Some(action) = action {
@@ -880,5 +887,10 @@ impl PanelUi {
         self.content_gen += 1;
         self.generation += 1;
         self.pull.set_reach(de_ui::pull::reach_for(output_h));
+    }
+
+    pub(crate) fn invalidate(&mut self) {
+        self.stale = [true; 2];
+        self.content_gen += 1;
     }
 }

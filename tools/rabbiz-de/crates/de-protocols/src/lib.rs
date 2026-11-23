@@ -62,6 +62,50 @@ pub fn configure_fullscreen(surface: &ToplevelSurface, size: Size<i32, smithay::
     // the output; the configure is sent lazily at first commit.
 }
 
+/// Desktop/Tablet policy: configure a floating, resizable window without
+/// Fullscreen/Maximized states.
+pub fn configure_floating(surface: &ToplevelSurface, size: Size<i32, smithay::utils::Logical>) {
+    surface.with_pending_state(|state| {
+        state.states.unset(xdg_toplevel::State::Fullscreen);
+        state.states.unset(xdg_toplevel::State::Maximized);
+        state.states.set(xdg_toplevel::State::Activated);
+        state.size = Some(size);
+        state.bounds = Some(size);
+    });
+}
+
+/// Desktop/Tablet policy: configure a maximized window filling the work area.
+pub fn configure_maximized(surface: &ToplevelSurface, size: Size<i32, smithay::utils::Logical>) {
+    surface.with_pending_state(|state| {
+        state.states.unset(xdg_toplevel::State::Fullscreen);
+        state.states.set(xdg_toplevel::State::Maximized);
+        state.states.set(xdg_toplevel::State::Activated);
+        state.size = Some(size);
+        state.bounds = Some(size);
+    });
+}
+
+/// Compute initial `(x, y, width, height)` for the `index`-th floating window
+/// in Desktop mode so multiple windows cascade cleanly inside `output`.
+#[must_use]
+pub fn desktop_window_geometry(
+    output: Size<i32, smithay::utils::Logical>,
+    index: usize,
+) -> (i32, i32, Size<i32, smithay::utils::Logical>) {
+    let margin_top = 64;
+    let margin_bottom = 64;
+    let avail_w = (output.w - 64).max(320);
+    let avail_h = (output.h - margin_top - margin_bottom).max(240);
+    let w = ((output.w * 65) / 100).clamp(320, avail_w.min(1040));
+    let h = ((avail_h * 84) / 100).clamp(240, avail_h.min(720));
+    let step = (index % 5) as i32;
+    let max_x = (output.w - w - 24).max(24);
+    let max_y = (output.h - margin_bottom - h).max(margin_top);
+    let x = (((output.w - w) / 2) + step * 36).clamp(24, max_x);
+    let y = (margin_top + 16 + step * 28).clamp(margin_top, max_y);
+    (x, y, (w, h).into())
+}
+
 /// Apply [`DECORATION_MODE`] to a toplevel.
 pub fn set_ssd(surface: &ToplevelSurface) {
     surface.with_pending_state(|state| {
@@ -102,5 +146,18 @@ mod tests {
             DECORATION_MODE,
             zxdg_toplevel_decoration_v1::Mode::ServerSide
         );
+    }
+
+    #[test]
+    fn desktop_window_geometry_cascades_within_landscape_output() {
+        let out: Size<i32, smithay::utils::Logical> = (1600, 720).into();
+        let (x0, y0, s0) = desktop_window_geometry(out, 0);
+        let (x1, y1, s1) = desktop_window_geometry(out, 1);
+        assert_eq!(s0, s1);
+        assert!(s0.w >= 320 && s0.w <= 1040);
+        assert!(s0.h >= 240 && s0.h <= 720);
+        assert!(x1 > x0 && y1 > y0);
+        assert!(x1 + s1.w <= out.w);
+        assert!(y1 + s1.h <= out.h);
     }
 }

@@ -1,8 +1,18 @@
-# System-wide defaults shipped with the image (no per-user setup needed).
-# Images (screenshots, downloads) open in the in-house Photos app.
+# Default XDG MIME associations for RabbizOS (XDG_CURRENT_DESKTOP=Rabbiz).
+# Deployed to /etc/xdg/mimeapps.list; per-user ~/.config/mimeapps.list overrides.
+
 [Default Applications]
+x-scheme-handler/http=google-chrome.desktop;rabbiz-browser.desktop
+x-scheme-handler/https=google-chrome.desktop;rabbiz-browser.desktop
+text/html=google-chrome.desktop;rabbiz-browser.desktop
+application/pdf=rabbiz-pdf.desktop
 image/png=rabbiz-photos.desktop
 image/jpeg=rabbiz-photos.desktop
 image/webp=rabbiz-photos.desktop
-image/gif=rabbiz-photos.desktop
-image/bmp=rabbiz-photos.desktop
+audio/mpeg=rabbiz-music.desktop
+audio/flac=rabbiz-music.desktop
+audio/ogg=rabbiz-music.desktop
+text/plain=rabbiz-notes.desktop
+inode/directory=rabbiz-files.desktop
+x-scheme-handler/tel=rabbiz-dialer.desktop
+x-scheme-handler/sms=rabbiz-sms.desktop

@@ -1,3 +1,16 @@
+---
+status: verified
+lane: de
+device: any
+kernel: n/a
+author: Bundit Nuntates
+ai_assisted: true
+date: 2026-11-21
+evidence:
+  - cmd: "cargo test --manifest-path tools/rabbiz-de/Cargo.toml -p de-ui -p de-system -p de-core"
+supersedes: []
+---
+
 # MPRIS media pill + shade media card (rabbiz-de)
 
 Lane: `de` · Device: device-independent · Evidence: L1 (native `virtual` backend, live session bus)

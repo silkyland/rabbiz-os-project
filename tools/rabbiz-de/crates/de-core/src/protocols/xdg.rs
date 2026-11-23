@@ -24,14 +24,23 @@ impl XdgShellHandler for De {
     }
 
     fn new_toplevel(&mut self, surface: ToplevelSurface) {
-        let size =
+        let out_size =
             Size::<i32, Logical>::from((self.output.width as i32, self.output.height as i32));
-        de_protocols::configure_fullscreen(&surface, size);
+        let (pos, win_size) = if self.desktop_mode {
+            let idx = self.space.elements().count();
+            let (x, y, s) = de_protocols::desktop_window_geometry(out_size, idx);
+            de_protocols::configure_floating(&surface, s);
+            ((x, y), s)
+        } else {
+            de_protocols::configure_fullscreen(&surface, out_size);
+            ((0, 0), out_size)
+        };
+        let _ = win_size;
         de_protocols::set_ssd(&surface);
         // Register for configure/commit bookkeeping. Only the first root
         // buffer can hand over the launcher to this window.
         let window = Window::new_wayland_window(surface);
-        self.space.map_element(window, (0, 0), false);
+        self.space.map_element(window, pos, false);
         self.needs_present = true;
     }
 
@@ -93,6 +102,24 @@ impl XdgShellHandler for De {
     // acknowledge politely but do nothing.
     fn move_request(&mut self, _surface: ToplevelSurface, _seat: wl_seat::WlSeat, _s: Serial) {}
     fn maximize_request(&mut self, surface: ToplevelSurface) {
+        if self.desktop_mode {
+            let logical =
+                de_api::Size::new(self.output.width as i32, self.output.height as i32);
+            let frame = self.insets.immersive_frame(logical);
+            let max_size = Size::<i32, Logical>::from((frame.w, frame.h));
+            de_protocols::configure_maximized(&surface, max_size);
+            let win = self
+                .space
+                .elements()
+                .find(|w| {
+                    w.toplevel()
+                        .is_some_and(|t| t.wl_surface() == surface.wl_surface())
+                })
+                .cloned();
+            if let Some(window) = win {
+                self.space.map_element(window, (frame.x, frame.y), false);
+            }
+        }
         surface.send_configure();
     }
     fn fullscreen_request(

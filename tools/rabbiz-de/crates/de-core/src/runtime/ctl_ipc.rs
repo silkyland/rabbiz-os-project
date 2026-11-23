@@ -11,7 +11,7 @@ use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use de_api::Size;
 use de_config::flags::BackendSelect;
@@ -771,6 +771,17 @@ impl De {
                     Some(serde_json::json!({ "orientation": self.rotation.current.name() })),
                 )
             }
+            IpcCommand::SetDesktopMode { enabled } => {
+                self.set_desktop_mode(enabled);
+                IpcResponse::ok(
+                    id,
+                    Some(serde_json::json!({
+                        "desktop_mode": self.desktop_mode,
+                        "form_factor": self.form_factor_name(),
+                        "orientation": self.rotation.current.name(),
+                    })),
+                )
+            }
             IpcCommand::SetMock { key, value } => self.dispatch_set_mock(id, &key, &value),
         }
     }
@@ -954,6 +965,8 @@ impl De {
             windows,
             orientation: self.rotation.current.name().to_string(),
             auto_rotate: self.rotation.policy.auto,
+            desktop_mode: self.desktop_mode,
+            form_factor: self.form_factor_name().to_string(),
         }
     }
 }

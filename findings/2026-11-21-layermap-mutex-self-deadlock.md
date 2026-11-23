@@ -1,3 +1,16 @@
+---
+status: verified
+lane: de
+device: any
+kernel: n/a
+author: Bundit Nuntates
+ai_assisted: true
+date: 2026-11-21
+evidence:
+  - cmd: "wayland-info && cargo test --manifest-path tools/rabbiz-de/Cargo.toml --workspace"
+supersedes: []
+---
+
 # LayerMap mutex self-deadlock — ctl/emu/wayland เงียบหลัง standards wave
 
 **Lane:** de · **Device:** host emulator (virtual backend) · **Evidence:** L0 host-verified

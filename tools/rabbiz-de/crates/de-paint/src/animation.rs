@@ -56,6 +56,10 @@ impl AnimationClock {
         }
     }
 
+    pub fn set_form_factor(&mut self, form_factor: FormFactor) {
+        self.form_factor = form_factor;
+    }
+
     #[must_use]
     pub fn form_factor(&self) -> FormFactor {
         if self.motion_restricted() {

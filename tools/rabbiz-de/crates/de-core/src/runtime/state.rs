@@ -111,6 +111,12 @@ pub struct De {
     pub output_obj: Output,
     /// Orientation policy + sensor (`runtime/rotation.rs`).
     pub(crate) rotation: crate::rotation::Rotation,
+    /// Active Desktop Mode (floating windows + auto-landscape on handset).
+    pub(crate) desktop_mode: bool,
+    /// Device's baseline form factor from `device.toml` (restored when exiting Desktop Mode).
+    pub(crate) default_form_factor: de_design::motion::FormFactor,
+    /// Saved rotation policy and orientation before entering Desktop Mode.
+    pub(crate) pre_desktop_rotation: Option<(de_api::RotationPolicy, de_api::Orientation)>,
     /// Now-playing (pill + shade card).
     pub(crate) media: crate::media_ui::MediaFx,
 
@@ -307,9 +313,9 @@ pub struct De {
     /// Monotonic ID counter for synthetic mock notifications.
     pub(crate) next_mock_notif_id: u32,
     /// Cached battery status updated off-thread by the status poller.
-    pub(crate) cached_battery: de_system::upower::BatteryState,
+    pub(crate) cached_battery: de_api::services::BatteryState,
     /// Cached privacy-indicator status updated off-thread by the status poller.
-    pub(crate) cached_privacy: de_system::privacy::PrivacyState,
+    pub(crate) cached_privacy: de_api::services::PrivacyState,
 }
 
 /// What the screen is showing (M3).
@@ -418,6 +424,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         de_paint::animation::AnimationClock::with_motion(scheme, reduced_motion, false)
             .for_form_factor(form_factor);
     let app_prefs = de_apps::prefs::AppPrefs::load();
+    let start_locked = should_start_locked(&app_prefs.prefs().lock_method);
     let theme = if app_prefs.prefs().theme_mode.trim() == "dark" {
         de_design::tokens::DARK
     } else {
@@ -709,6 +716,9 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         system_bell_state,
         presentation_state,
         present_seq: 0,
+        desktop_mode: form_factor == de_design::motion::FormFactor::Desktop,
+        default_form_factor: form_factor,
+        pre_desktop_rotation: None,
         idle_inhibitors: Vec::new(),
         screensaver: de_system::screensaver::ScreenSaver::start(),
 
@@ -771,7 +781,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         power: crate::power::Power::default(),
         lock: {
             let mut lock = crate::lock_ui::LockUi::default();
-            if should_start_locked(&app_prefs.prefs().lock_method) {
+            if start_locked {
                 lock.open();
             }
             lock
@@ -808,8 +818,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
             None
         },
         next_mock_notif_id: 10_000,
-        cached_battery: de_system::upower::BatteryState::default(),
-        cached_privacy: de_system::privacy::PrivacyState::default(),
+        cached_battery: de_api::services::BatteryState::default(),
+        cached_privacy: de_api::services::PrivacyState::default(),
     })
 }
 
@@ -820,6 +830,81 @@ pub(crate) fn should_start_locked(lock_method: &str) -> bool {
 }
 
 impl De {
+    /// Active form factor name (`handset`, `tablet`, `desktop`).
+    #[must_use]
+    pub(crate) fn form_factor_name(&self) -> &'static str {
+        match self.motion_clock.form_factor() {
+            de_design::motion::FormFactor::Handset => "handset",
+            de_design::motion::FormFactor::Tablet => "tablet",
+            de_design::motion::FormFactor::Desktop => "desktop",
+        }
+    }
+
+    /// Reconfigure all mapped xdg toplevels for the current mode (floating
+    /// cascaded windows in Desktop Mode; fullscreen in Handset Mode).
+    pub(crate) fn reconfigure_windows_for_mode(&mut self) {
+        let logical = de_api::Size::new(self.output.width as i32, self.output.height as i32);
+        let out_size =
+            smithay::utils::Size::<i32, smithay::utils::Logical>::from((logical.w, logical.h));
+        let frame = self.insets.immersive_frame(logical);
+        let full_size =
+            smithay::utils::Size::<i32, smithay::utils::Logical>::from((frame.w, frame.h));
+        let windows: Vec<_> = self.space.elements().cloned().collect();
+        for (idx, window) in windows.iter().enumerate() {
+            if let Some(toplevel) = window.toplevel() {
+                if self.desktop_mode {
+                    let (x, y, win_size) = de_protocols::desktop_window_geometry(out_size, idx);
+                    de_protocols::configure_floating(toplevel, win_size);
+                    toplevel.send_configure();
+                    self.space.map_element(window.clone(), (x, y), false);
+                } else {
+                    de_protocols::configure_fullscreen(toplevel, full_size);
+                    toplevel.send_configure();
+                    self.space.map_element(window.clone(), (0, 0), false);
+                }
+            }
+        }
+    }
+
+    /// Toggle Desktop Mode: auto-rotates a portrait handset to landscape
+    /// (`1600×720`) and switches windows between floating and fullscreen.
+    pub(crate) fn set_desktop_mode(&mut self, enabled: bool) {
+        if self.desktop_mode == enabled {
+            return;
+        }
+        self.desktop_mode = enabled;
+        let next_ff = if enabled {
+            de_design::motion::FormFactor::Desktop
+        } else {
+            self.default_form_factor
+        };
+        self.motion_clock.set_form_factor(next_ff);
+
+        if enabled {
+            self.pre_desktop_rotation = Some((self.rotation.policy, self.rotation.current));
+            if !self.rotation.current.is_landscape() {
+                let _ = self.set_rotation_mode("landscape_ccw");
+            } else {
+                self.reconfigure_windows_for_mode();
+            }
+        } else if let Some((prev_policy, prev_orient)) = self.pre_desktop_rotation.take() {
+            if self.rotation.current != prev_orient {
+                let _ = self.set_rotation_mode(prev_orient.name());
+            } else {
+                self.reconfigure_windows_for_mode();
+            }
+            self.rotation.policy = prev_policy;
+            if prev_policy.auto {
+                self.reevaluate_orientation();
+            }
+        } else {
+            self.reconfigure_windows_for_mode();
+        }
+        self.panels.invalidate();
+        self.shell_dirty = true;
+        self.needs_present = true;
+    }
+
     #[must_use]
     pub fn kind(&self) -> RendererKind {
         self.renderer.kind()

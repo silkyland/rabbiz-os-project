@@ -243,15 +243,8 @@ impl De {
         self.gestures = de_ui::gestures::GestureTracker::new(cfg);
         self.touch_claimed = false;
 
-        // Clients: new fullscreen size (minus system-bar insets).
-        let frame = self.insets.immersive_frame(logical);
-        let size = smithay::utils::Size::<i32, Logical>::from((frame.w, frame.h));
-        for window in self.space.elements() {
-            if let Some(toplevel) = window.toplevel() {
-                de_protocols::configure_fullscreen(toplevel, size);
-                toplevel.send_configure();
-            }
-        }
+        // Clients: reconfigure for Desktop Mode (floating) or Handset Mode (fullscreen).
+        self.reconfigure_windows_for_mode();
         self.sync_layer_insets();
 
         // Every raster is size-bound.

@@ -474,6 +474,109 @@ pub fn save_pin_credential_atomic(path: &Path, cred: &PinCredential) -> std::io:
     std::fs::rename(&tmp, path)
 }
 
+/// Default socket path for the root-owned `rabbiz-auth-helper` daemon.
+pub const DEFAULT_AUTH_HELPER_SOCKET: &str = "/run/rabbiz-auth/helper.sock";
+
+/// Root-owned credential & lockout paths (`/var/lib/rabbiz-auth/<user>/`)
+/// for the privileged `rabbiz-auth-helper` follow-up (`docs/DE-KEYGUARD-AUTH.md` §3).
+#[must_use]
+pub fn root_keyguard_paths(user: &str) -> Option<(PathBuf, PathBuf)> {
+    let clean = user.trim();
+    if clean.is_empty()
+        || clean == "."
+        || clean == ".."
+        || clean.contains('/')
+        || clean.contains('\0')
+    {
+        return None;
+    }
+    let base = Path::new("/var/lib/rabbiz-auth").join(clean);
+    Some((base.join("keyguard.json"), base.join("keyguard.state")))
+}
+
+/// Request sent to `rabbiz-auth-helper` over a `0660` root-owned Unix socket.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HelperRequest {
+    pub user: String,
+    pub method: LockMethod,
+    pub secret: String,
+}
+
+impl Drop for HelperRequest {
+    fn drop(&mut self) {
+        self.secret.zeroize();
+    }
+}
+
+/// Response from `rabbiz-auth-helper` (never echoes credentials).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
+pub enum HelperResponse {
+    Accepted,
+    Rejected { attempts_remaining: u8 },
+    Cooldown { retry_after_secs: u32 },
+    Unavailable,
+}
+
+impl From<HelperResponse> for Option<AuthOutcome> {
+    fn from(resp: HelperResponse) -> Self {
+        match resp {
+            HelperResponse::Accepted => Some(AuthOutcome::Accepted),
+            HelperResponse::Rejected { attempts_remaining } => {
+                Some(AuthOutcome::Rejected { attempts_remaining })
+            }
+            HelperResponse::Cooldown { retry_after_secs } => {
+                Some(AuthOutcome::Cooldown { retry_after_secs })
+            }
+            HelperResponse::Unavailable => None,
+        }
+    }
+}
+
+/// Verify a credential via `rabbiz-auth-helper` over `socket_path`.
+///
+/// Fails closed (`HelperResponse::Unavailable`) on any I/O, timeout, or parse error,
+/// and zeroizes the serialized request buffer immediately after writing.
+pub fn verify_via_helper_socket(
+    socket_path: &Path,
+    user: &str,
+    method: LockMethod,
+    secret: &str,
+) -> HelperResponse {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    let Ok(mut stream) = UnixStream::connect(socket_path) else {
+        return HelperResponse::Unavailable;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(2)));
+
+    let req = HelperRequest {
+        user: user.to_string(),
+        method,
+        secret: secret.to_string(),
+    };
+    let Ok(mut payload) = serde_json::to_vec(&req) else {
+        return HelperResponse::Unavailable;
+    };
+    drop(req);
+    payload.push(b'\n');
+    let write_res = stream.write_all(&payload);
+    payload.zeroize();
+    if write_res.is_err() || stream.flush().is_err() {
+        return HelperResponse::Unavailable;
+    }
+
+    let mut line = String::new();
+    let mut reader = BufReader::new(stream);
+    if reader.read_line(&mut line).is_err() {
+        return HelperResponse::Unavailable;
+    }
+    serde_json::from_str::<HelperResponse>(line.trim()).unwrap_or(HelperResponse::Unavailable)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -762,5 +865,57 @@ mod tests {
         save_lockout_state_atomic(&path, p.state()).expect("save");
         let restored = load_lockout_policy(&path, 10_004 - 3_600);
         assert_eq!(restored.cooldown_remaining(10_004 - 3_600), Some(30));
+    }
+
+    #[test]
+    fn root_keyguard_paths_rejects_traversal() {
+        assert!(root_keyguard_paths("").is_none());
+        assert!(root_keyguard_paths("..").is_none());
+        assert!(root_keyguard_paths("a/b").is_none());
+        let (cred, state) = root_keyguard_paths("rabbiz").expect("valid user");
+        assert_eq!(cred, PathBuf::from("/var/lib/rabbiz-auth/rabbiz/keyguard.json"));
+        assert_eq!(
+            state,
+            PathBuf::from("/var/lib/rabbiz-auth/rabbiz/keyguard.state")
+        );
+    }
+
+    #[test]
+    fn helper_socket_fails_closed_when_missing_and_roundtrips_json() {
+        use std::io::{BufRead, BufReader, Write};
+        use std::os::unix::net::UnixListener;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let missing = dir.path().join("missing.sock");
+        assert_eq!(
+            verify_via_helper_socket(&missing, "rabbiz", LockMethod::Passphrase, "pw"),
+            HelperResponse::Unavailable
+        );
+
+        let sock = dir.path().join("helper.sock");
+        let listener = UnixListener::bind(&sock).expect("bind");
+        let handle = std::thread::spawn(move || {
+            let (mut conn, _) = listener.accept().expect("accept");
+            let mut line = String::new();
+            BufReader::new(&conn).read_line(&mut line).expect("read");
+            let req: HelperRequest = serde_json::from_str(line.trim()).expect("parse req");
+            assert_eq!(req.user, "rabbiz");
+            assert_eq!(req.method, LockMethod::Pin);
+            let resp = if req.secret == "2580" {
+                HelperResponse::Accepted
+            } else {
+                HelperResponse::Rejected {
+                    attempts_remaining: 4,
+                }
+            };
+            let out = serde_json::to_string(&resp).expect("ser") + "\n";
+            conn.write_all(out.as_bytes()).expect("write");
+        });
+
+        assert_eq!(
+            verify_via_helper_socket(&sock, "rabbiz", LockMethod::Pin, "2580"),
+            HelperResponse::Accepted
+        );
+        handle.join().expect("join");
     }
 }

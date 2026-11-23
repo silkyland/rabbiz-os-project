@@ -374,6 +374,15 @@ fn parse_ctl<I: Iterator<Item = String>>(
                 .ok_or_else(|| format!("unknown orientation request '{req}'"))?;
             Ok(IpcCommand::SetAppOrientation { app_id, request })
         }
+        "desktop" | "desktop-mode" | "desktop_mode" => {
+            let arg = it.next().ok_or("ctl desktop needs on|off")?;
+            let enabled = match arg.to_ascii_lowercase().as_str() {
+                "on" | "1" | "true" | "enable" => true,
+                "off" | "0" | "false" | "disable" => false,
+                _ => return Err(format!("unknown desktop mode '{arg}' (expected on|off)")),
+            };
+            Ok(IpcCommand::SetDesktopMode { enabled })
+        }
         "mock" => {
             let key = it.next().ok_or("ctl mock needs <key> <value>")?;
             let value = match it.next() {
@@ -419,6 +428,19 @@ mod tests {
             })
         );
         assert!(parse(argv(&["ctl", "rotate", "sideways"])).is_err());
+    }
+
+    #[test]
+    fn ctl_desktop_parses() {
+        assert_eq!(
+            parse(argv(&["ctl", "desktop", "on"])).unwrap().command,
+            Command::Ctl(IpcCommand::SetDesktopMode { enabled: true })
+        );
+        assert_eq!(
+            parse(argv(&["ctl", "desktop", "off"])).unwrap().command,
+            Command::Ctl(IpcCommand::SetDesktopMode { enabled: false })
+        );
+        assert!(parse(argv(&["ctl", "desktop", "maybe"])).is_err());
     }
 
     #[test]

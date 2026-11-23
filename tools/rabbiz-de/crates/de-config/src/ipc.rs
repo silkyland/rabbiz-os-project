@@ -94,6 +94,8 @@ pub enum IpcCommand {
         app_id: String,
         request: OrientationRequest,
     },
+    /// Enable or disable Desktop Mode (floating windows + auto-landscape on handset).
+    SetDesktopMode { enabled: bool },
 }
 
 const fn default_true() -> bool {
@@ -198,6 +200,12 @@ pub struct ShellStateSnapshot {
     /// User rotation policy: follow the sensor.
     #[serde(default)]
     pub auto_rotate: bool,
+    /// Whether Desktop Mode (floating windows) is currently active.
+    #[serde(default)]
+    pub desktop_mode: bool,
+    /// Active form factor (`handset`, `tablet`, `desktop`).
+    #[serde(default)]
+    pub form_factor: String,
 }
 
 /// Decode a single IPC request line, enforcing [`MAX_MESSAGE_BYTES`].
@@ -490,6 +498,8 @@ mod tests {
             insets: InsetSummary { ime_bottom: 0 },
             orientation: "portrait".into(),
             auto_rotate: true,
+            desktop_mode: false,
+            form_factor: "handset".into(),
             windows: vec![WindowSummary {
                 app_id: "org.kde.kalk".into(),
                 focused: false,

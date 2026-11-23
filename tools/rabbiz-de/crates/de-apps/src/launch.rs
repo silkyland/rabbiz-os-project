@@ -28,6 +28,12 @@ struct Override {
 /// treat the id itself as a command. Logs land in
 /// `$XDG_STATE_HOME/rabbiz-de/apps/<desktop-id>.log` (append).
 pub fn launch(desktop_id: &str) -> Result<i32, String> {
+    launch_with_target(desktop_id, None)
+}
+
+/// Launch `<desktop-id>` detached, optionally passing a file path or URI
+/// argument (`target`) to the resolved command.
+pub fn launch_with_target(desktop_id: &str, target: Option<&str>) -> Result<i32, String> {
     let table: LaunchTable =
         toml::from_str(LAUNCH_TOML).map_err(|e| format!("embedded launch.toml is invalid: {e}"))?;
 
@@ -35,11 +41,50 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
         Some(o) => (o.exec.clone(), o.env.clone()),
         None => (desktop_exec(desktop_id), BTreeMap::new()),
     };
-    let argv = split_shellish(&cmdline);
+    let mut argv = split_shellish(&cmdline);
     if argv.is_empty() {
         return Err(format!("empty exec for {desktop_id}"));
     }
+    if let Some(arg) = target.filter(|s| !s.is_empty()) {
+        argv.push(arg.to_string());
+    }
     spawn(&argv, desktop_id, &extra_env)
+}
+
+/// Resolve the default `desktop_id` (without `.desktop`) for `mime` using
+/// `mimeapps.list` defaults first, falling back to associated catalog entries.
+#[must_use]
+pub fn resolve_default_for_mime(
+    mime: &str,
+    entries: &[crate::catalog::AppEntry],
+    mime_apps: &crate::mime::MimeApps,
+) -> Option<String> {
+    let valid = |desktop_file_id: &str| {
+        let stem = desktop_file_id.strip_suffix(".desktop").unwrap_or(desktop_file_id);
+        entries.iter().any(|e| e.id == stem)
+    };
+    if let Some(chosen) = mime_apps.default_app(mime, Some(&valid)) {
+        return Some(chosen.strip_suffix(".desktop").unwrap_or(&chosen).to_string());
+    }
+    let catalog_iter = entries.iter().flat_map(|e| {
+        e.mime_types
+            .iter()
+            .map(move |m| (e.id.as_str(), m.as_str()))
+    });
+    mime_apps
+        .associated_apps(mime, catalog_iter)
+        .into_iter()
+        .map(|id| id.strip_suffix(".desktop").unwrap_or(&id).to_string())
+        .find(|stem| entries.iter().any(|e| e.id == *stem))
+}
+
+/// Resolve and launch the default application for `mime` with optional `target`.
+pub fn launch_for_mime(mime: &str, target: Option<&str>) -> Result<i32, String> {
+    let catalog = crate::catalog::Catalog::scan(&[]);
+    let mime_apps = crate::mime::MimeApps::load();
+    let id = resolve_default_for_mime(mime, catalog.all(), &mime_apps)
+        .ok_or_else(|| format!("no application registered for {mime}"))?;
+    launch_with_target(&id, target)
 }
 
 /// Spawn an already-resolved command line detached — the same env/log/plumbing
@@ -202,5 +247,49 @@ mod tests {
         assert!(t.overrides["google-chrome"]
             .exec
             .starts_with("/opt/google/chrome/google-chrome"));
+    }
+
+    #[test]
+    fn resolves_mime_default_then_catalog_fallback() {
+        let entries = vec![
+            crate::catalog::AppEntry {
+                id: "rabbiz-pdf".to_string(),
+                name: "PDF".to_string(),
+                generic_name: String::new(),
+                icon: String::new(),
+                exec: Some("rabbiz-pdf".to_string()),
+                categories: vec![],
+                keywords: vec![],
+                mime_types: vec!["application/pdf".to_string()],
+                actions: vec![],
+                orientation: de_api::OrientationRequest::Unspecified,
+            },
+            crate::catalog::AppEntry {
+                id: "google-chrome".to_string(),
+                name: "Chrome".to_string(),
+                generic_name: String::new(),
+                icon: String::new(),
+                exec: Some("google-chrome".to_string()),
+                categories: vec![],
+                keywords: vec![],
+                mime_types: vec!["text/html".to_string()],
+                actions: vec![],
+                orientation: de_api::OrientationRequest::Unspecified,
+            },
+        ];
+        let mut mime_apps = crate::mime::MimeApps::default();
+        mime_apps.parse("[Default Applications]\ntext/html=google-chrome.desktop\n");
+        assert_eq!(
+            resolve_default_for_mime("text/html", &entries, &mime_apps).as_deref(),
+            Some("google-chrome")
+        );
+        assert_eq!(
+            resolve_default_for_mime("application/pdf", &entries, &mime_apps).as_deref(),
+            Some("rabbiz-pdf")
+        );
+        assert_eq!(
+            resolve_default_for_mime("application/x-unknown", &entries, &mime_apps),
+            None
+        );
     }
 }

@@ -230,6 +230,101 @@ pub mod mcp {
     pub use rabbiz_app_kit::mcp::{serve, Tool};
 }
 
+/// Adaptive layout helpers modeled on Material 3 / AOSP WindowSizeClass.
+pub mod adaptive {
+    use crate::insets::Size;
+
+    /// Responsive width class for adaptive phone / tablet / desktop UIs.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+    pub enum ViewportClass {
+        /// Handset portrait (`w < 840px`, e.g., 720×1600).
+        Compact,
+        /// Tablet portrait / small landscape (`840px <= w < 1200px`).
+        Medium,
+        /// Landscape desktop / wide tablet (`w >= 1200px`, e.g., 1600×720 or 1280×800+).
+        Expanded,
+    }
+
+    impl ViewportClass {
+        /// Classify an output or window size into a responsive [`ViewportClass`].
+        #[must_use]
+        pub const fn from_size(size: Size) -> Self {
+            if size.w >= 1200 {
+                Self::Expanded
+            } else if size.w >= 840 {
+                Self::Medium
+            } else {
+                Self::Compact
+            }
+        }
+
+        /// Recommended grid column count for card/list layouts.
+        #[must_use]
+        pub const fn grid_columns(self) -> usize {
+            match self {
+                Self::Compact => 1,
+                Self::Medium => 2,
+                Self::Expanded => 3,
+            }
+        }
+
+        /// True when a two-pane / desktop sidebar layout is appropriate.
+        #[must_use]
+        pub const fn supports_split_pane(self) -> bool {
+            matches!(self, Self::Medium | Self::Expanded)
+        }
+    }
+}
+
+/// MPRIS media-player metadata contract for `rabbiz-de` media pill & shade card.
+pub mod media {
+    use serde::{Deserialize, Serialize};
+
+    /// Standard `org.mpris.MediaPlayer2.Player` playback status.
+    #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub enum PlaybackStatus {
+        Playing,
+        Paused,
+        #[default]
+        Stopped,
+    }
+
+    impl PlaybackStatus {
+        #[must_use]
+        pub const fn as_mpris_str(self) -> &'static str {
+            match self {
+                Self::Playing => "Playing",
+                Self::Paused => "Paused",
+                Self::Stopped => "Stopped",
+            }
+        }
+    }
+
+    /// Track metadata published to the compositor's MPRIS watcher.
+    #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+    pub struct MediaMetadata {
+        pub title: String,
+        pub artist: String,
+        pub album: String,
+        pub status: PlaybackStatus,
+        pub duration_ms: u64,
+        pub position_ms: u64,
+        /// Local `file://` path under `$XDG_CACHE_HOME` or `$XDG_RUNTIME_DIR` (never remote HTTP).
+        pub art_url: Option<String>,
+    }
+
+    impl MediaMetadata {
+        /// Validate that `art_url`, if present, is a local `file://` URI without traversal.
+        #[must_use]
+        pub fn has_safe_local_art(&self) -> bool {
+            match &self.art_url {
+                None => true,
+                Some(u) => u.starts_with("file:///") && !u.contains(".."),
+            }
+        }
+    }
+}
+
 /// Headless app testing harness, golden image comparison, and simulator presets.
 pub mod testing {
     pub use rabbiz_app_kit::{DevicePreset, GoldenCompare, SimOptions, TestHarness};
@@ -353,5 +448,31 @@ mod tests {
 
         services::send_notification("com.rabbiz.sdktest", "Count Updated", "Count is now 2")
             .expect("send_notification");
+    }
+
+    #[test]
+    fn adaptive_viewport_class_and_media_metadata_work() {
+        use adaptive::ViewportClass;
+        assert_eq!(
+            ViewportClass::from_size(Size::new(720, 1600)),
+            ViewportClass::Compact
+        );
+        assert_eq!(
+            ViewportClass::from_size(Size::new(1600, 720)),
+            ViewportClass::Expanded
+        );
+        assert_eq!(ViewportClass::Compact.grid_columns(), 1);
+        assert_eq!(ViewportClass::Expanded.grid_columns(), 3);
+        assert!(ViewportClass::Expanded.supports_split_pane());
+
+        let meta = media::MediaMetadata {
+            title: "Track 1".to_string(),
+            artist: "Rabbiz".to_string(),
+            status: media::PlaybackStatus::Playing,
+            art_url: Some("file:///tmp/cover.png".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(meta.status.as_mpris_str(), "Playing");
+        assert!(meta.has_safe_local_art());
     }
 }
