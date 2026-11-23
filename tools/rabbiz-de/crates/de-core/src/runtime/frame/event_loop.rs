@@ -22,6 +22,7 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
     let mut event_loop: EventLoop<Run> =
         EventLoop::try_new().map_err(|e| format!("event loop: {e}"))?;
     let handle = event_loop.handle();
+    crate::protocols::xwayland::init(&display.handle(), &handle);
 
     let (auth_tx, auth_rx) =
         smithay::reexports::calloop::channel::channel::<crate::lock_ui::AuthVerifyResult>();

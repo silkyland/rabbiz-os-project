@@ -1,6 +1,7 @@
 //! In-process shell screens (P0–P20).
 
 pub mod boot;
+pub mod desktop_chrome;
 pub mod drawer;
 pub mod error;
 pub mod first_run;
@@ -22,3 +23,4 @@ pub mod search;
 pub mod settings;
 pub mod shade;
 pub mod status;
+pub mod taskbar;

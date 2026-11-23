@@ -66,6 +66,33 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
         // paints last on top of any background windows.
         for window in de.space.elements() {
             let loc = de.space.element_location(window).unwrap_or_default();
+            if de.desktop_mode {
+                let geo = window.geometry();
+                let title = window
+                    .toplevel()
+                    .map(|t| crate::snapshots::window_app_id(t))
+                    .unwrap_or_else(|| "Application".to_string());
+                let focused = de
+                    .seat
+                    .get_keyboard()
+                    .and_then(|k| k.current_focus())
+                    .zip(window.wl_surface())
+                    .is_some_and(|(f, s)| f == *s);
+                let tb = de_ui::desktop_chrome::render_titlebar(
+                    geo.size.w.max(240),
+                    &de.theme,
+                    &de_ui::desktop_chrome::WindowChromeModel {
+                        title: &title,
+                        focused,
+                        maximized: false,
+                        hovered: None,
+                    },
+                );
+                canvas.blit(
+                    &tb,
+                    ApiPoint::new(loc.x, loc.y - de_ui::desktop_chrome::TITLEBAR_H),
+                );
+            }
             let Some(surface) = window.wl_surface().map(std::borrow::Cow::into_owned) else {
                 continue;
             };
@@ -242,10 +269,68 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
             canvas.blit_scaled(px, de_api::Rect::new(x, y, px.size.w, px.size.h), alpha);
         }
     }
+    if de.desktop_mode && !de.lock.shown() {
+        let app_labels: Vec<String> = de
+            .space
+            .elements()
+            .map(|w| {
+                w.toplevel()
+                    .map(|t| crate::snapshots::window_app_id(t))
+                    .unwrap_or_else(|| "App".to_string())
+            })
+            .collect();
+        let focused_idx = de.seat.get_keyboard().and_then(|k| k.current_focus()).and_then(|f| {
+            de.space
+                .elements()
+                .position(|w| w.wl_surface().is_some_and(|s| *s == f))
+        });
+        let apps: Vec<de_ui::taskbar::TaskbarApp<'_>> = app_labels
+            .iter()
+            .enumerate()
+            .map(|(i, lbl)| de_ui::taskbar::TaskbarApp {
+                label: lbl,
+                focused: focused_idx == Some(i),
+                minimized: false,
+            })
+            .collect();
+        let mins = crate::runtime::frame_io::minute_of_day();
+        let clock = format!("{:02}:{:02}", (mins / 60) % 24, mins % 60);
+        let bar = de_ui::taskbar::render(
+            out_size,
+            &de.theme,
+            &de_ui::taskbar::TaskbarModel {
+                apps: &apps,
+                tray_count: de.tray_watcher.count(),
+                clock: &clock,
+                launcher_open: de.foreground == Foreground::Shell
+                    && de.nav.current == de_ui::nav::Screen::Drawer,
+                hovered: None,
+            },
+        );
+        canvas.blit(
+            &bar,
+            ApiPoint::new(0, out_size.h - de_ui::taskbar::TASKBAR_H),
+        );
+    }
     if de.power.menu_over_lock {
         if let Some(px) = de.power.menu_px.as_ref() {
             canvas.blit(px, ApiPoint::ZERO);
         }
+    }
+    if de.desktop_mode || de.pointer_active {
+        let cur = de
+            .cursor_px
+            .as_ref()
+            .cloned()
+            .unwrap_or_else(crate::cursor::cursor_pixels);
+        let loc = de.pointer.current_location();
+        canvas.blit(
+            &cur,
+            ApiPoint::new(
+                (loc.x - crate::cursor::CURSOR_HOTSPOT.0).round() as i32,
+                (loc.y - crate::cursor::CURSOR_HOTSPOT.1).round() as i32,
+            ),
+        );
     }
     Some(canvas.into_pixels())
 }

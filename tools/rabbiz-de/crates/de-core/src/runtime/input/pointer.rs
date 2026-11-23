@@ -43,6 +43,9 @@ impl De {
         let serial = SCOUNTER.next_serial();
         let ptr = self.pointer.clone();
         if pressed {
+            if self.desktop_mode && self.handle_desktop_pointer_press(pos, serial) {
+                return;
+            }
             if self.pointer_shell_owned(pos) {
                 self.pointer_press = Some((pos, button));
                 return;
@@ -50,12 +53,18 @@ impl De {
             if let Some(target) = self.surface_under(pos).and_then(|hit| hit.keyboard_target) {
                 self.focus_surface(Some(target), serial);
             }
-        } else if let Some((down_pos, down_button)) = self.pointer_press.take() {
-            let moved = ((pos.x - down_pos.x).powi(2) + (pos.y - down_pos.y).powi(2)).sqrt();
-            if down_button == button && moved <= 12.0 {
-                self.pointer_tap(down_pos, time);
+        } else {
+            if self.desktop_drag.take().is_some() {
+                self.needs_present = true;
+                return;
             }
-            return;
+            if let Some((down_pos, down_button)) = self.pointer_press.take() {
+                let moved = ((pos.x - down_pos.x).powi(2) + (pos.y - down_pos.y).powi(2)).sqrt();
+                if down_button == button && moved <= 12.0 {
+                    self.pointer_tap(down_pos, time);
+                }
+                return;
+            }
         }
         ptr.button(
             self,
@@ -217,6 +226,9 @@ impl De {
         // The cursor sprite is a composited element: motion must schedule
         // a frame or it would only move on unrelated damage.
         self.needs_present = true;
+        if self.handle_desktop_drag_motion(pos) {
+            return;
+        }
         self.menu_pointer_moved(pos);
         let serial = SCOUNTER.next_serial();
         let under = self.surface_under(pos).map(SurfaceHit::into_focus);
@@ -239,6 +251,172 @@ impl De {
                 utime: u64::from(time) * 1000,
             },
         );
+    }
+
+    fn handle_desktop_pointer_press(
+        &mut self,
+        pos: Point<f64, Logical>,
+        serial: smithay::utils::Serial,
+    ) -> bool {
+        use crate::state::{DesktopDrag, Foreground};
+        use de_ui::desktop_chrome::{hit_resize_edge, hit_titlebar, TitlebarHit, RESIZE_MARGIN, TITLEBAR_H};
+        use de_ui::taskbar::{hit as hit_taskbar, TaskbarHit};
+        use smithay::wayland::seat::WaylandFocus;
+
+        let out_size = de_api::Size::new(self.output.width as i32, self.output.height as i32);
+        let pt = api_point(pos);
+
+        // 1. Bottom Taskbar
+        if !self.panels.shown() {
+            let win_count = self.space.elements().count();
+            if let Some(hit) = hit_taskbar(out_size, pt, win_count) {
+                match hit {
+                    TaskbarHit::Launcher => {
+                        if self.foreground == Foreground::Shell
+                            && self.nav.current == de_ui::nav::Screen::Drawer
+                        {
+                            self.show_shell(de_ui::nav::Screen::Home);
+                        } else {
+                            self.show_shell(de_ui::nav::Screen::Drawer);
+                        }
+                    }
+                    TaskbarHit::QuickSettings | TaskbarHit::Tray => {
+                        self.panel_open(crate::panel_ui::PanelKind::Quick);
+                    }
+                    TaskbarHit::Window(idx) => {
+                        let target_w = self.space.elements().nth(idx).cloned();
+                        if let Some(w) = target_w {
+                            self.space.raise_element(&w, true);
+                            self.foreground = Foreground::App;
+                            if let Some(surf) = w.wl_surface().map(std::borrow::Cow::into_owned) {
+                                self.focus_surface(Some(surf), serial);
+                            }
+                            self.needs_present = true;
+                        }
+                    }
+                }
+                return true;
+            }
+        }
+
+        if self.foreground != Foreground::App || self.panels.shown() {
+            return false;
+        }
+
+        // 2. Window SSD Titlebar & Resize Borders (topmost window first)
+        let windows: Vec<_> = self.space.elements().rev().cloned().collect();
+        for w in windows {
+            let loc = self.space.element_location(&w).unwrap_or_default();
+            let geo = w.geometry();
+            let tb_rect = de_api::Rect::new(loc.x, loc.y - TITLEBAR_H, geo.size.w.max(240), TITLEBAR_H);
+            if let Some(hit) = hit_titlebar(tb_rect, pt) {
+                self.space.raise_element(&w, true);
+                if let Some(surf) = w.wl_surface().map(std::borrow::Cow::into_owned) {
+                    self.focus_surface(Some(surf), serial);
+                }
+                match hit {
+                    TitlebarHit::Close => {
+                        if let Some(tl) = w.toplevel() {
+                            tl.send_close();
+                        }
+                    }
+                    TitlebarHit::Minimize => {
+                        self.show_shell(de_ui::nav::Screen::Home);
+                    }
+                    TitlebarHit::Maximize => {
+                        if let Some(tl) = w.toplevel() {
+                            let max_h = (out_size.h - TITLEBAR_H - de_ui::taskbar::TASKBAR_H).max(240);
+                            de_protocols::configure_maximized(tl, (out_size.w, max_h).into());
+                            tl.send_configure();
+                            self.space.map_element(w, (0, TITLEBAR_H), false);
+                        }
+                    }
+                    TitlebarHit::Move => {
+                        self.desktop_drag = Some(DesktopDrag::Move {
+                            window: w,
+                            start_ptr: (pos.x, pos.y),
+                            start_loc: (loc.x, loc.y),
+                        });
+                    }
+                }
+                self.needs_present = true;
+                return true;
+            }
+            let win_rect = de_api::Rect::new(loc.x, loc.y, geo.size.w, geo.size.h);
+            if let Some(edge) = hit_resize_edge(win_rect, pt, RESIZE_MARGIN) {
+                self.space.raise_element(&w, true);
+                self.desktop_drag = Some(DesktopDrag::Resize {
+                    window: w,
+                    edge,
+                    start_ptr: (pos.x, pos.y),
+                    start_geo: (loc.x, loc.y, geo.size.w.max(240), geo.size.h.max(160)),
+                });
+                self.needs_present = true;
+                return true;
+            }
+        }
+        false
+    }
+
+    fn handle_desktop_drag_motion(&mut self, pos: Point<f64, Logical>) -> bool {
+        use crate::state::DesktopDrag;
+        use de_ui::desktop_chrome::ResizeEdge;
+
+        let Some(drag) = self.desktop_drag.clone() else {
+            return false;
+        };
+        match drag {
+            DesktopDrag::Move {
+                window,
+                start_ptr,
+                start_loc,
+            } => {
+                let dx = (pos.x - start_ptr.0).round() as i32;
+                let dy = (pos.y - start_ptr.1).round() as i32;
+                let nx = start_loc.0 + dx;
+                let ny = (start_loc.1 + dy).max(de_ui::desktop_chrome::TITLEBAR_H);
+                self.space.map_element(window, (nx, ny), false);
+            }
+            DesktopDrag::Resize {
+                window,
+                edge,
+                start_ptr,
+                start_geo,
+            } => {
+                let dx = (pos.x - start_ptr.0).round() as i32;
+                let dy = (pos.y - start_ptr.1).round() as i32;
+                let (mut x, mut y, mut w, mut h) = start_geo;
+                match edge {
+                    ResizeEdge::Right | ResizeEdge::TopRight | ResizeEdge::BottomRight => {
+                        w = (w + dx).max(240);
+                    }
+                    ResizeEdge::Left | ResizeEdge::TopLeft | ResizeEdge::BottomLeft => {
+                        let nw = (w - dx).max(240);
+                        x += w - nw;
+                        w = nw;
+                    }
+                    _ => {}
+                }
+                match edge {
+                    ResizeEdge::Bottom | ResizeEdge::BottomLeft | ResizeEdge::BottomRight => {
+                        h = (h + dy).max(160);
+                    }
+                    ResizeEdge::Top | ResizeEdge::TopLeft | ResizeEdge::TopRight => {
+                        let nh = (h - dy).max(160);
+                        y += h - nh;
+                        h = nh;
+                    }
+                    _ => {}
+                }
+                if let Some(tl) = window.toplevel() {
+                    de_protocols::configure_floating(tl, (w, h).into());
+                    tl.send_configure();
+                }
+                self.space.map_element(window, (x, y), false);
+            }
+        }
+        self.needs_present = true;
+        true
     }
 }
 

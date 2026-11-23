@@ -316,6 +316,31 @@ pub struct De {
     pub(crate) cached_battery: de_api::services::BatteryState,
     /// Cached privacy-indicator status updated off-thread by the status poller.
     pub(crate) cached_privacy: de_api::services::PrivacyState,
+    /// `org.kde.StatusNotifierWatcher` D-Bus service for Desktop Mode tray icons.
+    pub(crate) tray_watcher: de_system::tray::StatusNotifierWatcher,
+    /// XWayland X11 window manager (`M5-T1` / Phase D3).
+    pub(crate) xwm: Option<smithay::xwayland::X11Wm>,
+    pub(crate) xwayland_shell_state: smithay::wayland::xwayland_shell::XWaylandShellState,
+    /// Active XWayland `DISPLAY` number (when `Xwayland` is running).
+    pub(crate) xwayland_display: Option<u32>,
+    /// Active Desktop Mode window move/resize drag state.
+    pub(crate) desktop_drag: Option<DesktopDrag>,
+}
+
+/// Active pointer drag on a Desktop Mode window (titlebar move or edge resize).
+#[derive(Debug, Clone)]
+pub(crate) enum DesktopDrag {
+    Move {
+        window: Window,
+        start_ptr: (f64, f64),
+        start_loc: (i32, i32),
+    },
+    Resize {
+        window: Window,
+        edge: de_ui::desktop_chrome::ResizeEdge,
+        start_ptr: (f64, f64),
+        start_geo: (i32, i32, i32, i32),
+    },
 }
 
 /// What the screen is showing (M3).
@@ -820,6 +845,11 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         next_mock_notif_id: 10_000,
         cached_battery: de_api::services::BatteryState::default(),
         cached_privacy: de_api::services::PrivacyState::default(),
+        tray_watcher: de_system::tray::StatusNotifierWatcher::start(),
+        xwm: None,
+        xwayland_shell_state: smithay::wayland::xwayland_shell::XWaylandShellState::new::<De>(&display.handle()),
+        xwayland_display: None,
+        desktop_drag: None,
     })
 }
 

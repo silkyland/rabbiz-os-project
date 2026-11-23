@@ -13,4 +13,5 @@ pub mod notifications;
 pub mod power;
 pub mod privacy;
 pub mod screensaver;
+pub mod tray;
 pub mod upower;

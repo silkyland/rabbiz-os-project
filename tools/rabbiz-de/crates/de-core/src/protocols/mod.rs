@@ -14,3 +14,4 @@ pub(crate) mod session_lock;
 pub mod standards;
 pub mod virtual_pointer;
 pub mod xdg;
+pub(crate) mod xwayland;
