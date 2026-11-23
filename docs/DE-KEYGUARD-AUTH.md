@@ -37,7 +37,16 @@ Support four progressive modes configured in `de-config::Prefs::lock_method`:
 | Mode | UX on Swipe-Up | Verification Backend |
 |---|---|---|
 | `Swipe` (dev default) | Immediate unlock (current behavior) | None |
-| `Pin` (4–12 digits) | Full-screen numeric keypad + dots | Argon2id hash in `~/.config/rabbiz-shell/keyguard.hash` (`0600`) **or** Linux PAM (`rabbiz-lock` service) |
+| `Pin` (4–12 digits) | Full-screen numeric keypad + dots | Argon2id hash (`m=19456 KiB, t=2, p=1`, random 16-byte `getrandom` salt) in `~/.config/rabbiz-shell/keyguard.json` (`0600`) |
+
+### Current Limitation & Follow-Up: Unprivileged-User Writable Credential Storage
+
+Currently `keyguard.json` and `keyguard.state` live in `~/.config/rabbiz-shell/`, which is owned by the session user (`rabbiz`). Because all apps in the session currently run as the same UID (`rabbiz`), any un-sandboxed app running as `rabbiz` can overwrite `keyguard.json` with a known PIN hash or delete `keyguard.state` to reset lockout counters.
+
+**Follow-up design (root-owned auth helper / PAM):**
+1. Move credential storage to `/var/lib/rabbiz-auth/<user>/keyguard.json` and lockout state to `/var/lib/rabbiz-auth/<user>/keyguard.state`, owned `root:root` with mode `0600` (directory `0700`).
+2. Introduce a small setuid/root-owned helper (`rabbiz-auth-helper`, or a `pam_rabbiz` module invoked via `unix_chkpwd`-style helper) that accepts `(user, pin_bytes)` over a `0660` / socket-activated pipe, runs Argon2id + `LockoutPolicy` inside the privileged boundary, and returns only `Accepted | Rejected { attempts_remaining } | Cooldown { retry_after_secs }`.
+3. Enrollment/PIN-change requires either the current credential or Polkit/root authorization, preventing any same-UID app from replacing the stored hash.
 | `Passphrase` | `rabbiz-osk` (allowed in `DisplayArea::Critical` over Keyguard) + masked text field | Linux PAM (`pam_unix` for user `rabbiz`) |
 | `Biometric + Fallback` | Rear fingerprint (`fprintd` via `de-system/src/fingerprint.rs`) | Unlocks directly after first post-boot PIN/Passphrase; falls back to PIN/Passphrase after 5 failed touches or reboot |
 

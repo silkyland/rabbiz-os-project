@@ -42,6 +42,7 @@ pub struct BouncerModel<'a> {
     pub max_len: usize,
     pub error: Option<&'a str>,
     pub cooldown_secs: Option<u32>,
+    pub checking: bool,
     pub emergency_available: bool,
     pub backdrop: &'a Pixels,
 }
@@ -138,7 +139,7 @@ pub fn hit(size: Size, p: Point, m: &BouncerModel) -> Option<BouncerHit> {
     if m.emergency_available && emergency_rect(size).contains(p) {
         return Some(BouncerHit::Emergency);
     }
-    if m.cooldown_secs.is_some() {
+    if m.cooldown_secs.is_some() || m.checking {
         return None;
     }
     for (target, rect) in keypad_rects(size) {
@@ -176,12 +177,20 @@ pub fn render(size: Size, theme: &Theme, m: &BouncerModel, strings: &Strings) ->
         title_y,
     );
 
-    // Status line: cooldown countdown takes precedence over static error text.
+    // Status line: cooldown countdown takes precedence over checking/error text.
     let status_y = title_y + 56;
     if let Some(secs) = m.cooldown_secs {
         let msg =
             tr(strings, "bouncer.cooldown", "Try again in {s}s").replace("{s}", &secs.to_string());
         chrome::draw_centered(&mut c, &msg, &style::label(theme.warning), status_y);
+    } else if m.checking {
+        let msg = tr(strings, "bouncer.checking", "Checking PIN…");
+        chrome::draw_centered(
+            &mut c,
+            msg,
+            &style::label([0xFF, 0xF8, 0xF0, 0xCC]),
+            status_y,
+        );
     } else if let Some(err) = m.error {
         chrome::draw_centered(&mut c, err, &style::label(theme.danger), status_y);
     }
@@ -204,7 +213,7 @@ pub fn render(size: Size, theme: &Theme, m: &BouncerModel, strings: &Strings) ->
     }
 
     // 3×4 numeric keypad.
-    let locked_out = m.cooldown_secs.is_some();
+    let locked_out = m.cooldown_secs.is_some() || m.checking;
     let digit_style = text::LabelStyle {
         size: 40.0,
         line_height: 44.0,
@@ -292,6 +301,7 @@ mod tests {
             max_len: 6,
             error: None,
             cooldown_secs: None,
+            checking: false,
             emergency_available: true,
             backdrop,
         }

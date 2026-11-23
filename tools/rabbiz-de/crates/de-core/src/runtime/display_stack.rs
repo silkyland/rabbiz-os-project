@@ -59,4 +59,16 @@ mod tests {
             vec!["cursor", "gesture-bar", "popup", "app", "wall"]
         );
     }
+
+    #[test]
+    fn strictly_locked_first_frame_contains_only_keyguard_and_above() {
+        let mut stack = RenderStack::new();
+        stack.push(DisplayArea::Wallpaper, "wall");
+        stack.push(DisplayArea::Shell, "home");
+        stack.extend_front_to_back(DisplayArea::App, vec!["app"]);
+        stack.push(DisplayArea::Shade, "shade");
+        stack.push(DisplayArea::Keyguard, "lock");
+
+        assert_eq!(stack.into_smithay_elements(true), vec!["lock"]);
+    }
 }

@@ -11,7 +11,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use de_api::{Pixels, Point, Size};
 use de_design::motion::{MotionKind, SpringPreset};
 use de_paint::animation::{AnimationClock, SpringValue};
-use de_system::auth::{zeroize_secret, AuthOutcome, LockoutPolicy, PinCredential};
+use de_system::auth::{
+    keyguard_state_path, load_lockout_policy, save_lockout_state_atomic,
+    save_pin_credential_atomic, zeroize_secret, AuthOutcome, LockoutPolicy, LockoutState,
+    PinCredential,
+};
 use de_ui::lock::{LockModel, QuickAction};
 use de_ui::lock_bouncer::{BouncerHit, BouncerModel};
 use de_ui::nav::Screen;
@@ -29,6 +33,12 @@ const SHAKE_MS: f32 = 600.0;
 const MAX_PIN_LEN: usize = 12;
 /// Whether the bouncer displays and hit-tests the Emergency Call pill.
 const EMERGENCY_AVAILABLE: bool = true;
+
+/// Result returned from the off-thread PIN verification worker.
+pub(crate) struct AuthVerifyResult {
+    pub ok: bool,
+    pub upgraded_cred: Option<PinCredential>,
+}
 
 /// Result of dispatching a tap on the PIN bouncer surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,6 +121,12 @@ pub(crate) struct LockUi {
     bouncer_error: Option<String>,
     /// Deterministic backoff/lockout policy for credential attempts.
     pub lockout: LockoutPolicy,
+    /// True while an off-thread Argon2id verification is in flight.
+    pub verifying: bool,
+    /// Channel sender to deliver verification results back to the calloop event loop.
+    pub(crate) auth_tx: Option<smithay::reexports::calloop::channel::Sender<AuthVerifyResult>>,
+    /// Off-thread writer channel for persisting `keyguard.state`.
+    state_tx: Option<std::sync::mpsc::Sender<(PathBuf, LockoutState)>>,
     /// Optional salted PIN credential loaded from `keyguard.json`.
     pin_cred: Option<PinCredential>,
 }
@@ -143,13 +159,41 @@ impl Default for LockUi {
             bouncer_open: false,
             pin_buf: Vec::new(),
             bouncer_error: None,
-            lockout: LockoutPolicy::new(),
+            lockout: keyguard_state_path().map_or_else(LockoutPolicy::new, |p| {
+                load_lockout_policy(&p, now_epoch_secs())
+            }),
+            verifying: false,
+            auth_tx: None,
+            state_tx: None,
             pin_cred: load_pin_credential(),
         }
     }
 }
 
 impl LockUi {
+    fn persist_lockout_state(&mut self) {
+        let Some(path) = keyguard_state_path() else {
+            return;
+        };
+        if self.state_tx.is_none() {
+            let (tx, rx) = std::sync::mpsc::channel::<(PathBuf, LockoutState)>();
+            if let Ok(_) = std::thread::Builder::new()
+                .name("rabbiz-keyguard-state".into())
+                .spawn(move || {
+                    while let Ok((p, s)) = rx.recv() {
+                        if let Err(e) = save_lockout_state_atomic(&p, &s) {
+                            eprintln!("rabbiz-de: save keyguard state {} failed: {e}", p.display());
+                        }
+                    }
+                })
+            {
+                self.state_tx = Some(tx);
+            }
+        }
+        if let Some(tx) = &self.state_tx {
+            let _ = tx.send((path, self.lockout.state().clone()));
+        }
+    }
     #[must_use]
     pub fn shown(&self) -> bool {
         self.locked
@@ -177,9 +221,12 @@ impl LockUi {
     }
 
     /// Whether swipe-up must open the PIN bouncer instead of unlocking immediately.
+    ///
+    /// Fail closed: any mode other than `"swipe"` requires credential verification,
+    /// even if `keyguard.json` is missing or unreadable.
     #[must_use]
     pub fn requires_pin(&self, lock_method: &str) -> bool {
-        lock_method == "pin" && self.pin_cred.is_some()
+        lock_method.trim() != "swipe"
     }
 
     /// Show the lock (fresh raster; slide starts covered).
@@ -245,7 +292,11 @@ impl LockUi {
             if self.requires_pin(lock_method) {
                 zeroize_secret(&mut self.pin_buf);
                 self.bouncer_open = true;
-                self.bouncer_error = None;
+                self.bouncer_error = if self.pin_cred.is_none() {
+                    Some("Keyguard credential missing or unreadable — cannot unlock".to_string())
+                } else {
+                    None
+                };
                 self.slide.retarget(0.0);
                 self.slide.snap();
                 self.stale = true;
@@ -282,6 +333,7 @@ impl LockUi {
             max_len: self.pin_buf.len().clamp(6, MAX_PIN_LEN),
             error: self.bouncer_error.as_deref(),
             cooldown_secs: self.lockout.cooldown_remaining(now_s),
+            checking: self.verifying,
             emergency_available: EMERGENCY_AVAILABLE,
             backdrop: &dummy,
         };
@@ -290,7 +342,7 @@ impl LockUi {
         };
         match hit {
             BouncerHit::Digit(d) => {
-                if self.pin_buf.len() < MAX_PIN_LEN && d <= 9 {
+                if !self.verifying && self.pin_buf.len() < MAX_PIN_LEN && d <= 9 {
                     self.pin_buf.push(b'0' + d);
                     self.bouncer_error = None;
                     self.stale = true;
@@ -298,13 +350,14 @@ impl LockUi {
                 BouncerTapOutcome::Consumed
             }
             BouncerHit::Backspace => {
-                if self.pin_buf.pop().is_some() {
+                if !self.verifying && self.pin_buf.pop().is_some() {
                     self.stale = true;
                 }
                 BouncerTapOutcome::Consumed
             }
             BouncerHit::Cancel => {
                 zeroize_secret(&mut self.pin_buf);
+                self.verifying = false;
                 self.bouncer_open = false;
                 self.bouncer_error = None;
                 self.stale = true;
@@ -312,32 +365,99 @@ impl LockUi {
             }
             BouncerHit::Emergency => BouncerTapOutcome::Emergency,
             BouncerHit::Submit => {
-                if self.pin_buf.is_empty() {
+                if self.verifying || self.pin_buf.is_empty() {
                     return BouncerTapOutcome::Consumed;
                 }
-                let ok = self.pin_cred.as_ref().is_some_and(|cred| {
-                    std::str::from_utf8(&self.pin_buf).is_ok_and(|pin| cred.verify(pin))
-                });
-                zeroize_secret(&mut self.pin_buf);
-                match self.lockout.record_attempt(ok, now_s) {
-                    AuthOutcome::Accepted => {
-                        self.unlock_now();
-                        self.stale = true;
-                        BouncerTapOutcome::Unlocked
-                    }
-                    AuthOutcome::Rejected { attempts_remaining } => {
-                        self.bouncer_error = Some(format!(
-                            "Incorrect PIN ({attempts_remaining} attempts left)"
-                        ));
-                        self.stale = true;
-                        BouncerTapOutcome::Consumed
-                    }
-                    AuthOutcome::Cooldown { retry_after_secs } => {
-                        self.bouncer_error = Some(format!("Try again in {retry_after_secs}s"));
-                        self.stale = true;
-                        BouncerTapOutcome::Consumed
-                    }
+                if self.lockout.cooldown_remaining(now_s).is_some() {
+                    return BouncerTapOutcome::Consumed;
                 }
+                let Some(cred) = self.pin_cred.clone() else {
+                    zeroize_secret(&mut self.pin_buf);
+                    self.bouncer_error = Some(
+                        "Keyguard credential missing or unreadable — cannot unlock".to_string(),
+                    );
+                    self.stale = true;
+                    return BouncerTapOutcome::Consumed;
+                };
+                let mut pin_bytes = std::mem::take(&mut self.pin_buf);
+                if let Some(tx) = self.auth_tx.clone() {
+                    self.verifying = true;
+                    self.bouncer_error = None;
+                    self.stale = true;
+                    let _ = std::thread::Builder::new()
+                        .name("rabbiz-pin-verify".into())
+                        .spawn(move || {
+                            let (ok, upgraded_cred) = std::str::from_utf8(&pin_bytes)
+                                .map_or((false, None), |pin| cred.verify_and_upgrade(pin));
+                            zeroize_secret(&mut pin_bytes);
+                            let _ = tx.send(AuthVerifyResult { ok, upgraded_cred });
+                        });
+                    BouncerTapOutcome::Consumed
+                } else {
+                    // Synchronous test fallback: still run on a named worker thread so
+                    // verification never executes on the compositor main thread.
+                    let res = std::thread::Builder::new()
+                        .name("rabbiz-pin-verify".into())
+                        .spawn(move || {
+                            let (ok, upgraded_cred) = std::str::from_utf8(&pin_bytes)
+                                .map_or((false, None), |pin| cred.verify_and_upgrade(pin));
+                            zeroize_secret(&mut pin_bytes);
+                            AuthVerifyResult { ok, upgraded_cred }
+                        })
+                        .ok()
+                        .and_then(|h| h.join().ok())
+                        .unwrap_or(AuthVerifyResult {
+                            ok: false,
+                            upgraded_cred: None,
+                        });
+                    self.apply_verify_result(res, now_s)
+                }
+            }
+        }
+    }
+
+    pub(crate) fn apply_verify_result(
+        &mut self,
+        res: AuthVerifyResult,
+        now_s: u64,
+    ) -> BouncerTapOutcome {
+        self.verifying = false;
+        if res.ok {
+            if let Some(new_cred) = res.upgraded_cred {
+                self.pin_cred = Some(new_cred.clone());
+                if let Some(path) = keyguard_path() {
+                    let _ = std::thread::Builder::new()
+                        .name("rabbiz-keyguard-migrate".into())
+                        .spawn(move || {
+                            if let Err(e) = save_pin_credential_atomic(&path, &new_cred) {
+                                eprintln!(
+                                    "rabbiz-de: migrate keyguard credential {} failed: {e}",
+                                    path.display()
+                                );
+                            }
+                        });
+                }
+            }
+        }
+        let outcome = self.lockout.record_attempt(res.ok, now_s);
+        self.persist_lockout_state();
+        match outcome {
+            AuthOutcome::Accepted => {
+                self.unlock_now();
+                self.stale = true;
+                BouncerTapOutcome::Unlocked
+            }
+            AuthOutcome::Rejected { attempts_remaining } => {
+                self.bouncer_error = Some(format!(
+                    "Incorrect PIN ({attempts_remaining} attempts left)"
+                ));
+                self.stale = true;
+                BouncerTapOutcome::Consumed
+            }
+            AuthOutcome::Cooldown { retry_after_secs } => {
+                self.bouncer_error = Some(format!("Try again in {retry_after_secs}s"));
+                self.stale = true;
+                BouncerTapOutcome::Consumed
             }
         }
     }
@@ -432,6 +552,7 @@ impl De {
                 max_len: self.lock.pin_buf.len().clamp(6, MAX_PIN_LEN),
                 error: self.lock.bouncer_error.as_deref(),
                 cooldown_secs,
+                checking: self.lock.verifying,
                 emergency_available: EMERGENCY_AVAILABLE,
                 backdrop: &backdrop,
             };
@@ -528,6 +649,17 @@ impl De {
         None
     }
 
+    /// Apply the result of an off-thread PIN verification on the compositor loop.
+    pub(crate) fn finish_pin_verify(&mut self, res: AuthVerifyResult) {
+        if matches!(
+            self.lock.apply_verify_result(res, now_epoch_secs()),
+            BouncerTapOutcome::Unlocked
+        ) {
+            self.shell_dirty = true;
+        }
+        self.needs_present = true;
+    }
+
     /// Dispatch a tap on the PIN bouncer overlay.
     pub(crate) fn lock_bouncer_tap(&mut self, pos: Point) {
         let size = Size::new(self.output.width as i32, self.output.height as i32);
@@ -594,6 +726,7 @@ mod tests {
             max_len: 6,
             error: None,
             cooldown_secs: None,
+            checking: false,
             emergency_available: EMERGENCY_AVAILABLE,
             backdrop: &dummy,
         };
@@ -654,7 +787,10 @@ mod tests {
     #[test]
     fn swipe_mode_unlocks_immediately_without_bouncer() {
         let mut l = LockUi::default();
-        l.pin_cred = Some(PinCredential::create("1234", [0x22_u8; 16], 16));
+        l.pin_cred = Some(
+            PinCredential::create_with_params("1234", [0x22_u8; 16], 1024, 1, 1)
+                .expect("create_with_params"),
+        );
         let clock = AnimationClock::new();
         let size = Size::new(720, 1600);
         assert!(!l.requires_pin("swipe"));
@@ -675,7 +811,10 @@ mod tests {
     fn pin_mode_requires_bouncer_wrong_right_and_cancel() {
         let size = Size::new(720, 1600);
         let mut l = LockUi::default();
-        l.pin_cred = Some(PinCredential::create("1234", [0x42_u8; 16], 16));
+        l.pin_cred = Some(
+            PinCredential::create_with_params("1234", [0x42_u8; 16], 1024, 1, 1)
+                .expect("create_with_params"),
+        );
         assert!(l.requires_pin("pin"));
 
         // Swipe up opens bouncer instead of unlocking immediately.
@@ -781,5 +920,79 @@ mod tests {
             lockscreen_privacy_from_pref("unknown"),
             LockscreenPrivacy::ShowAll
         );
+    }
+
+    #[test]
+    fn pin_mode_with_missing_credential_stays_locked_with_recovery_error() {
+        let mut l = LockUi::default();
+        l.pin_cred = None;
+        assert!(l.requires_pin("pin"));
+        assert!(l.requires_pin("passphrase"));
+
+        l.open();
+        l.begin_drag();
+        l.drag_to(500.0);
+        l.release(-800.0, 1600.0, "pin");
+        assert!(l.shown());
+        assert!(!l.is_unlocking());
+        assert!(l.bouncer_open);
+        assert!(l
+            .bouncer_error
+            .as_deref()
+            .is_some_and(|e| e.contains("missing")));
+    }
+
+    #[test]
+    fn pin_verify_runs_off_thread_and_ignores_taps_while_in_flight() {
+        let size = Size::new(720, 1600);
+        let (tx, _rx) = smithay::reexports::calloop::channel::channel();
+        let mut l = LockUi::default();
+        l.auth_tx = Some(tx);
+        l.pin_cred = Some(
+            PinCredential::create_with_params("1234", [0x33_u8; 16], 1024, 1, 1)
+                .expect("create_with_params"),
+        );
+        l.open();
+        l.bouncer_open = true;
+
+        let d1 = find_bouncer_target(size, BouncerHit::Digit(1));
+        let d2 = find_bouncer_target(size, BouncerHit::Digit(2));
+        let d3 = find_bouncer_target(size, BouncerHit::Digit(3));
+        let d4 = find_bouncer_target(size, BouncerHit::Digit(4));
+        let submit = find_bouncer_target(size, BouncerHit::Submit);
+
+        for pt in [d1, d2, d3, d4] {
+            assert_eq!(
+                l.handle_bouncer_tap(pt, size, 1_000),
+                BouncerTapOutcome::Consumed
+            );
+        }
+        assert_eq!(
+            l.handle_bouncer_tap(submit, size, 1_000),
+            BouncerTapOutcome::Consumed
+        );
+        assert!(l.verifying);
+        assert!(l.pin_buf.is_empty());
+
+        // Further digit taps while verification is in flight are ignored.
+        assert_eq!(
+            l.handle_bouncer_tap(d1, size, 1_000),
+            BouncerTapOutcome::Consumed
+        );
+        assert!(l.pin_buf.is_empty());
+
+        // Applying the async result unlocks cleanly.
+        assert_eq!(
+            l.apply_verify_result(
+                AuthVerifyResult {
+                    ok: true,
+                    upgraded_cred: None,
+                },
+                1_000
+            ),
+            BouncerTapOutcome::Unlocked
+        );
+        assert!(!l.verifying);
+        assert!(!l.shown());
     }
 }

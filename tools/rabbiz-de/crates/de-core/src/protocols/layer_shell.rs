@@ -74,7 +74,8 @@ impl De {
             states
                 .data_map
                 .get::<LayerSurfaceData>()
-                .is_some_and(|data| data.lock().unwrap().initial_configure_sent)
+                .and_then(|data| data.lock().ok())
+                .is_some_and(|data| data.initial_configure_sent)
         });
         if !configured {
             layer.layer_surface().send_configure();

@@ -20,3 +20,39 @@ jobs:
           python3 -B -m unittest discover -s tools/qt-scanout/tests
           python3 -B tests/test_holdmenu.py
           python3 -B tests/test_volume_keys.py
+
+  rabbiz-de:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/rabbiz-de
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install native compositor build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libdrm-dev libgbm-dev libegl1-mesa-dev \
+            libinput-dev libseat-dev libudev-dev libpixman-1-dev \
+            libxkbcommon-dev libwayland-dev wayland-protocols \
+            libx11-dev libxcursor-dev libxcb1-dev libxi-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            tools/rabbiz-de/target
+          key: ${{ runner.os }}-rabbiz-de-${{ hashFiles('tools/rabbiz-de/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-rabbiz-de-
+      - name: Check crate seams
+        run: python3 scripts/check_seams.py
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Run workspace tests (includes Phases 1-6 regressions)
+        run: cargo test --workspace

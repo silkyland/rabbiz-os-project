@@ -124,10 +124,8 @@ fn ensure_initial_configure(
                 states
                     .data_map
                     .get::<XdgToplevelSurfaceData>()
-                    .unwrap()
-                    .lock()
-                    .unwrap()
-                    .initial_configure_sent
+                    .and_then(|d| d.lock().ok())
+                    .is_some_and(|d| d.initial_configure_sent)
             });
             if !sent {
                 toplevel.send_configure();

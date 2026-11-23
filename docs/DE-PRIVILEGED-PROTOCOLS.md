@@ -104,9 +104,24 @@ focus-stealing prevention, a product decision that is not made yet.
 1. `DeClientState` gets `exe: Option<PathBuf>` and `uid`, filled when the client is accepted.
 2. One function `is_allowed(global, &DeClientState, &Policy) -> bool`, pure and unit-tested; each filter and
    `can_view` calls it and logs `denied <global> exe=<path> pid=<pid>` through one helper.
-3. The policy file is read at startup; a missing file means the built-in default list above; a malformed file
+3. The policy file is read at startup; a missing file means the built-in default list; a malformed file
    is a startup warning and the default list, never "allow all".
 4. Tests: allowed exe binds, unknown exe is refused, refusal is logged, malformed policy falls back to the
    default list, the private OSK socket stays allowed.
 5. Device check: OSK typing, screenshots, `a21s-wayvnc` and the mirror still work; a copy of an unlisted
    binary is refused. Record it as a finding.
+
+## 8. Least-privilege defaults (2026-11-23 hardening)
+
+`de-config/src/privileged.rs` (`Policy::builtin()`) and `de-core/src/protocols/privileged.rs` enforce least privilege:
+
+| Global (`Privileged`) | Built-in public-socket allow-list | Notes |
+|---|---|---|
+| `virtual_keyboard` | Shipped OSKs only (`rabbiz-osk`, `a21s-osk`, `squeekboard`, `stevia`, `maliit-keyboard`, `fcitx5`) | Session OSK also gets `virtual_keyboard` via private socket |
+| `layer_shell` | Shipped OSKs only | Session OSK also gets `layer_shell` via private socket |
+| `screencopy` | *(empty)* | General-purpose CLIs (`grim`, `wayvnc`) removed; compositor-spawned helpers use `spawn_private_helper` (`WAYLAND_SOCKET`) |
+| `data_control` | *(empty)* | `wl-copy` / `wl-paste` removed from built-in allow-list |
+| `virtual_pointer` | *(empty)* | `wayvnc` removed from built-in allow-list |
+| `session_lock` | *(empty)* | Separate `Privileged::SessionLock` global; no longer reuses `layer_shell` |
+
+`/etc/rabbiz-de/privileged-clients.toml` (`[allow]`) can still extend any of the six keys (`virtual_keyboard`, `virtual_pointer`, `screencopy`, `data_control`, `layer_shell`, `session_lock`) with absolute paths, and can never remove built-ins.

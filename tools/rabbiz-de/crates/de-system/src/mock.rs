@@ -3,6 +3,8 @@
 //!
 //! Works identically on macOS and Linux with zero sysfs or D-Bus dependencies.
 
+#[cfg(any(feature = "emu", test))]
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
@@ -49,6 +51,8 @@ pub struct MockState {
 }
 
 static STORE: OnceLock<Mutex<MockState>> = OnceLock::new();
+#[cfg(any(feature = "emu", test))]
+static VIRTUAL_BACKEND_ENABLED: AtomicBool = AtomicBool::new(false);
 
 fn store() -> &'static Mutex<MockState> {
     STORE.get_or_init(|| Mutex::new(MockState::default()))
@@ -56,21 +60,61 @@ fn store() -> &'static Mutex<MockState> {
 
 /// Apply a transport command to the mock track (play/pause toggles).
 pub fn media_toggle_playing() {
+    if !is_enabled() {
+        return;
+    }
     let mut guard = store().lock().unwrap_or_else(|e| e.into_inner());
     if let Some(m) = guard.media.as_mut() {
         m.playing = !m.playing;
     }
 }
 
+/// Enable the mock store for `--backend=virtual`.
+///
+/// Compiled as a no-op when the `emu` feature is disabled in non-test builds.
+pub fn enable_virtual_backend() {
+    #[cfg(any(feature = "emu", test))]
+    {
+        VIRTUAL_BACKEND_ENABLED.store(true, Ordering::Release);
+    }
+}
+
+/// Disable the mock store (used by tests).
+#[cfg(test)]
+pub fn disable_virtual_backend() {
+    VIRTUAL_BACKEND_ENABLED.store(false, Ordering::Release);
+    let mut guard = store().lock().unwrap_or_else(|e| e.into_inner());
+    *guard = MockState::default();
+}
+
+/// Whether the virtual backend has enabled the mock store in this process.
+#[must_use]
+pub fn is_enabled() -> bool {
+    #[cfg(any(feature = "emu", test))]
+    {
+        VIRTUAL_BACKEND_ENABLED.load(Ordering::Acquire)
+    }
+    #[cfg(not(any(feature = "emu", test)))]
+    {
+        false
+    }
+}
+
 /// Read the current mock state snapshot.
 #[must_use]
 pub fn snapshot() -> MockState {
+    if !is_enabled() {
+        return MockState::default();
+    }
     store().lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// Drain and return any pending synthetic notifications queued since the last drain.
 #[must_use]
 pub fn drain_notifications() -> Vec<MockNotification> {
+    if !is_enabled() {
+        return Vec::new();
+    }
     let mut guard = store().lock().unwrap_or_else(|e| e.into_inner());
     std::mem::take(&mut guard.pending_notifications)
 }
@@ -78,12 +122,18 @@ pub fn drain_notifications() -> Vec<MockNotification> {
 /// Consume a pending one-shot fingerprint result (`Some(true)` = pass, `Some(false)` = fail).
 #[must_use]
 pub fn take_fingerprint() -> Option<bool> {
+    if !is_enabled() {
+        return None;
+    }
     let mut guard = store().lock().unwrap_or_else(|e| e.into_inner());
     guard.fingerprint_ok.take()
 }
 
 /// Apply a `ctl mock <key> <value>` mutation and return the serialized state.
 pub fn apply(key: &str, value: &str) -> Result<serde_json::Value, String> {
+    if !is_enabled() {
+        return Err("mock disabled: requires virtual backend with emu feature".to_string());
+    }
     let mut guard = store().lock().unwrap_or_else(|e| e.into_inner());
     apply_in(&mut guard, key, value)?;
     serde_json::to_value(&*guard).map_err(|e| format!("serialize mock state: {e}"))
@@ -263,6 +313,7 @@ mod tests {
     #[test]
     fn sensor_and_media_keys() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        enable_virtual_backend();
         apply("reset", "").unwrap();
         apply("orientation", "landscape_cw").unwrap();
         let (x, y, _) = snapshot().accel.unwrap();
@@ -285,8 +336,20 @@ mod tests {
     }
 
     #[test]
+    fn inert_unless_virtual_backend_enabled() {
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        disable_virtual_backend();
+        assert!(!is_enabled());
+        assert!(apply("fingerprint", "pass").is_err());
+        assert_eq!(take_fingerprint(), None);
+        assert_eq!(snapshot(), MockState::default());
+        assert!(drain_notifications().is_empty());
+    }
+
+    #[test]
     fn apply_all_keys_and_reset() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        enable_virtual_backend();
         apply("reset", "").unwrap();
         assert!(!snapshot().enabled);
 
@@ -337,6 +400,7 @@ mod tests {
     #[test]
     fn notifications_enqueue_and_drain() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        enable_virtual_backend();
         apply("reset", "").unwrap();
 
         apply("notif", "Chats|Sarah|Are we still on for 7?").unwrap();
@@ -365,6 +429,7 @@ mod tests {
     #[test]
     fn rejects_invalid_mock_keys_and_values() {
         let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        enable_virtual_backend();
         assert!(apply("battery", "105").is_err());
         assert!(apply("brightness", "abc").is_err());
         assert!(apply("charging", "maybe").is_err());

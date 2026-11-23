@@ -133,10 +133,10 @@ pub fn parse<I: Iterator<Item = String>>(args: I) -> Result<Cli, String> {
                 flags.virtual_refresh_hz = parse_virtual_refresh(&value(s, &mut it)?)?;
             }
             s if s.starts_with("--ctl-listen") => {
-                flags.ctl_listen = Some(value(s, &mut it)?);
+                flags.ctl_listen = Some(parse_loopback_addr("--ctl-listen", &value(s, &mut it)?)?);
             }
             s if s.starts_with("--emu-listen") => {
-                flags.emu_listen = Some(value(s, &mut it)?);
+                flags.emu_listen = Some(parse_loopback_addr("--emu-listen", &value(s, &mut it)?)?);
             }
             s if s.starts_with("--stats-file") => {
                 flags.stats_file = Some(PathBuf::from(value(s, &mut it)?));
@@ -166,6 +166,18 @@ pub fn parse<I: Iterator<Item = String>>(args: I) -> Result<Cli, String> {
         return Err("--ctl-listen and --emu-listen require --backend=virtual".to_string());
     }
     Ok(Cli { command, flags })
+}
+
+fn parse_loopback_addr(flag: &str, raw: &str) -> Result<String, String> {
+    let addr: std::net::SocketAddr = raw.parse().map_err(|_| {
+        format!("{flag} must be a valid loopback IP:PORT (e.g. 127.0.0.1:4721), got '{raw}'")
+    })?;
+    if !addr.ip().is_loopback() {
+        return Err(format!(
+            "{flag} only allows loopback addresses (got '{raw}')"
+        ));
+    }
+    Ok(raw.to_string())
 }
 
 fn parse_virtual_size(spec: &str) -> Result<(u32, u32), String> {
@@ -466,6 +478,31 @@ mod tests {
         assert!(parse(argv(&["--size=9000x1600"])).is_err());
         assert!(parse(argv(&["--refresh=0"])).is_err());
         assert!(parse(argv(&["--refresh=300"])).is_err());
+    }
+
+    #[test]
+    fn rejects_non_loopback_listeners() {
+        let err = parse(argv(&["--backend=virtual", "--ctl-listen=0.0.0.0:4721"])).unwrap_err();
+        assert!(err.contains("loopback"));
+
+        let err2 = parse(argv(&["--backend=virtual", "--emu-listen=[::]:4722"])).unwrap_err();
+        assert!(err2.contains("loopback"));
+
+        assert!(parse(argv(&[
+            "--backend=virtual",
+            "--ctl-listen=192.168.1.50:4721"
+        ]))
+        .is_err());
+        assert!(parse(argv(&["--backend=virtual", "--emu-listen=localhost:4722"])).is_err());
+
+        let ok = parse(argv(&[
+            "--backend=virtual",
+            "--ctl-listen=127.0.0.1:4721",
+            "--emu-listen=[::1]:4722",
+        ]))
+        .unwrap();
+        assert_eq!(ok.flags.ctl_listen.as_deref(), Some("127.0.0.1:4721"));
+        assert_eq!(ok.flags.emu_listen.as_deref(), Some("[::1]:4722"));
     }
 
     #[test]

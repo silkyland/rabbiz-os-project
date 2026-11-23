@@ -86,7 +86,43 @@ FAIL_FILE="$XDG_RUNTIME_DIR/rabbiz-de.fail"
 READY_FILE="$XDG_RUNTIME_DIR/rabbiz-de.ready"
 SOCKET="$XDG_RUNTIME_DIR/wayland-0"
 
+keyguard_requires_lock() {
+    local prefs="$XDG_CONFIG_HOME/rabbiz-shell/prefs.json"
+    local keyguard="$XDG_CONFIG_HOME/rabbiz-shell/keyguard.json"
+    if [ -r "$prefs" ]; then
+        local method=""
+        if command -v python3 >/dev/null 2>&1; then
+            method=$(python3 -c '
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+    print(str(d.get("lock_method", "")).strip())
+except Exception:
+    print("__invalid__")
+' "$prefs" 2>/dev/null || echo "__invalid__")
+        elif grep -q '"lock_method"[[:space:]]*:[[:space:]]*"swipe"' "$prefs" 2>/dev/null; then
+            method="swipe"
+        elif grep -q '"lock_method"' "$prefs" 2>/dev/null; then
+            method="non-swipe"
+        fi
+        if [ "$method" = "__invalid__" ]; then
+            return 0
+        fi
+        if [ -n "$method" ] && [ "$method" != "swipe" ]; then
+            return 0
+        fi
+        if [ "$method" = "swipe" ]; then
+            return 1
+        fi
+    fi
+    [ -e "$keyguard" ]
+}
+
 to_labwc() {
+    if keyguard_requires_lock; then
+        echo "rabbiz-session: $1 — refusing labwc fallback because keyguard lock is configured (fail-closed)" >&2
+        exit 1
+    fi
     echo "rabbiz-session: $1 — falling back to labwc" >&2
     # DE-mode env must not leak into labwc — a stale WAYLAND_DISPLAY makes
     # wlroots pick its wayland backend instead of DRM.

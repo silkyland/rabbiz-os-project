@@ -65,6 +65,8 @@ const CMA_FLOOR_KB: u64 = 96 * 1024;
 pub struct DeClientState {
     pub compositor_state: CompositorClientState,
     pub(crate) session_input_method: bool,
+    /// Privileged globals explicitly granted to a compositor-spawned private-socket helper.
+    pub(crate) private_grants: Vec<de_config::Privileged>,
     /// Filled once when the socket is accepted (see `privileged.rs`).
     pub(crate) identity: std::sync::OnceLock<crate::privileged::ClientIdentity>,
 }
@@ -296,12 +298,18 @@ pub struct De {
     pub(crate) lifecycle: de_system::lifecycle::LifecycleManager,
     /// Output window insets (status/nav bars, cutout, active OSK height).
     pub insets: de_api::WindowInsets,
+    /// Active display/input backend (`drm` vs `virtual`).
+    pub(crate) backend: BackendSelect,
     /// Non-blocking runtime control IPC socket (`ctl_ipc.rs`).
     pub(crate) ctl_ipc: Option<crate::ctl_ipc::CtlIpc>,
     /// Non-blocking TCP emulator frame & control listener (`--emu-listen`).
     pub(crate) emu_server: Option<crate::ctl_ipc::EmuFrameServer>,
     /// Monotonic ID counter for synthetic mock notifications.
     pub(crate) next_mock_notif_id: u32,
+    /// Cached battery status updated off-thread by the status poller.
+    pub(crate) cached_battery: de_system::upower::BatteryState,
+    /// Cached privacy-indicator status updated off-thread by the status poller.
+    pub(crate) cached_privacy: de_system::privacy::PrivacyState,
 }
 
 /// What the screen is showing (M3).
@@ -389,8 +397,8 @@ pub fn rss_kb() -> u64 {
 /// Fails before the first page flip ⇒ exit 75 territory.
 #[allow(clippy::too_many_lines)] // sequential bring-up; splitting hides ordering
 pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
-    if flags.backend == BackendSelect::Virtual && std::env::var_os("XDG_RUNTIME_DIR").is_none() {
-        std::env::set_var("XDG_RUNTIME_DIR", "/tmp");
+    if flags.backend == BackendSelect::Virtual {
+        de_system::mock::enable_virtual_backend();
     }
     let profile = de_config::device_profile::DeviceProfile::load().unwrap_or_else(|error| {
         eprintln!("device profile: {error}; using handset timing");
@@ -565,7 +573,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
     let relative_pointer_state = RelativePointerManagerState::new::<De>(&dh);
     let pointer_constraints_state = PointerConstraintsState::new::<De>(&dh);
     let session_lock_state = SessionLockManagerState::new::<De, _>(&dh, |c| {
-        crate::privileged::allowed(c, de_config::Privileged::LayerShell)
+        crate::privileged::allowed(c, de_config::Privileged::SessionLock)
     });
     crate::screencopy::init(&dh);
     crate::virtual_pointer::init(&dh);
@@ -761,7 +769,13 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         shell_im: crate::osk::ShellImBridge::bind(),
         screencopy_pending: Vec::new(),
         power: crate::power::Power::default(),
-        lock: crate::lock_ui::LockUi::default(),
+        lock: {
+            let mut lock = crate::lock_ui::LockUi::default();
+            if should_start_locked(&app_prefs.prefs().lock_method) {
+                lock.open();
+            }
+            lock
+        },
         shot_fx: crate::shot_ui::ShotFx::default(),
         osd_fx: crate::osd_ui::OsdFx::default(),
         hun_fx: crate::hun_ui::HunFx::default(),
@@ -777,13 +791,32 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
             cutout: de_api::EdgeInsets::ZERO,
             ime: de_api::EdgeInsets::ZERO,
         },
-        ctl_ipc: crate::ctl_ipc::CtlIpc::bind_with_tcp(flags.ctl_listen.as_deref()),
-        emu_server: flags
-            .emu_listen
-            .as_deref()
-            .and_then(crate::ctl_ipc::EmuFrameServer::bind),
+        backend: flags.backend,
+        ctl_ipc: crate::ctl_ipc::CtlIpc::bind_with_tcp(
+            if flags.backend == BackendSelect::Virtual {
+                flags.ctl_listen.as_deref()
+            } else {
+                None
+            },
+        ),
+        emu_server: if flags.backend == BackendSelect::Virtual {
+            flags
+                .emu_listen
+                .as_deref()
+                .and_then(crate::ctl_ipc::EmuFrameServer::bind)
+        } else {
+            None
+        },
         next_mock_notif_id: 10_000,
+        cached_battery: de_system::upower::BatteryState::default(),
+        cached_privacy: de_system::privacy::PrivacyState::default(),
     })
+}
+
+/// Whether the compositor must start on the lock screen before the first frame.
+#[must_use]
+pub(crate) fn should_start_locked(lock_method: &str) -> bool {
+    lock_method.trim() != "swipe"
 }
 
 impl De {
@@ -868,5 +901,31 @@ impl De {
         for action in actions {
             eprintln!("rabbiz-de: lifecycle {action:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_start_locked_for_any_non_swipe_method() {
+        assert!(!should_start_locked("swipe"));
+        assert!(!should_start_locked(" swipe "));
+        assert!(should_start_locked("pin"));
+        assert!(should_start_locked("passphrase"));
+        assert!(should_start_locked("biometric"));
+        assert!(should_start_locked(""));
+    }
+
+    #[test]
+    fn fresh_de_with_pin_starts_locked_before_any_input() {
+        let mut lock = crate::lock_ui::LockUi::default();
+        assert!(!lock.shown());
+        if should_start_locked("pin") {
+            lock.open();
+        }
+        assert!(lock.shown());
+        assert!(!lock.is_unlocking());
     }
 }

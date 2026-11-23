@@ -35,6 +35,21 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
         Size::new(de.output.width as i32, de.output.height as i32),
         CLEAR,
     );
+    let strictly_locked =
+        de.lock.shown() && !de.lock.is_unlocking() && de.lock.slide_px() <= f32::EPSILON;
+    if strictly_locked {
+        let now = std::time::Instant::now();
+        if let Some(px) = de.lock.px.as_ref() {
+            let x = de.lock.shake_x(now).round() as i32;
+            canvas.blit_scaled(px, de_api::Rect::new(x, 0, px.size.w, px.size.h), 1.0);
+        }
+        if de.power.menu_over_lock {
+            if let Some(px) = de.power.menu_px.as_ref() {
+                canvas.blit(px, ApiPoint::ZERO);
+            }
+        }
+        return Some(canvas.into_pixels());
+    }
     let map = layer_map_for_output(&de.output_obj);
     blit_layers(
         &mut canvas,

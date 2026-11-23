@@ -376,11 +376,11 @@ impl De {
         rows
     }
 
-    /// Status bar data from the live sysfs/procfs pollers + `panels.control_state`
-    /// (Wi-Fi / Bluetooth / Airplane / DND).
+    /// Status bar data from cached off-thread pollers + `panels.control_state`
+    /// (Wi-Fi / Bluetooth / Airplane / DND). Never blocks on sysfs/procfs.
     fn status_info(&self) -> StatusInfo {
-        let b = de_system::upower::poll_battery();
-        let p = de_system::privacy::poll_privacy();
+        let b = &self.cached_battery;
+        let p = &self.cached_privacy;
         let cs = &self.panels.control_state;
         StatusInfo {
             clock: clock_hhmm(),
@@ -398,25 +398,53 @@ impl De {
     }
 }
 
-/// "HH:MM" local time (same `date` contract as the M1 stub).
+fn ensure_locale_initialized() {
+    static INIT: std::sync::Once = std::sync::Once::new();
+    INIT.call_once(|| {
+        #[allow(unsafe_code)]
+        unsafe {
+            libc::setlocale(libc::LC_TIME, c"".as_ptr());
+        }
+    });
+}
+
+fn format_local_time(fmt: &std::ffi::CStr) -> Option<String> {
+    ensure_locale_initialized();
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    let t = secs as libc::time_t;
+    #[allow(unsafe_code)]
+    unsafe {
+        let mut tm: libc::tm = std::mem::zeroed();
+        if libc::localtime_r(&t, &mut tm).is_null() {
+            return None;
+        }
+        let mut buf = [0_u8; 64];
+        let n = libc::strftime(
+            buf.as_mut_ptr().cast::<libc::c_char>(),
+            buf.len(),
+            fmt.as_ptr(),
+            &tm,
+        );
+        if n == 0 {
+            return None;
+        }
+        std::str::from_utf8(&buf[..n])
+            .ok()
+            .map(|s| s.trim().to_string())
+    }
+}
+
+/// "HH:MM" local time (in-process `localtime_r`/`strftime`, no `date` fork).
 #[must_use]
 pub fn clock_hhmm() -> String {
-    std::process::Command::new("date")
-        .arg("+%H:%M")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map_or_else(|| "--:--".to_string(), |s| s.trim().to_string())
+    format_local_time(c"%H:%M").unwrap_or_else(|| "--:--".to_string())
 }
 
 /// "Mon, 9 Jun" — locale comes from the session environment.
 #[must_use]
 pub fn clock_date() -> String {
-    std::process::Command::new("date")
-        .arg("+%a, %-d %b")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_default()
+    format_local_time(c"%a, %-d %b").unwrap_or_default()
 }

@@ -17,10 +17,13 @@ This creates race conditions, makes state inspection hard in automated tests, an
 ## 2. Design Principles
 
 1. **No async runtime in `de-core`**: Matches [DE-SEAMS.md](DE-SEAMS.md) — `de-core` runs a synchronous calloop/poll event loop.
-2. **Typed JSON-lines over a user-scoped Unix domain socket** (`$XDG_RUNTIME_DIR/rabbiz-de-ctl.sock`, mode `0600`), with optional D-Bus bridge later in `de-system`.
+2. **Typed JSON-lines over a user-scoped Unix domain socket** (`$XDG_RUNTIME_DIR/rabbiz-de-ctl.sock`, mode `0600` created atomically with a `0177` umask; IPC is disabled if `XDG_RUNTIME_DIR` is unset — never falls back to `/tmp`), with optional D-Bus bridge later in `de-system`.
    - Zero extra crate dependencies (`std::os::unix::net::UnixListener` + `serde_json`, both already in the workspace).
    - Trivial to test from `de-smoke`, Python, shell scripts (`socat`), or `rabbiz-mirror`.
-3. **Fail-closed privilege checks**: Reuse `de_config::privileged` (`SO_PEERCRED` PID/UID/exe verification) so untrusted apps cannot unlock the screen or inject synthetic input.
+3. **Fail-closed lock & backend guards**:
+   - While Keyguard or `ext-session-lock-v1` is active, only `get_state`, `lock`, `reload_theme`, `reload_apps`, `show_osd`, and `set_panel` (`open: false`) are permitted.
+   - `set_mock` and `inject_*` (`inject_touch`, `inject_key`, `inject_hw_button`) are compiled behind the `emu` feature, restricted to `--backend=virtual`, and refused while locked; no IPC command can unlock the session.
+   - Optional TCP listeners (`--ctl-listen`, `--emu-listen`) require `--backend=virtual` and reject non-loopback addresses.
 
 ---
 

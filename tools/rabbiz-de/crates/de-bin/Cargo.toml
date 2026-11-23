@@ -8,6 +8,10 @@ rust-version.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+emu = ["de-core/emu", "de-system/emu"]
+
 [dependencies]
 de-core.workspace = true
 de-backend.workspace = true

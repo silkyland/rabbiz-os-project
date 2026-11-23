@@ -23,6 +23,47 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
         EventLoop::try_new().map_err(|e| format!("event loop: {e}"))?;
     let handle = event_loop.handle();
 
+    let (auth_tx, auth_rx) =
+        smithay::reexports::calloop::channel::channel::<crate::lock_ui::AuthVerifyResult>();
+    run.de.lock.auth_tx = Some(auth_tx);
+    handle
+        .insert_source(auth_rx, |event, (), run: &mut Run| {
+            if let smithay::reexports::calloop::channel::Event::Msg(res) = event {
+                run.de.finish_pin_verify(res);
+                run.pump();
+            }
+        })
+        .map_err(|e| format!("auth channel source: {e}"))?;
+
+    let (status_tx, status_rx) = smithay::reexports::calloop::channel::channel::<(
+        de_system::upower::BatteryState,
+        de_system::privacy::PrivacyState,
+    )>();
+    handle
+        .insert_source(status_rx, |event, (), run: &mut Run| {
+            if let smithay::reexports::calloop::channel::Event::Msg((bat, priv_st)) = event {
+                if run.de.cached_battery != bat || run.de.cached_privacy != priv_st {
+                    run.de.cached_battery = bat;
+                    run.de.cached_privacy = priv_st;
+                    run.de.meta_cache = None;
+                    run.de.shell_dirty = true;
+                    run.de.needs_present = true;
+                    run.pump();
+                }
+            }
+        })
+        .map_err(|e| format!("status channel source: {e}"))?;
+    let _ = std::thread::Builder::new()
+        .name("rabbiz-status-poll".into())
+        .spawn(move || loop {
+            let bat = de_system::upower::poll_battery();
+            let priv_st = de_system::privacy::poll_privacy();
+            if status_tx.send((bat, priv_st)).is_err() {
+                break;
+            }
+            std::thread::sleep(Duration::from_secs(2));
+        });
+
     // Wayland client socket: fixed name `wayland-0` (§7.20), falling back to an
     // auto-assigned socket name in virtual mode when `wayland-0` is already bound.
     let socket = match ListeningSocketSource::with_name("wayland-0") {
@@ -51,7 +92,9 @@ pub fn event_loop(mut run: Run, display: Display<De>, print_stats: bool) -> Resu
             |_, display, run: &mut Run| {
                 profiling_scope_display_dispatch();
                 unsafe {
-                    display.get_mut().dispatch_clients(&mut run.de).unwrap();
+                    if let Err(e) = display.get_mut().dispatch_clients(&mut run.de) {
+                        eprintln!("rabbiz-de: dispatch_clients: {e}");
+                    }
                 }
                 // Events we queued during dispatch (registry globals,
                 // configures, frame callbacks) only reach the client after

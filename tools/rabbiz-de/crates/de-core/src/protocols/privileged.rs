@@ -6,8 +6,12 @@
 //! which the compositor spawns over a private socket, is always trusted.
 
 use std::collections::HashSet;
+use std::io;
+use std::os::fd::OwnedFd;
+use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::process::{Child, Command, Stdio};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use de_config::privileged::POLICY_FILE;
 use de_config::{Policy, Privileged};
@@ -77,8 +81,15 @@ pub(crate) fn allowed(client: &Client, g: Privileged) -> bool {
     let Some(state) = client.get_data::<DeClientState>() else {
         return false;
     };
+    allowed_for_state(state, g)
+}
+
+fn allowed_for_state(state: &DeClientState, g: Privileged) -> bool {
     if state.session_input_method {
-        return true;
+        return matches!(g, Privileged::VirtualKeyboard | Privileged::LayerShell);
+    }
+    if !state.private_grants.is_empty() {
+        return state.private_grants.contains(&g);
     }
     let identity = state.identity.get();
     let ok = policy().allows(g, identity.and_then(|i| i.exe.as_deref()));
@@ -86,6 +97,32 @@ pub(crate) fn allowed(client: &Client, g: Privileged) -> bool {
         log_denied(g, identity);
     }
     ok
+}
+
+/// Spawn a compositor-trusted helper over a private `WAYLAND_SOCKET` pair,
+/// granting it only `grants` (never path-based allow-listing on the public socket).
+#[allow(dead_code)] // Used when compositor spawns screenshot/mirror/clipboard helpers
+pub(crate) fn spawn_private_helper(
+    display: &mut DisplayHandle,
+    socket_name: &str,
+    program: &str,
+    args: &[&str],
+    grants: Vec<Privileged>,
+) -> io::Result<Child> {
+    let (server, client) = UnixStream::pair()?;
+    display.insert_client(
+        server,
+        Arc::new(DeClientState {
+            private_grants: grants,
+            ..DeClientState::default()
+        }),
+    )?;
+    Command::new(program)
+        .args(args)
+        .stdin(Stdio::from(OwnedFd::from(client)))
+        .env("WAYLAND_SOCKET", "0")
+        .env("WAYLAND_DISPLAY", socket_name)
+        .spawn()
 }
 
 fn log_denied(g: Privileged, identity: Option<&ClientIdentity>) {
@@ -102,5 +139,38 @@ fn log_denied(g: Privileged, identity: Option<&ClientIdentity>) {
         .is_ok_and(|mut set| set.insert((exe.clone(), g)));
     if first {
         eprintln!("rabbiz-de: policy hides {g} from {exe} (pid {pid})");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_osk_gets_only_virtual_keyboard_and_layer_shell() {
+        let state = DeClientState {
+            session_input_method: true,
+            ..DeClientState::default()
+        };
+        assert!(allowed_for_state(&state, Privileged::VirtualKeyboard));
+        assert!(allowed_for_state(&state, Privileged::LayerShell));
+        assert!(!allowed_for_state(&state, Privileged::Screencopy));
+        assert!(!allowed_for_state(&state, Privileged::VirtualPointer));
+        assert!(!allowed_for_state(&state, Privileged::DataControl));
+        assert!(!allowed_for_state(&state, Privileged::SessionLock));
+    }
+
+    #[test]
+    fn private_socket_helper_gets_only_its_granted_globals() {
+        let state = DeClientState {
+            private_grants: vec![Privileged::Screencopy],
+            ..DeClientState::default()
+        };
+        assert!(allowed_for_state(&state, Privileged::Screencopy));
+        assert!(!allowed_for_state(&state, Privileged::VirtualKeyboard));
+        assert!(!allowed_for_state(&state, Privileged::VirtualPointer));
+        assert!(!allowed_for_state(&state, Privileged::DataControl));
+        assert!(!allowed_for_state(&state, Privileged::LayerShell));
+        assert!(!allowed_for_state(&state, Privileged::SessionLock));
     }
 }

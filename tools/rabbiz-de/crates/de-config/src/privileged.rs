@@ -27,16 +27,19 @@ pub enum Privileged {
     DataControl,
     /// `zwlr_layer_shell_v1`: overlays and exclusive keyboard grabs.
     LayerShell,
+    /// `ext-session-lock-v1`: external session lock screens.
+    SessionLock,
 }
 
 impl Privileged {
     /// Every protocol covered by the policy.
-    pub const ALL: [Privileged; 5] = [
+    pub const ALL: [Privileged; 6] = [
         Privileged::VirtualKeyboard,
         Privileged::VirtualPointer,
         Privileged::Screencopy,
         Privileged::DataControl,
         Privileged::LayerShell,
+        Privileged::SessionLock,
     ];
 
     /// Key used in the policy file and in log lines.
@@ -48,6 +51,7 @@ impl Privileged {
             Privileged::Screencopy => "screencopy",
             Privileged::DataControl => "data_control",
             Privileged::LayerShell => "layer_shell",
+            Privileged::SessionLock => "session_lock",
         }
     }
 }
@@ -95,7 +99,11 @@ struct FileShape {
 }
 
 impl Policy {
-    /// The built-in list: only what ships with the image.
+    /// The built-in list: least-privilege defaults for shipped OSKs only.
+    ///
+    /// General-purpose CLIs (`grim`, `wl-copy`, `wl-paste`, `wayvnc`) are NOT
+    /// allow-listed on the public socket; compositor-owned helpers receive a
+    /// private `WAYLAND_SOCKET` with only the globals they need.
     #[must_use]
     pub fn builtin() -> Self {
         let osk = [
@@ -115,20 +123,12 @@ impl Policy {
                 .or_default()
                 .extend(paths.iter().map(|p| (*p).to_string()));
         };
-        put(Privileged::VirtualKeyboard, &["/usr/bin/wayvnc"]);
-        put(Privileged::VirtualPointer, &["/usr/bin/wayvnc"]);
-        put(
-            Privileged::Screencopy,
-            &["/usr/bin/grim", "/usr/bin/wayvnc"],
-        );
-        put(
-            Privileged::DataControl,
-            &["/usr/bin/wl-paste", "/usr/bin/wl-copy"],
-        );
-        put(Privileged::LayerShell, &[]);
-        for g in Privileged::ALL {
-            put(g, &osk);
-        }
+        put(Privileged::VirtualKeyboard, &osk);
+        put(Privileged::VirtualPointer, &[]);
+        put(Privileged::Screencopy, &[]);
+        put(Privileged::DataControl, &[]);
+        put(Privileged::LayerShell, &osk);
+        put(Privileged::SessionLock, &[]);
         Self { allow }
     }
 
@@ -194,19 +194,37 @@ mod tests {
     #[test]
     fn builtin_lets_the_shipped_tools_use_what_they_need() {
         let pol = Policy::builtin();
-        assert!(pol.allows(Privileged::Screencopy, p("/usr/bin/grim").as_deref()));
-        assert!(pol.allows(Privileged::Screencopy, p("/usr/bin/wayvnc").as_deref()));
-        assert!(pol.allows(Privileged::VirtualPointer, p("/usr/bin/wayvnc").as_deref()));
-        assert!(pol.allows(Privileged::VirtualKeyboard, p("/usr/bin/wayvnc").as_deref()));
-        assert!(pol.allows(Privileged::DataControl, p("/usr/bin/wl-paste").as_deref()));
-        assert!(pol.allows(
-            Privileged::LayerShell,
-            p("/usr/local/bin/rabbiz-osk").as_deref()
-        ));
-        assert!(pol.allows(
-            Privileged::LayerShell,
-            p("/usr/local/bin/a21s-osk").as_deref()
-        ));
+        for osk in [
+            "/usr/local/bin/rabbiz-osk",
+            "/usr/local/bin/a21s-osk",
+            "/usr/bin/fcitx5",
+            "/usr/bin/maliit-keyboard",
+        ] {
+            assert!(pol.allows(Privileged::VirtualKeyboard, p(osk).as_deref()));
+            assert!(pol.allows(Privileged::LayerShell, p(osk).as_deref()));
+            assert!(!pol.allows(Privileged::Screencopy, p(osk).as_deref()));
+            assert!(!pol.allows(Privileged::DataControl, p(osk).as_deref()));
+            assert!(!pol.allows(Privileged::VirtualPointer, p(osk).as_deref()));
+            assert!(!pol.allows(Privileged::SessionLock, p(osk).as_deref()));
+        }
+    }
+
+    #[test]
+    fn general_purpose_clis_are_refused_by_builtin_policy() {
+        let pol = Policy::builtin();
+        for cli in [
+            "/usr/bin/grim",
+            "/usr/bin/wl-paste",
+            "/usr/bin/wl-copy",
+            "/usr/bin/wayvnc",
+        ] {
+            for g in Privileged::ALL {
+                assert!(
+                    !pol.allows(g, p(cli).as_deref()),
+                    "{cli} should not get {g}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -224,18 +242,23 @@ mod tests {
     #[test]
     fn each_tool_gets_only_its_own_protocols() {
         let pol = Policy::builtin();
-        // grim takes screenshots; it must not type or move the pointer.
-        assert!(!pol.allows(Privileged::VirtualKeyboard, p("/usr/bin/grim").as_deref()));
-        assert!(!pol.allows(Privileged::VirtualPointer, p("/usr/bin/grim").as_deref()));
-        // wl-paste reads the clipboard; it must not capture the screen.
-        assert!(!pol.allows(Privileged::Screencopy, p("/usr/bin/wl-paste").as_deref()));
+        assert!(!pol.allows(Privileged::Screencopy, p("/usr/bin/fcitx5").as_deref()));
+        assert!(!pol.allows(Privileged::VirtualPointer, p("/usr/bin/fcitx5").as_deref()));
+        assert!(!pol.allows(Privileged::DataControl, p("/usr/bin/fcitx5").as_deref()));
+        assert!(!pol.allows(
+            Privileged::SessionLock,
+            p("/usr/local/bin/rabbiz-osk").as_deref()
+        ));
     }
 
     #[test]
     fn a_renamed_copy_of_an_allowed_tool_is_not_allowed() {
         let pol = Policy::builtin();
-        assert!(!pol.allows(Privileged::Screencopy, p("/tmp/grim").as_deref()));
-        assert!(!pol.allows(Privileged::Screencopy, p("/usr/bin/grim-copy").as_deref()));
+        assert!(!pol.allows(Privileged::LayerShell, p("/tmp/rabbiz-osk").as_deref()));
+        assert!(!pol.allows(
+            Privileged::LayerShell,
+            p("/usr/local/bin/rabbiz-osk-copy").as_deref()
+        ));
     }
 
     #[test]
@@ -247,18 +270,27 @@ mod tests {
     fn a_replaced_binary_keeps_its_permission() {
         let pol = Policy::builtin();
         assert!(pol.allows(
-            Privileged::Screencopy,
-            p("/usr/bin/grim (deleted)").as_deref()
+            Privileged::LayerShell,
+            p("/usr/local/bin/rabbiz-osk (deleted)").as_deref()
         ));
     }
 
     #[test]
     fn the_file_can_only_add_never_remove() {
-        let pol =
-            Policy::extended_with("[allow]\nscreencopy = [\"/usr/bin/wf-recorder\"]\n").unwrap();
+        let pol = Policy::extended_with(
+            "[allow]\nscreencopy = [\"/usr/bin/wf-recorder\"]\nsession_lock = [\"/usr/bin/rabbiz-lock\"]\n",
+        )
+        .unwrap();
         assert!(pol.allows(Privileged::Screencopy, p("/usr/bin/wf-recorder").as_deref()));
+        assert!(pol.allows(
+            Privileged::SessionLock,
+            p("/usr/bin/rabbiz-lock").as_deref()
+        ));
         assert!(
-            pol.allows(Privileged::Screencopy, p("/usr/bin/grim").as_deref()),
+            pol.allows(
+                Privileged::LayerShell,
+                p("/usr/local/bin/rabbiz-osk").as_deref()
+            ),
             "built-ins stay"
         );
         assert!(!pol.allows(

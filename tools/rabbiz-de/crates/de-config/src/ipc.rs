@@ -22,14 +22,13 @@ pub const MAX_MESSAGE_BYTES: usize = 16 * 1024;
 pub const SOCKET_NAME: &str = "rabbiz-de-ctl.sock";
 
 /// Resolve the control socket path for the current user session.
+///
+/// Returns `None` when `XDG_RUNTIME_DIR` is unset or empty — callers must
+/// refuse to fall back to `/tmp` and disable IPC instead.
 #[must_use]
-pub fn socket_path() -> PathBuf {
-    if let Ok(dir) = std::env::var("XDG_RUNTIME_DIR") {
-        if !dir.is_empty() {
-            return PathBuf::from(dir).join(SOCKET_NAME);
-        }
-    }
-    PathBuf::from("/tmp").join(SOCKET_NAME)
+pub fn socket_path() -> Option<PathBuf> {
+    let dir = std::env::var_os("XDG_RUNTIME_DIR").filter(|v| !v.is_empty())?;
+    Some(PathBuf::from(dir).join(SOCKET_NAME))
 }
 
 /// Request envelope sent from a client to `rabbiz-de`.
@@ -574,5 +573,26 @@ mod tests {
             IpcResponse::ok(77, Some(serde_json::json!({ "apps": 9 })))
         );
         server.join().expect("server thread");
+    }
+
+    #[test]
+    fn socket_path_returns_none_without_xdg_runtime_dir() {
+        let prev = std::env::var_os("XDG_RUNTIME_DIR");
+        std::env::remove_var("XDG_RUNTIME_DIR");
+        assert_eq!(socket_path(), None);
+
+        std::env::set_var("XDG_RUNTIME_DIR", "");
+        assert_eq!(socket_path(), None);
+
+        std::env::set_var("XDG_RUNTIME_DIR", "/run/user/1000");
+        assert_eq!(
+            socket_path(),
+            Some(PathBuf::from("/run/user/1000/rabbiz-de-ctl.sock"))
+        );
+
+        match prev {
+            Some(v) => std::env::set_var("XDG_RUNTIME_DIR", v),
+            None => std::env::remove_var("XDG_RUNTIME_DIR"),
+        }
     }
 }

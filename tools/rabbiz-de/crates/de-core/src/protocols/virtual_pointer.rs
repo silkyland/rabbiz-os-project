@@ -141,13 +141,12 @@ impl Dispatch<ZwlrVirtualPointerV1, VptrData> for De {
     ) {
         use zwlr_virtual_pointer_v1::Request as R;
         match request {
-            R::Motion { time, dx, dy } => {
-                data.0
-                    .lock()
-                    .unwrap()
-                    .pending
-                    .push(Pending::Motion { time, dx, dy })
-            }
+            R::Motion { time, dx, dy } => data
+                .0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .pending
+                .push(Pending::Motion { time, dx, dy }),
             R::MotionAbsolute {
                 time,
                 x,
@@ -175,7 +174,7 @@ impl Dispatch<ZwlrVirtualPointerV1, VptrData> for De {
                 ));
                 data.0
                     .lock()
-                    .unwrap()
+                    .unwrap_or_else(|e| e.into_inner())
                     .pending
                     .push(Pending::Abs { time, pos });
             }
@@ -185,31 +184,38 @@ impl Dispatch<ZwlrVirtualPointerV1, VptrData> for De {
                 state: st,
             } => {
                 let pressed = matches!(st.into_result(), Ok(WlButtonState::Pressed));
-                data.0.lock().unwrap().pending.push(Pending::Button {
-                    time,
-                    button,
-                    pressed,
-                });
+                data.0
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .pending
+                    .push(Pending::Button {
+                        time,
+                        button,
+                        pressed,
+                    });
             }
             R::Axis { time, axis, value } => {
                 if let Some(i) = axis_idx(axis) {
-                    let a = &mut data.0.lock().unwrap().axes[i];
+                    let mut guard = data.0.lock().unwrap_or_else(|e| e.into_inner());
+                    let a = &mut guard.axes[i];
                     a.value += value;
                     a.time = time;
                     a.seen = true;
                 }
             }
             R::AxisSource { axis_source } => {
-                data.0.lock().unwrap().axis_source = match axis_source.into_result() {
-                    Ok(WlAxisSource::Finger) => Some(AxisSource::Finger),
-                    Ok(WlAxisSource::Continuous) => Some(AxisSource::Continuous),
-                    Ok(WlAxisSource::WheelTilt) => Some(AxisSource::WheelTilt),
-                    _ => Some(AxisSource::Wheel),
-                };
+                data.0.lock().unwrap_or_else(|e| e.into_inner()).axis_source =
+                    match axis_source.into_result() {
+                        Ok(WlAxisSource::Finger) => Some(AxisSource::Finger),
+                        Ok(WlAxisSource::Continuous) => Some(AxisSource::Continuous),
+                        Ok(WlAxisSource::WheelTilt) => Some(AxisSource::WheelTilt),
+                        _ => Some(AxisSource::Wheel),
+                    };
             }
             R::AxisStop { time, axis } => {
                 if let Some(i) = axis_idx(axis) {
-                    let a = &mut data.0.lock().unwrap().axes[i];
+                    let mut guard = data.0.lock().unwrap_or_else(|e| e.into_inner());
+                    let a = &mut guard.axes[i];
                     a.stop = true;
                     a.time = time;
                     a.seen = true;
@@ -222,7 +228,8 @@ impl Dispatch<ZwlrVirtualPointerV1, VptrData> for De {
                 discrete,
             } => {
                 if let Some(i) = axis_idx(axis) {
-                    let a = &mut data.0.lock().unwrap().axes[i];
+                    let mut guard = data.0.lock().unwrap_or_else(|e| e.into_inner());
+                    let a = &mut guard.axes[i];
                     a.value += value;
                     a.discrete += discrete;
                     a.time = time;
@@ -248,7 +255,7 @@ impl De {
     /// Dispatch one `frame`'s queued events through the same paths as
     /// libinput pointer events.
     fn flush_virtual_pointer(&mut self, data: &VptrData) {
-        let mut batch = data.0.lock().unwrap();
+        let mut batch = data.0.lock().unwrap_or_else(|e| e.into_inner());
         for ev in std::mem::take(&mut batch.pending) {
             match ev {
                 Pending::Motion { time, dx, dy } => {

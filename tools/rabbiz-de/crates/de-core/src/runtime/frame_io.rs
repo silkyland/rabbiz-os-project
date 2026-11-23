@@ -19,7 +19,7 @@ pub(crate) fn summarize(v: &[f64]) -> TimingSummary {
     TimingSummary {
         p50: p(0.50),
         p95: p(0.95),
-        max: *s.last().unwrap(),
+        max: s.last().copied().unwrap_or(0.0),
     }
 }
 

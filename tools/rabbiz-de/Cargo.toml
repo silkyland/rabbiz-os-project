@@ -70,6 +70,12 @@ minifb = "0.27"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+libc = "0.2"
+argon2 = "0.5"
+sha2 = "0.10"
+subtle = "2"
+zeroize = "1"
+getrandom = "0.3"
 
 # Vendored smithay 0.7.0 with one upstream fix backported:
 # `ShmBufferUserData::remove_destruction_hook` used `hook.id != hook_id` as the

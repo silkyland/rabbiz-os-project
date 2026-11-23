@@ -6,14 +6,15 @@
 //! `--backend=virtual`), polling accepted connections synchronously inside
 //! `de-core`'s event loop.
 
-use std::io::{BufRead, BufReader, ErrorKind, Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::PathBuf;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use de_api::Size;
+use de_config::flags::BackendSelect;
 use de_config::ipc::{
     decode_request, encode_response, socket_path, InsetSummary, IpcCommand, IpcResponse, PanelKind,
     ShellStateSnapshot, TouchInjectPhase, WindowSummary, MAX_MESSAGE_BYTES,
@@ -23,11 +24,57 @@ use de_ui::hun::{HunCandidate, HunContext, HunPriority};
 use crate::hun_ui::HunBannerData;
 use crate::state::{De, Foreground};
 
+/// Non-blocking stream for a connected `rabbiz-de ctl` client.
+pub(crate) enum CtlStream {
+    Unix(UnixStream),
+    Tcp(TcpStream),
+}
+
+impl CtlStream {
+    fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
+        match self {
+            Self::Unix(s) => s.set_nonblocking(nonblocking),
+            Self::Tcp(s) => s.set_nonblocking(nonblocking),
+        }
+    }
+}
+
+impl Read for CtlStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Unix(s) => s.read(buf),
+            Self::Tcp(s) => s.read(buf),
+        }
+    }
+}
+
+impl Write for CtlStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        match self {
+            Self::Unix(s) => s.write(buf),
+            Self::Tcp(s) => s.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        match self {
+            Self::Unix(s) => s.flush(),
+            Self::Tcp(s) => s.flush(),
+        }
+    }
+}
+
+struct CtlClient {
+    stream: CtlStream,
+    rx_buf: Vec<u8>,
+}
+
 /// Bound non-blocking Unix (+ optional TCP) listener for runtime `rabbiz-de ctl` requests.
 pub(crate) struct CtlIpc {
     listener: UnixListener,
     path: PathBuf,
     tcp_listener: Option<TcpListener>,
+    clients: Vec<CtlClient>,
 }
 
 impl CtlIpc {
@@ -38,8 +85,14 @@ impl CtlIpc {
     }
 
     /// Bind the user-scoped Unix socket plus an optional TCP control listener.
+    ///
+    /// Returns `None` if `XDG_RUNTIME_DIR` is unset (refuses `/tmp` fallback).
     pub(crate) fn bind_with_tcp(tcp_addr: Option<&str>) -> Option<Self> {
-        Self::bind_at_with_tcp(socket_path(), tcp_addr)
+        let Some(path) = socket_path() else {
+            eprintln!("rabbiz-de: XDG_RUNTIME_DIR is unset; disabling control IPC");
+            return None;
+        };
+        Self::bind_at_with_tcp(path, tcp_addr)
     }
 
     #[cfg(test)]
@@ -49,11 +102,22 @@ impl CtlIpc {
 
     pub(crate) fn bind_at_with_tcp(path: PathBuf, tcp_addr: Option<&str>) -> Option<Self> {
         let _ = std::fs::remove_file(&path);
-        let listener = match UnixListener::bind(&path) {
-            Ok(l) => l,
-            Err(e) => {
-                eprintln!("rabbiz-de: ctl ipc bind {} failed: {e}", path.display());
-                return None;
+        // Set restrictive umask around bind() so the socket is created 0600 atomically
+        // with no window between bind and chmod.
+        let listener = {
+            #[allow(unsafe_code)]
+            let old_umask = unsafe { libc::umask(0o177) };
+            let res = UnixListener::bind(&path);
+            #[allow(unsafe_code)]
+            unsafe {
+                libc::umask(old_umask);
+            }
+            match res {
+                Ok(l) => l,
+                Err(e) => {
+                    eprintln!("rabbiz-de: ctl ipc bind {} failed: {e}", path.display());
+                    return None;
+                }
             }
         };
         let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
@@ -62,25 +126,120 @@ impl CtlIpc {
             let _ = std::fs::remove_file(&path);
             return None;
         }
-        let tcp_listener = tcp_addr.and_then(|addr| match TcpListener::bind(addr) {
-            Ok(l) => {
-                if let Err(e) = l.set_nonblocking(true) {
-                    eprintln!("rabbiz-de: ctl tcp nonblocking {addr} failed: {e}");
-                    None
-                } else {
-                    Some(l)
-                }
+        let tcp_listener = tcp_addr.and_then(|addr| {
+            let Ok(sock_addr) = addr.parse::<std::net::SocketAddr>() else {
+                eprintln!("rabbiz-de: ctl tcp invalid address '{addr}'");
+                return None;
+            };
+            if !sock_addr.ip().is_loopback() {
+                eprintln!("rabbiz-de: ctl tcp non-loopback address '{addr}' rejected");
+                return None;
             }
-            Err(e) => {
-                eprintln!("rabbiz-de: ctl tcp bind {addr} failed: {e}");
-                None
+            match TcpListener::bind(sock_addr) {
+                Ok(l) => {
+                    if let Err(e) = l.set_nonblocking(true) {
+                        eprintln!("rabbiz-de: ctl tcp nonblocking {addr} failed: {e}");
+                        None
+                    } else {
+                        Some(l)
+                    }
+                }
+                Err(e) => {
+                    eprintln!("rabbiz-de: ctl tcp bind {addr} failed: {e}");
+                    None
+                }
             }
         });
         Some(Self {
             listener,
             path,
             tcp_listener,
+            clients: Vec::new(),
         })
+    }
+
+    fn accept_pending(&mut self) {
+        const MAX_CLIENTS: usize = 64;
+        for _ in 0..8 {
+            if self.clients.len() >= MAX_CLIENTS {
+                break;
+            }
+            if let Some(s) = self.try_accept() {
+                if s.set_nonblocking(true).is_ok() {
+                    self.clients.push(CtlClient {
+                        stream: CtlStream::Unix(s),
+                        rx_buf: Vec::new(),
+                    });
+                }
+            } else {
+                break;
+            }
+        }
+        for _ in 0..8 {
+            if self.clients.len() >= MAX_CLIENTS {
+                break;
+            }
+            if let Some(s) = self.try_accept_tcp() {
+                if s.set_nonblocking(true).is_ok() {
+                    self.clients.push(CtlClient {
+                        stream: CtlStream::Tcp(s),
+                        rx_buf: Vec::new(),
+                    });
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    /// Accept new connections and drain any complete `\n`-terminated requests
+    /// without blocking. Partial/stalled clients remain buffered across ticks.
+    pub(crate) fn poll_ready_requests(&mut self) -> Vec<(CtlStream, String)> {
+        self.accept_pending();
+        let mut ready = Vec::new();
+        let mut i = 0;
+        let mut tmp = [0_u8; 4096];
+        while i < self.clients.len() {
+            let mut drop_client = false;
+            let mut complete_line: Option<String> = None;
+            loop {
+                match self.clients[i].stream.read(&mut tmp) {
+                    Ok(0) => {
+                        drop_client = true;
+                        break;
+                    }
+                    Ok(n) => {
+                        if self.clients[i].rx_buf.len() + n > MAX_MESSAGE_BYTES + 1 {
+                            drop_client = true;
+                            break;
+                        }
+                        self.clients[i].rx_buf.extend_from_slice(&tmp[..n]);
+                        if let Some(nl) = self.clients[i].rx_buf.iter().position(|&b| b == b'\n') {
+                            let raw: Vec<u8> = self.clients[i].rx_buf.drain(..=nl).collect();
+                            match String::from_utf8(raw) {
+                                Ok(s) => complete_line = Some(s),
+                                Err(_) => drop_client = true,
+                            }
+                            break;
+                        }
+                    }
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                    Err(_) => {
+                        drop_client = true;
+                        break;
+                    }
+                }
+            }
+            if let Some(line) = complete_line {
+                let client = self.clients.swap_remove(i);
+                ready.push((client.stream, line));
+            } else if drop_client {
+                self.clients.swap_remove(i);
+            } else {
+                i += 1;
+            }
+        }
+        ready
     }
 
     fn try_accept(&self) -> Option<UnixStream> {
@@ -132,7 +291,15 @@ pub(crate) struct EmuFrameServer {
 
 impl EmuFrameServer {
     pub(crate) fn bind(addr: &str) -> Option<Self> {
-        let listener = match TcpListener::bind(addr) {
+        let Ok(sock_addr) = addr.parse::<std::net::SocketAddr>() else {
+            eprintln!("rabbiz-de: emu-listen invalid address '{addr}'");
+            return None;
+        };
+        if !sock_addr.ip().is_loopback() {
+            eprintln!("rabbiz-de: emu-listen non-loopback address '{addr}' rejected");
+            return None;
+        }
+        let listener = match TcpListener::bind(sock_addr) {
             Ok(l) => l,
             Err(e) => {
                 eprintln!("rabbiz-de: emu-listen bind {addr} failed: {e}");
@@ -182,77 +349,20 @@ fn write_emu_bytes(stream: &mut TcpStream, bytes: &[u8]) -> bool {
 }
 
 impl De {
-    /// Drain pending non-blocking control requests (at most 8 per tick to bound latency).
+    /// Drain pending non-blocking control requests without blocking on stalled clients.
     pub(crate) fn poll_ctl_ipc(&mut self) {
-        let mut accepted_unix = Vec::new();
-        let mut accepted_tcp = Vec::new();
-        if let Some(ipc) = self.ctl_ipc.as_ref() {
-            for _ in 0..8 {
-                let Some(stream) = ipc.try_accept() else {
-                    break;
-                };
-                accepted_unix.push(stream);
+        let ready = match self.ctl_ipc.as_mut() {
+            Some(ipc) => ipc.poll_ready_requests(),
+            None => return,
+        };
+        for (mut stream, line) in ready {
+            let resp = match decode_request(&line) {
+                Ok(req) => self.dispatch_ctl(req.id, req.command),
+                Err(err) => IpcResponse::err(0, err),
+            };
+            if let Ok(encoded) = encode_response(&resp) {
+                let _ = stream.write_all(encoded.as_bytes());
             }
-            for _ in 0..8 {
-                let Some(stream) = ipc.try_accept_tcp() else {
-                    break;
-                };
-                accepted_tcp.push(stream);
-            }
-        }
-        for stream in accepted_unix {
-            self.handle_ctl_stream(stream);
-        }
-        for stream in accepted_tcp {
-            self.handle_ctl_tcp_stream(stream);
-        }
-    }
-
-    fn handle_ctl_stream(&mut self, mut stream: UnixStream) {
-        let _ = stream.set_nonblocking(false);
-        let timeout = Some(Duration::from_millis(250));
-        let _ = stream.set_read_timeout(timeout);
-        let _ = stream.set_write_timeout(timeout);
-
-        let Ok(reader_stream) = stream.try_clone() else {
-            return;
-        };
-        let mut reader = BufReader::new(reader_stream.take((MAX_MESSAGE_BYTES + 1) as u64));
-        let mut line = String::new();
-        if reader.read_line(&mut line).is_err() || line.is_empty() {
-            return;
-        }
-
-        let resp = match decode_request(&line) {
-            Ok(req) => self.dispatch_ctl(req.id, req.command),
-            Err(err) => IpcResponse::err(0, err),
-        };
-        if let Ok(encoded) = encode_response(&resp) {
-            let _ = stream.write_all(encoded.as_bytes());
-        }
-    }
-
-    fn handle_ctl_tcp_stream(&mut self, mut stream: TcpStream) {
-        let _ = stream.set_nonblocking(false);
-        let timeout = Some(Duration::from_millis(250));
-        let _ = stream.set_read_timeout(timeout);
-        let _ = stream.set_write_timeout(timeout);
-
-        let Ok(reader_stream) = stream.try_clone() else {
-            return;
-        };
-        let mut reader = BufReader::new(reader_stream.take((MAX_MESSAGE_BYTES + 1) as u64));
-        let mut line = String::new();
-        if reader.read_line(&mut line).is_err() || line.is_empty() {
-            return;
-        }
-
-        let resp = match decode_request(&line) {
-            Ok(req) => self.dispatch_ctl(req.id, req.command),
-            Err(err) => IpcResponse::err(0, err),
-        };
-        if let Ok(encoded) = encode_response(&resp) {
-            let _ = stream.write_all(encoded.as_bytes());
         }
     }
 
@@ -450,6 +560,9 @@ impl De {
 
     /// Drain pending `de_system::mock` notifications and apply mocked system state.
     pub(crate) fn poll_mock_system(&mut self) {
+        if self.backend != BackendSelect::Virtual || !de_system::mock::is_enabled() {
+            return;
+        }
         let now = Instant::now();
         let now_ms = self.uptime_ms(now);
         let drained = de_system::mock::drain_notifications();
@@ -561,8 +674,12 @@ impl De {
     }
 
     fn dispatch_ctl(&mut self, id: u64, cmd: IpcCommand) -> IpcResponse {
-        if (self.locked() || self.is_session_locked()) && !command_allowed_while_locked(&cmd) {
-            return IpcResponse::err(id, "device_locked");
+        if let Err(err) = check_ipc_permission(
+            self.locked() || self.is_session_locked(),
+            self.backend,
+            &cmd,
+        ) {
+            return IpcResponse::err(id, err);
         }
         match cmd {
             IpcCommand::GetState => {
@@ -633,43 +750,12 @@ impl De {
             }
             IpcCommand::Screenshot { save } => self.ctl_screenshot(id, save),
             IpcCommand::InjectTouch { phase, slot, x, y } => {
-                let time_ms = std::time::Duration::from(self.clock.now()).as_millis() as u32;
-                let pos = smithay::utils::Point::<f64, smithay::utils::Logical>::from((
-                    f64::from(x),
-                    f64::from(y),
-                ));
-                match phase {
-                    TouchInjectPhase::Down => self.inject_touch_down(slot, pos, time_ms),
-                    TouchInjectPhase::Move => self.inject_touch_motion(slot, pos, time_ms),
-                    TouchInjectPhase::Up => {
-                        if (x != 0 || y != 0)
-                            && ((self.last_touch_pos.x as i32) != x
-                                || (self.last_touch_pos.y as i32) != y)
-                        {
-                            self.inject_touch_motion(slot, pos, time_ms);
-                        }
-                        self.inject_touch_up(slot, time_ms);
-                    }
-                    TouchInjectPhase::Cancel => self.inject_touch_cancel(slot, time_ms),
-                }
-                self.needs_present = true;
-                IpcResponse::ok(id, None)
+                self.dispatch_inject_touch(id, phase, slot, x, y)
             }
             IpcCommand::InjectKey { keycode, pressed } => {
-                if !self.hw_keyboard {
-                    self.hw_keyboard = true;
-                    self.osk = None;
-                }
-                let time_ms = std::time::Duration::from(self.clock.now()).as_millis() as u32;
-                self.inject_key(keycode, pressed, time_ms);
-                self.needs_present = true;
-                IpcResponse::ok(id, None)
+                self.dispatch_inject_key(id, keycode, pressed)
             }
-            IpcCommand::InjectHwButton { button } => {
-                self.inject_hw_button(button);
-                self.needs_present = true;
-                IpcResponse::ok(id, None)
-            }
+            IpcCommand::InjectHwButton { button } => self.dispatch_inject_hw_button(id, button),
             IpcCommand::SetRotation { mode } => match self.set_rotation_mode(&mode) {
                 Ok(()) => IpcResponse::ok(
                     id,
@@ -685,17 +771,110 @@ impl De {
                     Some(serde_json::json!({ "orientation": self.rotation.current.name() })),
                 )
             }
-            IpcCommand::SetMock { key, value } => match de_system::mock::apply(&key, &value) {
-                Ok(state_json) => {
-                    self.poll_mock_system();
-                    self.meta_cache = None;
-                    self.shell_dirty = true;
-                    self.needs_present = true;
-                    IpcResponse::ok(id, Some(state_json))
-                }
-                Err(e) => IpcResponse::err(id, e),
-            },
+            IpcCommand::SetMock { key, value } => self.dispatch_set_mock(id, &key, &value),
         }
+    }
+
+    #[cfg(any(feature = "emu", test))]
+    fn dispatch_inject_touch(
+        &mut self,
+        id: u64,
+        phase: TouchInjectPhase,
+        slot: i32,
+        x: i32,
+        y: i32,
+    ) -> IpcResponse {
+        let time_ms = std::time::Duration::from(self.clock.now()).as_millis() as u32;
+        let pos = smithay::utils::Point::<f64, smithay::utils::Logical>::from((
+            f64::from(x),
+            f64::from(y),
+        ));
+        match phase {
+            TouchInjectPhase::Down => self.inject_touch_down(slot, pos, time_ms),
+            TouchInjectPhase::Move => self.inject_touch_motion(slot, pos, time_ms),
+            TouchInjectPhase::Up => {
+                if (x != 0 || y != 0)
+                    && ((self.last_touch_pos.x as i32) != x || (self.last_touch_pos.y as i32) != y)
+                {
+                    self.inject_touch_motion(slot, pos, time_ms);
+                }
+                self.inject_touch_up(slot, time_ms);
+            }
+            TouchInjectPhase::Cancel => self.inject_touch_cancel(slot, time_ms),
+        }
+        self.needs_present = true;
+        IpcResponse::ok(id, None)
+    }
+
+    #[cfg(not(any(feature = "emu", test)))]
+    fn dispatch_inject_touch(
+        &mut self,
+        id: u64,
+        _phase: TouchInjectPhase,
+        _slot: i32,
+        _x: i32,
+        _y: i32,
+    ) -> IpcResponse {
+        IpcResponse::err(id, "emu_feature_disabled")
+    }
+
+    #[cfg(any(feature = "emu", test))]
+    fn dispatch_inject_key(&mut self, id: u64, keycode: u32, pressed: bool) -> IpcResponse {
+        if !self.hw_keyboard {
+            self.hw_keyboard = true;
+            self.osk = None;
+        }
+        let time_ms = std::time::Duration::from(self.clock.now()).as_millis() as u32;
+        self.inject_key(keycode, pressed, time_ms);
+        self.needs_present = true;
+        IpcResponse::ok(id, None)
+    }
+
+    #[cfg(not(any(feature = "emu", test)))]
+    fn dispatch_inject_key(&mut self, id: u64, _keycode: u32, _pressed: bool) -> IpcResponse {
+        IpcResponse::err(id, "emu_feature_disabled")
+    }
+
+    #[cfg(any(feature = "emu", test))]
+    fn dispatch_inject_hw_button(
+        &mut self,
+        id: u64,
+        button: de_config::ipc::HwButtonKind,
+    ) -> IpcResponse {
+        self.inject_hw_button(button);
+        self.needs_present = true;
+        IpcResponse::ok(id, None)
+    }
+
+    #[cfg(not(any(feature = "emu", test)))]
+    fn dispatch_inject_hw_button(
+        &mut self,
+        id: u64,
+        _button: de_config::ipc::HwButtonKind,
+    ) -> IpcResponse {
+        IpcResponse::err(id, "emu_feature_disabled")
+    }
+
+    #[cfg(any(feature = "emu", test))]
+    fn dispatch_set_mock(&mut self, id: u64, key: &str, value: &str) -> IpcResponse {
+        if key.trim() == "fingerprint" {
+            return IpcResponse::err(id, "fingerprint_mock_cannot_bypass_lock");
+        }
+        match de_system::mock::apply(key, value) {
+            Ok(state_json) => {
+                self.poll_mock_system();
+                self.meta_cache = None;
+                self.shell_dirty = true;
+                self.needs_present = true;
+                IpcResponse::ok(id, Some(state_json))
+            }
+            Err(e) => IpcResponse::err(id, e),
+        }
+    }
+
+    #[cfg(not(any(feature = "emu", test)))]
+    fn dispatch_set_mock(&mut self, id: u64, _key: &str, _value: &str) -> IpcResponse {
+        IpcResponse::err(id, "emu_feature_disabled")
     }
 
     fn ctl_screenshot(&mut self, id: u64, save: bool) -> IpcResponse {
@@ -791,13 +970,39 @@ fn command_allowed_while_locked(cmd: &IpcCommand) -> bool {
             | IpcCommand::ReloadApps
             | IpcCommand::ShowOsd { .. }
             | IpcCommand::SetPanel { open: false, .. }
-            | IpcCommand::InjectTouch { .. }
+    )
+}
+
+#[must_use]
+fn is_emu_only_command(cmd: &IpcCommand) -> bool {
+    matches!(
+        cmd,
+        IpcCommand::InjectTouch { .. }
             | IpcCommand::InjectKey { .. }
             | IpcCommand::InjectHwButton { .. }
             | IpcCommand::SetMock { .. }
             | IpcCommand::SetRotation { .. }
             | IpcCommand::SetAppOrientation { .. }
     )
+}
+
+fn check_ipc_permission(
+    locked: bool,
+    backend: BackendSelect,
+    cmd: &IpcCommand,
+) -> Result<(), &'static str> {
+    if locked && !command_allowed_while_locked(cmd) {
+        return Err("device_locked");
+    }
+    if is_emu_only_command(cmd) {
+        if backend != BackendSelect::Virtual {
+            return Err("virtual_backend_required");
+        }
+        if !cfg!(any(feature = "emu", test)) {
+            return Err("emu_feature_disabled");
+        }
+    }
+    Ok(())
 }
 
 fn map_panel_kind(panel: PanelKind) -> crate::panel_ui::PanelKind {
@@ -863,7 +1068,7 @@ mod tests {
     fn lock_guard_blocks_sensitive_commands_while_locked() {
         use de_config::ipc::{HwButtonKind, OsdKind};
 
-        // Allowed while locked: state query, re-lock, theme/app reload, OSD, panel close, and virtual input/mock.
+        // Allowed while locked: state query, re-lock, theme/app reload, OSD, panel close.
         assert!(command_allowed_while_locked(&IpcCommand::GetState));
         assert!(command_allowed_while_locked(&IpcCommand::Lock));
         assert!(command_allowed_while_locked(&IpcCommand::ReloadTheme));
@@ -881,25 +1086,25 @@ mod tests {
             panel: PanelKind::Quick,
             open: false,
         }));
-        assert!(command_allowed_while_locked(&IpcCommand::InjectTouch {
+
+        // Blocked while locked on every backend: mock, input injection, launch, screenshot, opening panels.
+        assert!(!command_allowed_while_locked(&IpcCommand::InjectTouch {
             phase: TouchInjectPhase::Down,
             slot: 0,
             x: 100,
             y: 200,
         }));
-        assert!(command_allowed_while_locked(&IpcCommand::InjectKey {
+        assert!(!command_allowed_while_locked(&IpcCommand::InjectKey {
             keycode: 28,
             pressed: true,
         }));
-        assert!(command_allowed_while_locked(&IpcCommand::InjectHwButton {
+        assert!(!command_allowed_while_locked(&IpcCommand::InjectHwButton {
             button: HwButtonKind::Power,
         }));
-        assert!(command_allowed_while_locked(&IpcCommand::SetMock {
-            key: "battery".to_string(),
-            value: "80".to_string(),
+        assert!(!command_allowed_while_locked(&IpcCommand::SetMock {
+            key: "fingerprint".to_string(),
+            value: "pass".to_string(),
         }));
-
-        // Blocked while locked: launching apps, taking screenshots, opening panels.
         assert!(!command_allowed_while_locked(&IpcCommand::Launch {
             desktop_id: "org.example.app".to_string(),
         }));
@@ -917,6 +1122,66 @@ mod tests {
             panel: PanelKind::Quick,
             open: true,
         }));
+    }
+
+    #[test]
+    fn drm_backend_rejects_mock_and_inject_even_when_unlocked() {
+        let mock_fp = IpcCommand::SetMock {
+            key: "fingerprint".to_string(),
+            value: "pass".to_string(),
+        };
+        let touch = IpcCommand::InjectTouch {
+            phase: TouchInjectPhase::Down,
+            slot: 0,
+            x: 10,
+            y: 20,
+        };
+        let key = IpcCommand::InjectKey {
+            keycode: 28,
+            pressed: true,
+        };
+        assert_eq!(
+            check_ipc_permission(false, BackendSelect::Drm, &mock_fp),
+            Err("virtual_backend_required")
+        );
+        assert_eq!(
+            check_ipc_permission(false, BackendSelect::Drm, &touch),
+            Err("virtual_backend_required")
+        );
+        assert_eq!(
+            check_ipc_permission(false, BackendSelect::Drm, &key),
+            Err("virtual_backend_required")
+        );
+    }
+
+    #[test]
+    fn virtual_backend_allows_mock_and_inject_only_when_unlocked() {
+        let mock_bat = IpcCommand::SetMock {
+            key: "battery".to_string(),
+            value: "75".to_string(),
+        };
+        let touch = IpcCommand::InjectTouch {
+            phase: TouchInjectPhase::Down,
+            slot: 0,
+            x: 10,
+            y: 20,
+        };
+        assert_eq!(
+            check_ipc_permission(false, BackendSelect::Virtual, &mock_bat),
+            Ok(())
+        );
+        assert_eq!(
+            check_ipc_permission(false, BackendSelect::Virtual, &touch),
+            Ok(())
+        );
+        assert_eq!(
+            check_ipc_permission(true, BackendSelect::Virtual, &mock_bat),
+            Err("device_locked")
+        );
+        assert_eq!(
+            check_ipc_permission(true, BackendSelect::Virtual, &touch),
+            Err("device_locked")
+        );
     }
 
     #[test]
@@ -939,5 +1204,44 @@ mod tests {
             assert!(ipc.try_accept().is_none());
         }
         assert!(!path.exists(), "socket must be unlinked on Drop");
+    }
+
+    #[test]
+    fn stalled_partial_client_does_not_block_poll() {
+        let path = std::env::temp_dir().join(format!(
+            "rabbiz-de-ctl-nonblock-{}-{}.sock",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_nanos())
+        ));
+        let mut ipc = CtlIpc::bind_at(path).expect("bind_at");
+
+        // Client 1 sends half a line and stalls without closing or sending '\n'.
+        let mut stalled = UnixStream::connect(&ipc.path).expect("connect stalled");
+        stalled.write_all(b"{\"id\":1,").expect("partial write");
+
+        // Client 2 sends a complete request.
+        let mut complete = UnixStream::connect(&ipc.path).expect("connect complete");
+        complete
+            .write_all(b"{\"id\":2,\"cmd\":\"get_state\"}\n")
+            .expect("full write");
+
+        let t0 = Instant::now();
+        let ready = ipc.poll_ready_requests();
+        assert!(
+            t0.elapsed() < std::time::Duration::from_millis(50),
+            "poll_ready_requests must not block on stalled client"
+        );
+        assert_eq!(ready.len(), 1);
+        assert_eq!(ready[0].1, "{\"id\":2,\"cmd\":\"get_state\"}\n");
+
+        // Once the stalled client finishes its line, the next poll delivers it.
+        stalled
+            .write_all(b"\"cmd\":\"lock\"}\n")
+            .expect("finish write");
+        let ready2 = ipc.poll_ready_requests();
+        assert_eq!(ready2.len(), 1);
+        assert_eq!(ready2[0].1, "{\"id\":1,\"cmd\":\"lock\"}\n");
     }
 }

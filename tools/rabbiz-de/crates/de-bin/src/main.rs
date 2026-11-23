@@ -78,7 +78,10 @@ fn main() {
             }
         },
         Command::Ctl(cmd) => {
-            let path = de_config::ipc::socket_path();
+            let Some(path) = de_config::ipc::socket_path() else {
+                eprintln!("ctl: XDG_RUNTIME_DIR is unset; control IPC disabled");
+                return 2;
+            };
             let req = de_config::ipc::IpcRequest {
                 id: 1,
                 command: cmd,
