@@ -1,0 +1,31 @@
+File: devices/samsung/a21s/kernel/a21s_linux_defconfig (1176 lines, 1176 explicit entries)
+EXPLICIT_MATCH   CONFIG_RANDOMIZE_BASE                want=y        got=y                  # KASLR
+MISSING_OR_DIFF  CONFIG_STACKPROTECTOR                want=y        got=(omitted/default)  # Stack protector
+MISSING_OR_DIFF  CONFIG_STACKPROTECTOR_STRONG         want=y        got=(omitted/default)  # Strong stack protector
+MISSING_OR_DIFF  CONFIG_FORTIFY_SOURCE                want=y        got=(omitted/default)  # FORTIFY_SOURCE
+MISSING_OR_DIFF  CONFIG_STRICT_KERNEL_RWX             want=y        got=(omitted/default)  # Strict kernel RWX
+MISSING_OR_DIFF  CONFIG_STRICT_MODULE_RWX             want=y        got=(omitted/default)  # Strict module RWX
+MISSING_OR_DIFF  CONFIG_HARDENED_USERCOPY             want=y        got=(omitted/default)  # Hardened usercopy
+MISSING_OR_DIFF  CONFIG_INIT_ON_ALLOC_DEFAULT_ON      want=y        got=(omitted/default)  # Init heap on alloc
+MISSING_OR_DIFF  CONFIG_INIT_ON_FREE_DEFAULT_ON       want=y        got=(omitted/default)  # Zero heap on free
+MISSING_OR_DIFF  CONFIG_SHUFFLE_PAGE_ALLOCATOR        want=y        got=(omitted/default)  # Page allocator randomization
+MISSING_OR_DIFF  CONFIG_SECURITY_LOCKDOWN_LSM         want=y        got=(omitted/default)  # Kernel lockdown LSM
+MISSING_OR_DIFF  CONFIG_SECURITY_SELINUX              want=y        got=(omitted/default)  # SELinux
+MISSING_OR_DIFF  CONFIG_SECURITY_APPARMOR             want=y        got=(omitted/default)  # AppArmor
+MISSING_OR_DIFF  CONFIG_SECCOMP                       want=y        got=(omitted/default)  # Seccomp
+MISSING_OR_DIFF  CONFIG_SECCOMP_FILTER                want=y        got=(omitted/default)  # Seccomp filter
+MISSING_OR_DIFF  CONFIG_MODULE_SIG                    want=y        got=(omitted/default)  # Kernel module signature verification
+MISSING_OR_DIFF  CONFIG_MODULE_SIG_FORCE              want=y        got=(omitted/default)  # Force signed kernel modules
+MISSING_OR_DIFF  CONFIG_DM_VERITY                     want=y        got=(omitted/default)  # dm-verity
+MISSING_OR_DIFF  CONFIG_DEVMEM                        want=not_set  got=(omitted/default)  # Disable /dev/mem
+MISSING_OR_DIFF  CONFIG_DEVKMEM                       want=not_set  got=(omitted/default)  # Disable /dev/kmem
+MISSING_OR_DIFF  CONFIG_BPF_UNPRIV_DEFAULT_OFF        want=y        got=(omitted/default)  # Disable unprivileged BPF
+MISSING_OR_DIFF  CONFIG_KEXEC                         want=not_set  got=y                  # Disable kexec (unless needed)
+MISSING_OR_DIFF  CONFIG_DEBUG_FS                      want=not_set  got=y                  # DebugFS exposure
+MISSING_OR_DIFF  CONFIG_ARM64_PTR_AUTH                want=y        got=(omitted/default)  # ARM64 Pointer Authentication
+MISSING_OR_DIFF  CONFIG_ARM64_BTI                     want=y        got=(omitted/default)  # ARM64 Branch Target Identification
+MISSING_OR_DIFF  CONFIG_UNMAP_KERNEL_AT_EL0           want=y        got=(omitted/default)  # KPTI
+MISSING_OR_DIFF  CONFIG_SLAB_FREELIST_RANDOM          want=y        got=(omitted/default)  # SLAB freelist randomization
+MISSING_OR_DIFF  CONFIG_SLAB_FREELIST_HARDENED        want=y        got=(omitted/default)  # SLAB freelist hardening
+MISSING_OR_DIFF  CONFIG_VMAP_STACK                    want=y        got=(omitted/default)  # Virtually mapped kernel stack
+MISSING_OR_DIFF  CONFIG_REFCOUNT_FULL                 want=y        got=(omitted/default)  # Refcount hardening

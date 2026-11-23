@@ -1,0 +1,57 @@
+=== Cargo.toml license & git/path deps ===
+tools/rabbiz-apps/Cargo.toml: license=['"Apache-2.0"'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-app-kit/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-calculator/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-clock/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-contacts/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-dialer/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-files/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-music/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-notes/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-pdf/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-photos/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-search/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-settings/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-sms/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-store/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-apps/crates/rabbiz-terminal/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-camera/Cargo.toml: license=['"Apache-2.0"'] git_deps=0 wild_deps=0
+tools/rabbiz-de/Cargo.toml: license=['"Apache-2.0"'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-api/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-apps/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-backend/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-bin/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-config/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-core/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-design/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-paint/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-protocols/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-render/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-sim/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-system/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/crates/de-ui/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-de/tests/smoke/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-mirror/linux/Cargo.toml: license=['"Apache-2.0"'] git_deps=0 wild_deps=0
+tools/rabbiz-osk/Cargo.toml: license=['"Apache-2.0"'] git_deps=0 wild_deps=0
+tools/rabbiz-osk/crates/osk-core/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-osk/crates/osk-render/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-osk/crates/osk-wayland/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-osk/spikes/s2-render/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-sdk/Cargo.toml: license=['"Apache-2.0"'] git_deps=0 wild_deps=0
+tools/rabbiz-sdk/crates/rabbiz-cli/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-sdk/crates/rabbiz-emu-proto/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-sdk/crates/rabbiz-emu-viewer/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-sdk/crates/rabbiz-flutter-runner/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-sdk/crates/rabbiz-pack/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-sdk/crates/rabbiz-sdk-c/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-sdk/crates/rabbiz-sdk/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+tools/rabbiz-sdk/crates/rabbiz-wasm-runner/Cargo.toml: license=['NONE'] git_deps=0 wild_deps=0
+
+=== Cargo.lock package counts & non-crates.io sources ===
+tools/rabbiz-apps/Cargo.lock: packages=346, git_sources=0
+tools/rabbiz-camera/Cargo.lock: packages=188, git_sources=0
+tools/rabbiz-de/Cargo.lock: packages=362, git_sources=0
+tools/rabbiz-de/vendor/smithay/Cargo.lock: packages=360, git_sources=0
+tools/rabbiz-mirror/linux/Cargo.lock: packages=75, git_sources=0
+tools/rabbiz-osk/Cargo.lock: packages=184, git_sources=0
+tools/rabbiz-sdk/Cargo.lock: packages=307, git_sources=0

@@ -1,0 +1,39 @@
+=== socs/exynos850/drivers/scsc/scsc_bt.ko.zst ===
+1013452ce793fe02331fbebb5c97f195760e1ce4d1f0ddde00e0ea13a5715cbb  socs/exynos850/drivers/scsc/scsc_bt.ko.zst
+-rw-r--r-- 1 dit dit 30K พ.ย.  18 19:20 socs/exynos850/drivers/scsc/scsc_bt.ko.zst
+socs/exynos850/drivers/scsc/scsc_bt.ko.zst: Zstandard compressed data (v0.8+), Dictionary ID: None
+--- modinfo strings ---
+description=SCSC MX BT Driver
+author=Samsung Electronics Co., Ltd
+license=GPL
+srcversion=3B7C4174EE2FE2875276CB8
+vermagic=7.3.0-g14a425b3a7dc SMP preempt mod_unload aarch64
+=== socs/exynos850/drivers/scsc/scsc_mx.ko.zst ===
+b8dbed5f0e5e350a6f7ce4295c621b436b10b9283da38f659c57bc9107ea263d  socs/exynos850/drivers/scsc/scsc_mx.ko.zst
+-rw-r--r-- 1 dit dit 64K พ.ย.  18 19:20 socs/exynos850/drivers/scsc/scsc_mx.ko.zst
+socs/exynos850/drivers/scsc/scsc_mx.ko.zst: Zstandard compressed data (v0.8+), Dictionary ID: None
+--- modinfo strings ---
+description=mx140 Core Driver
+author=SCSC
+license=GPL
+vermagic=7.3.0-g14a425b3a7dc SMP preempt mod_unload aarch64
+=== socs/exynos850/drivers/scsc/scsc_platform_mif.ko.zst ===
+af713637dfd58b67ac45a56e94b08e9284cbe884f2276cdf4e050583f5f23c36  socs/exynos850/drivers/scsc/scsc_platform_mif.ko.zst
+-rw-r--r-- 1 dit dit 16K พ.ย.  18 19:20 socs/exynos850/drivers/scsc/scsc_platform_mif.ko.zst
+socs/exynos850/drivers/scsc/scsc_platform_mif.ko.zst: Zstandard compressed data (v0.8+), Dictionary ID: None
+--- modinfo strings ---
+description=SCSC Platform device Maxwell MIF abstraction
+author=SCSC
+license=GPL
+vermagic=7.3.0-g14a425b3a7dc SMP preempt mod_unload aarch64
+=== socs/exynos850/drivers/scsc/scsc_wlan.ko.zst ===
+ad53939f2235912f24e42899b0ffab21c6fde0837089774480dfa036b67de64a  socs/exynos850/drivers/scsc/scsc_wlan.ko.zst
+-rw-r--r-- 1 dit dit 251K พ.ย.  18 19:20 socs/exynos850/drivers/scsc/scsc_wlan.ko.zst
+socs/exynos850/drivers/scsc/scsc_wlan.ko.zst: Zstandard compressed data (v0.8+), Dictionary ID: None
+--- modinfo strings ---
+sig_wait_cfm_timeout
+description=mx140 Wi-Fi Driver
+author=SLSI
+license=GPL and additional rights
+vermagic=7.3.0-g14a425b3a7dc SMP preempt mod_unload aarch64
+sig_wait_cfm_timeout

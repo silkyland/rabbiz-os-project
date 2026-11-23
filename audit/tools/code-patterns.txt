@@ -1,0 +1,109 @@
+=== Rust unsafe count by crate ===
+tools/rabbiz-sdk/crates/rabbiz-sdk-c/src/lib.rs:31
+tools/rabbiz-apps/crates/rabbiz-dialer/src/model.rs:6
+tools/rabbiz-apps/crates/rabbiz-files/src/model.rs:4
+tools/rabbiz-de/tests/smoke/src/main.rs:3
+tools/rabbiz-osk/crates/osk-wayland/src/input_method.rs:2
+tools/rabbiz-de/crates/de-render/src/gl.rs:2
+tools/rabbiz-de/crates/de-core/src/shell_ui/shell.rs:2
+tools/rabbiz-de/crates/de-core/src/runtime/frame/event_loop.rs:2
+tools/rabbiz-de/crates/de-core/src/runtime/ctl_ipc.rs:2
+tools/rabbiz-de/crates/de-backend/src/drm.rs:2
+tools/rabbiz-apps/crates/rabbiz-terminal/src/headless.rs:2
+tools/rabbiz-sdk/crates/rabbiz-pack/src/lib.rs:1
+tools/rabbiz-sdk/crates/rabbiz-flutter-runner/src/lib.rs:1
+tools/rabbiz-osk/crates/osk-wayland/src/main.rs:1
+tools/rabbiz-de/crates/de-core/src/runtime/snapshots.rs:1
+tools/rabbiz-de/crates/de-core/src/runtime/composite.rs:1
+tools/rabbiz-de/crates/de-core/src/protocols/screencopy.rs:1
+tools/rabbiz-de/crates/de-backend/src/probe.rs:1
+tools/rabbiz-apps/crates/rabbiz-sms/src/model.rs:1
+tools/rabbiz-apps/crates/rabbiz-photos/src/photos.rs:1
+tools/rabbiz-apps/crates/rabbiz-notes/src/model.rs:1
+tools/rabbiz-apps/crates/rabbiz-music/src/player.rs:1
+tools/rabbiz-apps/crates/rabbiz-clock/src/model.rs:1
+tools/rabbiz-apps/crates/rabbiz-app-kit/src/wayland.rs:1
+tools/rabbiz-apps/crates/rabbiz-app-kit/src/text_input.rs:1
+tools/rabbiz-apps/crates/rabbiz-app-kit/src/scroll.rs:1
+tools/rabbiz-apps/crates/rabbiz-app-kit/src/intent.rs:1
+
+=== Python subprocess/os.system/eval/exec ===
+tests/test_volume_keys.py:61:         patch('subprocess.Popen', side_effect=lambda argv, **kwargs: actions.append(argv)), \
+scripts/device_panel_benchmark.py:19:    return subprocess.run(args, check=True, text=True, capture_output=True).stdout
+scripts/volume-keys.py:49:    subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+rootfs-overlay/usr/local/bin/rabbiz-session:9:# labwc mode: exec()s the unchanged labwc launcher.
+rootfs-overlay/usr/local/bin/volume-keys.py:49:    subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+tools/rabbiz-de/scripts/check_seams.py:52:    out = subprocess.run(
+rootfs-overlay/usr/local/bin/rabbiz-labwc-session:5:# session environment, creates XDG dirs, then exec()s labwc as the session
+rootfs-overlay/usr/local/bin/rabbiz-appearance:87:    if shutil.which("squeekboard") and subprocess.run(
+rootfs-overlay/usr/local/bin/rabbiz-appearance:88:            ["pgrep", "-x", "squeekboard"], stdout=subprocess.DEVNULL).returncode == 0:
+rootfs-overlay/usr/local/bin/rabbiz-appearance:89:        subprocess.run(["pkill", "-x", "squeekboard"], check=False)
+rootfs-overlay/usr/local/bin/rabbiz-appearance:91:        subprocess.Popen(["squeekboard"], env=os.environ.copy(), start_new_session=True,
+rootfs-overlay/usr/local/bin/rabbiz-appearance:92:                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+rootfs-overlay/usr/local/bin/rabbiz-appearance:96:    subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "color-scheme", scheme],
+rootfs-overlay/usr/local/bin/rabbiz-appearance:97:                   stderr=subprocess.DEVNULL, check=False)
+rootfs-overlay/usr/local/bin/rabbiz-appearance:110:    subprocess.run(["gsettings", "set", "org.gnome.desktop.interface", "accent-color", nearest],
+rootfs-overlay/usr/local/bin/rabbiz-appearance:111:                   stderr=subprocess.DEVNULL, check=False)
+tools/qt-scanout/tests/test_shell_launcher.py:33:            return subprocess.run(["/bin/bash", str(LAUNCHER)], env=env,
+tools/qt-scanout/tests/test_patch_egl.py:25:            result = subprocess.run(
+tools/shade-preview/preview.py:168:sys.exit(app.exec())
+tools/shade-preview/preview.py:202:                + "exec(open(%r).read())\n" % str(grab)
+tools/shade-preview/preview.py:205:            subprocess.run([sys.executable, str(driver)], env=env, check=False)
+
+=== World-writable permissions (0666/0777/666/777) ===
+scripts/deploy_shell.sh:194:  chmod 666 /sys/kernel/a21s_fp/trigger_unlock /sys/kernel/a21s_fp/sleep_pin /dev/esfp0 2>/dev/null || true
+scripts/de_m1_check.sh:40:ssh "$HOST" "flock --close --timeout 300 $DEVICE chmod 777 /tmp/de-m1-check && chmod +x /tmp/de-m1-check/rabbiz-de /tmp/de-m1-check/de-smoke /tmp/de-m1-check/rabbiz-session /tmp/de-m1-check/a21s-power-key" </dev/null
+rootfs-overlay/usr/local/bin/a21s-volume:121:    chmod 666 "${LOCK_FILE}" 2>/dev/null || true
+tools/rabbiz-de/Cargo.lock:1034:checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
+tools/rabbiz-de/Cargo.lock:1308:checksum = "e8a484fa48be5f62a8d3ffed767779d0ab808cfead91de98ef4362d469097dfb"
+tools/rabbiz-de/Cargo.lock:1956:checksum = "cfb9cf8877777222e4a3bc7eb247e398b56baba500c38c1c46842431adc8b55c"
+tools/rabbiz-de/Cargo.lock:2097:checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+tools/rabbiz-de/Cargo.lock:2561:checksum = "2c591d83f69777866b9126b24c6dd9a18351f177e49d625920d19f989fd31cf8"
+tools/rabbiz-de/Cargo.lock:3391:checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+rootfs-overlay/usr/local/bin/a21s-modem-ctl:13:  chmod 666 "$FP_SYS/trigger_unlock" "$FP_SYS/sleep_pin" 2>/dev/null || true
+rootfs-overlay/usr/local/bin/a21s-modem-ctl:14:  chmod 666 /dev/esfp0 2>/dev/null || true
+rootfs-overlay/etc/udev/rules.d/99-a21s-sensors-vib.rules:2:ACTION=="add", SUBSYSTEM=="leds", KERNEL=="vibrator", RUN+="/bin/chmod 0666 /sys/class/leds/vibrator/brightness /sys/kernel/a21s_vib/duration_ms"
+rootfs-overlay/etc/udev/rules.d/99-a21s-modem-fp.rules:1:KERNEL=="esfp0", MODE="0666"
+rootfs-overlay/etc/udev/rules.d/99-a21s-modem-fp.rules:3:ACTION=="add", SUBSYSTEM=="misc", KERNEL=="esfp0", RUN+="/bin/chmod 666 /sys/kernel/a21s_fp/trigger_unlock /sys/kernel/a21s_fp/sleep_pin"
+tools/rabbiz-camera/Cargo.lock:1006:checksum = "cfb9cf8877777222e4a3bc7eb247e398b56baba500c38c1c46842431adc8b55c"
+tools/rabbiz-camera/Cargo.lock:1088:checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+tools/rabbiz-camera/Cargo.lock:1292:checksum = "2c591d83f69777866b9126b24c6dd9a18351f177e49d625920d19f989fd31cf8"
+tools/rabbiz-sdk/Cargo.lock:249:checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
+tools/rabbiz-sdk/Cargo.lock:1327:checksum = "c96395f0a926bc13b1c17622aaddda1ecb55d49c8f1bf9777e4d877800a43f8b"
+tools/rabbiz-sdk/Cargo.lock:1740:checksum = "cfb9cf8877777222e4a3bc7eb247e398b56baba500c38c1c46842431adc8b55c"
+tools/rabbiz-sdk/Cargo.lock:1849:checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+tools/rabbiz-sdk/Cargo.lock:2295:checksum = "2c591d83f69777866b9126b24c6dd9a18351f177e49d625920d19f989fd31cf8"
+tools/rabbiz-sdk/Cargo.lock:2945:checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+tools/rabbiz-apps/Cargo.lock:294:checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
+tools/rabbiz-apps/Cargo.lock:2113:checksum = "cfb9cf8877777222e4a3bc7eb247e398b56baba500c38c1c46842431adc8b55c"
+tools/rabbiz-apps/Cargo.lock:2222:checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+tools/rabbiz-apps/Cargo.lock:2678:checksum = "2c591d83f69777866b9126b24c6dd9a18351f177e49d625920d19f989fd31cf8"
+tools/rabbiz-apps/Cargo.lock:3357:checksum = "29666d0abbfad1e3dc4dcf6144730dd3a3ab225bbbdac83319345b1b44ccfc1b"
+tools/rabbiz-apps/crates/rabbiz-files/src/ui.rs:956:                        model::mode_string(m.mode() & 0o777),
+tools/rabbiz-apps/crates/rabbiz-files/src/ui.rs:957:                        m.mode() & 0o7777
+tools/rabbiz-apps/crates/rabbiz-files/src/cli.rs:360:        perms: model::mode_string(mode & 0o777),
+tools/rabbiz-apps/crates/rabbiz-files/src/cli.rs:361:        mode_octal: mode & 0o7777,
+tools/rabbiz-apps/crates/rabbiz-dialer/src/model.rs:200:            "0927778888",
+tools/rabbiz-apps/crates/rabbiz-dialer/src/model.rs:375:                "0927778888",
+tools/rabbiz-apps/crates/rabbiz-contacts/src/model.rs:251:        ("Grab Driver", "0927778888", "trip", false),
+tools/rabbiz-de/crates/de-backend/src/probe.rs:494:        assert_eq!(round3(16.66666), 16.667);
+tools/rabbiz-de/crates/de-system/src/auth.rs:832:        ) & 0o777;
+tools/rabbiz-de/crates/de-design/src/motion.rs:369:const EMPHASIZED_JOIN_X: f32 = 0.166_666;
+tools/rabbiz-de/crates/de-design/src/motion.rs:631:            [[0.0, 0.0], [0.05, 0.0], [0.133_333, 0.06], [0.166_666, 0.4]],
+tools/rabbiz-de/crates/de-design/src/motion.rs:632:            [[0.166_666, 0.4], [0.208_333, 0.82], [0.25, 1.0], [1.0, 1.0]],
+tools/rabbiz-de/crates/de-design/src/motion.rs:667:        assert_eq!(emphasized_eval(0.166_666), 0.4);
+tools/rabbiz-de/crates/de-core/src/runtime/ctl_ipc.rs:1237:                & 0o777;
+tools/rabbiz-de/assets/wallpapers/SOURCE.txt:16:| ember.png | 40e7a341e6b9267a10b138fe777308494eef230b12881c71c61fa0e7c3812a94 | 1337803 |
+tools/rabbiz-osk/Cargo.lock:876:checksum = "cfb9cf8877777222e4a3bc7eb247e398b56baba500c38c1c46842431adc8b55c"
+tools/rabbiz-osk/Cargo.lock:949:checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+tools/rabbiz-osk/Cargo.lock:1251:checksum = "2c591d83f69777866b9126b24c6dd9a18351f177e49d625920d19f989fd31cf8"
+tools/rabbiz-mirror/linux/Cargo.lock:693:checksum = "e6769c452d71ba30696c6b37770c439a9cc9110f47f7d5cdbeda79840ef5ea31"
+
+=== TODO/FIXME/HACK/XXX counts ===
+devices/samsung/a21s/kernel/patches/0005-a21s-power-modem-dts.patch:4
+shell/Rabbiz/Windowing/LaunchFlow.js:1
+devices/samsung/a21s/kernel/patches/0009-a21s-tmu-thermal-zones.patch:1
+devices/samsung/a21s/docs/a21s-modem-power-findings.md:1
+devices/samsung/a21s/docs/a21s-mainline-boot.md:1
+devices/samsung/a21s/docs/a21s-backlight-interface.md:1
+devices/samsung/a21s/docs/a21s-audio-abox-plan.md:1
