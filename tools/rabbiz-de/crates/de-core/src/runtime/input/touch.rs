@@ -57,6 +57,17 @@ impl De {
             return;
         }
         let zone = self.gestures.zone(api_point(pos));
+        if !self.rotation.policy.auto && !self.desktop_mode && !self.lock.shown() {
+            if let Some(suggested) = self.rotation.sensed.filter(|&s| s != self.rotation.current) {
+                let out_size =
+                    de_api::Size::new(self.output.width as i32, self.output.height as i32);
+                if de_ui::rotate_pill::hit(out_size, api_point(pos)) {
+                    let _ = self.set_rotation_mode(suggested.name());
+                    self.touch_claimed = true;
+                    return;
+                }
+            }
+        }
         // Top layers (including the OSK) own their interactive region.
         // Retain the nav strip as a way to leave the foreground client.
         let layer_contact = zone != Zone::NavBar

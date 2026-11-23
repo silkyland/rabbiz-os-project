@@ -269,6 +269,13 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
             canvas.blit_scaled(px, de_api::Rect::new(x, y, px.size.w, px.size.h), alpha);
         }
     }
+    if !de.rotation.policy.auto && !de.desktop_mode && !de.lock.shown() {
+        if de.rotation.sensed.is_some_and(|s| s != de.rotation.current) {
+            let pill = de_ui::rotate_pill::render(&de.theme);
+            let r = de_ui::rotate_pill::pill_rect(out_size);
+            canvas.blit(&pill, ApiPoint::new(r.x, r.y));
+        }
+    }
     if de.desktop_mode && !de.lock.shown() {
         let app_labels: Vec<String> = de
             .space

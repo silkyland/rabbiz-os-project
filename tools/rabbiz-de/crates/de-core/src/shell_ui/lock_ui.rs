@@ -13,8 +13,9 @@ use de_design::motion::{MotionKind, SpringPreset};
 use de_paint::animation::{AnimationClock, SpringValue};
 use de_system::auth::{
     keyguard_state_path, load_lockout_policy, save_lockout_state_atomic,
-    save_pin_credential_atomic, zeroize_secret, AuthOutcome, LockoutPolicy, LockoutState,
-    PinCredential,
+    save_pin_credential_atomic, verify_via_helper_socket, zeroize_secret, AuthOutcome,
+    HelperResponse, LockMethod, LockoutPolicy, LockoutState, PinCredential,
+    DEFAULT_AUTH_HELPER_SOCKET,
 };
 use de_ui::lock::{LockModel, QuickAction};
 use de_ui::lock_bouncer::{BouncerHit, BouncerModel};
@@ -76,6 +77,24 @@ fn keyguard_path() -> Option<PathBuf> {
             .join("rabbiz-shell")
             .join("keyguard.json"),
     )
+}
+
+fn verify_pin_with_optional_helper(
+    pin: &str,
+    cred: &PinCredential,
+) -> (bool, Option<PinCredential>) {
+    let sock = std::path::Path::new(DEFAULT_AUTH_HELPER_SOCKET);
+    if sock.exists() {
+        let user = std::env::var("USER").unwrap_or_else(|_| "rabbiz".to_string());
+        match verify_via_helper_socket(sock, &user, LockMethod::Pin, pin) {
+            HelperResponse::Accepted => return (true, None),
+            HelperResponse::Rejected { .. } | HelperResponse::Cooldown { .. } => {
+                return (false, None);
+            }
+            HelperResponse::Unavailable => {}
+        }
+    }
+    cred.verify_and_upgrade(pin)
 }
 
 fn load_pin_credential() -> Option<PinCredential> {
@@ -388,7 +407,9 @@ impl LockUi {
                         .name("rabbiz-pin-verify".into())
                         .spawn(move || {
                             let (ok, upgraded_cred) = std::str::from_utf8(&pin_bytes)
-                                .map_or((false, None), |pin| cred.verify_and_upgrade(pin));
+                                .map_or((false, None), |pin| {
+                                    verify_pin_with_optional_helper(pin, &cred)
+                                });
                             zeroize_secret(&mut pin_bytes);
                             let _ = tx.send(AuthVerifyResult { ok, upgraded_cred });
                         });
@@ -400,7 +421,9 @@ impl LockUi {
                         .name("rabbiz-pin-verify".into())
                         .spawn(move || {
                             let (ok, upgraded_cred) = std::str::from_utf8(&pin_bytes)
-                                .map_or((false, None), |pin| cred.verify_and_upgrade(pin));
+                                .map_or((false, None), |pin| {
+                                    verify_pin_with_optional_helper(pin, &cred)
+                                });
                             zeroize_secret(&mut pin_bytes);
                             AuthVerifyResult { ok, upgraded_cred }
                         })
