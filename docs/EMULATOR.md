@@ -83,7 +83,11 @@ Tier 2 boots the real **RabbizOS Desktop Environment (`rabbiz-de`)** using `Outp
 # Recommended: start via the rabbiz CLI (auto-launches viewer + container/daemon)
 rabbiz emu start --device samsung/a21s
 
-# Or invoke rabbiz-de directly on a Linux host / inside the ARM64 container:
+# Or invoke rabbiz-de directly on a Linux host / inside the ARM64 container.
+# IMPORTANT: build with `--features emu` — touch/key/button injection
+# (`inject_touch` & friends) is compiled out without it, so viewer taps and
+# drags silently do nothing (`emu_feature_disabled` on the ctl socket).
+#   cargo build --release -p de-bin --features emu
 rabbiz-de run \
   --backend=virtual \
   --size=720x1600 \
