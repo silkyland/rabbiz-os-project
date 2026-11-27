@@ -25,9 +25,15 @@ impl CompositorHandler for De {
     }
 
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
+        if let Some(state) = client.get_data::<DeClientState>() {
+            return &state.compositor_state;
+        }
+        // The XWayland server is a wayland client too, but smithay inserts it
+        // with `XWaylandClientData` (which carries its own compositor state)
+        // rather than the compositor's per-client type.
         &client
-            .get_data::<DeClientState>()
-            .expect("client has no DeClientState")
+            .get_data::<smithay::xwayland::XWaylandClientData>()
+            .expect("client has neither DeClientState nor XWaylandClientData")
             .compositor_state
     }
 

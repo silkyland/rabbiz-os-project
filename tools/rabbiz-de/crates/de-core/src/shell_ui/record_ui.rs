@@ -10,8 +10,6 @@ use std::process::Child;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use de_config::Privileged;
-use smithay::reexports::wayland_server::DisplayHandle;
-
 use crate::state::De;
 
 pub(crate) struct RecordState {
@@ -63,6 +61,13 @@ fn output_path() -> Option<PathBuf> {
     Some(dir.join(format!("Screenrecord_{ms}.mp4")))
 }
 
+#[allow(unsafe_code)]
+fn sigint(pid: u32) {
+    unsafe {
+        libc::kill(pid as i32, libc::SIGINT);
+    }
+}
+
 impl De {
     /// Toggle screen recording. Returns the new recording state, or an error
     /// string when starting failed (stop never fails — the child either takes
@@ -72,9 +77,7 @@ impl De {
             if let Some(mut child) = self.record.child.take() {
                 // SIGINT, not kill(): wf-recorder only writes a valid mp4
                 // trailer when it shuts down through its signal handler.
-                unsafe {
-                    libc::kill(child.id() as i32, libc::SIGINT);
-                }
+                sigint(child.id());
                 // Do not wait on the frame thread; the finalizer thread
                 // inside wf-recorder exits by itself and the zombie is
                 // reaped on the next poll or drop.
