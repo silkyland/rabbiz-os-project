@@ -301,23 +301,32 @@ impl De {
     }
 
     pub(crate) fn recents_model(&mut self, windows: &[smithay::desktop::Window]) -> RecentsModel {
-        RecentsModel::new(
-            windows
-                .iter()
-                .map(|window| {
-                    let id = window
-                        .toplevel()
-                        .map(crate::snapshots::window_app_id)
-                        .unwrap_or_default();
-                    let mut entry = self.recent_entry(&id);
-                    entry.snapshot = crate::snapshots::snapshot(window);
-                    entry
-                })
-                .collect(),
-        )
+        let mut entries: Vec<RecentEntry> = windows
+            .iter()
+            .map(|window| {
+                let id = window
+                    .toplevel()
+                    .map(crate::snapshots::window_app_id)
+                    .unwrap_or_default();
+                let mut entry = self.recent_entry(&id);
+                entry.snapshot = crate::snapshots::snapshot(window);
+                entry
+            })
+            .collect();
+        // A card being flung off keeps its slot after the app exits: the
+        // frozen entry stands in for the dead window until the fly-off
+        // spring completes, so the dismiss animation plays to the end.
+        if let Some(d) = self.navigation.card_dismiss.as_ref() {
+            if let Some(frozen) = d.entry.as_ref() {
+                if !entries.iter().any(|e| e.id == d.id) {
+                    entries.insert(d.index.min(entries.len()), frozen.clone());
+                }
+            }
+        }
+        RecentsModel::new(entries)
     }
 
-    fn recent_entry(&mut self, id: &str) -> RecentEntry {
+    pub(crate) fn recent_entry(&mut self, id: &str) -> RecentEntry {
         let title = self
             .catalog
             .find(id)

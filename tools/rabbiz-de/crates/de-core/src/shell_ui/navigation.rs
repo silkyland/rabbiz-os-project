@@ -36,6 +36,10 @@ pub(crate) struct Navigation {
     pub recents_from_app: bool,
     /// A Recents card being swiped up to close its app.
     pub card_dismiss: Option<CardDismiss>,
+    /// After a dismissed card leaves, cards behind its slot slide over to
+    /// fill the gap instead of jumping (index of the removed slot, spring
+    /// from one stride down to zero).
+    pub recents_layout_shift: Option<(usize, SpringValue, Option<Instant>)>,
     /// Whether `Screen::Settings` is currently showing the Keyboard subpage.
     pub settings_keyboard: bool,
     /// GPU-cached static backdrop + per-card textures for 60 FPS Recents scrolling.
@@ -70,6 +74,13 @@ pub(crate) struct RecentsLayers {
 /// list can shrink under it when the app exits.
 pub(crate) struct CardDismiss {
     pub window: smithay::desktop::Window,
+    /// The card's app id and carousel index when the drag started: the entry
+    /// is kept in the model after the window dies so the fly-off animates.
+    pub id: String,
+    pub index: usize,
+    /// Entry captured when the close commit lands; drawn in the window's
+    /// place once the app has exited.
+    pub entry: Option<de_ui::recents::RecentEntry>,
     /// Vertical offset in px (negative = up), finger-tracked then sprung.
     pub offset: SpringValue,
     pub dragging: bool,
@@ -103,6 +114,7 @@ impl Navigation {
             search_query: String::new(),
             recents_from_app: false,
             card_dismiss: None,
+            recents_layout_shift: None,
             settings_keyboard: false,
             recents_layers: None,
             nav_bar_active: SpringValue::new(0.0, SpringPreset::Snappy, MotionKind::Effects),
@@ -396,13 +408,24 @@ impl De {
             let Some(window) = windows.into_iter().nth(i) else {
                 return false;
             };
+            let id = window
+                .toplevel()
+                .map(crate::snapshots::window_app_id)
+                .unwrap_or_default();
             self.navigation.card_dismiss = Some(CardDismiss {
                 window,
+                id,
+                index: i,
+                entry: None,
                 offset: SpringValue::new(0.0, SpringPreset::Smooth, MotionKind::Spatial),
                 dragging: true,
                 closing: false,
                 last_tick: None,
             });
+        }
+        if std::env::var_os("DE_DISMISS_DEBUG").is_some() {
+            let st = self.navigation.card_dismiss.as_ref();
+            eprintln!("dismiss_drag: dy={dy:.0} state={}", st.map_or("none".into(), |d| format!("off={:.0} closing={}", d.offset.value, d.closing)));
         }
         if let Some(d) = self.navigation.card_dismiss.as_mut() {
             // Up follows 1:1; down only gives a little (nothing to do there).
@@ -435,15 +458,35 @@ impl De {
         }
         d.dragging = false;
         d.last_tick = Some(Instant::now());
-        if de_ui::recents::dismiss_on_release(size, dy, vy) {
+        let closing = de_ui::recents::dismiss_on_release(size, dy, vy);
+        if closing {
             d.closing = true;
+            // Fling-out: fast enough that even a slow drag past the
+            // threshold snaps off screen, capped so a hard fling does not
+            // finish before a frame can show it (~250 ms visible travel).
             d.offset
-                .retarget_with_velocity(-(size.h as f32), vy.min(0.0));
+                .retarget_with_velocity(-(size.h as f32), vy.clamp(-3000.0, -1200.0));
             if let Some(toplevel) = d.window.toplevel() {
                 toplevel.send_close();
             }
         } else {
             d.offset.retarget_with_velocity(0.0, vy);
+        }
+        if closing {
+            // The window dies within a frame or two of `send_close`; freeze
+            // its entry now so the card keeps rendering through the fly-off
+            // instead of vanishing the instant the app exits.
+            let (id, window) = {
+                let Some(d) = self.navigation.card_dismiss.as_ref() else {
+                    return true;
+                };
+                (d.id.clone(), d.window.clone())
+            };
+            let mut entry = self.recent_entry(&id);
+            entry.snapshot = crate::snapshots::snapshot(&window);
+            if let Some(d) = self.navigation.card_dismiss.as_mut() {
+                d.entry = Some(entry);
+            }
         }
         self.needs_present = true;
         true
@@ -463,10 +506,29 @@ impl De {
             .replace(now)
             .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
         let moving = d.offset.advance(dt, &self.motion_clock);
+        if std::env::var_os("DE_DISMISS_DEBUG").is_some() {
+            eprintln!("dismiss_advance: dt={dt:.4} off={:.0} vel={:.0} closing={} moving={moving}", d.offset.value, d.offset.velocity, d.closing);
+        }
         // Off-screen counts as done; the window leaves when the app exits.
         let gone = d.closing && d.offset.value <= -(self.output.height as f32) * 0.98;
         if gone || !moving || d.offset.settled() {
-            self.navigation.card_dismiss = None;
+            let dismissed = self.navigation.card_dismiss.take().unwrap();
+            // The app really exited: cards behind the removed slot slide
+            // over one stride instead of jumping next frame.
+            if dismissed.closing
+                && !self.recent_windows().contains(&dismissed.window)
+            {
+                let size = Size::new(self.output.width as i32, self.output.height as i32);
+                let stride = de_ui::recents::card_stride(size) as f32;
+                let remaining = self.recent_windows().len();
+                if dismissed.index < remaining {
+                    let mut shift =
+                        SpringValue::new(stride, SpringPreset::Smooth, MotionKind::Spatial);
+                    shift.retarget(0.0);
+                    self.navigation.recents_layout_shift =
+                        Some((dismissed.index, shift, Some(Instant::now())));
+                }
+            }
             if self.foreground == crate::state::Foreground::Shell
                 && self.nav.current == de_ui::nav::Screen::Recents
                 && self.morph.is_none()
@@ -481,13 +543,38 @@ impl De {
         self.needs_present = true;
     }
 
+    /// Advance the slide-over of cards filling a dismissed card's slot.
+    pub(crate) fn advance_recents_shift(&mut self, now: Instant) {
+        let Some((_, shift, last_tick)) = self.navigation.recents_layout_shift.as_mut() else {
+            return;
+        };
+        let dt = last_tick
+            .replace(now)
+            .map_or(0.0, |last| now.duration_since(last).as_secs_f32());
+        shift.advance(dt, &self.motion_clock);
+        if shift.settled() {
+            self.navigation.recents_layout_shift = None;
+        }
+        if !self.recents_layers_active() {
+            self.shell_dirty = true;
+        }
+        self.needs_present = true;
+    }
+
     /// The card lift to paint, if its window is still listed.
     pub(crate) fn card_lift(
         &self,
         windows: &[smithay::desktop::Window],
     ) -> Option<de_ui::recents::CardLift> {
         let d = self.navigation.card_dismiss.as_ref()?;
-        let index = windows.iter().position(|w| w == &d.window)?;
+        // Live window: its position in the stack is the entries index. Dead
+        // window: `recents_model` re-inserts the frozen entry at the slot the
+        // drag started on (clamped), so the fly-off keeps animating after
+        // the app has exited.
+        let index = windows
+            .iter()
+            .position(|w| w == &d.window)
+            .unwrap_or_else(|| d.index.min(windows.len()));
         Some(de_ui::recents::CardLift {
             index,
             dy: d.offset.value,
@@ -815,6 +902,7 @@ impl Navigation {
         self.home_underlay_px = None;
         self.home_underlay_tex = None;
         self.recents_layers = None;
+        self.recents_layout_shift = None;
         self.drawer_pull_y = 0.0;
         self.drawer_dragging = false;
     }

@@ -199,6 +199,7 @@ impl Run {
             self.de.navigation.recents_last_tick = None;
         }
         self.de.advance_card_dismiss(t0);
+        self.de.advance_recents_shift(t0);
         self.de.advance_panel(t0);
         self.de.power.advance(t0);
         self.de.advance_lock(t0);
@@ -246,6 +247,16 @@ impl Run {
         } else {
             None
         };
+        if std::env::var_os("DE_DISMISS_DEBUG").is_some()
+            && self.de.navigation.card_dismiss.is_some()
+        {
+            eprintln!(
+                "frame: recents_layered={recents_layered} lift={recents_lift:?} fg={:?} screen={:?} fade={}",
+                self.de.foreground,
+                self.de.nav.current,
+                self.de.navigation.recents_fade.is_some()
+            );
+        }
         if !layered
             && !recents_layered
             && (matches!(self.de.foreground, crate::state::Foreground::Shell)

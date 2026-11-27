@@ -222,6 +222,13 @@ where
             de_api::Size::new(de.output.width as i32, de.output.height as i32),
         );
     } else if de.recents_layered && de.navigation.recents_layers.is_some() {
+        if std::env::var_os("DE_DISMISS_DEBUG").is_some() {
+            eprintln!(
+                "render: recents branch cards={} lift={:?}",
+                de.navigation.recents_layers.as_ref().map_or(0, |l| l.cards.len()),
+                de.recents_lift
+            );
+        }
         if let Some(layers) = de.navigation.recents_layers.as_mut() {
             sync_recents_textures(renderer, layers);
         }
@@ -237,6 +244,13 @@ where
             de.recents_lift,
         );
     } else if let Some(tex) = texture_buffer::<R>(de.shell_tex.as_ref()) {
+        if std::env::var_os("DE_DISMISS_DEBUG").is_some() && de.recents_layered {
+            eprintln!(
+                "render: SHELL-TEX branch despite recents_layered! layers_none={} home_key={}",
+                de.navigation.recents_layers.is_none(),
+                de.home.layers_key().is_some()
+            );
+        }
         let slide_y = if de.navigation.drawer_slide.value > 0.5 {
             de.navigation.drawer_slide.value
         } else {
@@ -1085,12 +1099,26 @@ fn push_recents_layers<R: ImportAll>(
     };
     let card_rise = ((1.0 - pull) * (size.h as f32 * 0.22)).round() as i32;
     // Smithay consumes front-to-back: cards first, then static backdrop behind them.
+    let shift = nav
+        .recents_layout_shift
+        .as_ref()
+        .map(|(slot, spring, _)| (*slot, spring.value));
     for (i, cache) in layers.cards.iter().enumerate() {
         let mut card = de_ui::recents::card_at(size, i, pos);
         let mut alpha = pull;
         if let Some(l) = lift.filter(|l| l.index == i) {
             card.y += l.dy.round() as i32;
             alpha *= l.alpha(size);
+            if std::env::var_os("DE_DISMISS_DEBUG").is_some() {
+                eprintln!("lift render: card{i} dy={:.0} y={}", l.dy, card.y);
+            }
+        }
+        // Cards behind a just-removed slot start one stride to the right and
+        // slide into place, instead of jumping when the entry list shrinks.
+        if let Some((slot, dx)) = shift {
+            if i >= slot {
+                card.x += dx.round() as i32;
+            }
         }
         card.y += card_rise;
         if card.x + card.w < 0 || card.x > size.w || card.y + card.h < 0 || alpha <= 0.0 {

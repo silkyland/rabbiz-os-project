@@ -136,8 +136,30 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
                         );
                     }
                     let pos = de.navigation.recents_pager.pos();
+                    // Same card motion as the GPU path (`push_recents_layers`):
+                    // the dismiss drag/fly-off offsets and fades the lifted
+                    // card, and cards behind a just-removed slot slide over.
+                    let lift = de.card_lift(&de.recent_windows());
+                    let shift = de
+                        .navigation
+                        .recents_layout_shift
+                        .as_ref()
+                        .map(|(slot, spring, _)| (*slot, spring.value));
                     for (i, cache) in layers.cards.iter().enumerate() {
-                        let card = de_ui::recents::card_at(out_size, i, pos);
+                        let mut card = de_ui::recents::card_at(out_size, i, pos);
+                        let mut alpha = pull;
+                        if let Some(l) = lift.filter(|l| l.index == i) {
+                            card.y += l.dy.round() as i32;
+                            alpha *= l.alpha(out_size);
+                        }
+                        if let Some((slot, dx)) = shift {
+                            if i >= slot {
+                                card.x += dx.round() as i32;
+                            }
+                        }
+                        if alpha <= 0.0 {
+                            continue;
+                        }
                         if let Some(px) = cache.px.as_ref() {
                             canvas.blit_scaled(
                                 px,
@@ -147,7 +169,7 @@ pub fn composite_output(de: &De) -> Option<Pixels> {
                                     px.size.w,
                                     px.size.h,
                                 ),
-                                pull,
+                                alpha,
                             );
                         }
                     }
