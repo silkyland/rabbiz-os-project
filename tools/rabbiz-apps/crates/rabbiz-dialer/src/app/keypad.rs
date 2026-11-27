@@ -14,8 +14,26 @@ impl DialerApp {
     /// The keypad bottom sheet: scrim + rounded sheet + drag handle, then
     /// number display, caller-ID pill, 12 circular keys and the action row.
     pub(super) fn render_keypad_sheet(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
-        let sheet = self.keypad_sheet(w, h);
-        widgets::BottomSheet::render_backdrop_and_sheet(c, Size::new(w, h), sheet, t, "");
+        let sheet = self.keypad_sheet_anim(w, h);
+        let ease = self.sheet_ease();
+        // Scrim fades in with the sheet travel; the sheet body itself is
+        // the widget's rounded-top, squared-bottom shape.
+        let scrim_a = (t.scrim[3] as f32 * ease).round() as u8;
+        c.fill_rect(
+            Rect::new(0, 0, w, h),
+            [t.scrim[0], t.scrim[1], t.scrim[2], scrim_a],
+        );
+        c.fill_rounded_rect(sheet, 36.0, t.surface1);
+        let r_int = 36.min(sheet.h / 2);
+        if sheet.h > r_int {
+            c.fill_rect(
+                Rect::new(sheet.x, sheet.y + r_int, sheet.w, sheet.h - r_int),
+                t.surface1,
+            );
+        }
+        let handle = Rect::new(sheet.x + (sheet.w - 44) / 2, sheet.y + 12, 44, 5);
+        c.fill_rounded_rect(handle, 2.5, ui::state_layer(t, 0.35));
+        let _ = Size::new(w, h);
 
         // Number display (big, fit-shrunk), vertically centered in the
         // display band under the handle.
@@ -131,18 +149,18 @@ impl DialerApp {
             rr = Rect::new(r.x - dw / 2, r.y - dh / 2, r.w + dw, r.h + dh);
         }
         let radius = rr.h as f32 / 2.0;
-        // Borderless: the circle only gains a fill while pressed (and a
-        // hairline tonal wash on the pop so the key still reads as a key).
+        // Tonal circles: a quiet surface2 disc at rest, accent tonal wash
+        // while pressed — the M3 dialer key.
         if pressed {
-            c.fill_rounded_rect(rr, radius, alpha(t.accent, 0x30));
+            c.fill_rounded_rect(rr, radius, alpha(t.accent, 0x38));
         } else {
-            c.fill_rounded_rect(rr, radius, alpha(t.text, 0x08));
+            c.fill_rounded_rect(rr, radius, t.surface2);
         }
         ui::draw_centered(
             c,
             key.digit,
-            &ui::styled(38.0, 600, t.text),
-            Rect::new(rr.x, rr.y + rr.h / 2 - 30, rr.w, 42),
+            &ui::styled(36.0, 500, if pressed { t.accent } else { t.text }),
+            Rect::new(rr.x, rr.y + rr.h / 2 - 28, rr.w, 42),
         );
         match key.sub {
             SubLabel::None => {}

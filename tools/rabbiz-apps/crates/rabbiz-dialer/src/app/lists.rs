@@ -1,4 +1,5 @@
-//! Recents and Contacts list renderers — flat M3 rows + inset dividers.
+//! Favorites/Recents/Contacts list renderers — sectioned M3 rows over the
+//! shared item model (day/letter headers interleaved with data rows).
 
 use de_api::Pixels;
 use rabbiz_app_kit::{icons, text, ui, widgets, Canvas, Point, Rect, Size, Theme};
@@ -7,7 +8,7 @@ use crate::model::{self, CallDir};
 
 use super::chrome::{draw_avatar, draw_icon, entry_tint};
 use super::input::row_call_rect;
-use super::{now_unix, DialerApp, Hit};
+use super::{now_unix, DialerApp, Hit, Row};
 
 /// Blit `px` clipped to `clip` (Canvas has no scissor — same trick as
 /// contacts/notes): a half-scrolled row still reads correctly at the
@@ -46,8 +47,28 @@ fn label_clip(
     }
 }
 
+/// Section header band ("Today", "Yesterday", "A", "B", …) — small caps,
+/// dim accent ink, inset to the text column like the Google Phone log.
+fn section_header(c: &mut Canvas, t: &Theme, band: Rect, vp: Rect, label: &str) {
+    let Some(vr) = band.intersect(vp) else {
+        return;
+    };
+    if vr.h < 6 {
+        return;
+    }
+    label_clip(
+        c,
+        &label.to_uppercase(),
+        ui::styled(14.0, 700, t.accent_dim),
+        ui::MARGIN + 4,
+        band.y + 14,
+        band.w - ui::MARGIN * 2,
+        vp,
+    );
+}
+
 /// Flat list row shared by Recents + Contacts: leading 48px avatar,
-/// title + caption, trailing call-back icon button, inset divider.
+/// title + caption, trailing call-back tonal icon button, inset divider.
 #[allow(clippy::too_many_arguments)]
 fn flat_row(
     c: &mut Canvas,
@@ -75,39 +96,39 @@ fn flat_row(
     }
     let cy = row.y + row.h / 2;
     // Leading avatar (kit widget; skipped when the band is clipped away).
-    let av = Rect::new(row.x + 16, cy - 24, 48, 48);
+    let av = Rect::new(row.x + ui::MARGIN, cy - 24, 48, 48);
     if vp.contains(Point::new(av.x, av.y))
         && vp.contains(Point::new(av.right() - 1, av.bottom() - 1))
     {
         draw_avatar(c, av, name, tint);
     }
-    let tx = row.x + 80;
+    let tx = row.x + ui::MARGIN + 64;
     let call_r = row_call_rect(row);
-    let text_right = call_r.x - 8;
+    let text_right = call_r.x - 12;
     // Title line + trailing time caption (AOSP recents row anatomy).
     label_clip(
         c,
         name,
-        ui::styled(22.0, 600, name_col),
+        ui::styled(20.0, 500, name_col),
         tx,
-        row.y + 16,
-        text_right - tx - 90,
+        row.y + 14,
+        text_right - tx - 92,
         vp,
     );
     label_clip(
         c,
         trailing_text,
         ui::caption(t.text3),
-        text_right - 90,
-        row.y + 20,
+        text_right - 88,
+        row.y + 18,
         84,
         vp,
     );
     // Caption line: call-type icon + meta.
     let mut cap_x = tx;
     if let Some((ic, col)) = caption_icon {
-        if vp.contains(Point::new(cap_x + 8, cy + 10)) {
-            draw_icon(c, ic, 18.0, col, cap_x + 8, cy + 10);
+        if vp.contains(Point::new(cap_x + 8, cy + 12)) {
+            draw_icon(c, ic, 18.0, col, cap_x + 8, cy + 12);
         }
         cap_x += 26;
     }
@@ -116,7 +137,7 @@ fn flat_row(
         caption,
         ui::caption(caption_col),
         cap_x,
-        row.y + 52,
+        row.y + 50,
         text_right - cap_x,
         vp,
     );
@@ -135,13 +156,81 @@ fn flat_row(
         );
     }
     // Inset divider (from the text column to the right edge).
-    let dy = row.bottom() - 1;
+    let dy = row.bottom() + 2;
     if dy >= vp.y && dy < vp.bottom() {
         ui::divider_inset(c, t, tx, row.right() - ui::MARGIN, dy);
     }
 }
 
 impl DialerApp {
+    // ---------------- favorites tab ----------------
+
+    /// Favorite contact grid: 3-column tiles with a large avatar over a
+    /// tonal card, tap = quick call — the speed-dial surface.
+    pub(super) fn render_favorites(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
+        let favs = self.favorite_indices();
+        let vp = Rect::new(
+            0,
+            self.content_top(),
+            w,
+            self.content_bottom(w, h) - self.content_top(),
+        );
+        for (vis, &real) in favs.iter().enumerate() {
+            let ct = &self.contacts[real];
+            let card = self.fav_card_rect(w, h, vis);
+            let Some(vr) = card.intersect(vp) else {
+                continue;
+            };
+            if vr.h < 8 {
+                continue;
+            }
+            let pressed = self.pressed == Some(Hit::ConCall(real));
+            c.fill_rounded_rect(
+                card,
+                28.0,
+                if pressed { t.surface3 } else { t.surface1 },
+            );
+            if pressed {
+                ui::press_overlay(c, t, card, 28.0, 0.08);
+            }
+            // Avatar with a thin surface ring so the tile reads as one unit.
+            let av = Rect::new(card.x + card.w / 2 - 36, card.y + 22, 72, 72);
+            draw_avatar(c, av, &ct.name, ct.color);
+            ui::draw_centered(
+                c,
+                &ct.name,
+                &ui::styled(16.0, 600, t.text),
+                Rect::new(card.x + 8, card.y + 104, card.w - 16, 24),
+            );
+            ui::draw_centered(
+                c,
+                if ct.label.is_empty() { "Mobile" } else { &ct.label },
+                &ui::caption(t.text3),
+                Rect::new(card.x + 8, card.y + 130, card.w - 16, 20),
+            );
+        }
+        let content_h = self.favorites_height(favs.len());
+        ui::scrollbar(
+            c,
+            t,
+            Rect::new(w - 4, vp.y, 4, vp.h),
+            self.scroll,
+            content_h,
+        );
+        if favs.is_empty() {
+            widgets::EmptyState::render(
+                c,
+                vp,
+                t,
+                icons::STAR_OUTLINE,
+                "No favorites yet",
+                "Star contacts to pin them here for quick calling",
+            );
+        }
+    }
+
+    // ---------------- recents tab ----------------
+
     pub(super) fn render_recents(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
         // Filter chips (measured widths, 48px tall).
         let (all_r, mis_r, clear_r) = self.recents_chip_rects(w);
@@ -178,48 +267,53 @@ impl DialerApp {
             );
         }
 
-        let idxs = self.filtered_recents();
         let vp = self.recents_viewport(w, h);
+        let items = self.recents_items();
         let now = now_unix();
-        for (vis, &real) in idxs.iter().enumerate() {
-            let r = self.recents_row_rect(w, vis);
-            let e = &self.recents.entries[real];
-            let missed = e.dir == CallDir::Missed;
-            let name = if e.name.is_empty() {
-                model::format_number(&e.number)
-            } else {
-                e.name.clone()
-            };
-            let tint = entry_tint(&self.contacts, &e.name, &e.number);
-            let meta = format!("{} · {}", e.dir.label(), model::format_number(&e.number));
-            let cap_col = if missed { t.danger } else { t.text3 };
-            flat_row(
-                c,
-                t,
-                r,
-                vp,
-                &name,
-                tint,
-                if missed { t.danger } else { t.text },
-                Some((e.dir.icon(), if missed { t.danger } else { t.text3 })),
-                &meta,
-                cap_col,
-                &model::when_label(now, e.unix),
-                self.pressed == Some(Hit::RecRow(real)),
-                self.pressed == Some(Hit::RecCall(real)),
-            );
+        for (vis, item) in items.iter().enumerate() {
+            let r = self.item_rect(w, &items, vis, vp.y);
+            match item {
+                Row::Header(label) => section_header(c, t, r, vp, label),
+                Row::Recent(real) => {
+                    let e = &self.recents.entries[*real];
+                    let missed = e.dir == CallDir::Missed;
+                    let name = if e.name.is_empty() {
+                        model::format_number(&e.number)
+                    } else {
+                        e.name.clone()
+                    };
+                    let tint = entry_tint(&self.contacts, &e.name, &e.number);
+                    let meta = format!("{} · {}", e.dir.label(), model::format_number(&e.number));
+                    let cap_col = if missed { t.danger } else { t.text3 };
+                    flat_row(
+                        c,
+                        t,
+                        r,
+                        vp,
+                        &name,
+                        tint,
+                        if missed { t.danger } else { t.text },
+                        Some((e.dir.icon(), if missed { t.danger } else { t.text3 })),
+                        &meta,
+                        cap_col,
+                        &model::when_label(now, e.unix),
+                        self.pressed == Some(Hit::RecRow(*real)),
+                        self.pressed == Some(Hit::RecCall(*real)),
+                    );
+                }
+                Row::Contact(_) => {}
+            }
         }
 
         // Scrollbar + empty state.
-        let content_h = idxs.len() as i32 * super::REC_PITCH;
         ui::scrollbar(
             c,
             t,
             Rect::new(w - 4, vp.y, 4, vp.h),
             self.scroll,
-            content_h,
+            Self::items_height(&items),
         );
-        if idxs.is_empty() {
+        if items.is_empty() {
             widgets::EmptyState::render(
                 c,
                 vp,
@@ -245,92 +339,50 @@ impl DialerApp {
         }
     }
 
+    // ---------------- contacts tab ----------------
+
     pub(super) fn render_contacts(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
-        // Favorites strip — capped at 3 fixed cards (no offscreen overflow).
-        if self.show_favorites() {
-            ui::draw_text(
-                c,
-                "FAVORITES",
-                &ui::styled(14.0, 600, t.text3),
-                ui::MARGIN,
-                self.content_top() + 4,
-                Some(w - ui::MARGIN * 2),
-            );
-            for (i, ct) in self
-                .contacts
-                .iter()
-                .filter(|ct| ct.favorite)
-                .take(3)
-                .enumerate()
-            {
-                let card = self.fav_card_rect(w, i);
-                let real = self.contact_index(ct);
-                let pressed = self.pressed == Some(Hit::ConCall(real));
-                c.fill_rounded_rect(card, 24.0, if pressed { t.surface3 } else { t.surface1 });
-                draw_avatar(
-                    c,
-                    Rect::new(card.x + card.w / 2 - 28, card.y + 12, 56, 56),
-                    &ct.name,
-                    ct.color,
-                );
-                ui::draw_centered(
-                    c,
-                    &ct.name,
-                    &ui::styled(15.0, 600, t.text),
-                    Rect::new(card.x + 4, card.y + 74, card.w - 8, 20),
-                );
+        let vp = self.contacts_viewport(w, h);
+        let items = self.contacts_items();
+        for (vis, item) in items.iter().enumerate() {
+            let r = self.item_rect(w, &items, vis, vp.y);
+            match item {
+                Row::Header(label) => section_header(c, t, r, vp, label),
+                Row::Contact(real) => {
+                    let ct = &self.contacts[*real];
+                    let meta = if ct.label.is_empty() {
+                        model::format_number(&ct.number)
+                    } else {
+                        format!("{} · {}", ct.label, model::format_number(&ct.number))
+                    };
+                    flat_row(
+                        c,
+                        t,
+                        r,
+                        vp,
+                        &ct.name,
+                        ct.color,
+                        t.text,
+                        None,
+                        &meta,
+                        t.text3,
+                        "",
+                        self.pressed == Some(Hit::ConRow(*real)),
+                        self.pressed == Some(Hit::ConCall(*real)),
+                    );
+                }
+                Row::Recent(_) => {}
             }
         }
 
-        ui::draw_text(
-            c,
-            if self.query.trim().is_empty() {
-                "ALL CONTACTS"
-            } else {
-                "RESULTS"
-            },
-            &ui::styled(14.0, 600, t.text3),
-            ui::MARGIN,
-            self.contacts_rows_label_y(),
-            Some(w - ui::MARGIN * 2),
-        );
-
-        let vp = self.contacts_viewport(w, h);
-        let list = self.filtered_contacts();
-        for (vis, ct) in list.iter().enumerate() {
-            let r = self.contact_row_rect(w, vis);
-            let real = self.contact_index(ct);
-            let meta = if ct.label.is_empty() {
-                model::format_number(&ct.number)
-            } else {
-                format!("{} · {}", ct.label, model::format_number(&ct.number))
-            };
-            flat_row(
-                c,
-                t,
-                r,
-                vp,
-                &ct.name,
-                ct.color,
-                t.text,
-                None,
-                &meta,
-                t.text3,
-                "",
-                self.pressed == Some(Hit::ConRow(real)),
-                self.pressed == Some(Hit::ConCall(real)),
-            );
-        }
-
-        let content_h = list.len() as i32 * super::CON_PITCH;
         ui::scrollbar(
             c,
             t,
             Rect::new(w - 4, vp.y, 4, vp.h),
             self.scroll,
-            content_h,
+            Self::items_height(&items),
         );
-        if list.is_empty() {
+        if items.is_empty() {
             widgets::EmptyState::render(
                 c,
                 vp,

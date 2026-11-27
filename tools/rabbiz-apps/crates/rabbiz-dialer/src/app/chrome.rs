@@ -169,17 +169,22 @@ impl DialerApp {
         );
     }
 
-    /// Page switcher: M3 segmented control (Recents | Contacts).
-    pub(super) fn render_tabs(&mut self, c: &mut Canvas, t: &Theme, w: i32) {
-        let bar = self.tabs_rect(w);
-        let labels: Vec<&str> = Tab::ALL.iter().map(|t| t.label()).collect();
-        let active = Tab::ALL.iter().position(|x| *x == self.tab).unwrap_or(0);
-        widgets::segmented(c, t, bar, &labels, active);
+    /// M3 navigation bar (Favorites | Recents | Contacts) pinned to the
+    /// bottom edge — the kit widget already draws the active tonal pill.
+    pub(super) fn render_navbar(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
+        let bar = self.navbar_rect(w, h);
+        let tabs: Vec<(&str, &str)> = Tab::ALL.iter().map(|t| (t.icon(), t.label())).collect();
+        let active = Tab::ALL.iter().position(|x| *x == self.tab).unwrap_or(1);
+        widgets::BottomTabBar::render_with_icons(c, bar, t, &tabs, active);
     }
 
-    /// Trailing dialpad FAB opening the keypad sheet.
+    /// Trailing dialpad FAB opening the keypad sheet — floats above the
+    /// nav bar with a soft contact shadow so it reads as elevated.
     pub(super) fn render_fab(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
         let r = self.fab_rect(w, h);
+        // Cheap elevation: a blurred-ish shadow disc behind the FAB body.
+        let shadow = Rect::new(r.x + 3, r.y + 6, r.w, r.h);
+        c.fill_rounded_rect(shadow, 28.0, ui::with_alpha(t.shadow, 0x30));
         widgets::fab(
             c,
             t,

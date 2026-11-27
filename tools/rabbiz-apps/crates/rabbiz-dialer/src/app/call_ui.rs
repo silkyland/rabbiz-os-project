@@ -1,5 +1,7 @@
-//! In-call screen renderer (caller card, toggle grid, incoming actions,
-//! DTMF pad).
+//! In-call screen renderer — a full-height gradient tinted by the
+//! caller's contact color (dark plum at the bottom, tint bleeding in from
+//! the status bar), the identity in open air (no containing card), the
+//! 2x3 tonal control grid, incoming answer/decline circles, DTMF pad.
 
 use rabbiz_app_kit::{icons, ui, Canvas, Rect, Theme};
 
@@ -40,13 +42,31 @@ impl DialerApp {
         };
         let cx = w / 2;
 
-        // Caller card: a surface panel so the avatar+identity sit on a real
-        // container instead of the flat page bg.
-        let card = self.caller_card(w);
-        c.fill_rounded_rect(card, 36.0, t.surface1);
+        // Full-height tinted gradient: the contact color bleeds in from
+        // the top edge and dissolves into the page background by ~60% of
+        // the screen height. Drawn as horizontal strips (fill_rect only).
+        let zone = self.caller_zone(w);
+        let top_col = mix(t.bg, tint, 0.42);
+        // One strip per ~4px row — fine enough that the falloff reads as a
+        // real gradient, not banding (scanline fills are nearly free).
+        let strips = (h / 4).max(64);
+        for i in 0..strips {
+            let f0 = i as f32 / strips as f32;
+            // quadratic falloff — strong tint at the very top, gone early.
+            let m = (1.0 - f0 / 0.62).max(0.0);
+            let col = mix(t.bg, top_col, m * m);
+            let y0 = h * i / strips;
+            let y1 = h * (i + 1) / strips;
+            c.fill_rect(Rect::new(0, y0, w, (y1 - y0).max(1)), col);
+        }
 
-        // Big centered avatar.
-        let av = Rect::new(cx - 66, card.y + 42, 132, 132);
+        // Big centered avatar with a soft tonal halo ring.
+        let av = Rect::new(cx - 75, zone.y + 28, 150, 150);
+        c.fill_rounded_rect(
+            Rect::new(av.x - 8, av.y - 8, av.w + 16, av.h + 16),
+            (av.h + 16) as f32 / 2.0,
+            alpha(tint, 0x30),
+        );
         draw_avatar(c, av, &name, tint);
 
         let display_name = if name.is_empty() {
@@ -57,15 +77,15 @@ impl DialerApp {
         ui::draw_centered(
             c,
             &display_name,
-            &ui::styled(30.0, 600, t.text),
-            Rect::new(card.x + 16, av.bottom() + 20, card.w - 32, 44),
+            &ui::styled(34.0, 600, t.text),
+            Rect::new(zone.x + 8, av.bottom() + 22, zone.w - 16, 48),
         );
         if !name.is_empty() {
             ui::draw_centered(
                 c,
                 &model::format_number(&number),
-                &ui::caption(t.text3),
-                Rect::new(card.x + 16, av.bottom() + 68, card.w - 32, 28),
+                &ui::styled(18.0, 400, t.text2),
+                Rect::new(zone.x + 8, av.bottom() + 74, zone.w - 16, 28),
             );
         }
 
@@ -75,7 +95,7 @@ impl DialerApp {
             c,
             &status,
             &ui::styled(24.0, if active { 600 } else { 400 }, st_col),
-            Rect::new(card.x + 16, card.bottom() - 60, card.w - 32, 40),
+            Rect::new(zone.x + 8, zone.bottom() - 48, zone.w - 16, 40),
         );
 
         if dtmf_open {

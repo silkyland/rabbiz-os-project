@@ -15,7 +15,7 @@ mod lists;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use rabbiz_app_kit::{AppEvent, AppFrame, AppState, Canvas, TextInputCtl, Theme};
+use rabbiz_app_kit::{AppEvent, AppFrame, AppState, Canvas, Rect, TextInputCtl, Theme};
 
 use crate::backend::{self, Backend, BackendKind};
 use crate::contacts;
@@ -29,29 +29,51 @@ pub(super) const POP_S: f32 = 0.18;
 pub(super) const PRESS_SHRINK: f32 = 1.0 - de_design::motion::PRESS_SCALE;
 
 // Row metrics (pitch includes the gap).
-pub(super) const REC_PITCH: i32 = 100;
-pub(super) const REC_ROW_H: i32 = 96;
-pub(super) const CON_PITCH: i32 = 100;
-pub(super) const CON_ROW_H: i32 = 96;
+pub(super) const ROW_PITCH: i32 = 92;
+pub(super) const ROW_H: i32 = 88;
 
-/// Visible pages — the keypad is no longer a tab: it is a bottom-sheet
-/// overlay opened from the dialpad FAB, like the AOSP Phone app where the
-/// call log is the hero surface.
+/// Visible pages — M3 bottom-navigation destinations. The keypad is not a
+/// tab: it is a bottom-sheet overlay opened from the dialpad FAB, like the
+/// AOSP Phone app where the call log is the hero surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Tab {
+    Favorites,
     Recents,
     Contacts,
 }
 
 impl Tab {
-    pub(super) const ALL: [Tab; 2] = [Tab::Recents, Tab::Contacts];
+    pub(super) const ALL: [Tab; 3] = [Tab::Favorites, Tab::Recents, Tab::Contacts];
     pub(super) fn label(self) -> &'static str {
         match self {
+            Tab::Favorites => "Favorites",
             Tab::Recents => "Recents",
             Tab::Contacts => "Contacts",
         }
     }
+    pub(super) fn icon(self) -> &'static str {
+        match self {
+            Tab::Favorites => rabbiz_app_kit::icons::STAR,
+            Tab::Recents => rabbiz_app_kit::icons::HISTORY,
+            Tab::Contacts => rabbiz_app_kit::icons::GROUP,
+        }
+    }
 }
+
+/// One visual unit in a scrolling list — section headers interleave with
+/// data rows, so hit-testing and scrolling share a single geometry walk.
+#[derive(Debug, Clone, PartialEq)]
+pub(super) enum Row {
+    /// Day/letter section header band.
+    Header(String),
+    /// Index into `recents.entries`.
+    Recent(usize),
+    /// Index into `contacts`.
+    Contact(usize),
+}
+
+/// Section header band height (caption baseline + breathing room).
+pub(super) const HEADER_H: i32 = 44;
 
 /// Everything the finger can land on. Copy so `pressed` can snapshot it.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -102,6 +124,8 @@ pub struct DialerApp {
     pub(super) call: Option<CallSession>,
     /// Keypad bottom-sheet overlay (opened by the dialpad FAB).
     pub(super) keypad_open: bool,
+    /// Sheet slide-in progress 0→1 (spring-ish ease-out over ~240 ms).
+    pub(super) sheet_anim: f32,
     pub(super) pressed: Option<Hit>,
     /// Release "pop" animation: (key index, elapsed s).
     pub(super) pop: Option<(usize, f32)>,
@@ -109,6 +133,9 @@ pub struct DialerApp {
     pub(super) scroll: i32,
     pub(super) max_scroll: i32,
     pub(super) drag: Option<(i32, i32, bool)>,
+    /// Long-press backspace repeat: seconds the bksp key has been held;
+    /// after the 0.5 s delay digits delete every 60 ms (AOSP behavior).
+    pub(super) bksp_hold: f32,
     pub(super) status: String,
     /// Wall-clock anchor: the kit only delivers `Tick` while `animating`
     /// was set, so call progression, the elapsed timer and pop animation
@@ -137,11 +164,13 @@ impl DialerApp {
             contacts: contacts::resolved(),
             call: None,
             keypad_open,
+            sheet_anim: 0.0,
             pressed: None,
             pop: None,
             scroll: 0,
             max_scroll: 0,
             drag: None,
+            bksp_hold: 0.0,
             status: String::new(),
             last_instant: None,
             vp: (720, 1600),
@@ -210,6 +239,32 @@ impl DialerApp {
                 self.pop = None;
             }
         }
+        // Sheet slide: ease-out toward open/closed; small snap window.
+        let target = if self.keypad_open { 1.0 } else { 0.0 };
+        if (self.sheet_anim - target).abs() > 0.001 {
+            let dir = if target > self.sheet_anim { 1.0 } else { -1.0 };
+            self.sheet_anim = (self.sheet_anim + dir * dt / 0.24).clamp(0.0, 1.0);
+        }
+        // Long-press backspace: after the initial hold delay, delete one
+        // digit per repeat interval until the key is released.
+        if self.pressed == Some(Hit::Bksp) && self.call.is_none() && self.keypad_open {
+            self.bksp_hold += dt;
+            if self.bksp_hold > 0.5 {
+                let reps = ((self.bksp_hold - 0.5) / 0.06) as usize;
+                let prev = ((self.bksp_hold - dt - 0.5).max(0.0) / 0.06) as usize;
+                for _ in prev..reps {
+                    self.number.pop();
+                }
+            }
+        } else {
+            self.bksp_hold = 0.0;
+        }
+    }
+
+    /// Ease-out cubic for the sheet travel (fast start, soft landing).
+    pub(super) fn sheet_ease(&self) -> f32 {
+        let x = self.sheet_anim.clamp(0.0, 1.0);
+        1.0 - (1.0 - x).powi(3)
     }
 
     // ---------------- actions ----------------
@@ -348,34 +403,24 @@ impl DialerApp {
             .collect()
     }
 
-    pub(super) fn filtered_contacts(&self) -> Vec<&Contact> {
-        self.contacts
-            .iter()
-            .filter(|c| model::contact_matches(c, &self.query))
-            .collect()
-    }
-
-    pub(super) fn contact_index(&self, ct: &Contact) -> usize {
-        self.contacts
-            .iter()
-            .position(|x| x.number == ct.number && x.name == ct.name)
-            .unwrap_or(0)
-    }
-
     fn update_scroll_limits(&mut self, w: i32, h: i32) {
-        let (vp_h, count, pitch) = match self.tab {
+        let (vp_h, content) = match self.tab {
+            Tab::Favorites => {
+                let top = self.content_top();
+                let vp_h = self.content_bottom(w, h) - top;
+                (vp_h, self.favorites_height(self.favorite_indices().len()))
+            }
             Tab::Recents => {
                 let vp = self.recents_viewport(w, h);
-                (vp.h, self.filtered_recents().len() as i32, REC_PITCH)
+                (vp.h, Self::items_height(&self.recents_items()))
             }
             Tab::Contacts => {
                 let vp = self.contacts_viewport(w, h);
-                (vp.h, self.filtered_contacts().len() as i32, CON_PITCH)
+                (vp.h, Self::items_height(&self.contacts_items()))
             }
         };
         // +FAB clearance: the last row scrolls fully above the dialpad FAB.
-        let content = count * pitch + 108;
-        self.max_scroll = (content - vp_h).max(0);
+        self.max_scroll = (content + 108 - vp_h).max(0);
         self.scroll = self.scroll.clamp(0, self.max_scroll);
     }
 }
@@ -402,6 +447,10 @@ impl AppState for DialerApp {
                 let in_list = !self.keypad_open
                     && self.call.is_none()
                     && match self.tab {
+                        Tab::Favorites => {
+                            let top = self.content_top();
+                            Rect::new(0, top, w, self.content_bottom(w, h) - top).contains(pos)
+                        }
                         Tab::Recents => self.recents_viewport(w, h).contains(pos),
                         Tab::Contacts => self.contacts_viewport(w, h).contains(pos),
                     };
@@ -483,9 +532,11 @@ impl AppState for DialerApp {
         if self.recents_dirty {
             self.save_recents();
         }
+        let sheet_moving = (self.sheet_anim - if self.keypad_open { 1.0 } else { 0.0 }).abs() > 0.001;
+        let bksp_held = self.pressed == Some(Hit::Bksp) && self.keypad_open;
         AppFrame {
             dirty,
-            animating: self.call.is_some() || self.pop.is_some(),
+            animating: self.call.is_some() || self.pop.is_some() || sheet_moving || bksp_held,
             quit: false,
         }
     }
@@ -504,12 +555,15 @@ impl AppState for DialerApp {
 
         self.render_header(canvas, theme, w);
         self.render_search(canvas, theme, w);
-        self.render_tabs(canvas, theme, w);
         match self.tab {
+            Tab::Favorites => self.render_favorites(canvas, theme, w, h),
             Tab::Recents => self.render_recents(canvas, theme, w, h),
             Tab::Contacts => self.render_contacts(canvas, theme, w, h),
         }
-        if self.keypad_open {
+        self.render_navbar(canvas, theme, w, h);
+        // The sheet is a modal overlay: it slides over the nav bar and
+        // hides the FAB (its own action row replaces it).
+        if self.sheet_anim > 0.001 {
             self.render_keypad_sheet(canvas, theme, w, h);
         } else {
             self.render_fab(canvas, theme, w, h);
@@ -549,6 +603,10 @@ mod tests {
         let mut h = TestHarness::new(DialerApp::new(None));
         h.state_mut().recents = Recents::demo_seed(now_unix());
 
+        h.state_mut().tab = Tab::Favorites;
+        h.save_png(&dir.join("dialer-after-favorites.png"))
+            .expect("save favorites shot");
+
         h.state_mut().tab = Tab::Recents;
         h.save_png(&dir.join("dialer-after-recents.png"))
             .expect("save recents shot");
@@ -558,6 +616,7 @@ mod tests {
             .expect("save contacts shot");
 
         h.state_mut().keypad_open = true;
+        h.state_mut().sheet_anim = 1.0;
         h.state_mut().number = "0812345678".to_string();
         h.save_png(&dir.join("dialer-after-keypad.png"))
             .expect("save keypad shot");
@@ -574,5 +633,27 @@ mod tests {
         h.state_mut().call = Some(active);
         h.save_png(&dir.join("dialer-after-incall.png"))
             .expect("save in-call shot");
+
+        // Dark plum — the on-device product theme.
+        h.set_theme(de_design::tokens::DARK);
+        h.state_mut().call = None;
+        h.state_mut().tab = Tab::Recents;
+        h.save_png(&dir.join("dialer-dark-recents.png"))
+            .expect("save dark recents shot");
+        h.state_mut().tab = Tab::Favorites;
+        h.save_png(&dir.join("dialer-dark-favorites.png"))
+            .expect("save dark favorites shot");
+        h.state_mut().keypad_open = true;
+        h.state_mut().sheet_anim = 1.0;
+        h.save_png(&dir.join("dialer-dark-keypad.png"))
+            .expect("save dark keypad shot");
+        h.state_mut().keypad_open = false;
+        h.state_mut().sheet_anim = 0.0;
+        let mut dark_call = CallSession::outgoing("0865551234".to_string(), None);
+        dark_call.phase = CallPhase::Active;
+        dark_call.secs = 74.0;
+        h.state_mut().call = Some(dark_call);
+        h.save_png(&dir.join("dialer-dark-incall.png"))
+            .expect("save dark in-call shot");
     }
 }

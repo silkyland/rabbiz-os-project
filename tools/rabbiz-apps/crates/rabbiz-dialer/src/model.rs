@@ -424,6 +424,25 @@ pub fn when_label(now_unix: i64, then_unix: i64) -> String {
     format!("{}/{}", day_month(then_unix).0, day_month(then_unix).1)
 }
 
+/// Section-header bucket for the recents list: coarser than `when_label`
+/// ("Today"/"Yesterday"/weekday/"12/03") so rows group under one header
+/// per day, like the Google Phone call log.
+#[must_use]
+pub fn day_section_label(now_unix: i64, then_unix: i64) -> String {
+    let day = |t: i64| t.div_euclid(86_400);
+    let diff = day(now_unix) - day(then_unix);
+    if diff <= 0 {
+        return "Today".to_string();
+    }
+    if diff == 1 {
+        return "Yesterday".to_string();
+    }
+    if diff < 7 {
+        return weekday_name(then_unix);
+    }
+    format!("{}/{}", day_month(then_unix).0, day_month(then_unix).1)
+}
+
 #[allow(unsafe_code)]
 fn hhmm(unix: i64) -> String {
     // Local time via libc.

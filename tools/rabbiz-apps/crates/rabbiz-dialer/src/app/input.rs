@@ -6,20 +6,20 @@ use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3::ContentPu
 use crate::model::{self, CallDir, CallPhase, KEYS};
 
 use super::chrome::ring_rect;
-use super::{DialerApp, Hit, Tab, CON_PITCH, CON_ROW_H, REC_PITCH, REC_ROW_H};
+use super::{now_unix, DialerApp, Hit, Row, Tab, HEADER_H, ROW_H, ROW_PITCH};
 
 /// Circular dialpad-key diameter.
-pub(super) const KEY_D: i32 = 88;
+pub(super) const KEY_D: i32 = 96;
 /// Horizontal centre-to-centre spacing of pad columns.
-const KEY_COL_PITCH: i32 = 140;
+const KEY_COL_PITCH: i32 = 148;
 /// Vertical pitch of pad rows (circle + breathing room).
-const KEY_ROW_PITCH: i32 = 104;
+const KEY_ROW_PITCH: i32 = 108;
 /// Call FAB diameter on the keypad sheet / end-call circle in-call.
 const CALL_BTN_D: i32 = 96;
-/// In-call toggle circle diameter.
-const TOGGLE_D: i32 = 84;
-/// Favorites card geometry (fixed 3-column strip).
-const FAV_CARD_H: i32 = 104;
+/// In-call control circle diameter.
+const TOGGLE_D: i32 = 76;
+/// In-call control grid cell pitch (button + label breathing room).
+const TOGGLE_CELL: i32 = 128;
 
 /// Chip label width mirroring `widgets::chip_width` (theme-free — the
 /// label style is color-independent, so a dummy color measures the same).
@@ -38,7 +38,105 @@ pub(super) fn row_call_rect(row: Rect) -> Rect {
 }
 
 impl DialerApp {
+    // ---------------- list item model ----------------
+
+    /// Recents flattened into scrollable rows: a "Today/Yesterday/…" header
+    /// before each new day bucket, then the call entries under it.
+    pub(super) fn recents_items(&self) -> Vec<Row> {
+        let now = now_unix();
+        let mut out = Vec::new();
+        let mut last: Option<String> = None;
+        for &real in &self.filtered_recents() {
+            let e = &self.recents.entries[real];
+            let label = model::day_section_label(now, e.unix);
+            if last.as_ref() != Some(&label) {
+                out.push(Row::Header(label.clone()));
+                last = Some(label);
+            }
+            out.push(Row::Recent(real));
+        }
+        out
+    }
+
+    /// Contacts flattened into scrollable rows: alphabetical letter
+    /// headers over the name-sorted, query-filtered list.
+    pub(super) fn contacts_items(&self) -> Vec<Row> {
+        let mut idx: Vec<usize> = self
+            .contacts
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| model::contact_matches(c, &self.query))
+            .map(|(i, _)| i)
+            .collect();
+        idx.sort_by(|&a, &b| {
+            self.contacts[a]
+                .name
+                .to_lowercase()
+                .cmp(&self.contacts[b].name.to_lowercase())
+        });
+        let mut out = Vec::new();
+        let mut last: Option<String> = None;
+        for i in idx {
+            let letter = self.contacts[i]
+                .name
+                .chars()
+                .next()
+                .unwrap_or('#')
+                .to_uppercase()
+                .to_string();
+            if last.as_ref() != Some(&letter) {
+                out.push(Row::Header(letter.clone()));
+                last = Some(letter);
+            }
+            out.push(Row::Contact(i));
+        }
+        out
+    }
+
+    /// Favorites shown on the Favorites tab (contact indices, stable order).
+    pub(super) fn favorite_indices(&self) -> Vec<usize> {
+        self.contacts
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.favorite)
+            .filter(|(_, c)| model::contact_matches(c, &self.query))
+            .map(|(i, _)| i)
+            .collect()
+    }
+
+    /// Y of item `vis` in a list viewport, or the item's height band.
+    /// Items walk cumulative heights: headers are `HEADER_H`, rows `ROW_PITCH`.
+    pub(super) fn item_y(items: &[Row], vis: usize) -> (i32, i32) {
+        let mut y = 0;
+        for (i, item) in items.iter().enumerate() {
+            let h = match item {
+                Row::Header(_) => HEADER_H,
+                _ => ROW_PITCH,
+            };
+            if i == vis {
+                return (y, h);
+            }
+            y += h;
+        }
+        (y, 0)
+    }
+
+    pub(super) fn items_height(items: &[Row]) -> i32 {
+        items
+            .iter()
+            .map(|item| match item {
+                Row::Header(_) => HEADER_H,
+                _ => ROW_PITCH,
+            })
+            .sum()
+    }
+
     // ---------------- page chrome geometry ----------------
+
+    /// Bottom navigation bar rect.
+    pub(super) fn navbar_rect(&self, w: i32, h: i32) -> Rect {
+        widgets::BottomTabBar::layout(Size::new(w, h), ui::BOTTOM_SAFE)
+    }
 
     /// Shared SearchPill rect under the header.
     pub(super) fn search_rect(&self, w: i32) -> Rect {
@@ -50,23 +148,22 @@ impl DialerApp {
         )
     }
 
-    /// Recents|Contacts segmented bar.
-    pub(super) fn tabs_rect(&self, w: i32) -> Rect {
-        let s = self.search_rect(w);
-        Rect::new(ui::MARGIN, s.bottom() + 12, w - ui::MARGIN * 2, 48)
-    }
-
-    /// Top of the per-page content area (chips on Recents, favorites on
-    /// Contacts). Y-only; independent of `w`.
+    /// Top of the per-page content area. Y-only; independent of `w`.
     pub(super) fn content_top(&self) -> i32 {
-        // TOP_SAFE + 76 (search y) + 52 (pill) + 12 + 48 (tabs) + 12
-        ui::TOP_SAFE + 200
+        // TOP_SAFE + 76 (search y) + 52 (pill) + 16 gap
+        ui::TOP_SAFE + 144
     }
 
-    /// Dialpad FAB aligned to the trailing content edge.
+    /// Bottom edge usable by scrolling content (above the nav bar).
+    pub(super) fn content_bottom(&self, w: i32, h: i32) -> i32 {
+        self.navbar_rect(w, h).y - 8
+    }
+
+    /// Dialpad FAB floating above the nav bar, trailing edge.
     pub(super) fn fab_rect(&self, w: i32, h: i32) -> Rect {
-        let d = 84;
-        Rect::new(w - ui::MARGIN - d, h - ui::BOTTOM_SAFE - 16 - d, d, d)
+        let d = 88;
+        let nav = self.navbar_rect(w, h);
+        Rect::new(w - ui::MARGIN - d, nav.y - 20 - d, d, d)
     }
 
     // ---------------- recents ----------------
@@ -92,60 +189,54 @@ impl DialerApp {
         (all, mis, clear)
     }
 
-    /// Recents list viewport (below the filter chips).
+    /// Recents list viewport (below the filter chips, above the nav bar).
     pub(super) fn recents_viewport(&self, w: i32, h: i32) -> Rect {
         let top = self.content_top() + widgets::CHIP_H + 12;
-        Rect::new(0, top, w, h - ui::BOTTOM_SAFE - 16 - top)
-    }
-
-    pub(super) fn recents_row_rect(&self, w: i32, i: usize) -> Rect {
-        let top = self.recents_viewport(w, 0).y;
-        Rect::new(0, top + i as i32 * REC_PITCH - self.scroll, w, REC_ROW_H)
+        Rect::new(0, top, w, self.content_bottom(w, h) - top)
     }
 
     // ---------------- contacts ----------------
 
-    /// Favorites strip is only shown when not searching and favorites exist.
-    pub(super) fn show_favorites(&self) -> bool {
-        self.query.trim().is_empty() && self.contacts.iter().any(|c| c.favorite)
+    /// Contacts list viewport (below the search pill, above the nav bar).
+    pub(super) fn contacts_viewport(&self, w: i32, h: i32) -> Rect {
+        let top = self.content_top();
+        Rect::new(0, top, w, self.content_bottom(w, h) - top)
     }
 
-    /// One favorites-strip card — the strip is capped at 3 columns, so the
-    /// 4th+ favorite no longer paints off the edge.
-    pub(super) fn fav_card_rect(&self, w: i32, i: usize) -> Rect {
-        let card_w = (w - ui::MARGIN * 2 - 24) / 3;
+    /// Rect of item `vis` (scrolled) within a viewport-topped list.
+    pub(super) fn item_rect(&self, w: i32, items: &[Row], vis: usize, vp_top: i32) -> Rect {
+        let (y, h) = Self::item_y(items, vis);
+        let band = match items.get(vis) {
+            Some(Row::Header(_)) => h,
+            _ => ROW_H,
+        };
+        let _ = h;
+        Rect::new(0, vp_top + y - self.scroll, w, band)
+    }
+
+    // ---------------- favorites grid ----------------
+
+    /// One favorites-grid card: 3 columns, avatar+name tile.
+    pub(super) fn fav_card_rect(&self, w: i32, h: i32, i: usize) -> Rect {
+        let cols = 3;
+        let gap = 16;
+        let card_w = (w - ui::MARGIN * 2 - gap * (cols - 1)) / cols;
+        let card_h = 168;
+        let vp_top = self.content_top();
+        let row = i as i32 / cols;
+        let col = i as i32 % cols;
+        let _ = h;
         Rect::new(
-            ui::MARGIN + i as i32 * (card_w + 12),
-            self.content_top() + 30,
+            ui::MARGIN + col * (card_w + gap),
+            vp_top + row * (card_h + gap) - self.scroll,
             card_w,
-            FAV_CARD_H,
+            card_h,
         )
     }
 
-    /// Y of the "ALL CONTACTS"/"RESULTS" caption.
-    pub(super) fn contacts_rows_label_y(&self) -> i32 {
-        let top = self.content_top();
-        if self.show_favorites() {
-            top + 30 + FAV_CARD_H + 16
-        } else {
-            top + 4
-        }
-    }
-
-    /// Top of the contacts rows list (below the fixed favorites strip).
-    pub(super) fn contacts_rows_top(&self) -> i32 {
-        self.contacts_rows_label_y() + 26
-    }
-
-    /// Contacts list viewport = rows area only (favorites are fixed).
-    pub(super) fn contacts_viewport(&self, w: i32, h: i32) -> Rect {
-        let top = self.contacts_rows_top();
-        Rect::new(0, top, w, h - ui::BOTTOM_SAFE - 16 - top)
-    }
-
-    pub(super) fn contact_row_rect(&self, w: i32, i: usize) -> Rect {
-        let top = self.contacts_rows_top();
-        Rect::new(0, top + i as i32 * CON_PITCH - self.scroll, w, CON_ROW_H)
+    pub(super) fn favorites_height(&self, count: usize) -> i32 {
+        let rows = (count as i32 + 2) / 3;
+        rows * (168 + 16)
     }
 
     // ---------------- keypad sheet ----------------
@@ -158,9 +249,16 @@ impl DialerApp {
         widgets::BottomSheet::sheet_rect(Size::new(w, h), sh)
     }
 
-    /// 12 circular key rects inside the keypad sheet.
-    pub(super) fn pad_key_rects(&self, w: i32, h: i32) -> Vec<Rect> {
-        let sheet = self.keypad_sheet(w, h);
+    /// The sheet slid up by the open animation (0 ease = parked off-screen).
+    pub(super) fn keypad_sheet_anim(&self, w: i32, h: i32) -> Rect {
+        let mut r = self.keypad_sheet(w, h);
+        let travel = ((1.0 - self.sheet_ease()) * (r.h as f32 + 48.0)).round() as i32;
+        r.y += travel;
+        r
+    }
+
+    /// 12 circular key rects for a sheet rect (shared by dial pad + DTMF).
+    pub(super) fn key_rects_in(w: i32, sheet: Rect) -> Vec<Rect> {
         let grid_top = sheet.y + 148;
         (0..KEYS.len())
             .map(|i| {
@@ -172,14 +270,20 @@ impl DialerApp {
             .collect()
     }
 
-    /// In-call DTMF pad — same footprint as the dial pad.
+    /// 12 circular key rects inside the (animated) keypad sheet.
+    pub(super) fn pad_key_rects(&self, w: i32, h: i32) -> Vec<Rect> {
+        Self::key_rects_in(w, self.keypad_sheet_anim(w, h))
+    }
+
+    /// In-call DTMF pad — same footprint, but the sheet is static in-call
+    /// (the keypad-sheet open animation only applies to the dial pad).
     pub(super) fn dtmf_key_rects(&self, w: i32, h: i32) -> Vec<Rect> {
-        self.pad_key_rects(w, h)
+        Self::key_rects_in(w, self.keypad_sheet(w, h))
     }
 
     /// Bottom action row of the keypad sheet: (hide, call FAB, backspace).
     pub(super) fn action_row(&self, w: i32, h: i32) -> (Rect, Rect, Rect) {
-        let sheet = self.keypad_sheet(w, h);
+        let sheet = self.keypad_sheet_anim(w, h);
         let y = sheet.bottom() - ui::BOTTOM_SAFE - 124;
         let call = Rect::new(w / 2 - CALL_BTN_D / 2, y, CALL_BTN_D, CALL_BTN_D);
         let hide = Rect::new(w / 2 - 156, y + 24, 48, 48);
@@ -189,18 +293,18 @@ impl DialerApp {
 
     // ---------------- in-call geometry ----------------
 
-    /// Caller card (avatar + name + number + status) — a surface panel so
-    /// the avatar sits on a real container, not the flat page bg.
-    pub(super) fn caller_card(&self, w: i32) -> Rect {
-        Rect::new(ui::MARGIN, ui::TOP_SAFE + 40, w - ui::MARGIN * 2, 420)
+    /// Caller identity zone (avatar + name + number + status) — open air
+    /// over the tinted gradient, no containing card.
+    pub(super) fn caller_zone(&self, w: i32) -> Rect {
+        Rect::new(ui::MARGIN, ui::TOP_SAFE + 24, w - ui::MARGIN * 2, 400)
     }
 
-    /// 2×3 toggle grid: row 0 = the real toggles (mute/keypad/speaker),
-    /// row 1 = reserved slots (drawn disabled). Centers at w/2 ±128.
+    /// 2×3 control grid with labels: row 0 = (mute, keypad, speaker),
+    /// row 1 = reserved slots (drawn disabled). Centres at w/2 ±128.
     pub(super) fn in_call_grid(&self, w: i32, h: i32) -> [[Rect; 3]; 2] {
         let end = self.end_call_rect(w, h);
-        let row2_y = end.y - 32 - TOGGLE_D - 32;
-        let row1_y = row2_y - TOGGLE_D - 44;
+        let row2_y = end.y - 24 - TOGGLE_CELL;
+        let row1_y = row2_y - TOGGLE_CELL;
         let mk = |col: i32, y: i32| Rect::new(w / 2 + col - TOGGLE_D / 2, y, TOGGLE_D, TOGGLE_D);
         [
             [mk(-128, row1_y), mk(0, row1_y), mk(128, row1_y)],
@@ -215,7 +319,7 @@ impl DialerApp {
 
     /// Incoming-call (decline, answer) circles + caption bands under them.
     pub(super) fn incoming_rects(&self, w: i32, h: i32) -> (Rect, Rect, Rect, Rect) {
-        let by = h - ui::BOTTOM_SAFE - 300;
+        let by = h - ui::BOTTOM_SAFE - 280;
         let dec = Rect::new(w / 2 - 190, by, 120, 120);
         let ans = Rect::new(w / 2 + 70, by, 120, 120);
         let dec_lbl = Rect::new(dec.x - 20, by + 128, 160, 30);
@@ -237,6 +341,9 @@ impl DialerApp {
         if self.keypad_open {
             return self.keypad_hit(w, h, pos);
         }
+        if let Some(i) = widgets::BottomTabBar::hit(self.navbar_rect(w, h), pos, Tab::ALL.len()) {
+            return Some(Hit::Tab(Tab::ALL[i]));
+        }
         if self.backend.can_simulate_incoming() && ring_rect(w).contains(pos) {
             return Some(Hit::RingSim);
         }
@@ -247,20 +354,18 @@ impl DialerApp {
                 widgets::SearchHit::Field => Hit::Search,
             });
         }
-        if let Some(i) = widgets::segmented_hit(self.tabs_rect(w), pos, Tab::ALL.len()) {
-            return Some(Hit::Tab(Tab::ALL[i]));
-        }
         if self.fab_rect(w, h).contains(pos) {
             return Some(Hit::KeypadFab);
         }
         match self.tab {
+            Tab::Favorites => self.favorites_hit(w, h, pos),
             Tab::Recents => self.recents_hit(w, h, pos),
             Tab::Contacts => self.contacts_hit(w, h, pos),
         }
     }
 
     fn keypad_hit(&self, w: i32, h: i32, pos: Point) -> Option<Hit> {
-        let sheet = self.keypad_sheet(w, h);
+        let sheet = self.keypad_sheet_anim(w, h);
         if !sheet.contains(pos) {
             return Some(Hit::KeypadHide); // scrim tap dismisses the sheet
         }
@@ -282,6 +387,19 @@ impl DialerApp {
         Some(Hit::List) // inside the sheet: swallow, no fall-through
     }
 
+    fn favorites_hit(&self, w: i32, h: i32, pos: Point) -> Option<Hit> {
+        let vp = Rect::new(0, self.content_top(), w, self.content_bottom(w, h) - self.content_top());
+        if !vp.contains(pos) {
+            return None;
+        }
+        for (vis, &real) in self.favorite_indices().iter().enumerate() {
+            if self.fav_card_rect(w, h, vis).contains(pos) {
+                return Some(Hit::ConCall(real));
+            }
+        }
+        Some(Hit::List)
+    }
+
     fn recents_hit(&self, w: i32, h: i32, pos: Point) -> Option<Hit> {
         let (all, mis, clear) = self.recents_chip_rects(w);
         if all.contains(pos) {
@@ -297,49 +415,43 @@ impl DialerApp {
         if !vp.contains(pos) {
             return None;
         }
-        for (vis, &real) in self.filtered_recents().iter().enumerate() {
-            let r = self.recents_row_rect(w, vis);
+        let items = self.recents_items();
+        let vp_top = vp.y;
+        for (vis, item) in items.iter().enumerate() {
+            let Row::Recent(real) = item else {
+                continue;
+            };
+            let r = self.item_rect(w, &items, vis, vp_top);
             if !r.contains(pos) {
                 continue;
             }
             if row_call_rect(r).contains(pos) {
-                return Some(Hit::RecCall(real));
+                return Some(Hit::RecCall(*real));
             }
-            return Some(Hit::RecRow(real));
+            return Some(Hit::RecRow(*real));
         }
         Some(Hit::List)
     }
 
     fn contacts_hit(&self, w: i32, h: i32, pos: Point) -> Option<Hit> {
-        // Favorites strip (fixed, capped at 3, only when not searching).
-        if self.show_favorites() {
-            for (i, ct) in self
-                .contacts
-                .iter()
-                .filter(|c| c.favorite)
-                .take(3)
-                .enumerate()
-            {
-                if self.fav_card_rect(w, i).contains(pos) {
-                    return Some(Hit::ConCall(self.contact_index(ct)));
-                }
-            }
-        }
         let vp = self.contacts_viewport(w, h);
         if !vp.contains(pos) {
             return None;
         }
-        let list = self.filtered_contacts();
-        for (vis, ct) in list.iter().enumerate() {
-            let r = self.contact_row_rect(w, vis);
+        let items = self.contacts_items();
+        let vp_top = vp.y;
+        for (vis, item) in items.iter().enumerate() {
+            let Row::Contact(real) = item else {
+                continue;
+            };
+            let r = self.item_rect(w, &items, vis, vp_top);
             if !r.contains(pos) {
                 continue;
             }
-            let real = self.contact_index(ct);
             if row_call_rect(r).contains(pos) {
-                return Some(Hit::ConCall(real));
+                return Some(Hit::ConCall(*real));
             }
-            return Some(Hit::ConRow(real));
+            return Some(Hit::ConRow(*real));
         }
         Some(Hit::List)
     }
