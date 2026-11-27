@@ -18,8 +18,16 @@ if [ "$ACTION" = "fp-unlock" ] && [ -w /sys/kernel/a21s_fp/trigger_unlock ]; the
   printf '1\n' > /sys/kernel/a21s_fp/trigger_unlock 2>/dev/null || true
 fi
 
-RABBIZ_UID="$(id -u rabbiz 2>/dev/null || echo 1001)"
-RUNTIME_DIR="/run/user/${RABBIZ_UID}"
+# Never touch user-owned /run/user/<uid> paths as root (SVC-001).
+RABBIZ_USER="rabbiz"
+RABBIZ_UID="$(id -u "$RABBIZ_USER" 2>/dev/null || echo 1001)"
+if [ "$(id -u)" -eq 0 ]; then
+  exec runuser -u "$RABBIZ_USER" -- env \
+    XDG_RUNTIME_DIR="/run/user/${RABBIZ_UID}" \
+    "$0" "$ACTION"
+fi
+
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${RABBIZ_UID}}"
 mkdir -p "$RUNTIME_DIR" 2>/dev/null || true
 
 # Power + Volume Up/Down is the screenshot combo (volume-keys.py). The Power press arrives first or
@@ -34,12 +42,9 @@ fi
 
 CMD_FILE="${RUNTIME_DIR}/a21s-power.cmd"
 NONCE="$(date +%s%N 2>/dev/null || date +%s)-$$"
-
-printf '%s:%s\n' "$ACTION" "$NONCE" > "$CMD_FILE"
-if [ "$(id -u)" -eq 0 ]; then
-  chown rabbiz:rabbiz "$CMD_FILE" 2>/dev/null || true
-  chmod 664 "$CMD_FILE" 2>/dev/null || true
-fi
+TMP_CMD="$(mktemp "${CMD_FILE}.tmp.XXXXXX")"
+printf '%s:%s\n' "$ACTION" "$NONCE" > "$TMP_CMD"
+mv -f "$TMP_CMD" "$CMD_FILE"
 
 # Failsafe hardware wake/sleep only when no shell owns power policy: under
 # rabbiz-de the compositor drives backlight + bl_power itself for every

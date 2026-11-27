@@ -1,6 +1,6 @@
 use de_api::Pixels;
 use rabbiz_app_kit::text::{self, LabelStyle};
-use rabbiz_app_kit::ui;
+use rabbiz_app_kit::{icons, ui, widgets};
 use rabbiz_app_kit::{Canvas, Point, Rect, Size, Theme};
 
 use crate::model::{
@@ -9,7 +9,7 @@ use crate::model::{
 
 use super::{
     Focus, Hit, SmsApp, View, BUBBLE_MAX_PCT, BUBBLE_PAD_X, BUBBLE_PAD_Y, DAY_SEP_H, FIELD_LINE_H,
-    GUTTER, ROW_GAP, ROW_H, RUN_GAP, RUN_SEP, SEND_W, STATE_H, TIME_CAPTION_H,
+    GUTTER, ROW_H, RUN_GAP, RUN_SEP, SEND_W, STATE_H, TIME_CAPTION_H,
 };
 
 // ---- Cached text rasterization ----
@@ -115,10 +115,9 @@ impl SmsApp {
         let w = size.w;
         let h = size.h;
 
-        // The list is always the backdrop: the thread slides over it during
-        // transitions (and is the only view when settled on the list).
-        self.render_list(canvas, theme, w, h);
-        if self.view != View::Thread {
+        canvas.fill_rect(Rect::new(0, 0, w, h), theme.bg);
+        if self.view == View::List {
+            self.render_list(canvas, theme, w, h);
             return;
         }
         match self.transition.as_ref().map(|t| (t.progress(), t.exit)) {
@@ -133,8 +132,7 @@ impl SmsApp {
                 if off <= 0 {
                     self.render_thread(canvas, theme, w, h);
                 } else {
-                    // Composite the thread on an offscreen canvas, then blit
-                    // it shifted right — the list shows through on the left.
+                    self.render_list(canvas, theme, w, h);
                     let mut tc = Canvas::filled(Size::new(w, h), theme.bg);
                     self.render_thread(&mut tc, theme, w, h);
                     canvas.blit(&tc.to_pixels(), Point::new(off, 0));
@@ -152,7 +150,7 @@ impl SmsApp {
         let max_bubble_w = content_w * BUBBLE_MAX_PCT / 100;
         let max_text_w = max_bubble_w - BUBBLE_PAD_X * 2;
         // Measure with the incoming-bubble color; metrics are color-independent.
-        let body_style = ui::body(theme.text);
+        let body_style = ui::styled(23.0, 400, theme.text);
         let now = Self::now_ts();
 
         let mut elems: Vec<Elem> = Vec::new();
@@ -216,82 +214,127 @@ impl SmsApp {
     // ================= list view =================
 
     fn render_list(&mut self, canvas: &mut Canvas, theme: &Theme, w: i32, h: i32) {
-        let header_bottom = ui::draw_header(canvas, theme, "Messages", &self.status);
+        let header_end = ui::draw_header(canvas, theme, "Messages", "");
+        ui::divider_inset(canvas, theme, ui::MARGIN, w - ui::MARGIN, header_end);
 
-        // "+ New message" pill under the header, right-aligned.
-        let new_r = Rect::new(w - ui::MARGIN - 190, header_bottom + 8, 190, 52);
-        self.new_msg_rect = new_r;
+        let bottom = h - ui::BOTTOM_SAFE;
+        let control_height = 56;
+        let compose = Rect::new(
+            w - ui::MARGIN - 180,
+            bottom - control_height - 12,
+            180,
+            control_height,
+        );
+        self.new_msg_rect = compose;
+        let area = Rect::new(0, header_end + 8, w, (compose.y - 20 - header_end).max(0));
+        self.list_area = area;
+        self.row_rects.clear();
+
+        let threads = self.threads();
+        let content_h = threads.len() as i32 * ROW_H;
+        self.list_scroll = clamp_scroll(self.list_scroll, content_h - area.h);
+        if !area.is_empty() && threads.is_empty() {
+            widgets::EmptyState::render(
+                canvas,
+                area,
+                theme,
+                icons::MESSAGE,
+                "No conversations",
+                "Start a conversation to send an SMS.",
+            );
+        } else if !area.is_empty() {
+            // A viewport-sized canvas clips rows at the toolbar and compose action.
+            let mut list = Canvas::filled(Size::new(area.w, area.h), theme.bg);
+            let name_style = ui::styled(23.0, 600, theme.text);
+            let preview_style = ui::caption(theme.text2);
+            let time_style = ui::caption(theme.text2);
+            let now = Self::now_ts();
+            let today = local_time(now);
+            let viewport = Rect::new(0, 0, area.w, area.h);
+            let first = (self.list_scroll / ROW_H) as usize;
+            for (i, (_, peer, last_idx)) in threads.iter().enumerate().skip(first) {
+                let y = i as i32 * ROW_H - self.list_scroll;
+                if y >= area.h {
+                    break;
+                }
+                let row = Rect::new(0, y, area.w, ROW_H);
+                let Some(visible) = row.intersect(viewport) else {
+                    continue;
+                };
+                self.row_rects.push((i, visible.translate(area.x, area.y)));
+                if self.pressed == Some(Hit::Row(i)) {
+                    ui::press_overlay(&mut list, theme, visible, 0.0, 0.10);
+                }
+
+                let m = &self.msgs[*last_idx];
+                let name = self.display_peer(peer);
+                let avatar = Rect::new(ui::MARGIN, y + 20, 52, 52);
+                let known = self.contacts.name_for(peer);
+                widgets::avatar(
+                    &mut list,
+                    known.unwrap_or(""),
+                    avatar,
+                    ui::avatar_tint(known.unwrap_or(peer)),
+                    theme.text,
+                );
+                let text_x = avatar.right() + 18;
+                let text_right = row.right() - ui::MARGIN;
+                let date = local_time(m.ts);
+                let when = if date.year == today.year && date.yday == today.yday {
+                    format_time(m.ts)
+                } else {
+                    day_label(m.ts, now)
+                };
+                let mut name_right = text_right;
+                if let Some(px) = label_px(&when, time_style, Some((w / 4).max(1)), 1) {
+                    name_right -= px.size.w + 12;
+                    list.blit(&px, Point::new(text_right - px.size.w, y + 18));
+                }
+                blit_label(
+                    &mut list,
+                    &name,
+                    name_style,
+                    text_x,
+                    y + 14,
+                    Some((name_right - text_x).max(1)),
+                    1,
+                );
+                blit_label(
+                    &mut list,
+                    &m.body,
+                    preview_style,
+                    text_x,
+                    y + 48,
+                    Some((text_right - text_x).max(1)),
+                    1,
+                );
+                ui::divider_inset(&mut list, theme, text_x, text_right, row.bottom() - 1);
+            }
+            canvas.blit(&list.to_pixels(), Point::new(area.x, area.y));
+            ui::scrollbar(
+                canvas,
+                theme,
+                Rect::new(area.right() - 8, area.y, 6, area.h),
+                self.list_scroll,
+                content_h,
+            );
+        }
+
         ui::draw_pill_button(
             canvas,
             theme,
-            new_r,
+            compose,
             "New message",
             true,
             self.pressed == Some(Hit::NewMsg),
         );
-
-        let threads = self.threads();
-        self.row_rects.clear();
-        let top = header_bottom + 76;
-        let avail = h - ui::BOTTOM_SAFE - top;
-        let visible = (avail / (ROW_H + ROW_GAP)).max(0) as usize;
-
-        if threads.is_empty() {
-            let msg = "No conversations yet.\nTap “New message” to write the first SMS.";
-            let st = ui::body(theme.text3);
-            if let Some(px) = label_px(msg, st, Some(w - ui::MARGIN * 2), usize::MAX) {
-                canvas.blit(&px, Point::new(ui::MARGIN, top + 40));
-            }
-            return;
-        }
-
-        let name_style = ui::styled(24.0, 600, theme.text);
-        let preview_style = ui::caption(theme.text2);
-        let time_style = ui::caption(theme.text3);
-        let now = Self::now_ts();
-        let ln = local_time(now);
-
-        for (i, (_, peer, last_idx)) in threads.iter().enumerate().take(visible) {
-            let m = &self.msgs[*last_idx];
-            let r = Rect::new(
-                ui::MARGIN,
-                top + i as i32 * (ROW_H + ROW_GAP),
-                w - ui::MARGIN * 2,
-                ROW_H,
-            );
-            self.row_rects.push(r);
-            ui::draw_card(canvas, theme, r, self.pressed == Some(Hit::Row(i)));
-
-            let name = self.display_peer(peer);
-            blit_label(
-                canvas,
-                &name,
-                name_style,
-                r.x + 20,
-                r.y + 14,
-                Some(r.w - 180),
-                1,
-            );
-            blit_label(
-                canvas,
-                &m.body,
-                preview_style,
-                r.x + 20,
-                r.y + 48,
-                Some(r.w - 190),
-                1,
-            );
-
-            let lt = local_time(m.ts);
-            let when = if lt.year == ln.year && lt.yday == ln.yday {
-                format_time(m.ts)
-            } else {
-                day_label(m.ts, now)
-            };
-            if let Some(px) = label_px(&when, time_style, None, 1) {
-                canvas.blit(&px, Point::new(r.x + r.w - 20 - px.size.w, r.y + 16));
-            }
-        }
+        widgets::Toast::render(
+            canvas,
+            Size::new(w, h),
+            ui::BOTTOM_SAFE + control_height + 24,
+            theme,
+            &self.status,
+        );
     }
 
     // ================= thread view =================
@@ -300,7 +343,7 @@ impl SmsApp {
     /// `(to_rect, body_rect, send_rect, msg_area)`.
     fn compose_layout(&self, theme: &Theme, w: i32, h: i32) -> (Rect, Rect, Rect, Rect) {
         let field_w = w - GUTTER * 2 - SEND_W - 12;
-        let body_style = ui::body(theme.text);
+        let body_style = ui::styled(22.0, 400, theme.text);
         let lines = if self.body_draft.trim().is_empty() {
             1
         } else {
@@ -313,32 +356,18 @@ impl SmsApp {
         let bottom = h - ui::BOTTOM_SAFE - 12; // bottom edge of the compose block
         let send_r = Rect::new(w - GUTTER - SEND_W, bottom - field_h, SEND_W, field_h);
         let body_r = Rect::new(GUTTER, bottom - field_h, field_w, field_h);
-        let mut top = body_r.y - 10;
+        let header_end = ui::TOP_SAFE + widgets::TopAppBar::HEIGHT;
         let to_r = if self.is_new {
-            let r = Rect::new(GUTTER, top - 52, w - GUTTER * 2, 52);
-            top = r.y - 10;
-            r
+            Rect::new(GUTTER, header_end + 12, w - GUTTER * 2, 52)
         } else {
             Rect::new(0, 0, 0, 0)
         };
-        let msg_top = ui::TOP_SAFE + 78;
-        let msg_area = Rect::new(0, msg_top, w, (top - 8 - msg_top).max(0));
+        let msg_top = header_end.max(to_r.bottom()) + 12;
+        let msg_area = Rect::new(0, msg_top, w, (body_r.y - 18 - msg_top).max(0));
         (to_r, body_r, send_r, msg_area)
     }
 
     fn render_thread(&mut self, canvas: &mut Canvas, theme: &Theme, w: i32, h: i32) {
-        // Header: back pill + peer name.
-        let back_r = Rect::new(GUTTER, ui::TOP_SAFE + 12, 116, 50);
-        self.back_rect = back_r;
-        ui::draw_pill_button(
-            canvas,
-            theme,
-            back_r,
-            "‹ Back",
-            false,
-            self.pressed == Some(Hit::Back),
-        );
-
         let title = if self.is_new {
             // Compose for a known contact shows their name; otherwise the
             // generic "New message" caption.
@@ -348,18 +377,12 @@ impl SmsApp {
         } else {
             self.display_peer(&self.peer_label)
         };
-        let title_style = ui::styled(28.0, 600, theme.text);
-        let tx = back_r.x + back_r.w + 16;
-        let max_tw = (w - ui::MARGIN - tx).max(40);
-        blit_label(
-            canvas,
-            &title,
-            title_style,
-            tx,
-            ui::TOP_SAFE + 22,
-            Some(max_tw),
-            1,
-        );
+        let bar = widgets::TopAppBar::layout(Size::new(w, h), ui::TOP_SAFE);
+        self.back_rect = widgets::TopAppBar::back_rect(bar);
+        widgets::TopAppBar::render(canvas, bar, theme, &title, true, None);
+        if self.pressed == Some(Hit::Back) {
+            ui::press_overlay(canvas, theme, self.back_rect, 24.0, 0.10);
+        }
 
         let (to_r, body_r, send_r, msg_area) = self.compose_layout(theme, w, h);
         self.to_rect = to_r;
@@ -369,6 +392,13 @@ impl SmsApp {
 
         self.draw_messages(canvas, theme, w, msg_area);
         self.draw_compose(canvas, theme, to_r, body_r, send_r);
+        widgets::Toast::render(
+            canvas,
+            Size::new(w, h),
+            h - msg_area.bottom(),
+            theme,
+            &self.status,
+        );
     }
 
     fn draw_messages(&mut self, canvas: &mut Canvas, theme: &Theme, w: i32, area: Rect) {
@@ -383,18 +413,19 @@ impl SmsApp {
         // y = content_h lands on the viewport bottom.
         let top_idx = layout.content_h - view_h - self.scroll;
 
-        let cap_style = ui::caption(theme.text3);
+        let mut messages = Canvas::filled(Size::new(area.w, area.h), theme.bg);
+        let cap_style = ui::caption(theme.text2);
         let state_style = ui::styled(16.0, 400, theme.text_on_accent);
 
         for elem in &layout.elems {
-            let ey = area.y + elem_y(elem) - top_idx;
-            if ey + elem_h(elem) < area.y || ey > area.y + area.h {
+            let ey = elem_y(elem) - top_idx;
+            if ey + elem_h(elem) <= 0 || ey >= area.h {
                 continue; // culled
             }
             match elem {
                 Elem::Day { label, .. } => {
                     if let Some(px) = label_px(label, cap_style, None, 1) {
-                        canvas.blit(&px, Point::new((w - px.size.w) / 2, ey + 4));
+                        messages.blit(&px, Point::new((w - px.size.w) / 2, ey + 4));
                     }
                 }
                 Elem::Time { right, label, .. } => {
@@ -404,7 +435,7 @@ impl SmsApp {
                         } else {
                             GUTTER
                         };
-                        canvas.blit(&px, Point::new(ex, ey));
+                        messages.blit(&px, Point::new(ex, ey));
                     }
                 }
                 Elem::Bubble {
@@ -418,21 +449,21 @@ impl SmsApp {
                     let bx = if *right { w - GUTTER - bw } else { GUTTER };
                     let br = Rect::new(bx, ey, *bw, *bh);
                     let bg = if *right { theme.accent } else { theme.surface1 };
-                    canvas.fill_rounded_rect(br, 20.0, bg);
+                    messages.fill_rounded_rect(br, 20.0, bg);
                     let fg = if *right {
                         theme.text_on_accent
                     } else {
                         theme.text
                     };
-                    let max_tw = bw - BUBBLE_PAD_X * 2;
+                    let max_tw = (w - GUTTER * 2) * BUBBLE_MAX_PCT / 100 - BUBBLE_PAD_X * 2;
                     let style = ui::styled(23.0, 400, fg);
                     if let Some(px) = label_px(&m.body, style, Some(max_tw), usize::MAX) {
-                        canvas.blit(&px, Point::new(bx + BUBBLE_PAD_X, ey + BUBBLE_PAD_Y));
+                        messages.blit(&px, Point::new(bx + BUBBLE_PAD_X, ey + BUBBLE_PAD_Y));
                     }
                     if m.outgoing {
                         let sl = state_label(m.state);
                         if let Some(px) = label_px(sl, state_style, None, 1) {
-                            canvas.blit(
+                            messages.blit(
                                 &px,
                                 Point::new(
                                     bx + bw - BUBBLE_PAD_X - px.size.w,
@@ -444,6 +475,7 @@ impl SmsApp {
                 }
             }
         }
+        canvas.blit(&messages.to_pixels(), Point::new(area.x, area.y));
     }
 
     fn draw_compose(
@@ -456,12 +488,17 @@ impl SmsApp {
     ) {
         if self.is_new && !to_r.is_empty() {
             let focused = self.focus == Focus::To;
-            ui::draw_card(canvas, theme, to_r, focused);
-            if focused {
-                canvas.fill_rounded_rect(to_r, 20.0, theme.surface3);
-            }
+            canvas.fill_rounded_rect(
+                to_r,
+                16.0,
+                if focused {
+                    theme.surface2
+                } else {
+                    theme.surface1
+                },
+            );
             let (shown, col) = if self.to_draft.is_empty() {
-                ("Phone number", theme.text3)
+                ("To: phone number", theme.text2)
             } else {
                 (self.to_draft.as_str(), theme.text)
             };
@@ -477,10 +514,15 @@ impl SmsApp {
         }
 
         let focused = self.focus == Focus::Body;
-        ui::draw_card(canvas, theme, body_r, focused);
-        if focused {
-            canvas.fill_rounded_rect(body_r, 20.0, theme.surface3);
-        }
+        canvas.fill_rounded_rect(
+            body_r,
+            24.0,
+            if focused {
+                theme.surface2
+            } else {
+                theme.surface1
+            },
+        );
         let max_tw = body_r.w - 40;
         if self.body_draft.trim().is_empty() {
             blit_label(

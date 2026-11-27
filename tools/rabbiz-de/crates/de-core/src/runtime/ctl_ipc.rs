@@ -30,15 +30,6 @@ pub(crate) enum CtlStream {
     Tcp(TcpStream),
 }
 
-impl CtlStream {
-    fn set_nonblocking(&self, nonblocking: bool) -> std::io::Result<()> {
-        match self {
-            Self::Unix(s) => s.set_nonblocking(nonblocking),
-            Self::Tcp(s) => s.set_nonblocking(nonblocking),
-        }
-    }
-}
-
 impl Read for CtlStream {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
@@ -64,9 +55,15 @@ impl Write for CtlStream {
     }
 }
 
+/// Maximum idle duration before a stalled `CtlClient` is evicted (`SVC-007`).
+const CTL_CLIENT_IDLE_TIMEOUT: Duration = Duration::from_secs(10);
+/// Maximum concurrent `--emu-listen` viewer/control clients (`SVC-007`).
+const MAX_EMU_CLIENTS: usize = 8;
+
 struct CtlClient {
     stream: CtlStream,
     rx_buf: Vec<u8>,
+    last_activity: Instant,
 }
 
 /// Bound non-blocking Unix (+ optional TCP) listener for runtime `rabbiz-de ctl` requests.
@@ -158,8 +155,14 @@ impl CtlIpc {
         })
     }
 
-    fn accept_pending(&mut self) {
+    fn evict_idle_clients(&mut self, now: Instant) {
+        self.clients
+            .retain(|c| now.saturating_duration_since(c.last_activity) < CTL_CLIENT_IDLE_TIMEOUT);
+    }
+
+    fn accept_pending(&mut self, now: Instant) {
         const MAX_CLIENTS: usize = 64;
+        self.evict_idle_clients(now);
         for _ in 0..8 {
             if self.clients.len() >= MAX_CLIENTS {
                 break;
@@ -169,6 +172,7 @@ impl CtlIpc {
                     self.clients.push(CtlClient {
                         stream: CtlStream::Unix(s),
                         rx_buf: Vec::new(),
+                        last_activity: now,
                     });
                 }
             } else {
@@ -184,6 +188,7 @@ impl CtlIpc {
                     self.clients.push(CtlClient {
                         stream: CtlStream::Tcp(s),
                         rx_buf: Vec::new(),
+                        last_activity: now,
                     });
                 }
             } else {
@@ -193,9 +198,11 @@ impl CtlIpc {
     }
 
     /// Accept new connections and drain any complete `\n`-terminated requests
-    /// without blocking. Partial/stalled clients remain buffered across ticks.
+    /// without blocking. Stalled clients idle longer than `CTL_CLIENT_IDLE_TIMEOUT`
+    /// are evicted so they cannot exhaust `MAX_CLIENTS` (`SVC-007`).
     pub(crate) fn poll_ready_requests(&mut self) -> Vec<(CtlStream, String)> {
-        self.accept_pending();
+        let now = Instant::now();
+        self.accept_pending(now);
         let mut ready = Vec::new();
         let mut i = 0;
         let mut tmp = [0_u8; 4096];
@@ -209,6 +216,7 @@ impl CtlIpc {
                         break;
                     }
                     Ok(n) => {
+                        self.clients[i].last_activity = now;
                         if self.clients[i].rx_buf.len() + n > MAX_MESSAGE_BYTES + 1 {
                             drop_client = true;
                             break;
@@ -223,7 +231,14 @@ impl CtlIpc {
                             break;
                         }
                     }
-                    Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                    Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                        if now.saturating_duration_since(self.clients[i].last_activity)
+                            >= CTL_CLIENT_IDLE_TIMEOUT
+                        {
+                            drop_client = true;
+                        }
+                        break;
+                    }
                     Err(_) => {
                         drop_client = true;
                         break;
@@ -321,6 +336,9 @@ impl EmuFrameServer {
 
     fn accept_pending(&mut self) {
         for _ in 0..4 {
+            if self.clients.len() >= MAX_EMU_CLIENTS {
+                break;
+            }
             match self.listener.accept() {
                 Ok((stream, _)) => {
                     let _ = stream.set_nonblocking(true);
@@ -909,40 +927,44 @@ impl De {
         IpcResponse::err(id, "emu_feature_disabled")
     }
 
-    fn ctl_screenshot(&mut self, id: u64, save: bool) -> IpcResponse {
+    /// Compositor-side capture + PNG save shared by the ctl command and the
+    /// Quick Settings screenshot tile. Fires the flash/toast feedback when
+    /// `save` is set.
+    pub(crate) fn capture_and_save_screenshot(&mut self, save: bool) -> Result<(PathBuf, u32, u32), String> {
         let Some(px) = crate::composite::capture_output(self) else {
-            return IpcResponse::err(id, "no_frame_available");
+            return Err("no_frame_available".to_string());
         };
-        let png = match de_paint::encode_png(&px) {
-            Ok(bytes) => bytes,
-            Err(e) => return IpcResponse::err(id, format!("encode_png: {e}")),
-        };
+        let png = de_paint::encode_png(&px).map_err(|e| format!("encode_png: {e}"))?;
         let now_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |d| d.as_millis());
-        let path = screenshot_path(save, now_ms);
+        let path = screenshot_path(save, now_ms).map_err(str::to_string)?;
         if let Some(parent) = path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                return IpcResponse::err(id, format!("mkdir {}: {e}", parent.display()));
-            }
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("mkdir {}: {e}", parent.display()))?;
         }
-        if let Err(e) = std::fs::write(&path, png) {
-            return IpcResponse::err(id, format!("write {}: {e}", path.display()));
-        }
-        let path_str = path.to_string_lossy().into_owned();
+        std::fs::write(&path, png).map_err(|e| format!("write {}: {e}", path.display()))?;
         if save {
+            let path_str = path.to_string_lossy().into_owned();
             self.shot_fx.fire(&path_str, Instant::now());
             self.needs_present = true;
         }
-        IpcResponse::ok(
-            id,
-            Some(serde_json::json!({
-                "path": path_str,
-                "width": px.size.w,
-                "height": px.size.h,
-                "saved": save,
-            })),
-        )
+        Ok((path, px.size.w as u32, px.size.h as u32))
+    }
+
+    fn ctl_screenshot(&mut self, id: u64, save: bool) -> IpcResponse {
+        match self.capture_and_save_screenshot(save) {
+            Ok((path, w, h)) => IpcResponse::ok(
+                id,
+                Some(serde_json::json!({
+                    "path": path.to_string_lossy(),
+                    "width": w,
+                    "height": h,
+                    "saved": save,
+                })),
+            ),
+            Err(e) => IpcResponse::err(id, e),
+        }
     }
 
     fn ctl_state_snapshot(&self) -> ShellStateSnapshot {
@@ -1047,10 +1069,10 @@ fn map_panel_kind(panel: PanelKind) -> crate::panel_ui::PanelKind {
     }
 }
 
-/// Resolve the screenshot destination path:
+/// Resolve the screenshot destination path (`SVC-012` — never falls back to `/tmp`):
 /// - `save == true`: `$XDG_PICTURES_DIR/Screenshots` (or `$HOME/Pictures/Screenshots`), timestamped PNG.
-/// - `save == false`: `$XDG_RUNTIME_DIR/rabbiz-de-shot.png` (ephemeral, does not pollute Pictures).
-fn screenshot_path(save: bool, timestamp_ms: u128) -> PathBuf {
+/// - `save == false`: `$XDG_RUNTIME_DIR/rabbiz-de-shot.png` (ephemeral, fails closed if unset).
+fn screenshot_path(save: bool, timestamp_ms: u128) -> Result<PathBuf, &'static str> {
     if save {
         let pictures = std::env::var_os("XDG_PICTURES_DIR")
             .filter(|v| !v.is_empty())
@@ -1060,16 +1082,16 @@ fn screenshot_path(save: bool, timestamp_ms: u128) -> PathBuf {
                     .filter(|v| !v.is_empty())
                     .map(|h| PathBuf::from(h).join("Pictures"))
             })
-            .unwrap_or_else(|| PathBuf::from("/tmp"));
-        pictures
+            .ok_or("no_pictures_dir")?;
+        Ok(pictures
             .join("Screenshots")
-            .join(format!("Screenshot_{timestamp_ms}.png"))
+            .join(format!("Screenshot_{timestamp_ms}.png")))
     } else {
         let runtime = std::env::var_os("XDG_RUNTIME_DIR")
             .filter(|v| !v.is_empty())
             .map(PathBuf::from)
-            .unwrap_or_else(|| PathBuf::from("/tmp"));
-        runtime.join("rabbiz-de-shot.png")
+            .ok_or("xdg_runtime_dir_unset")?;
+        Ok(runtime.join("rabbiz-de-shot.png"))
     }
 }
 
@@ -1091,12 +1113,13 @@ mod tests {
 
     #[test]
     fn screenshot_paths_distinguish_saved_and_ephemeral() {
-        let saved = screenshot_path(true, 1_700_000_000_123);
-        assert!(saved.ends_with("Screenshots/Screenshot_1700000000123.png"));
-
-        let ephemeral = screenshot_path(false, 1_700_000_000_123);
-        assert!(ephemeral.ends_with("rabbiz-de-shot.png"));
-        assert_ne!(saved, ephemeral);
+        if let Ok(saved) = screenshot_path(true, 1_700_000_000_123) {
+            assert!(saved.ends_with("Screenshots/Screenshot_1700000000123.png"));
+            if let Ok(ephemeral) = screenshot_path(false, 1_700_000_000_123) {
+                assert!(ephemeral.ends_with("rabbiz-de-shot.png"));
+                assert_ne!(saved, ephemeral);
+            }
+        }
     }
 
     #[test]

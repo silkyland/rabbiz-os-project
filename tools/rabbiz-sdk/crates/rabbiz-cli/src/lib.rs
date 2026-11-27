@@ -518,8 +518,26 @@ pub fn avds_root_dir() -> PathBuf {
     std::env::temp_dir().join("rabbiz-sdk-avds")
 }
 
+/// Validate an AVD profile name (`[A-Za-z0-9._-]+`, rejecting traversal or leading `.`/`-`).
+#[must_use]
+pub fn is_valid_avd_name(name: &str) -> bool {
+    !name.is_empty()
+        && name.len() <= 128
+        && !name.starts_with('.')
+        && !name.starts_with('-')
+        && !name.contains("..")
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
 /// Create and save an [`AvdProfile`] inside `avds_root/<name>/avd.toml`.
 pub fn create_avd_in(avds_root: &Path, name: &str, device: &str) -> Result<AvdProfile, String> {
+    if !is_valid_avd_name(name) {
+        return Err(format!(
+            "invalid AVD name {name:?}: must match [A-Za-z0-9][A-Za-z0-9._-]* without '..'"
+        ));
+    }
     let profile = AvdProfile::for_device(name, device);
     let dir = avds_root.join(name);
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
@@ -582,7 +600,7 @@ pub fn build_qemu_vm_command(profile: &AvdProfile, image_qcow2: &Path) -> Vec<St
         format!("file={},if=virtio,format=qcow2", image_qcow2.display()),
         "-netdev".to_string(),
         format!(
-            "user,id=net0,hostfwd=tcp::{}-:5910,hostfwd=tcp::{}-:5911,hostfwd=tcp::{}-:22",
+            "user,id=net0,hostfwd=tcp:127.0.0.1:{}-:5910,hostfwd=tcp:127.0.0.1:{}-:5911,hostfwd=tcp:127.0.0.1:{}-:22",
             profile.emu_port, profile.ctl_port, profile.ssh_port
         ),
         "-device".to_string(),
@@ -735,13 +753,10 @@ pub static EMU_MCP_TOOLS: &[Tool] = &[
         description: "Capture a PNG screenshot of the emulator (phone screen + 320px control panel) to disk.",
         input_schema: r#"{"type":"object","properties":{"path":{"type":"string"}}}"#,
         handler: |args| {
-            let path = args
-                .get("path")
-                .and_then(|v| v.as_str())
-                .map_or_else(
-                    || std::env::temp_dir().join("rabbiz-emu-mcp-shot.png"),
-                    PathBuf::from,
-                );
+            let path = match args.get("path").and_then(|v| v.as_str()) {
+                Some(p) => PathBuf::from(p),
+                None => mcp_unique_temp_dir("shot")?.join("rabbiz-emu-mcp-shot.png"),
+            };
             let mut viewer = rabbiz_emu_viewer::ViewerState::new(
                 "127.0.0.1:5910".to_string(),
                 "127.0.0.1:5911".to_string(),
@@ -761,15 +776,13 @@ pub static EMU_MCP_TOOLS: &[Tool] = &[
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| "missing project_dir".to_string())?;
             let p_path = PathBuf::from(project_dir);
-            let rbz_out = std::env::temp_dir().join("rabbiz-mcp-build.rbz");
+            let work_dir = mcp_unique_temp_dir("pack")?;
+            let rbz_out = work_dir.join("rabbiz-mcp-build.rbz");
             let meta = pack_rbz(&p_path, &rbz_out)?;
-            let data_home = args
-                .get("data_home")
-                .and_then(|v| v.as_str())
-                .map_or_else(
-                    || std::env::temp_dir().join("rabbiz-mcp-xdg"),
-                    PathBuf::from,
-                );
+            let data_home = match args.get("data_home").and_then(|v| v.as_str()) {
+                Some(d) => PathBuf::from(d),
+                None => work_dir.join("xdg"),
+            };
             let desktop = install_rbz_local(&rbz_out, &data_home)?;
             Ok(serde_json::json!({
                 "ok": true,
@@ -781,6 +794,33 @@ pub static EMU_MCP_TOOLS: &[Tool] = &[
         },
     },
 ];
+
+fn mcp_unique_temp_dir(tag: &str) -> Result<PathBuf, String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let base = std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    let dir = base.join(format!(
+        "rabbiz-mcp-{tag}-{}-{nanos}-{seq}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {e}", dir.display()))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
+    Ok(dir)
+}
 
 /// Re-export packaging helpers for `main.rs` CLI commands.
 pub fn cli_pack(dir: &Path, out: Option<&Path>) -> Result<(PathBuf, RbzMetadata), String> {

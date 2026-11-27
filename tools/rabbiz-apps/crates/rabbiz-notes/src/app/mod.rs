@@ -2,23 +2,32 @@ mod input;
 mod render;
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use de_design::motion::{bezier_eval, BEZIER_ENTER, STAGGER_MAX, STAGGER_MS};
 use de_paint::fonts::font_system;
 use rabbiz_app_kit::text::shape::Shaped;
 use rabbiz_app_kit::text::{LabelStyle, TextWrap};
-use rabbiz_app_kit::{ui, AppEvent, AppFrame, AppState, Canvas, Point, Rect, TextInputCtl, Theme};
+use rabbiz_app_kit::widgets::{FabSize, SearchPill, TopAppBar};
+use rabbiz_app_kit::{
+    ui, AppEvent, AppFrame, AppState, Canvas, Point, Rect, ScrollView, Size, TextInputCtl, Theme,
+};
 use wayland_protocols::wp::text_input::zv3::client::zwp_text_input_v3::ContentPurpose;
 
 use crate::model::{matching_indices, now_unix, Note, TextBuf};
 use crate::store as notes_store;
 use render::caret_geometry;
 
-pub(super) const ROW_H: i32 = 96;
-pub(super) const ROW_GAP: i32 = 12;
-pub(super) const SEARCH_H: i32 = 56;
-pub(super) const FAB_D: i32 = 56;
-pub(super) const EDIT_PAD: i32 = 20;
+/// Keep-style card height: title + 2-line preview + edited caption.
+pub(super) const ROW_H: i32 = 112;
+pub(super) const ROW_GAP: i32 = 4;
+pub(super) const SEARCH_H: i32 = SearchPill::HEIGHT;
+pub(super) const FAB_D: i32 = FabSize::Standard.px();
+/// Title field metrics (borderless Keep-style editor, first line of body).
+pub(super) const TITLE_SIZE: f32 = 30.0;
+pub(super) const TITLE_LH: f32 = 38.0;
+/// Vertical gap between the title block and the body block (content px).
+pub(super) const TITLE_BODY_GAP: i32 = 14;
 pub(super) const BODY_SIZE: f32 = 24.0;
 pub(super) const BODY_LH: f32 = 32.0;
 /// Stagger intro budget: STAGGER_MAX items x STAGGER_MS + settle tail.
@@ -44,6 +53,7 @@ pub(super) enum Hit {
     Delete,
     New,
     Search,
+    SearchClear,
     Row(u64), // note id
 }
 
@@ -55,16 +65,10 @@ pub(super) enum Pending {
     DefocusSearch,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DragKind {
-    List,
-    Editor,
-}
-
+/// Editor scroll drag (the list scrolls through `ScrollView` instead).
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Drag {
     pub(super) id: i32,
-    pub(super) kind: DragKind,
     pub(super) start_y: i32,
     pub(super) start_scroll: i32,
     pub(super) moved: bool,
@@ -77,9 +81,13 @@ pub(super) struct Geom {
     pub(super) search: Rect,
     pub(super) list_vp: Rect,
     pub(super) fab: Rect,
+    /// Editor chrome: back icon at left, delete at right (icon buttons).
+    pub(super) bar: Rect,
     pub(super) back: Rect,
     pub(super) del: Rect,
-    pub(super) editor_card: Rect,
+    /// Editor scroll viewport (title + body content scrolls inside).
+    pub(super) edit_vp: Rect,
+    /// Text inset inside `edit_vp` — origin of the title/body content.
     pub(super) text_area: Rect,
 }
 
@@ -91,13 +99,23 @@ pub struct NotesApp {
     pub(super) edit: TextBuf,
     pub(super) editing: Option<u64>, // note id — survives resorting
     pub(super) edit_gen: u64,
-    pub(super) shaped: Option<Shaped>,
+    /// Editor shaping split at the first newline: line 0 is the TITLE-size
+    /// block, the rest is the body block — the Keep look over a single
+    /// plain-text buffer (the title is still derived, never stored).
+    pub(super) title_shaped: Option<Shaped>,
+    pub(super) body_shaped: Option<Shaped>,
     pub(super) shaped_key: (u64, i32),
     pub(super) body_color: [u8; 4],
     pub(super) geom: Option<Geom>,
-    pub(super) scroll: i32,      // list scroll, px
+    /// List scroll physics (fling + rubber-band overscroll).
+    pub(super) list_sv: ScrollView,
+    /// Touch id that went down inside the list viewport.
+    pub(super) list_touch: Option<i32>,
+    /// Monotonic clock for ScrollView velocity timestamps.
+    pub(super) t0: Instant,
     pub(super) edit_scroll: i32, // editor scroll, px
     pub(super) pressed: Option<Hit>,
+    /// Editor scroll drag (list drags live in `list_sv`).
     pub(super) drag: Option<Drag>,
     pub(super) pending: Pending,
     pub(super) delete_armed: bool,
@@ -117,11 +135,14 @@ impl NotesApp {
             edit: TextBuf::new(),
             editing: None,
             edit_gen: 0,
-            shaped: None,
+            title_shaped: None,
+            body_shaped: None,
             shaped_key: (u64::MAX, -1),
             body_color: [0, 0, 0, 255],
             geom: None,
-            scroll: 0,
+            list_sv: ScrollView::new(),
+            list_touch: None,
+            t0: Instant::now(),
             edit_scroll: 0,
             pressed: None,
             drag: None,
@@ -134,9 +155,13 @@ impl NotesApp {
     pub(super) fn frame(&self, dirty: bool) -> AppFrame {
         AppFrame {
             dirty,
-            animating: self.intro_ms < INTRO_TOTAL_MS,
+            animating: self.intro_ms < INTRO_TOTAL_MS || self.list_sv.is_animating(),
             quit: false,
         }
+    }
+
+    pub(super) fn now_ms(&self) -> u64 {
+        self.t0.elapsed().as_millis() as u64
     }
 
     // -- persistence ---------------------------------------------------------
@@ -166,7 +191,8 @@ impl NotesApp {
         self.editing = Some(id);
         self.edit_gen += 1;
         self.edit_scroll = 0;
-        self.shaped = None;
+        self.title_shaped = None;
+        self.body_shaped = None;
         self.focus = Focus::Editor;
         self.delete_armed = false;
         ti.activate(ContentPurpose::Normal);
@@ -190,7 +216,8 @@ impl NotesApp {
             }
         }
         self.edit.set("");
-        self.shaped = None;
+        self.title_shaped = None;
+        self.body_shaped = None;
         self.focus = Focus::List;
         ti.deactivate();
     }
@@ -211,7 +238,8 @@ impl NotesApp {
             notes_store::delete_note(&self.dir, id);
         }
         self.edit.set("");
-        self.shaped = None;
+        self.title_shaped = None;
+        self.body_shaped = None;
         self.focus = Focus::List;
         self.delete_armed = false;
         ti.deactivate();
@@ -231,7 +259,7 @@ impl NotesApp {
         }
     }
 
-    // -- shaped text (editor body) -------------------------------------------
+    // -- shaped text (editor, split at the first newline) ---------------------
 
     pub(super) fn body_style(&self) -> LabelStyle {
         let mut st = ui::styled(BODY_SIZE, 400, self.body_color);
@@ -239,7 +267,21 @@ impl NotesApp {
         st
     }
 
-    /// (Re)shape the editor body when (text,width) changed. Called from
+    pub(super) fn title_style(&self) -> LabelStyle {
+        let mut st = ui::styled(TITLE_SIZE, 600, self.body_color);
+        st.line_height = TITLE_LH;
+        st
+    }
+
+    /// Split `text` at the first newline: (title line, body rest).
+    pub(super) fn title_body_split(text: &str) -> (&str, &str) {
+        match text.find('\n') {
+            Some(i) => (&text[..i], &text[i + 1..]),
+            None => (text, ""),
+        }
+    }
+
+    /// (Re)shape title + body when (text,width) changed. Called from
     /// render (has theme) and lazily from events via stored color.
     pub(super) fn ensure_shaped(&mut self) {
         let Some(g) = self.geom else { return };
@@ -247,37 +289,86 @@ impl NotesApp {
             return;
         }
         if self.editing.is_none() {
-            self.shaped = None;
+            self.title_shaped = None;
+            self.body_shaped = None;
             return;
         }
         let key = (self.edit_gen, g.text_area.w);
         if self.shaped_key == key {
             return;
         }
-        let style = self.body_style();
+        let (title_txt, body_txt) = Self::title_body_split(self.edit.as_str());
+        let (title_txt, body_txt) = (title_txt.to_string(), body_txt.to_string());
+        let title_style = self.title_style();
+        let body_style = self.body_style();
+        let w = g.text_area.w as f32;
         if let Ok(mut fs) = font_system().lock() {
-            self.shaped = Some(Shaped::shape(
+            self.title_shaped = Some(Shaped::shape(
                 &mut fs,
-                self.edit.as_str(),
-                &style,
-                Some(g.text_area.w as f32),
+                &title_txt,
+                &title_style,
+                Some(w),
+                TextWrap::Glyph,
+            ));
+            self.body_shaped = Some(Shaped::shape(
+                &mut fs,
+                &body_txt,
+                &body_style,
+                Some(w),
                 TextWrap::Glyph,
             ));
             self.shaped_key = key;
         }
     }
 
+    /// Title block height in content px — at least one title line tall so
+    /// the placeholder/empty-title caret sits inside the same band.
+    pub(super) fn title_block_h(&self) -> i32 {
+        self.title_shaped
+            .as_ref()
+            .map(|s| s.extent().1)
+            .unwrap_or(TITLE_LH as i32)
+            .max(TITLE_LH as i32)
+    }
+
+    /// Composed editor content height (title + gap + body) in content px.
+    pub(super) fn content_height(&self) -> i32 {
+        let body_h = self
+            .body_shaped
+            .as_ref()
+            .map(|s| s.extent().1)
+            .unwrap_or(0)
+            .max(BODY_LH as i32);
+        self.title_block_h() + TITLE_BODY_GAP + body_h
+    }
+
     /// Caret position in *content* coords (before scroll): (x, top, height).
+    /// Cursor on buffer line 0 → title block; line ≥1 → body block offset
+    /// by the title block height + gap.
     pub(super) fn caret_pos(&self) -> Option<(f32, f32, f32)> {
-        let sh = self.shaped.as_ref()?;
         let (line, index) = self.edit.cursor_line_col();
-        caret_geometry(sh, line, index)
+        if line == 0 {
+            let sh = self.title_shaped.as_ref()?;
+            Some(
+                caret_geometry(sh, 0, index).unwrap_or((0.0, 0.0, TITLE_LH)),
+            )
+        } else {
+            let sh = self.body_shaped.as_ref()?;
+            let dy = (self.title_block_h() + TITLE_BODY_GAP) as f32;
+            caret_geometry(sh, line - 1, index).map(|(x, t, h)| (x, t + dy, h))
+        }
     }
 
     // -- geometry ------------------------------------------------------------
 
     fn compute_geom(&self, w: i32, h: i32) -> Geom {
         let m = ui::MARGIN;
+        let size = Size::new(w, h);
+        // Editor top bar shares the TopAppBar slot (back + delete icons).
+        let bar = TopAppBar::layout(size, ui::TOP_SAFE);
+        let back = TopAppBar::back_rect(bar);
+        let del = TopAppBar::action_rect(bar);
+
         let header_bottom = ui::TOP_SAFE + 56;
         let search = Rect::new(m, header_bottom + 8, w - m * 2, SEARCH_H);
         let list_top = search.y + SEARCH_H + 12;
@@ -293,49 +384,45 @@ impl NotesApp {
             FAB_D,
             FAB_D,
         );
-        let back = Rect::new(m, ui::TOP_SAFE + 12, 104, 48);
-        let del = Rect::new(w - m - 116, ui::TOP_SAFE + 12, 116, 48);
-        let card_top = ui::TOP_SAFE + 68;
-        // While editing, the OSK covers the bottom ~430px — end the card
-        // above it so the caret never hides behind the keyboard.
-        let card_bottom = if self.focus == Focus::Editor {
-            h - OSK_RESERVE - 12
+
+        // While editing, the OSK covers the bottom ~430px — end the
+        // viewport above it so the caret never hides behind the keyboard.
+        // (Reserve applies only while the editor owns text focus, i.e.
+        // focus == Editor; the guess is documented at OSK_RESERVE.)
+        let edit_bottom = if self.focus == Focus::Editor {
+            h - OSK_RESERVE - 8
         } else {
-            h - ui::BOTTOM_SAFE - 16
+            h - ui::BOTTOM_SAFE - 8
         };
-        let editor_card = Rect::new(m, card_top, w - m * 2, (card_bottom - card_top).max(200));
+        let edit_vp = Rect::new(
+            0,
+            bar.bottom() + 4,
+            w,
+            (edit_bottom - bar.bottom() - 4).max(120),
+        );
+        // Borderless Keep-style fields: text inset only by the margin —
+        // no boxed card around title or body.
         let text_area = Rect::new(
-            editor_card.x + EDIT_PAD,
-            editor_card.y + EDIT_PAD,
-            (editor_card.w - EDIT_PAD * 2).max(40),
-            (editor_card.h - EDIT_PAD * 2).max(80),
+            m + 8,
+            edit_vp.y + 12,
+            (w - (m + 8) * 2).max(40),
+            (edit_vp.h - 24).max(80),
         );
         Geom {
             search,
             list_vp,
             fab,
+            bar,
             back,
             del,
-            editor_card,
+            edit_vp,
             text_area,
         }
     }
 
-    pub(super) fn list_max_scroll(&self) -> i32 {
-        let Some(g) = self.geom else { return 0 };
-        let n = matching_indices(&self.notes, &self.search.text).len() as i32;
-        let content = n * (ROW_H + ROW_GAP) + 16;
-        (content - g.list_vp.h).max(0)
-    }
-
     pub(super) fn edit_max_scroll(&self) -> i32 {
         let Some(g) = self.geom else { return 0 };
-        let total = self
-            .shaped
-            .as_ref()
-            .map(|s| s.extent().1)
-            .unwrap_or(g.text_area.h);
-        (total - g.text_area.h).max(0)
+        (self.content_height() - g.text_area.h).max(0)
     }
 
     /// Note id under `pos` for the current scroll, or None.
@@ -344,7 +431,8 @@ impl NotesApp {
         if !g.list_vp.contains(pos) {
             return None;
         }
-        let dy = pos.y - g.list_vp.y + self.scroll;
+        let scroll = self.list_sv.offset_i32();
+        let dy = pos.y - g.list_vp.y + scroll;
         if dy < 0 {
             return None;
         }
@@ -352,7 +440,7 @@ impl NotesApp {
         let ids = matching_indices(&self.notes, &self.search.text);
         let &note_i = ids.get(vis_i as usize)?;
         // Undo the first-paint stagger so hit-testing matches what is drawn.
-        let row_top = g.list_vp.y + vis_i * (ROW_H + ROW_GAP) - self.scroll
+        let row_top = g.list_vp.y + vis_i * (ROW_H + ROW_GAP) - scroll
             + self.stagger_offset(vis_i as usize);
         if pos.y < row_top || pos.y >= row_top + ROW_H {
             return None;
@@ -422,5 +510,60 @@ impl AppState for NotesApp {
             Focus::Editor => self.render_editor(canvas, theme, g),
             _ => self.render_list(canvas, theme, g),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Note;
+    use std::path::Path;
+
+    fn app_with_notes(notes: Vec<Note>) -> NotesApp {
+        let dir = std::env::temp_dir().join(format!(
+            "rabbiz-notes-shots-{}",
+            std::process::id()
+        ));
+        let mut app = NotesApp::new();
+        app.dir = dir;
+        app.notes = notes;
+        app
+    }
+
+    #[test]
+    fn harness_renders_note_states() {
+        let tag = std::env::var("SHOT_TAG").unwrap_or_else(|_| "current".into());
+        let out = Path::new("/tmp/rabbiz-shots");
+        let now = now_unix();
+        let notes: Vec<Note> = (0..12)
+            .map(|i| {
+                Note::new(
+                    100 + i as u64,
+                    &format!(
+                        "Note {i} title\nFirst preview line {i}\nSecond preview line {i} with more words"
+                    ),
+                    now - i as i64 * 3600,
+                )
+            })
+            .collect();
+
+        let mut h = rabbiz_app_kit::TestHarness::new(app_with_notes(notes));
+        h.save_png(&out.join(format!("notes-{tag}-list.png"))).unwrap();
+
+        // Editor: tap the first row.
+        let _ = h.render();
+        let g = h.state().geom.unwrap();
+        h.tap(Point::new(g.list_vp.x + 40, g.list_vp.y + 40));
+        h.save_png(&out.join(format!("notes-{tag}-editor.png"))).unwrap();
+        h.tap(g.back.center());
+        let _ = h.render();
+
+        // Search with no match.
+        h.tap(Point::new(g.search.x + 60, g.search.y + g.search.h / 2));
+        h.type_text("zzzznope");
+        h.save_png(&out.join(format!("notes-{tag}-nomatch.png"))).unwrap();
+
+        let mut h_empty = rabbiz_app_kit::TestHarness::new(app_with_notes(Vec::new()));
+        h_empty.save_png(&out.join(format!("notes-{tag}-empty.png"))).unwrap();
     }
 }

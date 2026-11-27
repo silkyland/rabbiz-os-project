@@ -105,7 +105,7 @@ done
 if [[ "${APPS_DEPLOY_SKIP_ARCH_CHECK:-0}" != "1" ]] && command -v file >/dev/null 2>&1; then
   desc="$(file -b "${bins[0]}")"
   case "$desc" in
-    *ELF*aarch64*|*ELF*ARM\ aarch64*) ;;
+    *ELF*aarch64*) ;;
     *) echo "ERROR: ${bins[0]} is not an aarch64 ELF ($desc)" >&2
        echo "       build for the device (--build) or set APPS_DEPLOY_SKIP_ARCH_CHECK=1" >&2
        exit 2 ;;
@@ -113,22 +113,23 @@ if [[ "${APPS_DEPLOY_SKIP_ARCH_CHECK:-0}" != "1" ]] && command -v file >/dev/nul
 fi
 
 echo ">> deploying ${#bins[@]} rabbiz-apps binaries from $bindir to $HOST:/usr/local/bin/"
-tmp_remote=/tmp/rabbiz-apps-bin.$$
-ssh "$HOST" "mkdir -p $tmp_remote"
+tmp_remote=$(ssh "$HOST" 'umask 077 && mktemp -d /root/.deploy.XXXXXX')
+REMOTE_SCRIPT=$(mktemp)
+trap 'rm -f "$REMOTE_SCRIPT"; ssh -q "$HOST" "rm -rf -- \"\$1\"" _ "$tmp_remote" 2>/dev/null || true' EXIT
 for f in "${bins[@]}"; do
   scp -q "$f" "$HOST:$tmp_remote/$(basename "$f").new"
   echo "   $(basename "$f")"
 done
 
-REMOTE_SCRIPT=$(mktemp)
-trap 'rm -f "$REMOTE_SCRIPT"; ssh -q "$HOST" "rm -rf '"$tmp_remote"'" 2>/dev/null || true' EXIT
 cat > "$REMOTE_SCRIPT" <<REMOTE
-set -e
-for new in $tmp_remote/*.new; do
+set -eu
+STAGE='$tmp_remote'
+trap 'rm -rf -- "\$STAGE"' EXIT
+for new in "\$STAGE"/*.new; do
   name=\$(basename "\$new" .new)
   install -m 0755 -o root -g root "\$new" "/usr/local/bin/\$name"
 done
-rm -rf $tmp_remote
+rm -rf -- "\$STAGE"
 REMOTE
 
 "$REPO_ROOT/scripts/device_session.sh" "$HOST" < "$REMOTE_SCRIPT"

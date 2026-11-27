@@ -91,6 +91,7 @@ smithay = { path = "vendor/smithay" }
 [profile.release]
 lto = "thin"
 strip = "symbols"
+overflow-checks = true
 
 [workspace.lints.rust]
 unsafe_code = "warn"

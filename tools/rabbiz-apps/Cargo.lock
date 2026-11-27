@@ -1856,6 +1856,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "rabbiz-search"
+version = "0.1.0"
+dependencies = [
+ "de-api",
+ "de-config",
+ "de-design",
+ "de-paint",
+ "rabbiz-app-kit",
+ "serde_json",
+ "wayland-protocols",
+]
+
+[[package]]
 name = "rabbiz-settings"
 version = "0.1.0"
 dependencies = [
@@ -1865,6 +1878,7 @@ dependencies = [
  "de-paint",
  "rabbiz-app-kit",
  "serde_json",
+ "wayland-protocols",
 ]
 
 [[package]]

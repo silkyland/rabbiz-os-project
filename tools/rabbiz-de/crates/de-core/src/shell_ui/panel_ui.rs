@@ -138,6 +138,15 @@ pub(crate) struct PanelUi {
 }
 
 impl PanelUi {
+    /// Flip a tile's lit state and force both panel images to re-render.
+    pub(crate) fn set_tile_on(&mut self, i: usize, on: bool) {
+        if i < self.on.len() {
+            self.on[i] = on;
+        }
+        self.stale = [true; 2];
+        self.content_gen += 1;
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             kind: PanelKind::Notifications,
@@ -226,18 +235,25 @@ impl De {
         self.panels.available[5] = true;
         self.panels.on[11] = self.desktop_mode;
         self.panels.available[11] = true;
+        // Screenshot is compositor-internal capture — always available.
+        self.panels.available[9] = true;
+        // Recording needs the wf-recorder binary; while recording the tile
+        // stays lit from `record`, not from a polled control state.
+        self.panels.available[10] = crate::record_ui::recorder_available();
+        self.panels.on[10] = self.record.recording();
         for (i, value) in [
             (0, state.wifi),
             (1, state.bluetooth),
             (2, state.airplane),
             (4, state.flashlight),
+            (8, state.hotspot),
             (6, state.battery_saver),
         ] {
             self.panels.available[i] = value.is_some();
             self.panels.on[i] = value.unwrap_or(false);
         }
-        // GNSS/location, hotspot, recording and NFC stay
-        // unavailable until their own providers expose a working contract.
+        // GNSS/location and recording stay unavailable until their own
+        // providers expose a working contract.
         let lock_b = self.panels.slider_drag == Some(0)
             || self.panels.slider_lock_until[0].is_some_and(|t| now < t);
         let lock_v = self.panels.slider_drag == Some(1)
@@ -544,6 +560,7 @@ impl De {
                         1 => Some(Action::Bluetooth(on)),
                         2 => Some(Action::Airplane(on)),
                         4 => Some(Action::Flashlight(on)),
+                        8 => Some(Action::Hotspot(on)),
                         6 => Some(Action::BatterySaver(on)),
                         5 => {
                             self.toggle_auto_rotate();
@@ -565,6 +582,28 @@ impl De {
                         11 => {
                             self.set_desktop_mode(on);
                             self.panel_close();
+                            None
+                        }
+                        9 => {
+                            // Capture is deferred to the next power poll so the
+                            // panel-close animation is out of the frame.
+                            self.panel_close();
+                            self.tile_shot_pending = true;
+                            None
+                        }
+                        10 => {
+                            match self.toggle_recording() {
+                                Ok(now_recording) => {
+                                    self.panels.on[i] = now_recording;
+                                }
+                                Err(e) => {
+                                    eprintln!("rabbiz-de: screen record toggle failed: {e}");
+                                    self.panels.on[i] = false;
+                                }
+                            }
+                            self.panels.stale = [true; 2];
+                            self.panels.content_gen += 1;
+                            self.shell_dirty = true;
                             None
                         }
                         _ => None,

@@ -38,17 +38,19 @@ impl SmsApp {
                 }
                 self.pressed = None;
                 self.drag_last_y = None;
+                self.drag_origin_y = None;
                 match self.view {
                     View::List => {
                         if self.new_msg_rect.contains(pos) {
                             self.pressed = Some(Hit::NewMsg);
                         } else {
-                            for (i, r) in self.row_rects.iter().enumerate() {
-                                if r.contains(pos) {
-                                    self.pressed = Some(Hit::Row(i));
-                                    break;
-                                }
+                            if self.list_area.contains(pos) {
+                                self.drag_origin_y = Some(pos.y);
                             }
+                            self.pressed = self
+                                .row_rects
+                                .iter()
+                                .find_map(|(i, r)| r.contains(pos).then_some(Hit::Row(*i)));
                         }
                         if self.pressed.is_none() {
                             ti.deactivate();
@@ -83,33 +85,57 @@ impl SmsApp {
                 }
             }
             AppEvent::TouchMove { pos, .. } => {
-                if self.drag_last_y.is_some() {
+                if self.view == View::List && !animating {
+                    if let Some(origin) = self.drag_origin_y {
+                        if self.drag_last_y.is_some() || (origin - pos.y).abs() >= 8 {
+                            let last = self.drag_last_y.replace(pos.y).unwrap_or(origin);
+                            self.list_scroll = (self.list_scroll + last - pos.y).max(0);
+                            self.pressed = None;
+                            frame.dirty = true;
+                        }
+                    }
+                } else if self.drag_last_y.is_some() {
                     frame.dirty = true;
                     let last = self.drag_last_y.replace(pos.y).unwrap_or(pos.y);
-                    // Finger moving up (pos.y < last) reveals older messages.
-                    self.scroll += last - pos.y;
+                    // Pull down from the newest messages to reveal older ones.
+                    self.scroll += pos.y - last;
                 }
             }
-            AppEvent::TouchUp { .. } => {
+            AppEvent::TouchUp { pos, .. } => {
                 frame.dirty = true;
                 match self.pressed.take() {
-                    Some(Hit::NewMsg) => {
+                    Some(Hit::NewMsg) if self.new_msg_rect.contains(pos) => {
                         self.open_thread(String::new(), String::new(), true);
                         ti.activate(ContentPurpose::Phone);
                         ti.set_surrounding("", 0);
                     }
-                    Some(Hit::Row(i)) => {
+                    Some(Hit::Row(i))
+                        if self
+                            .row_rects
+                            .iter()
+                            .any(|(index, rect)| *index == i && rect.contains(pos)) =>
+                    {
                         let threads = self.threads();
                         if let Some((key, peer, _)) = threads.get(i) {
                             let (k, p) = (key.clone(), peer.clone());
                             self.open_thread(k, p, false);
                         }
                     }
-                    Some(Hit::Back) => self.close_thread(ti),
-                    Some(Hit::Send) => self.send(ti),
+                    Some(Hit::Back) if self.back_rect.contains(pos) => self.close_thread(ti),
+                    Some(Hit::Send) if self.send_rect.contains(pos) => self.send(ti),
                     _ => {}
                 }
                 self.drag_last_y = None;
+                self.drag_origin_y = None;
+            }
+            AppEvent::Scroll { dy, .. } if !animating => {
+                if self.view == View::List {
+                    self.list_scroll = (self.list_scroll + dy.round() as i32).max(0);
+                } else {
+                    self.scroll -= dy.round() as i32;
+                }
+                self.pressed = None;
+                frame.dirty = true;
             }
             AppEvent::TextCommit(s) => {
                 self.append_to_focus(&s);
@@ -128,6 +154,11 @@ impl SmsApp {
             AppEvent::Key { keysym, utf8 } => {
                 frame.dirty = true;
                 match (keysym, utf8) {
+                    (0xff1b, _) => {
+                        if self.view == View::Thread {
+                            self.close_thread(ti);
+                        }
+                    }
                     (0xff0d, _) => {
                         if self.view == View::Thread && !self.body_draft.trim().is_empty() {
                             self.send(ti);

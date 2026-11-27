@@ -24,7 +24,6 @@ pub(super) const RUN_SEP: i32 = 14; // between runs
 pub(super) const DAY_SEP_H: i32 = 30;
 pub(super) const TIME_CAPTION_H: i32 = 24;
 pub(super) const ROW_H: i32 = 92;
-pub(super) const ROW_GAP: i32 = 12;
 const ANIM_ENTER_MS: u32 = 360; // list → thread (BEZIER_ENTER)
 const ANIM_EXIT_MS: u32 = 160; // thread → list (BEZIER_EXIT)
 pub(super) const SEND_W: i32 = 104;
@@ -84,6 +83,9 @@ pub struct SmsApp {
     pub(super) body_draft: String,
     pub(super) focus: Focus,
     pub(super) scroll: i32,
+    pub(super) list_scroll: i32,
+    pub(super) list_area: Rect,
+    pub(super) drag_origin_y: Option<i32>,
     pub(super) drag_last_y: Option<i32>,
     pub(super) pressed: Option<Hit>,
     pub(super) transition: Option<Transition>,
@@ -91,7 +93,7 @@ pub struct SmsApp {
     next_id: u64,
     pub(super) status: String,
     // Hit-test rects captured during the last render.
-    pub(super) row_rects: Vec<Rect>,
+    pub(super) row_rects: Vec<(usize, Rect)>,
     pub(super) new_msg_rect: Rect,
     pub(super) back_rect: Rect,
     pub(super) send_rect: Rect,
@@ -106,7 +108,7 @@ impl SmsApp {
         let next_id = msgs.iter().map(|m| m.id).max().unwrap_or(0) + 1;
         let backend = Backend::detect();
         let status = match backend {
-            Backend::Mmcli => "Modem ready".to_string(),
+            Backend::Mmcli => String::new(),
             Backend::Unavailable => "No modem yet — messages are saved on this device".to_string(),
         };
         let mut app = Self {
@@ -120,6 +122,9 @@ impl SmsApp {
             body_draft: String::new(),
             focus: Focus::None,
             scroll: 0,
+            list_scroll: 0,
+            list_area: Rect::new(0, 0, 0, 0),
+            drag_origin_y: None,
             drag_last_y: None,
             pressed: None,
             transition: None,
@@ -308,5 +313,94 @@ impl AppState for SmsApp {
 
     fn render(&mut self, canvas: &mut Canvas, theme: &Theme) {
         self.render_frame(canvas, theme);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rabbiz_app_kit::{Point, TestHarness};
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    fn shot_dir() -> PathBuf {
+        let d = PathBuf::from("/tmp/rabbiz-shots");
+        let _ = std::fs::create_dir_all(&d);
+        d
+    }
+
+    /// Inject a deterministic conversation set: enough threads that the
+    /// list must scroll (>12), plus a peer thread with in/out bubbles,
+    /// a Failed outgoing and a Thai message.
+    fn seed_msgs(app: &mut SmsApp) {
+        let now = SmsApp::now_ts();
+        let mut msgs = vec![
+            Message::new(
+                1,
+                "0812345678",
+                "Hey, are we still on for tonight?",
+                false,
+                now - 7_200,
+            ),
+            Message::new(2, "0812345678", "Yes! See you at 7.", true, now - 7_140),
+            Message::new(3, "0812345678", "Don't be late.", false, now - 7_080),
+            Message::new(4, "0812345678", "สวัสดีครับ เจอกันครับ", true, now - 3_600),
+        ];
+        // Long thread list so scrolling is exercised.
+        for i in 0..14 {
+            let peer = format!("089111{:04}", i);
+            msgs.push(Message::new(
+                100 + i as u64,
+                &peer,
+                &format!("Thread message {}", i + 1),
+                i % 3 == 0,
+                now - 86_400 + i * 600,
+            ));
+        }
+        let mut failed = Message::new(
+            200,
+            "0865551234",
+            "Call me back when you can",
+            true,
+            now - 900,
+        );
+        failed.state = MsgState::Failed;
+        msgs.push(failed);
+        app.msgs = msgs;
+    }
+
+    /// Drives the app through list + thread and saves PNGs (the
+    /// before/after evidence contract).
+    #[test]
+    fn renders_main_screens_to_png() {
+        let dir = shot_dir();
+        let mut h = TestHarness::new(SmsApp::new(None));
+        seed_msgs(h.state_mut());
+
+        h.save_png(&dir.join("sms-after-list.png"))
+            .expect("save list shot");
+
+        let area = h.state().list_area;
+        h.swipe(
+            Point::new(150, area.bottom() - 16),
+            Point::new(150, area.y + 16),
+            8,
+            Duration::from_millis(16),
+        );
+        assert!(
+            h.state().view == View::List,
+            "a swipe does not open a thread"
+        );
+        let _ = h.render();
+        assert_eq!(
+            h.state().row_rects.last().unwrap().0,
+            h.state().threads().len() - 1,
+        );
+
+        h.state_mut()
+            .open_thread("0812345678".into(), "0812345678".into(), false);
+        h.state_mut().transition = None;
+        h.save_png(&dir.join("sms-after-thread.png"))
+            .expect("save thread shot");
     }
 }

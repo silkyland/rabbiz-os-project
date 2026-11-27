@@ -11,6 +11,17 @@ Before=display-manager.service rabbiz-session.service steamos-session.service
 Type=simple
 ExecStart=/usr/local/bin/a21s-drm-keeper
 Restart=on-failure
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=none
+RestrictNamespaces=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target

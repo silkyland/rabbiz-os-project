@@ -5,11 +5,12 @@
 #   make                      # native build also works
 
 CC ?= cc
-CFLAGS ?= -O2 -Wall -Wextra
+CFLAGS ?= -O2 -Wall -Wextra -fstack-protector-strong -D_FORTIFY_SOURCE=2 -fPIE
+LDFLAGS ?= -pie -Wl,-z,relro,-z,now
 TARGET = a21s-cbd
 
 $(TARGET): a21s-cbd.c
-	$(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
 
 clean:
 	rm -f $(TARGET)

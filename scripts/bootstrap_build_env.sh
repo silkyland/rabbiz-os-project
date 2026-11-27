@@ -25,16 +25,32 @@ if [[ ! -d "$ROOT_DIR/src/linux/.git" ]]; then
     git -C "$ROOT_DIR/src/linux" fetch --depth 50 origin "$LINUX_COMMIT"
   fi
   git -C "$ROOT_DIR/src/linux" checkout "$LINUX_COMMIT"
+  actual_linux="$(git -C "$ROOT_DIR/src/linux" rev-parse HEAD)"
+  if [[ "$actual_linux" != "$LINUX_COMMIT"* ]]; then
+    echo "ERROR: src/linux HEAD ($actual_linux) does not match pinned $LINUX_COMMIT" >&2
+    exit 1
+  fi
 else
   echo "[*] src/linux already exists ($(git -C "$ROOT_DIR/src/linux" rev-parse --short HEAD))."
 fi
 
 for patch in "$ROOT_DIR"/devices/samsung/a21s/kernel/patches/*.patch; do
   [[ -e "$patch" ]] || continue
+  patch_name="$(basename "$patch")"
+  case "$patch_name" in
+    0011-a21s-cpu-idle-states.patch|0012-a21s-et520-spi-dts.patch)
+      echo "[*] Skipping non-bootable/experimental patch: $patch_name"
+      continue
+      ;;
+  esac
+  if head -n 20 "$patch" | grep -q 'DO NOT FLASH'; then
+    echo "[*] Skipping DO NOT FLASH patch: $patch_name"
+    continue
+  fi
   if git -C "$ROOT_DIR/src/linux" apply --reverse --check "$patch" >/dev/null 2>&1; then
-    echo "[*] Patch already applied: $(basename "$patch")"
+    echo "[*] Patch already applied: $patch_name"
   else
-    echo "[*] Applying patch: $(basename "$patch")"
+    echo "[*] Applying patch: $patch_name"
     git -C "$ROOT_DIR/src/linux" apply "$patch"
   fi
 done
@@ -42,8 +58,15 @@ done
 if [[ ! -d "$ROOT_DIR/src/uniLoader/.git" ]]; then
   echo "[*] Cloning samsungexynos850/uniLoader ($UNILOADER_COMMIT)..."
   git clone --depth 1 "$UNILOADER_REPO" "$ROOT_DIR/src/uniLoader"
-  git -C "$ROOT_DIR/src/uniLoader" fetch --depth 20 origin "$UNILOADER_COMMIT" || true
-  git -C "$ROOT_DIR/src/uniLoader" checkout "$UNILOADER_COMMIT" || true
+  if ! git -C "$ROOT_DIR/src/uniLoader" rev-parse --verify "${UNILOADER_COMMIT}^{commit}" >/dev/null 2>&1; then
+    git -C "$ROOT_DIR/src/uniLoader" fetch --depth 20 origin "$UNILOADER_COMMIT"
+  fi
+  git -C "$ROOT_DIR/src/uniLoader" checkout "$UNILOADER_COMMIT"
+  actual_uniloader="$(git -C "$ROOT_DIR/src/uniLoader" rev-parse HEAD)"
+  if [[ "$actual_uniloader" != "$UNILOADER_COMMIT"* ]]; then
+    echo "ERROR: src/uniLoader HEAD ($actual_uniloader) does not match pinned $UNILOADER_COMMIT" >&2
+    exit 1
+  fi
 else
   echo "[*] src/uniLoader already exists ($(git -C "$ROOT_DIR/src/uniLoader" rev-parse --short HEAD))."
 fi

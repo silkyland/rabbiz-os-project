@@ -142,13 +142,17 @@ fn read_to_buf(
 ) -> std::thread::JoinHandle<()> {
     std::thread::spawn(move || {
         let mut pipe = pipe;
+        let mut limited = (&mut pipe).take((OUTPUT_CAP as u64) + 1);
         let mut tmp = [0u8; 8192];
         loop {
-            match pipe.read(&mut tmp) {
+            match limited.read(&mut tmp) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => buf.lock().unwrap().extend_from_slice(&tmp[..n]),
             }
         }
+        // Drain any remaining bytes into a sink so a chatty child cannot deadlock
+        // on a full pipe buffer while our in-memory buffer stays capped.
+        let _ = std::io::copy(&mut pipe, &mut std::io::sink());
     })
 }
 

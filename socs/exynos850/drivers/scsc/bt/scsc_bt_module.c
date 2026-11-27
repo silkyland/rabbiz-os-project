@@ -2193,8 +2193,13 @@ static int scsc_btlog_enables_set_param_cb(const char *buffer,
 
 		u32 start_index = buffer_len - SCSC_BTLOG_BUF_MAX_CHAR_TO_COPY - newline_len;
 
+		if (start_index >= sizeof(btlog_enables_buf))
+			return -ERANGE;
+
 		memcpy(btlog_enables_buf, buffer, SCSC_BTLOG_BUF_PREFIX_LEN);
-		strcpy(&btlog_enables_buf[SCSC_BTLOG_BUF_PREFIX_LEN], &buffer[start_index]);
+		strscpy(&btlog_enables_buf[SCSC_BTLOG_BUF_PREFIX_LEN],
+			&buffer[start_index],
+			sizeof(btlog_enables_buf) - SCSC_BTLOG_BUF_PREFIX_LEN);
 		ret = kstrtou64(btlog_enables_buf, 0, &btlog_enables_low);
 
 		if (!ret) {

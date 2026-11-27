@@ -1,24 +1,27 @@
-//! Lightweight polling watcher for live Light/Dark theme reactivity.
+//! Lightweight polling watcher for live Light/Dark theme + accent reactivity.
 //!
 //! Apps instantiate [`ThemeWatcher`] once at startup and call
 //! [`ThemeWatcher::poll`] on frame ticks or periodic timers. `poll` only reads
 //! and parses `prefs.json` when its filesystem modification time changes (or
 //! when the file appears/disappears), and only returns `true` when the active
-//! `theme_mode` actually changed so callers know whether to trigger a repaint.
+//! `theme_mode` or `deAccent` actually changed so callers know whether to
+//! trigger a repaint. The returned [`Theme`] has the persisted accent applied
+//! via `de_design::theme::theme_with`.
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use de_config::Prefs;
-use de_design::theme::theme_for;
+use de_design::theme::theme_with;
 use de_design::tokens::Theme;
 
-/// Watches a `prefs.json` file for live `theme_mode` changes.
+/// Watches a `prefs.json` file for live `theme_mode`/`deAccent` changes.
 #[derive(Debug, Clone)]
 pub struct ThemeWatcher {
     prefs_path: PathBuf,
     last_mtime: Option<SystemTime>,
     mode: String,
+    accent: String,
     theme: Theme,
 }
 
@@ -30,12 +33,12 @@ impl ThemeWatcher {
         let prefs_path = Prefs::path();
         let last_mtime = stat_mtime(&prefs_path);
         let prefs = Prefs::load();
-        let mode = prefs.theme_mode;
-        let theme = theme_for(&mode);
+        let theme = theme_with(&prefs.theme_mode, &prefs.accent);
         Self {
             prefs_path,
             last_mtime,
-            mode,
+            mode: prefs.theme_mode,
+            accent: prefs.accent,
             theme,
         }
     }
@@ -48,12 +51,12 @@ impl ThemeWatcher {
     pub fn from_path(path: PathBuf) -> Self {
         let last_mtime = stat_mtime(&path);
         let prefs = read_prefs_from(&path);
-        let mode = prefs.theme_mode;
-        let theme = theme_for(&mode);
+        let theme = theme_with(&prefs.theme_mode, &prefs.accent);
         Self {
             prefs_path: path,
             last_mtime,
-            mode,
+            mode: prefs.theme_mode,
+            accent: prefs.accent,
             theme,
         }
     }
@@ -70,10 +73,17 @@ impl ThemeWatcher {
         &self.mode
     }
 
+    /// Currently active `deAccent` id (e.g. `"copper"` or `"blue"`).
+    #[must_use]
+    pub fn accent(&self) -> &str {
+        &self.accent
+    }
+
     /// Check the watched `prefs.json` modification time and reload if it
     /// changed (or if the file appeared/disappeared).
     ///
-    /// Returns `true` only when the active `theme_mode` actually changed.
+    /// Returns `true` only when the active `theme_mode` or `deAccent`
+    /// actually changed.
     pub fn poll(&mut self) -> bool {
         let mtime = stat_mtime(&self.prefs_path);
         if mtime == self.last_mtime {
@@ -85,19 +95,21 @@ impl ThemeWatcher {
 
     /// Unconditionally reload `prefs.json` regardless of modification time.
     ///
-    /// Returns `true` only when the active `theme_mode` actually changed.
+    /// Returns `true` only when the active `theme_mode` or `deAccent`
+    /// actually changed.
     pub fn force_reload(&mut self) -> bool {
         self.last_mtime = stat_mtime(&self.prefs_path);
         self.apply_reloaded_prefs()
     }
 
     fn apply_reloaded_prefs(&mut self) -> bool {
-        let next_mode = read_prefs_from(&self.prefs_path).theme_mode;
-        if next_mode == self.mode {
+        let prefs = read_prefs_from(&self.prefs_path);
+        if prefs.theme_mode == self.mode && prefs.accent == self.accent {
             return false;
         }
-        self.theme = theme_for(&next_mode);
-        self.mode = next_mode;
+        self.theme = theme_with(&prefs.theme_mode, &prefs.accent);
+        self.mode = prefs.theme_mode;
+        self.accent = prefs.accent;
         true
     }
 }
@@ -244,6 +256,39 @@ mod tests {
         assert!(!watcher.poll());
         assert_eq!(watcher.mode(), "dark");
         assert_eq!(watcher.current().bg, DARK.bg);
+    }
+
+    #[test]
+    fn accent_change_repaints_without_mode_change() {
+        let dir = TestDir::new("accent-only");
+        let path = dir.path().join("prefs.json");
+        write_prefs_with_mtime(&path, "light", 1_700_000_000);
+
+        let mut watcher = ThemeWatcher::from_path(path.clone());
+        assert_eq!(watcher.accent(), "copper");
+        assert_eq!(watcher.current().accent, LIGHT.accent);
+
+        // Same mode, new accent -> poll still reports a change.
+        let prefs = Prefs {
+            accent: "blue".into(),
+            ..Prefs::default()
+        };
+        let mut file = File::create(&path).expect("rewrite prefs file");
+        file.write_all(prefs.to_json().as_bytes())
+            .expect("write prefs json");
+        file.set_modified(UNIX_EPOCH + Duration::from_secs(1_700_000_030))
+            .expect("bump mtime");
+
+        assert!(watcher.poll());
+        assert_eq!(watcher.mode(), "light");
+        assert_eq!(watcher.accent(), "blue");
+        assert_eq!(
+            watcher.current().accent,
+            de_design::theme::accent_colors(de_design::theme::Mode::Light, "blue")
+                .unwrap()
+                .accent
+        );
+        assert!(!watcher.poll());
     }
 
     #[test]

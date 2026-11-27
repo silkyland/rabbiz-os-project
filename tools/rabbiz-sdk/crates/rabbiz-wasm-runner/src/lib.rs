@@ -16,6 +16,12 @@ use serde::{Deserialize, Serialize};
 /// modules trap cleanly instead of hanging the phone.
 pub const DEFAULT_MAX_STEPS: usize = 250_000;
 
+/// Maximum nested WASM function call depth to prevent native stack overflow.
+pub const MAX_CALL_DEPTH: usize = 256;
+
+/// Maximum local variables (including params) permitted in a single WASM frame.
+pub const MAX_LOCALS_PER_FRAME: usize = 4096;
+
 /// WASM binary magic + version 1 (`\0asm\x01\0\0\0`).
 pub const WASM_MAGIC_VERSION: [u8; 8] = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
 
@@ -310,7 +316,10 @@ impl WasmModule {
                         for _ in 0..local_decl_count {
                             let n = read_leb_u32(bytes, &mut bpos)? as usize;
                             let _vt = read_u8(bytes, &mut bpos)?;
-                            total_locals = total_locals.saturating_add(n);
+                            total_locals = total_locals
+                                .checked_add(n)
+                                .filter(|&t| t <= MAX_LOCALS_PER_FRAME)
+                                .ok_or_else(|| "wasm locals limit exceeded".to_string())?;
                         }
                         let code = parse_instructions(&bytes[bpos..body_end])?;
                         func_bodies.push((total_locals, code));
@@ -325,7 +334,7 @@ impl WasmModule {
                         if mode != 0 {
                             return Err(format!("unsupported data segment mode {mode}"));
                         }
-                        let offset = read_const_expr_i32(bytes, &mut sec_pos)? as usize;
+                        let offset = (read_const_expr_i32(bytes, &mut sec_pos)? as u32) as usize;
                         let size = read_leb_u32(bytes, &mut sec_pos)? as usize;
                         let data_end = sec_pos
                             .checked_add(size)
@@ -385,7 +394,7 @@ impl WasmModule {
             return Err(format!("export {name:?} not found"));
         };
         let mut fuel = self.max_steps;
-        self.invoke_func(func_idx, args, host, &mut fuel)
+        self.invoke_func(func_idx, args, host, &mut fuel, 0)
     }
 
     fn invoke_func(
@@ -394,7 +403,11 @@ impl WasmModule {
         args: &[i32],
         host: &mut HostContext<'_>,
         fuel: &mut usize,
+        depth: usize,
     ) -> Result<Option<i32>, String> {
+        if depth >= MAX_CALL_DEPTH {
+            return Err("wasm trap: call stack exhausted".to_string());
+        }
         let idx = func_idx as usize;
         if idx < self.imports.len() {
             let import = self.imports[idx];
@@ -420,7 +433,12 @@ impl WasmModule {
             ));
         }
 
-        let mut locals = vec![0i32; ftype.params + func.num_locals];
+        let total_locals = ftype
+            .params
+            .checked_add(func.num_locals)
+            .filter(|&t| t <= MAX_LOCALS_PER_FRAME)
+            .ok_or_else(|| "wasm trap: locals limit exceeded".to_string())?;
+        let mut locals = vec![0i32; total_locals];
         locals[..args.len()].copy_from_slice(args);
 
         let mut stack: Vec<i32> = Vec::with_capacity(32);
@@ -508,7 +526,9 @@ impl WasmModule {
                         return Err("wasm stack underflow on call".to_string());
                     }
                     let call_args: Vec<i32> = stack.drain(stack.len() - param_len..).collect();
-                    if let Some(ret) = self.invoke_func(callee_idx, &call_args, host, fuel)? {
+                    if let Some(ret) =
+                        self.invoke_func(callee_idx, &call_args, host, fuel, depth + 1)?
+                    {
                         stack.push(ret);
                     }
                 }
@@ -557,11 +577,14 @@ impl WasmModule {
                     *slot = v;
                 }
                 Instr::I32Load { offset } => {
-                    let base = pop_i32(&mut stack)? as usize;
+                    let base = (pop_i32(&mut stack)? as u32) as usize;
                     let addr = base
                         .checked_add(offset as usize)
                         .ok_or_else(|| "memory address overflow".to_string())?;
-                    if addr + 4 > self.memory.len() {
+                    let end = addr
+                        .checked_add(4)
+                        .ok_or_else(|| "memory address overflow".to_string())?;
+                    if end > self.memory.len() {
                         return Err("wasm trap: out of bounds memory access".to_string());
                     }
                     let val = i32::from_le_bytes([
@@ -574,14 +597,17 @@ impl WasmModule {
                 }
                 Instr::I32Store { offset } => {
                     let val = pop_i32(&mut stack)?;
-                    let base = pop_i32(&mut stack)? as usize;
+                    let base = (pop_i32(&mut stack)? as u32) as usize;
                     let addr = base
                         .checked_add(offset as usize)
                         .ok_or_else(|| "memory address overflow".to_string())?;
-                    if addr + 4 > self.memory.len() {
+                    let end = addr
+                        .checked_add(4)
+                        .ok_or_else(|| "memory address overflow".to_string())?;
+                    if end > self.memory.len() {
                         return Err("wasm trap: out of bounds memory access".to_string());
                     }
-                    self.memory[addr..addr + 4].copy_from_slice(&val.to_le_bytes());
+                    self.memory[addr..end].copy_from_slice(&val.to_le_bytes());
                 }
                 Instr::I32Const(v) => stack.push(v),
                 Instr::I32Eqz => {

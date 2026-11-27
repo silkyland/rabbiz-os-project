@@ -7,12 +7,12 @@ use rabbiz_app_kit::{Canvas, Point, Rect, Theme};
 
 use crate::model::{self, TextBuf};
 use crate::views::{
-    save_bar, DetailItem, FormItem, ListGeom, FAV_CARD_H, HEADER_H, ROW_H, ROW_PITCH, SEARCH_H,
+    contact_form_bar, row_call_button, save_bar, DetailItem, FormItem, ListGeom, FAV_CARD_H,
+    HEADER_H, ROW_H, ROW_PITCH, SEARCH_H,
 };
 use crate::{ContactsApp, Focus, Hit, Screen};
 
 // ---- Material Icons Round codepoints (verified against the bundled TTF) ----
-const IC_PERSON: &str = "\u{e7fd}";
 const IC_PERSON_ADD: &str = "\u{e7fe}";
 const IC_SEARCH: &str = "\u{e8b6}";
 const IC_CLOSE: &str = "\u{e5cd}";
@@ -26,14 +26,7 @@ const IC_CALL: &str = "\u{e0b0}";
 
 // ---- small draw primitives ----
 
-fn alpha(c: [u8; 4], a: u8) -> [u8; 4] {
-    [c[0], c[1], c[2], a]
-}
-
-fn mix(a: [u8; 4], b: [u8; 4], t: f32) -> [u8; 4] {
-    let l = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
-    [l(a[0], b[0]), l(a[1], b[1]), l(a[2], b[2]), l(a[3], b[3])]
-}
+use rabbiz_app_kit::ui::with_alpha as alpha;
 
 /// Rasterize + blit a Material icon with ink bounds centered on (cx, cy).
 fn draw_icon(c: &mut Canvas, codepoint: &str, size: f32, color: [u8; 4], cx: i32, cy: i32) {
@@ -52,24 +45,10 @@ fn draw_icon(c: &mut Canvas, codepoint: &str, size: f32, color: [u8; 4], cx: i32
     }
 }
 
-/// Avatar circle: tinted bg + initial (or person glyph), same look as the
-/// dialer's avatars (same palette via `model::hash_color`).
+/// Avatar circle: tinted bg + initial (or person glyph) — the shared kit
+/// widget (`rabbiz_app_kit::widgets::avatar`) with the tint as glyph color.
 fn draw_avatar(c: &mut Canvas, r: Rect, name: &str, tint: [u8; 4]) {
-    c.fill_rounded_rect(r, (r.h as f32) / 2.0, alpha(tint, 0x2E));
-    if let Some(ch) = name.chars().next() {
-        let s: String = ch.to_uppercase().collect();
-        let st = kit_ui::styled(r.h as f32 * 0.44, 600, tint);
-        kit_ui::draw_centered(c, &s, &st, r);
-    } else {
-        draw_icon(
-            c,
-            IC_PERSON,
-            r.h as f32 * 0.52,
-            tint,
-            r.x + r.w / 2,
-            r.y + r.h / 2,
-        );
-    }
+    rabbiz_app_kit::widgets::avatar(c, name, r, tint, tint);
 }
 
 /// Blit `px` clipped to `clip` (Canvas has no scissor — same trick as notes).
@@ -191,9 +170,9 @@ fn draw_mini_field(
     }
 }
 
-/// Section caption ("PHONES", "ALL CONTACTS", …).
+/// Inset section caption.
 fn draw_section(c: &mut Canvas, t: &Theme, s: &str, x: i32, y: i32) {
-    kit_ui::draw_text(c, s, &kit_ui::styled(13.0, 600, t.text3), x, y, None);
+    kit_ui::draw_text(c, s, &kit_ui::styled(15.0, 600, t.text2), x, y, None);
 }
 
 impl ContactsApp {
@@ -271,7 +250,7 @@ impl ContactsApp {
         // -- favorites strip (hidden while searching) ------------------------
         let show_favs = self.search.text.trim().is_empty() && !self.favorites().is_empty();
         if show_favs {
-            draw_section(c, t, "FAVORITES", kit_ui::MARGIN, g.favs_label_y);
+            draw_section(c, t, "Favorites", kit_ui::MARGIN, g.favs_label_y);
             let favs = self.favorites();
             let n = favs.len() as i32;
             let card_w = (w - kit_ui::MARGIN * 2 - 12 * (n - 1)) / n;
@@ -287,17 +266,21 @@ impl ContactsApp {
                     &ct.name,
                     model::avatar_tint(ct),
                 );
-                kit_ui::draw_centered(
-                    c,
-                    &ct.name,
-                    &kit_ui::styled(15.0, 600, t.text),
-                    Rect::new(card.x, card.y + 72, card.w, 20),
-                );
+                let name = Rect::new(card.x + 8, card.y + 71, card.w - 16, 24);
+                if let Some(px) =
+                    text::label_clamped(&ct.name, kit_ui::styled(17.0, 600, t.text), name.w, 1)
+                {
+                    let pixels = text::cache::to_pixels(&px);
+                    c.blit(
+                        &pixels,
+                        Point::new(name.x + (name.w - pixels.size.w) / 2, name.y),
+                    );
+                }
                 if let Some(p) = ct.primary_phone() {
                     kit_ui::draw_centered(
                         c,
                         &model::format_number(&p.number),
-                        &kit_ui::styled(12.0, 400, t.text3),
+                        &kit_ui::styled(13.0, 400, t.text2),
                         Rect::new(card.x, card.y + 92, card.w, 16),
                     );
                 }
@@ -309,9 +292,9 @@ impl ContactsApp {
             c,
             t,
             if self.search.text.trim().is_empty() {
-                "ALL CONTACTS"
+                "All contacts"
             } else {
-                "RESULTS"
+                "Results"
             },
             kit_ui::MARGIN,
             g.section_y,
@@ -338,92 +321,80 @@ impl ContactsApp {
                 continue;
             };
             let pressed = self.pressed == Some(Hit::Row(ci));
-            kit_ui::draw_card(c, t, vis_row, pressed);
-            // M3 state-layer on press (90 ms-class feedback, static frame).
             if pressed {
-                c.fill_rounded_rect(vis_row, 24.0, kit_ui::state_layer(t, 0.10));
+                kit_ui::press_overlay(c, t, vis_row, 12.0, 0.10);
             }
 
-            let inner = Rect::new(row.x + 14, row.y, row.w - 14 - 90, row.h);
+            let avatar = Rect::new(row.x + 8, row.y + (row.h - 52) / 2, 52, 52);
+            if avatar.intersect(g.vp) == Some(avatar) {
+                draw_avatar(c, avatar, &ct.name, model::avatar_tint(ct));
+            }
+            let has_number = ct.primary_phone().is_some();
+            let trailing = if has_number { 92 } else { 12 };
+            let inner = Rect::new(avatar.right() + 18, row.y, row.w - 78 - trailing, row.h);
             let Some(tclip) = inner.intersect(g.vp) else {
                 continue;
             };
-            draw_avatar(
-                c,
-                Rect::new(row.x + 14, row.y + (row.h - 60) / 2, 60, 60),
-                &ct.name,
-                model::avatar_tint(ct),
-            );
+            let has_secondary = has_number || !ct.emails.is_empty();
             // Name (+ favorite star).
-            let name_w = inner.w - 30;
+            let name_w = inner.w - if ct.favorite { 26 } else { 0 };
             if let Some(px) = text::label_clamped(&ct.name, kit_ui::label(t.text), name_w, 1) {
                 let p = text::cache::to_pixels(&px);
-                blit_clipped(c, &p, inner.x, inner.y + 12, tclip);
+                let y = if has_secondary {
+                    inner.y + 14
+                } else {
+                    inner.y + (inner.h - p.size.h) / 2
+                };
+                blit_clipped(c, &p, inner.x, y, tclip);
             }
-            if ct.favorite {
+            if ct.favorite && tclip.h == inner.h {
                 draw_icon(
                     c,
                     IC_STAR,
                     18.0,
                     t.warning,
                     inner.x + inner.w - 8,
-                    inner.y + 20,
+                    inner.y + if has_secondary { 27 } else { inner.h / 2 },
                 );
             }
-            // Primary number (+ label).
-            if let Some(p) = ct.primary_phone() {
-                let meta = if p.label.trim().is_empty() {
-                    model::format_number(&p.number)
-                } else {
-                    format!("{} · {}", p.label, model::format_number(&p.number))
-                };
-                kit_ui::draw_text(
+            let meta = ct
+                .primary_phone()
+                .map(|p| {
+                    let number = model::format_number(&p.number);
+                    if p.label.trim().is_empty() {
+                        number
+                    } else {
+                        format!("{} · {number}", p.label)
+                    }
+                })
+                .or_else(|| ct.emails.first().map(|e| e.address.clone()));
+            if let Some(px) = meta
+                .and_then(|meta| text::label_clamped(&meta, kit_ui::caption(t.text2), inner.w, 1))
+            {
+                blit_clipped(
                     c,
-                    &meta,
-                    &kit_ui::styled(16.0, 400, t.text3),
+                    &text::cache::to_pixels(&px),
                     inner.x,
-                    inner.y + 48,
-                    Some(inner.w),
-                );
-            } else if !ct.emails.is_empty() {
-                kit_ui::draw_text(
-                    c,
-                    &ct.emails[0].address,
-                    &kit_ui::styled(16.0, 400, t.text3),
-                    inner.x,
-                    inner.y + 48,
-                    Some(inner.w),
+                    inner.y + 46,
+                    tclip,
                 );
             }
-            // Quick-dial button.
-            let cb = Rect::new(row.x + row.w - 72, row.y + (row.h - 56) / 2, 56, 56);
-            let cb_vis = cb.intersect(g.vp).unwrap_or(cb);
-            let cbp = self.pressed == Some(Hit::DialRow(ci));
-            c.fill_rounded_rect(
-                cb_vis,
-                28.0,
-                alpha(t.success, if cbp { 0x66 } else { 0x24 }),
-            );
-            draw_icon(c, IC_CALL, 26.0, t.success, cb.x + 28, cb.y + 28);
+
+            let cb = row_call_button(row);
+            if has_number && cb.intersect(g.vp) == Some(cb) {
+                let pressed = self.pressed == Some(Hit::DialRow(ci));
+                if pressed {
+                    kit_ui::press_overlay(c, t, cb, 28.0, 0.10);
+                }
+                draw_icon(c, IC_CALL, 26.0, t.accent, cb.x + 28, cb.y + 28);
+            }
+            if row.bottom() < g.vp.bottom() {
+                kit_ui::divider_inset(c, t, inner.x, row.right(), row.bottom());
+            }
         }
 
-        // -- FAB ---------------------------------------------------------------
         if !self.search_focus && !self.contacts.is_empty() {
-            let fab = g.fab;
-            let fab_bg = if self.pressed == Some(Hit::Fab) {
-                t.accent_dim
-            } else {
-                t.accent
-            };
-            c.fill_rounded_rect(fab, (fab.h / 2) as f32, fab_bg);
-            draw_icon(
-                c,
-                IC_ADD,
-                30.0,
-                t.text_on_accent,
-                fab.x + fab.w / 2,
-                fab.y + fab.h / 2,
-            );
+            rabbiz_app_kit::widgets::fab(c, t, g.fab, IC_ADD, self.pressed == Some(Hit::Fab));
         }
     }
 
@@ -669,61 +640,16 @@ impl ContactsApp {
             }
         }
 
-        // Fixed call/message bar.
-        if ct.primary_phone().is_some() {
-            let call = g.call;
-            let msg = g.message;
-            let cp = self.pressed == Some(Hit::Call);
-            let mp = self.pressed == Some(Hit::Message);
-            c.fill_rounded_rect(
-                call,
-                36.0,
-                if cp {
-                    mix(t.success, [0, 0, 0, 255], 0.15)
-                } else {
-                    t.success
-                },
-            );
-            draw_icon(
+        // Paired actions share the same height, width and center axis.
+        if !g.call.is_empty() {
+            kit_ui::draw_pill_button(c, t, g.call, "Call", true, self.pressed == Some(Hit::Call));
+            kit_ui::draw_pill_button(
                 c,
-                IC_CALL,
-                30.0,
-                t.text_on_accent,
-                call.x + 40,
-                call.y + call.h / 2,
-            );
-            kit_ui::draw_text(
-                c,
-                "Call",
-                &kit_ui::styled(22.0, 600, t.text_on_accent),
-                call.x + 76,
-                call.y + call.h / 2 - 14,
-                Some(call.w - 90),
-            );
-            c.fill_rounded_rect(
-                msg,
-                36.0,
-                if mp {
-                    mix(t.accent, [0, 0, 0, 255], 0.15)
-                } else {
-                    t.accent
-                },
-            );
-            draw_icon(
-                c,
-                IC_SMS,
-                30.0,
-                t.text_on_accent,
-                msg.x + 40,
-                msg.y + msg.h / 2,
-            );
-            kit_ui::draw_text(
-                c,
+                t,
+                g.message,
                 "Message",
-                &kit_ui::styled(22.0, 600, t.text_on_accent),
-                msg.x + 76,
-                msg.y + msg.h / 2 - 14,
-                Some(msg.w - 90),
+                false,
+                self.pressed == Some(Hit::Message),
             );
         }
     }
@@ -734,15 +660,16 @@ impl ContactsApp {
         let g = self.form_geom(w, h);
         let editing = self.editing_id.is_some();
 
-        // Top bar (Cancel only — Save lives in the fixed bottom bar).
-        kit_ui::draw_pill_button(
-            c,
-            t,
-            g.back,
-            "‹ Cancel",
-            false,
-            self.pressed == Some(Hit::Cancel),
-        );
+        let bar = contact_form_bar(w, h);
+        let title = if editing {
+            "Edit contact"
+        } else {
+            "New contact"
+        };
+        rabbiz_app_kit::widgets::TopAppBar::render(c, bar, t, title, true, None);
+        if self.pressed == Some(Hit::Cancel) {
+            kit_ui::press_overlay(c, t, g.back, 24.0, 0.10);
+        }
         let save_pressed = self.pressed == Some(Hit::Save);
 
         // Fixed Save bar at bottom (always reachable regardless of scroll).
@@ -784,7 +711,7 @@ impl ContactsApp {
                         t,
                         r,
                         FieldSpec {
-                            caption: "NAME",
+                            caption: "Name",
                             buf: &self.form.name,
                             focused: self.focus == Focus::Name,
                             placeholder: "Full name",
@@ -959,7 +886,7 @@ impl ContactsApp {
                         t,
                         r,
                         FieldSpec {
-                            caption: "NOTE",
+                            caption: "Notes",
                             buf: &self.form.note,
                             focused: self.focus == Focus::Note,
                             placeholder: "Notes about this contact",
@@ -969,19 +896,5 @@ impl ContactsApp {
                 }
             }
         }
-
-        // Title hint under the top bar.
-        kit_ui::draw_text(
-            c,
-            if editing {
-                "Edit contact"
-            } else {
-                "New contact"
-            },
-            &kit_ui::title(t.text),
-            kit_ui::MARGIN,
-            kit_ui::TOP_SAFE + 68,
-            Some(w - kit_ui::MARGIN * 2),
-        );
     }
 }

@@ -1,16 +1,17 @@
 //! Touch gestures, keyboard navigation, and `AppEvent` dispatch for
 //! `rabbiz-photos`.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
-use de_api::{Point, Rect};
-use rabbiz_app_kit::ui;
+use de_api::{Point, Rect, Size};
+use rabbiz_app_kit::widgets::{self, DialogLayout};
 use rabbiz_app_kit::{AppEvent, AppFrame, TextInputCtl};
 
 use crate::layout;
 use crate::viewer;
 
-use super::{Gesture, PhotosApp, Screen, Touch, PUMP_EVENTS};
+use super::render::{header_action_rect, rescan_rect, viewer_chrome};
+use super::{Gesture, PhotosApp, Screen, Touch, PUMP_EVENTS, TOAST_MS};
 
 impl PhotosApp {
     fn new_touch(&self, id: i32, pos: Point) -> Touch {
@@ -26,6 +27,20 @@ impl PhotosApp {
         }
     }
 
+    /// Dialog geometry must match `widgets::dialog` in `render_viewer`.
+    fn delete_dialog_layout(&self) -> DialogLayout {
+        let name = self.current_name();
+        widgets::dialog_layout(
+            Size::new(self.cur_w.max(1), self.cur_h.max(1)),
+            &[name.as_str()],
+            &["Cancel", "Delete"],
+        )
+    }
+
+    fn set_toast(&mut self, msg: impl Into<String>) {
+        self.toast = Some((msg.into(), Instant::now() + Duration::from_millis(TOAST_MS)));
+    }
+
     fn touch_down(&mut self, id: i32, pos: Point) {
         // Single-finger model: ignore extra touches while one is tracked.
         if self.touch.is_some() {
@@ -33,16 +48,47 @@ impl PhotosApp {
         }
         match self.screen {
             Screen::Grid => {
-                self.pressed_cell = layout::hit_cell(&self.layout, self.view_top, self.scroll, pos);
-                self.scroll_start = self.scroll;
-                self.scroll_down_y = pos.y;
+                if header_action_rect(self.cur_w).contains(pos) {
+                    self.refresh_pressed = true;
+                    return;
+                }
+                if self.photos.is_empty() {
+                    let area = Rect::new(0, self.view_top, self.cur_w, self.view_h);
+                    if rescan_rect(area).contains(pos) {
+                        self.rescan_pressed = true;
+                        return;
+                    }
+                }
+                self.pressed_cell =
+                    layout::hit_cell(&self.layout, self.view_top, self.sv.offset(), pos);
+                self.sv.on_touch_down(pos.y as f32, self.now_ms());
                 self.touch = Some(self.new_touch(id, pos));
             }
             Screen::Viewer => {
-                let back = Rect::new(ui::MARGIN, ui::TOP_SAFE + 12, 120, 48);
-                if back.contains(pos) {
-                    self.back_pressed = true;
+                if self.del_dialog {
+                    let l = self.delete_dialog_layout();
+                    if let Some(i) = widgets::dialog_action_at(&l, pos) {
+                        self.del_pressed = Some(i);
+                    } else if widgets::dialog_on_scrim(&l, Size::new(self.cur_w, self.cur_h), pos) {
+                        self.del_scrim = true;
+                    }
                     return;
+                }
+                // Hidden chrome isn't tappable — those taps toggle it back.
+                if self.chrome_vis {
+                    let vc = viewer_chrome(self.cur_w, self.cur_h, self.viewer_rise());
+                    if vc.back.contains(pos) {
+                        self.back_pressed = true;
+                        return;
+                    }
+                    if vc.info.contains(pos) {
+                        self.info_pressed = true;
+                        return;
+                    }
+                    if vc.delete.contains(pos) {
+                        self.delete_pressed = true;
+                        return;
+                    }
                 }
                 self.touch = Some(self.new_touch(id, pos));
             }
@@ -71,13 +117,15 @@ impl PhotosApp {
                     }
                 };
                 t.anchor = pos;
+                if t.mode == Gesture::Scroll {
+                    // A fling/scroll cancels the cell press flash.
+                    self.pressed_cell = None;
+                }
             }
         }
         match t.mode {
             Gesture::Scroll => {
-                let dy = pos.y - self.scroll_down_y;
-                self.scroll =
-                    layout::clamp_scroll(self.scroll_start - dy as f32, self.max_scroll());
+                self.sv.on_touch_move(pos.y as f32, self.now_ms());
             }
             Gesture::Pan => {
                 self.v_pan.0 += (pos.x - t.prev.x) as f32;
@@ -109,9 +157,55 @@ impl PhotosApp {
     }
 
     fn touch_up(&mut self, id: i32, pos: Point) {
+        // Dialog buttons win over everything else.
+        if let Some(i) = self.del_pressed.take() {
+            if widgets::dialog_action_at(&self.delete_dialog_layout(), pos) == Some(i) {
+                self.del_dialog = false;
+                if i == 1 {
+                    self.delete_current();
+                }
+            }
+            return;
+        }
+        if self.del_scrim {
+            self.del_scrim = false;
+            self.del_dialog = false;
+            return;
+        }
         if self.back_pressed {
             self.back_pressed = false;
             self.close_viewer();
+            return;
+        }
+        if self.refresh_pressed {
+            self.refresh_pressed = false;
+            self.rescan();
+            self.set_toast("Library updated");
+            return;
+        }
+        if self.rescan_pressed {
+            self.rescan_pressed = false;
+            self.rescan();
+            self.set_toast("Library updated");
+            return;
+        }
+        let chrome = viewer_chrome(self.cur_w, self.cur_h, self.viewer_rise());
+        if std::mem::take(&mut self.info_pressed) {
+            if chrome.info.contains(pos) {
+                self.show_info = !self.show_info;
+                if self.show_info && self.info_dimensions.is_none() {
+                    self.info_dimensions = self
+                        .photos
+                        .get(self.v_index)
+                        .and_then(|photo| crate::headless::image_dimensions(&photo.path));
+                }
+            }
+            return;
+        }
+        if std::mem::take(&mut self.delete_pressed) {
+            if chrome.delete.contains(pos) {
+                self.del_dialog = true;
+            }
             return;
         }
         let Some(t) = self.touch.take() else { return };
@@ -122,9 +216,9 @@ impl PhotosApp {
         }
         match self.screen {
             Screen::Grid => {
-                let moved =
-                    (pos.x - t.down.x).abs().max((pos.y - t.down.y).abs()) > viewer::TOUCH_SLOP;
-                if !moved {
+                // Releases a drag + may launch a fling; returns was-drag.
+                self.sv.on_touch_up(self.now_ms());
+                if t.mode != Gesture::Scroll {
                     if let Some(idx) = self.pressed_cell {
                         self.open_viewer(idx);
                     }
@@ -143,12 +237,18 @@ impl PhotosApp {
                     self.drag_dx = 0.0;
                 }
                 Gesture::Undecided => {
-                    // Tap: double-tap zoom toggle, else arm the double-tap.
+                    // Double-tap zooms (and does not toggle chrome); a single
+                    // tap fades the overlay chrome in or out — the AOSP
+                    // contract where two quick taps net "zoom, chrome as-is".
                     let now = Instant::now();
                     if viewer::is_double_tap(self.last_up, now, pos) {
                         self.toggle_zoom(pos);
+                        self.toggle_chrome();
+                        self.last_up = None;
+                    } else {
+                        self.toggle_chrome();
+                        self.last_up = Some((now, pos));
                     }
-                    self.last_up = Some((now, pos));
                 }
                 _ => {}
             },
@@ -190,7 +290,6 @@ impl PhotosApp {
                         0xff1b | 0xff08 => self.close_viewer(), // Esc / Backspace
                         // Keyboard pages use the same content-space sign as a
                         // rightward finger drag (u > 0 = previous).
-                        // u sign = content direction: positive = previous.
                         0xff51 => self.commit_page(-1, 1.0),
                         0xff53 => self.commit_page(1, -1.0),
                         _ => {}

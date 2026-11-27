@@ -1,15 +1,23 @@
 // A21s phone shell: the only interactive user is `rabbiz`, and labwc has no polkit
-// authentication agent (no gnome-shell/kwallet prompt). Without this rule every radio
-// change from the shell fails with "Insufficient privileges": NetworkManager refuses
-// `nmcli device wifi connect` and `nmcli connection load` (both verified on the device).
+// authentication agent (no gnome-shell/kwallet prompt). Without this rule radio
+// changes from the shell fail with "Insufficient privileges".
 //
-// Scope is deliberately NetworkManager only, and only for `rabbiz`. Everything else
-// (systemd units, package management) keeps requiring authentication; the seat handover
-// rule stays in 50-rabbiz-session.rules.
+// Scope is strictly limited to an active local `rabbiz` session and an explicit
+// allow-list of safe NetworkManager actions (SEC-005). Privileged actions such as
+// settings.modify.system, settings.modify.global-dns, settings.modify.hostname,
+// wifi.share.open, and GetSecrets are deliberately excluded.
 polkit.addRule(function(action, subject) {
-    if (subject.user !== "rabbiz")
+    if (subject.user !== "rabbiz" || !subject.active || !subject.local)
         return polkit.Result.NOT_HANDLED;
-    if (action.id.indexOf("org.freedesktop.NetworkManager.") === 0)
+    var allowed = {
+        "org.freedesktop.NetworkManager.network-control": true,
+        "org.freedesktop.NetworkManager.enable-disable-wifi": true,
+        "org.freedesktop.NetworkManager.enable-disable-wwan": true,
+        "org.freedesktop.NetworkManager.enable-disable-network": true,
+        "org.freedesktop.NetworkManager.settings.modify.own": true,
+        "org.freedesktop.NetworkManager.wifi.scan": true
+    };
+    if (allowed[action.id] === true)
         return polkit.Result.YES;
     return polkit.Result.NOT_HANDLED;
 });

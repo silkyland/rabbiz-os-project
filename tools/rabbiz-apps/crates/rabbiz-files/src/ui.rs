@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use de_api::{Point, Rect};
 use rabbiz_app_kit::text;
 use rabbiz_app_kit::ui as kit_ui;
-use rabbiz_app_kit::{Canvas, Theme};
+use rabbiz_app_kit::widgets::{self, IconBtnStyle};
+use rabbiz_app_kit::{icons, Canvas, Theme};
 
 use crate::layout as lay;
 use crate::model::{self, FileKind, SortKey};
@@ -66,9 +67,19 @@ fn icon_button(
     hit: Hit,
     active: bool,
 ) {
-    c.fill_rounded_rect(r, (r.h as f32) / 2.0, t.surface1);
-    let col = if active { t.accent } else { t.text };
-    draw_icon(c, codepoint, 26.0, col, r.x + r.w / 2, r.y + r.h / 2);
+    widgets::icon_btn(
+        c,
+        t,
+        r,
+        codepoint,
+        if active {
+            IconBtnStyle::Tonal
+        } else {
+            IconBtnStyle::Plain
+        },
+        active,
+        false,
+    );
     hit_rect(hits, r, hit);
 }
 
@@ -137,53 +148,14 @@ impl FilesApp {
             icon_button(c, t, hits, r, "\u{e88a}", Hit::Home, false);
             x += 48;
         }
-        // Breadcrumb segments.
-        let segs = self.crumb_segments();
-        let sep_w = 14;
-        let avail = w - kit_ui::MARGIN - x - 3 * 52 - 16;
-        let mut cx = x;
-        let n = segs.len();
-        for (i, (label, target)) in segs.iter().enumerate() {
-            let st = kit_ui::styled(19.0, if i + 1 == n { 600 } else { 400 }, t.text);
-            let max_w = if i + 1 == n {
-                (avail - cx + x).max(40)
-            } else {
-                180
-            };
-            let Some(px) = text::label(label, st, Some(max_w)) else {
-                continue;
-            };
-            let tw = px.width() as i32;
-            if cx + tw > w - kit_ui::MARGIN - 3 * 52 {
-                break;
-            }
-            let r = Rect::new(cx - 4, bar_y, tw + 8, PATH_BAR_H);
-            self.crumbs.push((label.clone(), r));
-            self.crumb_targets.push(target.clone());
-            c.blit(
-                &de_api::Pixels::new(
-                    de_api::Size::new(tw, px.height() as i32),
-                    px.data().to_vec(),
-                ),
-                Point::new(cx, bar_y + (PATH_BAR_H - px.height() as i32) / 2),
-            );
-            hit_rect(hits, r, Hit::Crumb(self.crumbs.len() - 1));
-            cx += tw;
-            if i + 1 < n {
-                let st_sep = kit_ui::caption(t.text3);
-                let sep = " / ";
-                if let Some(sp) = text::label(sep, st_sep, None) {
-                    c.blit(
-                        &de_api::Pixels::new(
-                            de_api::Size::new(sp.width() as i32, sp.height() as i32),
-                            sp.data().to_vec(),
-                        ),
-                        Point::new(cx, bar_y + (PATH_BAR_H - sp.height() as i32) / 2),
-                    );
-                }
-                cx += sep_w;
-            }
-        }
+        kit_ui::draw_text(
+            c,
+            "Files",
+            &kit_ui::title(t.text),
+            x + 8,
+            bar_y + 1,
+            Some((w - x - 178).max(0)),
+        );
         // Right-side icon buttons.
         let mut bx = w - kit_ui::MARGIN - 48;
         icon_button(
@@ -216,8 +188,11 @@ impl FilesApp {
             self.search_open || !self.search.s.is_empty(),
         );
 
-        // ---- search row ----
-        let mut top = bar_y + PATH_BAR_H + 8;
+        // Give the current directory its own line. Fit the visible path
+        // from the leaf backwards so a deep folder never loses its title.
+        let crumbs_y = bar_y + PATH_BAR_H + 12;
+        self.render_breadcrumbs(c, t, hits, crumbs_y);
+        let mut top = crumbs_y + PATH_BAR_H + 8;
         if self.search_open {
             let r = Rect::new(
                 kit_ui::MARGIN,
@@ -379,32 +354,79 @@ impl FilesApp {
         }
     }
 
-    /// Breadcrumb labels + jump targets, root→leaf.
-    fn crumb_segments(&self) -> Vec<(String, PathBuf)> {
-        let mut segs: Vec<(String, PathBuf)> = Vec::new();
-        let mut cur = PathBuf::from("/");
-        segs.push(("/".to_string(), cur.clone()));
-        for comp in self.cwd.components() {
-            use std::path::Component;
-            match comp {
-                Component::RootDir => {}
-                Component::Normal(os) => {
-                    cur.push(os);
-                    let label = if cur == self.home {
-                        "Home".to_string()
-                    } else {
-                        os.to_string_lossy().into_owned()
-                    };
-                    segs.push((label, cur.clone()));
-                }
-                _ => {}
+    fn render_breadcrumbs(
+        &mut self,
+        c: &mut Canvas,
+        t: &Theme,
+        hits: &mut Vec<(Rect, Hit)>,
+        y: i32,
+    ) {
+        let track = Rect::new(
+            kit_ui::MARGIN,
+            y,
+            self.cur_w - kit_ui::MARGIN * 2,
+            PATH_BAR_H,
+        );
+        let mut remaining = (track.w - 24).max(0);
+        let mut visible = Vec::new();
+        for (label, target) in self.crumb_segments().into_iter().rev() {
+            let leaf = visible.is_empty();
+            let style = kit_ui::styled(
+                19.0,
+                if leaf { 600 } else { 400 },
+                if leaf { t.text } else { t.text2 },
+            );
+            let Some(px) = text::label(&label, style, leaf.then_some(remaining)) else {
+                continue;
+            };
+            let width = px.width() as i32 + 12;
+            if width > remaining + if leaf { 12 } else { 0 } {
+                break;
             }
+            visible.push((label, target, px, width));
+            remaining -= width + 20;
         }
-        // De-duplicate the leading "/" when cwd == "/".
-        if self.cwd == Path::new("/") {
-            segs.truncate(1);
-        } else if segs.len() > 1 && segs[0].1 == Path::new("/") {
-            // keep "/" crumb + each component
+        c.fill_rounded_rect(track, 12.0, t.surface1);
+        let mut x = track.x + 8;
+        for (label, target, px, width) in visible.into_iter().rev() {
+            if x > track.x + 8 {
+                draw_icon(
+                    c,
+                    icons::CHEVRON_RIGHT,
+                    16.0,
+                    t.text3,
+                    x + 10,
+                    track.center().y,
+                );
+                x += 20;
+            }
+            let r = Rect::new(x, y, width, PATH_BAR_H);
+            self.crumbs.push((label, r));
+            self.crumb_targets.push(target);
+            c.blit(
+                &de_api::Pixels::new(
+                    de_api::Size::new(px.width() as i32, px.height() as i32),
+                    px.data().to_vec(),
+                ),
+                Point::new(r.x + 6, track.center().y - px.height() as i32 / 2),
+            );
+            hit_rect(hits, r, Hit::Crumb(self.crumbs.len() - 1));
+            x += width;
+        }
+    }
+
+    /// Breadcrumb labels and jump targets, starting at Home when possible.
+    fn crumb_segments(&self) -> Vec<(String, PathBuf)> {
+        let (mut cur, root_label, relative) = match self.cwd.strip_prefix(&self.home) {
+            Ok(relative) => (self.home.clone(), "Home", relative),
+            Err(_) => (PathBuf::from("/"), "/", self.cwd.as_path()),
+        };
+        let mut segs = vec![(root_label.to_owned(), cur.clone())];
+        for comp in relative.components() {
+            if let std::path::Component::Normal(name) = comp {
+                cur.push(name);
+                segs.push((name.to_string_lossy().into_owned(), cur.clone()));
+            }
         }
         segs
     }
@@ -506,8 +528,7 @@ impl FilesApp {
         let (icon_kind, name, sub, is_sel, is_link) = self.item_info(item);
         let pressed = self.pressed_item == Some(idx) && self.pressed_hit.is_none();
 
-        // Row surface.
-        c.fill_rounded_rect(r, 16.0, t.surface1);
+        // Press and selection use a surface layer over the flat directory list.
         if is_sel {
             c.fill_rounded_rect(r, 16.0, alpha(t.accent_dim, 90));
         } else if pressed {
@@ -545,50 +566,28 @@ impl FilesApp {
             tile.y + tile.h / 2,
         );
         cx += tile.w + 16;
-        let text_w = r.right() - 16 - cx;
+        let text_w = (r.right() - 16 - cx).max(0);
         kit_ui::draw_text(
             c,
             &name,
             &kit_ui::styled(21.0, if item == Item::Parent { 500 } else { 450 }, t.text),
             cx,
-            y + 12,
+            y + 9,
             Some(text_w),
         );
-        let sub_line = if is_link {
-            format!("{sub} · link")
-        } else {
-            sub
-        };
+        let mut details = sub;
+        if is_link {
+            details.push_str(" · link");
+        }
         kit_ui::draw_text(
             c,
-            &sub_line,
-            &kit_ui::caption(t.text3),
+            &details,
+            &kit_ui::caption(t.text2),
             cx,
-            y + 38,
+            y + 35,
             Some(text_w),
         );
-        // Trailing modified date for files.
-        if let Item::Ent(i) = item {
-            if let Some(e) = self.vis.get(i) {
-                if !e.is_dir {
-                    let date = model::format_time(e.mtime);
-                    let st = kit_ui::styled(15.0, 400, t.text3);
-                    let max_w = 150;
-                    if let Some(px) = text::label(&date, st, Some(max_w)) {
-                        c.blit(
-                            &de_api::Pixels::new(
-                                de_api::Size::new(px.width() as i32, px.height() as i32),
-                                px.data().to_vec(),
-                            ),
-                            Point::new(
-                                r.right() - 16 - px.width() as i32,
-                                y + (lay::ROW_H - px.height() as i32) / 2,
-                            ),
-                        );
-                    }
-                }
-            }
-        }
+        c.fill_rect(Rect::new(cx, r.bottom() + lay::GAP / 2, text_w, 1), t.line);
     }
 
     fn render_cell(&self, c: &mut Canvas, t: &Theme, idx: usize, y: i32, ox: i32) {
@@ -596,7 +595,7 @@ impl FilesApp {
         let cw = lay::cell_w(self.cur_w);
         let r = Rect::new(x, y, cw, lay::CELL_H);
         let item = self.items[idx];
-        let (icon_kind, name, _sub, is_sel, _link) = self.item_info(item);
+        let (icon_kind, name, details, is_sel, _) = self.item_info(item);
         let pressed = self.pressed_item == Some(idx) && self.pressed_hit.is_none();
 
         if is_sel {
@@ -641,9 +640,13 @@ impl FilesApp {
             &kit_ui::styled(17.0, 500, t.text),
             Rect::new(x + 6, y + 84, cw - 12, 40),
         );
+        let detail = details
+            .split_once(" · ")
+            .map(|(size, _)| size)
+            .unwrap_or(&details);
         kit_ui::draw_centered(
             c,
-            &_sub,
+            detail,
             &kit_ui::caption(t.text3),
             Rect::new(x + 6, y + 122, cw - 12, 30),
         );
@@ -684,7 +687,7 @@ impl FilesApp {
         let content = lay::content_h(self.content_count(), self.grid);
         let track_h = self.view_h;
         let thumb_h = ((track_h as i64 * track_h as i64) / content.max(1) as i64) as i32;
-        let thumb_h = thumb_h.clamp(48, track_h);
+        let thumb_h = thumb_h.clamp(48.min(track_h), track_h);
         let travel = track_h - thumb_h;
         let ty = self.view_top + (travel as f32 * (self.scroll / max as f32)) as i32;
         let r = Rect::new(self.cur_w - 8, ty, 5, thumb_h);
@@ -732,44 +735,43 @@ impl FilesApp {
         let y = self.cur_h - kit_ui::BOTTOM_SAFE - FOOTER_H - ACTBAR_H - 8;
         let r = Rect::new(kit_ui::MARGIN, y, w - kit_ui::MARGIN * 2, ACTBAR_H);
         c.fill_rounded_rect(r, 20.0, t.surface1);
-        // Count + Done on the left.
+        // Count + action pills.
         let n = self.selection.len();
         kit_ui::draw_text(
             c,
             &format!("{n} selected"),
-            &kit_ui::styled(18.0, 600, t.text),
-            r.x + 20,
-            r.y + 14,
-            Some(160),
+            &kit_ui::styled(17.0, 600, t.text),
+            r.x + 16,
+            r.y + 18,
+            Some(120),
         );
         let single = n == 1;
-        // Fixed order left→right after the count.
-        let mut ax = r.x + 150;
-        for (act, label, enabled) in [
-            (SelAct::Open, "Open", single),
-            (SelAct::Rename, "Rename", single),
-            (SelAct::Copy, "Copy", true),
-            (SelAct::Move, "Move", true),
-            (SelAct::Delete, "Delete", true),
-            (SelAct::Info, "Info", single),
-            (SelAct::Done, "Done", true),
+        // Fixed order left->right after the count, sized to fit on one line without wrapping.
+        let mut ax = r.x + 136;
+        for (act, label, enabled, bw) in [
+            (SelAct::Open, "Open", single, 62),
+            (SelAct::Rename, "Rename", single, 78),
+            (SelAct::Copy, "Copy", true, 60),
+            (SelAct::Move, "Move", true, 60),
+            (SelAct::Delete, "Delete", true, 68),
+            (SelAct::Info, "Info", single, 54),
+            (SelAct::Done, "Done", true, 62),
         ] {
-            let bw = 68;
             let br = Rect::new(ax, r.y + 14, bw, ACTBAR_H - 28);
             c.fill_rounded_rect(br, 12.0, if enabled { t.surface2 } else { t.surface1 });
             let col = if enabled { t.text } else { t.text3 };
-            kit_ui::draw_centered(c, label, &kit_ui::styled(16.0, 600, col), br);
+            kit_ui::draw_centered(c, label, &kit_ui::styled(15.0, 600, col), br);
             if enabled {
                 hit_rect(hits, br, Hit::Sel(act));
             }
-            ax += bw + 8;
+            ax += bw + 6;
         }
     }
 
     fn render_menu(&mut self, c: &mut Canvas, t: &Theme, hits: &mut Vec<(Rect, Hit)>) {
         // Panel under the sort button (top-right area).
         let w = 280;
-        let x = self.cur_w - kit_ui::MARGIN - 48 - 3 * 52 - w;
+        let x = (self.cur_w - kit_ui::MARGIN - 52 - w).max(kit_ui::MARGIN);
         let y = kit_ui::TOP_SAFE + 8 + PATH_BAR_H + 8;
         let rows = SortKey::ALL.len() + 2; // + hidden toggle + spacer
         let h = rows as i32 * 48 + 16;

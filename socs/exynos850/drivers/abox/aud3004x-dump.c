@@ -433,12 +433,12 @@ static ssize_t codec_sysfs_store(const struct class *cls,
 	int ret;
 	char input[MAX_STRING_LENGTH];
 
-	if (strlen(buf) > MAX_STRING_LENGTH) {
-		pr_info("%s() [ERROR] wrong input: %s\n", __func__, buf);
-		return 0;
+	if (count >= sizeof(input)) {
+		pr_info("%s() [ERROR] wrong input length: %zu\n", __func__, count);
+		return -EINVAL;
 	}
 
-	memcpy(input, buf, strlen(buf));
+	strscpy(input, buf, sizeof(input));
 	ret = command_parsing(input);
 
 	if (g_command == COMMAND_WRITE)

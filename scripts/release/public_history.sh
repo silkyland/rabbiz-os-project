@@ -67,6 +67,7 @@ done
 cat > "$WORK/replace.txt" <<'EOF'
 regex:192\.168\.\d{1,3}\.\d{1,3}==><lan-ip>
 regex:/Users/[A-Za-z0-9._-]+/==>/Users/<user>/
+regex:/home/[A-Za-z0-9._-]+/==>/home/<user>/
 EOF
 if [[ -f "$REDACT_FILE" ]]; then
   cat "$REDACT_FILE" >> "$WORK/replace.txt"
@@ -78,7 +79,8 @@ fi
 echo "[3/5] rewriting history in $OUT"
 git -C "$OUT" filter-repo --quiet --force \
   --mailmap "$WORK/mailmap" \
-  --replace-text "$WORK/replace.txt"
+  --replace-text "$WORK/replace.txt" \
+  --replace-message "$WORK/replace.txt"
 
 echo "[4/5] verifying"
 fail=0
@@ -92,9 +94,6 @@ if diff <(git -C "$SRC" ls-tree -r --name-only "$SRC_TIP") <(git -C "$OUT" ls-tr
 else
   echo "  FAIL file list differs from source tip"; fail=1
 fi
-echo "  files whose content changed at the tip:"
-git -C "$OUT" fetch --quiet "$SRC" "refs/heads/$BRANCH" 2>/dev/null || true
-git -C "$OUT" diff --stat FETCH_HEAD HEAD 2>/dev/null | tail -n 1 | sed 's/^/    /' || true
 
 echo "  authors/committers after rewrite:"
 git -C "$OUT" log --format='%an <%ae>%n%cn <%ce>' | sort | uniq -c | sort -rn | sed 's/^/    /'
@@ -109,7 +108,7 @@ for e in "${OLD[@]}"; do
   fi
 done
 
-leak_patterns=('192\.168\.[0-9]+\.[0-9]+' '/Users/[A-Za-z0-9._-]+/[^<]')
+leak_patterns=('192\.168\.[0-9]+\.[0-9]+' '/Users/[A-Za-z0-9._-]+/[^<]' '/home/[A-Za-z0-9._-]+/[^<]')
 for p in "${leak_patterns[@]}"; do
   n="$(git -C "$OUT" log --all -p --format= -G"$p" | grep -cE "^\+.*$p" || true)"
   if [[ "$n" == 0 ]]; then echo "  clean: $p"; else echo "  FAIL $n added lines still match $p"; fail=1; fi
@@ -129,8 +128,9 @@ echo "[5/5] secret scan"
 if command -v gitleaks >/dev/null 2>&1; then
   if gitleaks detect --source "$OUT" --redact --no-banner --exit-code 1; then echo "  gitleaks: no findings"; else echo "  FAIL gitleaks reported findings (see above)"; fail=1; fi
 else
-  echo "  WARNING: gitleaks not installed — NO secret scan was done. Install it (brew install gitleaks) and run:"
-  echo "           gitleaks detect --source '$OUT' --redact"
+  echo "  FAIL: gitleaks not installed — refusing to pass without a secret scan." >&2
+  echo "        Install gitleaks (e.g. brew install gitleaks) and re-run." >&2
+  fail=1
 fi
 
 echo

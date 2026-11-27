@@ -190,25 +190,13 @@ pub fn format_number(d: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Avatar tint — same palette + hash as the dialer so a contact looks the
-// same in both apps.
+// Avatar tint — the shared app-kit palette (`ui::avatar_tint`), so a contact
+// looks identical in the dialer, contacts and sms apps.
 // ---------------------------------------------------------------------------
 
 #[must_use]
 pub fn hash_color(seed: &str) -> [u8; 4] {
-    const PALETTE: [[u8; 4]; 6] = [
-        [0x3B, 0x82, 0xF6, 0xFF],
-        [0x10, 0xB9, 0x81, 0xFF],
-        [0xF5, 0x9E, 0x0B, 0xFF],
-        [0xEC, 0x48, 0x99, 0xFF],
-        [0x8B, 0x5C, 0xF6, 0xFF],
-        [0x06, 0xB6, 0xD4, 0xFF],
-    ];
-    let mut h: u32 = 0;
-    for b in seed.bytes() {
-        h = h.wrapping_mul(31).wrapping_add(u32::from(b)) & 0xFFFF;
-    }
-    PALETTE[(h as usize) % PALETTE.len()]
+    rabbiz_app_kit::ui::avatar_tint(seed)
 }
 
 /// Stable per-contact tint: seeded by name, falling back to primary number.

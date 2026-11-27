@@ -3,13 +3,45 @@ set -euo pipefail
 
 RABBIZ_USER="rabbiz"
 RABBIZ_UID="$(id -u "${RABBIZ_USER}" 2>/dev/null || echo 1001)"
+
+ensure_amp() {
+    if amixer -c 1 cget name='SPK SPK On' 2>/dev/null | grep -q "values=off"; then
+        amixer -c 1 cset name='SPK SPK On' on >/dev/null 2>&1 || true
+    fi
+    if amixer -c 1 cget name='ABOX SPUS ASRC3' 2>/dev/null | grep -q "values=on"; then
+        amixer -c 1 cset name='ABOX SPUS ASRC3' 0 >/dev/null 2>&1 || true
+    fi
+    if [ -r /sys/kernel/debug/regmap/0-001e/registers ] && [ -w /sys/bus/i2c/devices/0-001e/playback_init ]; then
+        local r00 r0e
+        r00="$(awk -F': ' '/^00:/{print $2}' /sys/kernel/debug/regmap/0-001e/registers 2>/dev/null || true)"
+        r0e="$(awk -F': ' '/^0e:/{print $2}' /sys/kernel/debug/regmap/0-001e/registers 2>/dev/null || true)"
+        # Ensure SMA1303 POWER_ON (bit0=1 in reg 00) and SPK_UNMUTE (bit0=0 in reg 0e)
+        if [ -z "${r00}" ] || [ $((0x${r00} & 1)) -eq 0 ] || [ $((0x${r0e} & 1)) -eq 1 ]; then
+            echo 1536000 > /sys/bus/i2c/devices/0-001e/playback_init 2>/dev/null || true
+        fi
+    fi
+}
+
+# Never touch user-owned /run/user/<uid> paths as root (SVC-001).
 if [ "$(id -u)" -eq 0 ]; then
-    RUNTIME_DIR="/run/user/${RABBIZ_UID}"
-    DBUS_ADDR="unix:path=${RUNTIME_DIR}/bus"
-else
-    RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${RABBIZ_UID}}"
-    DBUS_ADDR="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${RUNTIME_DIR}/bus}"
+    case "${1:-get}" in
+        ensure-amp)
+            ensure_amp
+            exit 0
+            ;;
+        up|set)
+            ensure_amp
+            ;;
+    esac
+    exec runuser -u "${RABBIZ_USER}" -- env \
+        XDG_RUNTIME_DIR="/run/user/${RABBIZ_UID}" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${RABBIZ_UID}/bus" \
+        HOME="/home/${RABBIZ_USER}" \
+        "$0" "$@"
 fi
+
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${RABBIZ_UID}}"
+DBUS_ADDR="${DBUS_SESSION_BUS_ADDRESS:-unix:path=${RUNTIME_DIR}/bus}"
 STATE_FILE="${RUNTIME_DIR}/a21s-volume.state"
 LOCK_FILE="${RUNTIME_DIR}/a21s-volume.lock"
 STAMP_FILE="${RUNTIME_DIR}/a21s-volume.stamp"
@@ -18,18 +50,10 @@ SINK_TARGET="@DEFAULT_AUDIO_SINK@"
 mkdir -p "${RUNTIME_DIR}" 2>/dev/null || true
 
 run_as_rabbiz() {
-    if [ "$(id -u)" -eq 0 ]; then
-        runuser -u "${RABBIZ_USER}" -- env \
-            XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
-            DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDR}" \
-            HOME="/home/${RABBIZ_USER}" \
-            "$@"
-    else
-        env \
-            XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
-            DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDR}" \
-            "$@"
-    fi
+    env \
+        XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+        DBUS_SESSION_BUS_ADDRESS="${DBUS_ADDR}" \
+        "$@"
 }
 
 wpctl_cmd() {
@@ -58,35 +82,13 @@ write_state() {
     local muted="$2"
     local nonce tmp
     nonce="$(date +%s%N 2>/dev/null || date +%s)-$$"
-    tmp="${STATE_FILE}.tmp.$$"
+    tmp="$(mktemp "${STATE_FILE}.tmp.XXXXXX")"
     {
         printf 'VOLUME=%s\n' "${pct}"
         printf 'MUTED=%s\n' "${muted}"
         printf 'NONCE=%s\n' "${nonce}"
     } > "${tmp}"
     mv -f "${tmp}" "${STATE_FILE}"
-    if [ "$(id -u)" -eq 0 ]; then
-        chown "${RABBIZ_USER}:${RABBIZ_USER}" "${STATE_FILE}" 2>/dev/null || true
-    fi
-    chmod 664 "${STATE_FILE}" 2>/dev/null || true
-}
-
-ensure_amp() {
-    if amixer -c 1 cget name='SPK SPK On' 2>/dev/null | grep -q "values=off"; then
-        amixer -c 1 cset name='SPK SPK On' on >/dev/null 2>&1 || true
-    fi
-    if amixer -c 1 cget name='ABOX SPUS ASRC3' 2>/dev/null | grep -q "values=on"; then
-        amixer -c 1 cset name='ABOX SPUS ASRC3' 0 >/dev/null 2>&1 || true
-    fi
-    if [ -r /sys/kernel/debug/regmap/0-001e/registers ] && [ -w /sys/bus/i2c/devices/0-001e/playback_init ]; then
-        local r00 r0e
-        r00="$(awk -F': ' '/^00:/{print $2}' /sys/kernel/debug/regmap/0-001e/registers 2>/dev/null || true)"
-        r0e="$(awk -F': ' '/^0e:/{print $2}' /sys/kernel/debug/regmap/0-001e/registers 2>/dev/null || true)"
-        # Ensure SMA1303 POWER_ON (bit0=1 in reg 00) and SPK_UNMUTE (bit0=0 in reg 0e)
-        if [ -z "${r00}" ] || [ $((0x${r00} & 1)) -eq 0 ] || [ $((0x${r0e} & 1)) -eq 1 ]; then
-            echo 1536000 > /sys/bus/i2c/devices/0-001e/playback_init 2>/dev/null || true
-        fi
-    fi
 }
 
 # Serialize and debounce rapid dual triggers (e.g. volume-keys.py + labwc)
@@ -105,10 +107,6 @@ debounce_step() {
         fi
     fi
     printf '%s:%s\n' "${dir}" "${now_ms}" > "${STAMP_FILE}" 2>/dev/null || true
-    if [ "$(id -u)" -eq 0 ]; then
-        chown "${RABBIZ_USER}:${RABBIZ_USER}" "${STAMP_FILE}" 2>/dev/null || true
-        chmod 664 "${STAMP_FILE}" 2>/dev/null || true
-    fi
     return 0
 }
 
@@ -116,10 +114,6 @@ cmd="${1:-get}"
 shift || true
 
 exec 9>"${LOCK_FILE}"
-if [ "$(id -u)" -eq 0 ]; then
-    chown "${RABBIZ_USER}:${RABBIZ_USER}" "${LOCK_FILE}" 2>/dev/null || true
-    chmod 666 "${LOCK_FILE}" 2>/dev/null || true
-fi
 flock -w 2 9 || true
 
 case "${cmd}" in

@@ -7,6 +7,14 @@ Before=rabbiz-session.service
 Type=oneshot
 ExecStart=/usr/local/bin/a21s-modem-ctl init
 RemainAfterExit=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateNetwork=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target

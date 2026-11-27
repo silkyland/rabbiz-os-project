@@ -1,24 +1,26 @@
 #!/usr/bin/env bash
 # mirror_setup.sh — install and enable wayvnc on the A21s for Rabbiz Mirror (macOS).
 #
-#   ./scripts/mirror_setup.sh                 # listen on USB + localhost only
-#   ./scripts/mirror_setup.sh --lan           # also listen on all interfaces (Wi-Fi)
+#   ./scripts/mirror_setup.sh                 # listen on 127.0.0.1:5900 only
 #   DEVICE=<device-ip> ./scripts/mirror_setup.sh
 #
-# Idempotent. Packages are downloaded on the Mac (the device may have no Wi-Fi)
-# and installed with `pacman -U`; nothing here touches /lib or the kernel.
+# Connect over an SSH tunnel (wayvnc is bound strictly to loopback):
+#   ssh -N -L 5900:127.0.0.1:5900 root@<device-ip>
+#
+# Idempotent. Packages and their PGP signatures are downloaded over verified TLS
+# on the host (the device may have no Wi-Fi), verified with pacman-key on the
+# device, and installed with `pacman -U`; nothing here touches /lib or the kernel.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 DEVICE=${DEVICE:-172.16.42.1}
-LISTEN="172.16.42.1 127.0.0.1"
+LISTEN="127.0.0.1"
 CACHE="tools/rabbiz-mirror/.cache/pkgs"
 UNIT_PATH="/home/rabbiz/.config/systemd/user/a21s-wayvnc.service"
 HELPER_PATH="/usr/local/bin/rabbiz-mirror"
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --lan) LISTEN="0.0.0.0" ;;
         --host) DEVICE=$2; shift ;;
         -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
@@ -27,7 +29,6 @@ while [ $# -gt 0 ]; do
 done
 
 say() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
-warn() { printf '\033[1;33mwarning:\033[0m %s\n' "$*"; }
 
 say "Checking SSH to root@$DEVICE"
 ssh -o BatchMode=yes -o ConnectTimeout=6 "root@$DEVICE" true
@@ -36,33 +37,61 @@ ssh -o BatchMode=yes -o ConnectTimeout=6 "root@$DEVICE" true
 if ssh "root@$DEVICE" 'pacman -Q wayvnc neatvnc aml' >/dev/null 2>&1; then
     say "wayvnc already installed on the device"
 else
-    say "Downloading wayvnc packages for aarch64 into $CACHE"
+    say "Downloading wayvnc packages and signatures for aarch64 into $CACHE"
     mkdir -p "$CACHE"
-    for package in \
-        aml-1.0.0-1-aarch64.pkg.tar.xz \
-        neatvnc-1.0.3-1-aarch64.pkg.tar.xz \
+    PKGS=(
+        aml-1.0.0-1-aarch64.pkg.tar.xz
+        neatvnc-1.0.3-1-aarch64.pkg.tar.xz
         wayvnc-0.10.2-1-aarch64.pkg.tar.xz
-    do
+    )
+    for package in "${PKGS[@]}"; do
         if [ ! -f "$CACHE/$package" ]; then
-            curl -skL --fail --max-time 120 \
+            curl -fsSL --max-time 120 \
                 -o "$CACHE/$package" \
                 "https://mirror.archlinuxarm.org/aarch64/extra/$package"
         fi
+        if [ ! -f "$CACHE/$package.sig" ]; then
+            curl -fsSL --max-time 120 \
+                -o "$CACHE/$package.sig" \
+                "https://mirror.archlinuxarm.org/aarch64/extra/$package.sig"
+        fi
     done
-    say "Installing packages on the device"
-    scp -q "$CACHE"/aml-1.0.0-1-aarch64.pkg.tar.xz \
-           "$CACHE"/neatvnc-1.0.3-1-aarch64.pkg.tar.xz \
-           "$CACHE"/wayvnc-0.10.2-1-aarch64.pkg.tar.xz "root@$DEVICE:/tmp/"
-    ssh "root@$DEVICE" 'pacman -U --noconfirm /tmp/aml-1.0.0-1-aarch64.pkg.tar.xz /tmp/neatvnc-1.0.3-1-aarch64.pkg.tar.xz /tmp/wayvnc-0.10.2-1-aarch64.pkg.tar.xz'
+
+    say "Staging and verifying packages on the device"
+    REMOTE_STAGE=$(ssh "root@$DEVICE" 'umask 077 && mktemp -d /root/.mirror-setup.XXXXXX')
+    trap 'ssh -q "root@$DEVICE" "rm -rf -- \"\$1\"" _ "$REMOTE_STAGE" 2>/dev/null || true' EXIT
+
+    for package in "${PKGS[@]}"; do
+        scp -q "$CACHE/$package" "$CACHE/$package.sig" "root@$DEVICE:$REMOTE_STAGE/"
+    done
+
+    ssh "root@$DEVICE" 'bash -se' -- "$REMOTE_STAGE" "${PKGS[@]}" <<'INSTALL'
+set -euo pipefail
+stage="$1"
+shift
+trap 'rm -rf -- "$stage"' EXIT
+pkg_paths=()
+for pkg in "$@"; do
+    pacman-key --verify "$stage/$pkg.sig" "$stage/$pkg"
+    pkg_paths+=("$stage/$pkg")
+done
+pacman -U --noconfirm "${pkg_paths[@]}"
+INSTALL
+    trap - EXIT
 fi
 
 # A manually started wayvnc (e.g. from an earlier probe) would hold port 5900.
 ssh "root@$DEVICE" 'pkill -x wayvnc 2>/dev/null || true'
 
 # --- 2. user unit in the rabbiz session -----------------------------------
-say "Writing $UNIT_PATH"
-RABBIZ_UID=$(ssh "root@$DEVICE" 'id -u rabbiz')
-ssh "root@$DEVICE" "install -d -o rabbiz -g rabbiz /home/rabbiz/.config/systemd/user && cat > $UNIT_PATH" <<UNIT
+say "Writing $UNIT_PATH (bound to $LISTEN:5900)"
+ssh "root@$DEVICE" 'bash -se' -- "$UNIT_PATH" "$LISTEN" <<'WRITE_UNIT'
+set -euo pipefail
+unit_path="$1"
+listen="$2"
+rabbiz_uid=$(id -u rabbiz)
+runuser -u rabbiz -- mkdir -p "$(dirname "$unit_path")"
+runuser -u rabbiz -- tee "$unit_path" >/dev/null <<EOF
 [Unit]
 Description=A21s wayvnc screen mirror
 Documentation=man:wayvnc(1)
@@ -70,15 +99,17 @@ StartLimitIntervalSec=0
 StartLimitBurst=0
 
 [Service]
-Environment=XDG_RUNTIME_DIR=/run/user/${RABBIZ_UID}
+Environment=XDG_RUNTIME_DIR=/run/user/${rabbiz_uid}
 Environment=WAYLAND_DISPLAY=wayland-0
-ExecStart=/usr/bin/wayvnc -o DSI-1 -f 30 $LISTEN
+ExecStart=/usr/bin/wayvnc -o DSI-1 -f 30 ${listen}
 Restart=always
 RestartSec=2
 
 [Install]
 WantedBy=default.target
-UNIT
+EOF
+runuser -u rabbiz -- chmod 0644 "$unit_path"
+WRITE_UNIT
 
 # --- 3. root-side control helper used by the Mac app ----------------------
 say "Writing $HELPER_PATH"
@@ -155,9 +186,7 @@ HELPER
 say "Enabling and starting a21s-wayvnc in the rabbiz session"
 ssh "root@$DEVICE" 'u=$(id -u rabbiz); runuser -u rabbiz -- env XDG_RUNTIME_DIR=/run/user/$u DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$u/bus systemctl --user daemon-reload && rabbiz-mirror enable'
 
-say "Done. Launch the Mac app with:"
+say "Done. Forward port 5900 over SSH and launch the Mac app with:"
+printf '    ssh -N -L 5900:127.0.0.1:5900 root@%s &\n' "$DEVICE"
 printf '    open "dist/Rabbiz Mirror.app"     # after ./scripts/build_mac_app.sh\n'
 printf '    ssh root@%s rabbiz-mirror status\n' "$DEVICE"
-if [ "$LISTEN" = "0.0.0.0" ]; then
-    warn "wayvnc has no authentication and is now reachable from the LAN. Use only on trusted networks."
-fi

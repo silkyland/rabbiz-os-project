@@ -29,32 +29,26 @@ pub(super) const POP_S: f32 = 0.18;
 pub(super) const PRESS_SHRINK: f32 = 1.0 - de_design::motion::PRESS_SCALE;
 
 // Row metrics (pitch includes the gap).
-pub(super) const REC_PITCH: i32 = 106;
-pub(super) const REC_ROW_H: i32 = 94;
+pub(super) const REC_PITCH: i32 = 100;
+pub(super) const REC_ROW_H: i32 = 96;
 pub(super) const CON_PITCH: i32 = 100;
-pub(super) const CON_ROW_H: i32 = 88;
+pub(super) const CON_ROW_H: i32 = 96;
 
+/// Visible pages — the keypad is no longer a tab: it is a bottom-sheet
+/// overlay opened from the dialpad FAB, like the AOSP Phone app where the
+/// call log is the hero surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum Tab {
-    Keypad,
     Recents,
     Contacts,
 }
 
 impl Tab {
-    pub(super) const ALL: [Tab; 3] = [Tab::Keypad, Tab::Recents, Tab::Contacts];
+    pub(super) const ALL: [Tab; 2] = [Tab::Recents, Tab::Contacts];
     pub(super) fn label(self) -> &'static str {
         match self {
-            Tab::Keypad => "Keypad",
             Tab::Recents => "Recents",
             Tab::Contacts => "Contacts",
-        }
-    }
-    pub(super) fn icon(self) -> &'static str {
-        match self {
-            Tab::Keypad => "\u{e0bc}",   // dialpad
-            Tab::Recents => "\u{e889}",  // history
-            Tab::Contacts => "\u{e7fd}", // person
         }
     }
 }
@@ -64,6 +58,8 @@ impl Tab {
 pub(super) enum Hit {
     Pad(usize),
     Dtmf(usize),
+    /// Keypad-sheet backspace *and* the DTMF-sheet "hide keypad" button
+    /// (context decides).
     Bksp,
     /// Keypad call FAB *and* in-call end/decline buttons (context decides).
     Call,
@@ -79,6 +75,14 @@ pub(super) enum Hit {
     RecCall(usize),
     ConRow(usize),
     ConCall(usize),
+    /// Bottom-center dialpad FAB opening the keypad sheet.
+    KeypadFab,
+    /// Scrim tap or the keypad sheet's hide button — closes the sheet.
+    KeypadHide,
+    /// In-call toggle buttons (explicit hits — no sentinel Pad indices).
+    Mute,
+    Speaker,
+    DtmfToggle,
     /// Inside a scrollable list viewport (drag scroll; tap = no action).
     List,
 }
@@ -96,6 +100,8 @@ pub struct DialerApp {
     /// at startup; every contacts-tab/lookup surface reads this.
     pub(super) contacts: Vec<Contact>,
     pub(super) call: Option<CallSession>,
+    /// Keypad bottom-sheet overlay (opened by the dialpad FAB).
+    pub(super) keypad_open: bool,
     pub(super) pressed: Option<Hit>,
     /// Release "pop" animation: (key index, elapsed s).
     pub(super) pop: Option<(usize, f32)>,
@@ -118,9 +124,10 @@ impl DialerApp {
         let recents = Self::load_recents();
         // `--dial <number>` hand-off: prefill the keypad, never auto-call.
         let number = initial_number.map_or_else(String::new, |n| model::digits_only(&n));
+        let keypad_open = !number.is_empty();
         Self {
             backend,
-            tab: Tab::Keypad,
+            tab: Tab::Recents,
             number,
             query: String::new(),
             search_focus: false,
@@ -129,6 +136,7 @@ impl DialerApp {
             recents_dirty: false,
             contacts: contacts::resolved(),
             call: None,
+            keypad_open,
             pressed: None,
             pop: None,
             scroll: 0,
@@ -291,7 +299,9 @@ impl DialerApp {
         }
     }
 
-    /// Append committed text to whichever field has focus.
+    /// Append committed text to whichever field has focus. Digits typed
+    /// while no call is up open the keypad sheet — same as tapping a digit
+    /// in the AOSP Phone app.
     fn commit_text(&mut self, s: &str) {
         if self.search_focus {
             self.query.push_str(s);
@@ -303,6 +313,7 @@ impl DialerApp {
         for ch in s.chars() {
             let d = model::digits_only(&ch.to_string());
             if !d.is_empty() {
+                self.keypad_open = true;
                 self.push_digit(&d);
             }
         }
@@ -313,19 +324,26 @@ impl DialerApp {
             for _ in 0..n {
                 self.query.pop();
             }
-        } else if self.call.is_none() {
+        } else if self.call.is_none() && self.keypad_open {
             for _ in 0..n {
                 self.number.pop();
             }
         }
     }
 
+    /// Search filters both pages: name or number substring against the log.
     pub(super) fn filtered_recents(&self) -> Vec<usize> {
+        let q = self.query.trim().to_lowercase();
         self.recents
             .entries
             .iter()
             .enumerate()
             .filter(|(_, e)| !self.missed_only || e.dir == CallDir::Missed)
+            .filter(|(_, e)| {
+                q.is_empty()
+                    || e.name.to_lowercase().contains(&q)
+                    || e.number.contains(self.query.trim())
+            })
             .map(|(i, _)| i)
             .collect()
     }
@@ -354,9 +372,9 @@ impl DialerApp {
                 let vp = self.contacts_viewport(w, h);
                 (vp.h, self.filtered_contacts().len() as i32, CON_PITCH)
             }
-            Tab::Keypad => (0, 0, 1),
         };
-        let content = count * pitch;
+        // +FAB clearance: the last row scrolls fully above the dialpad FAB.
+        let content = count * pitch + 108;
         self.max_scroll = (content - vp_h).max(0);
         self.scroll = self.scroll.clamp(0, self.max_scroll);
     }
@@ -381,11 +399,12 @@ impl AppState for DialerApp {
                 self.pressed = hit;
                 // Any touch inside a list viewport can start a scroll drag;
                 // a tap without movement still dispatches the row action.
-                let in_list = match self.tab {
-                    Tab::Recents => self.recents_viewport(w, h).contains(pos),
-                    Tab::Contacts => self.contacts_viewport(w, h).contains(pos),
-                    Tab::Keypad => false,
-                };
+                let in_list = !self.keypad_open
+                    && self.call.is_none()
+                    && match self.tab {
+                        Tab::Recents => self.recents_viewport(w, h).contains(pos),
+                        Tab::Contacts => self.contacts_viewport(w, h).contains(pos),
+                    };
                 if in_list {
                     self.drag = Some((pos.y, self.scroll, false));
                 }
@@ -418,9 +437,8 @@ impl AppState for DialerApp {
                 match keysym {
                     0xff08 => self.backspace_chars(1), // BackSpace
                     0xff0d => {
-                        // Return places the call on the keypad tab.
-                        if self.call.is_none() && self.tab == Tab::Keypad && !self.number.is_empty()
-                        {
+                        // Return places the call when the keypad is up.
+                        if self.call.is_none() && self.keypad_open && !self.number.is_empty() {
                             let n = self.number.clone();
                             self.place_call(&n);
                         }
@@ -446,7 +464,7 @@ impl AppState for DialerApp {
                 // Mouse wheel/trackpad: scroll whichever list is visible.
                 // `dy` follows the wl_pointer axis sign (positive = scroll
                 // down → larger offset); flip if on-device feel disagrees.
-                if matches!(self.tab, Tab::Recents | Tab::Contacts) {
+                if !self.keypad_open && self.call.is_none() {
                     let next = (self.scroll as f32 + dy)
                         .round()
                         .clamp(0.0, self.max_scroll as f32) as i32;
@@ -485,11 +503,16 @@ impl AppState for DialerApp {
         }
 
         self.render_header(canvas, theme, w);
+        self.render_search(canvas, theme, w);
         self.render_tabs(canvas, theme, w);
         match self.tab {
-            Tab::Keypad => self.render_keypad(canvas, theme, w, h),
             Tab::Recents => self.render_recents(canvas, theme, w, h),
             Tab::Contacts => self.render_contacts(canvas, theme, w, h),
+        }
+        if self.keypad_open {
+            self.render_keypad_sheet(canvas, theme, w, h);
+        } else {
+            self.render_fab(canvas, theme, w, h);
         }
     }
 }
@@ -502,4 +525,54 @@ pub(crate) fn now_unix() -> i64 {
 
 pub fn run(initial_number: Option<String>) {
     rabbiz_app_kit::run_app(DialerApp::new(initial_number));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::CallPhase;
+    use rabbiz_app_kit::TestHarness;
+    use std::path::PathBuf;
+
+    fn shot_dir() -> PathBuf {
+        let d = PathBuf::from("/tmp/rabbiz-shots");
+        let _ = std::fs::create_dir_all(&d);
+        d
+    }
+
+    /// Drives the app through its main screens and saves PNGs (the
+    /// before/after evidence contract). Deterministic data is injected so
+    /// the shots are stable regardless of the host's store files.
+    #[test]
+    fn renders_main_screens_to_png() {
+        let dir = shot_dir();
+        let mut h = TestHarness::new(DialerApp::new(None));
+        h.state_mut().recents = Recents::demo_seed(now_unix());
+
+        h.state_mut().tab = Tab::Recents;
+        h.save_png(&dir.join("dialer-after-recents.png"))
+            .expect("save recents shot");
+
+        h.state_mut().tab = Tab::Contacts;
+        h.save_png(&dir.join("dialer-after-contacts.png"))
+            .expect("save contacts shot");
+
+        h.state_mut().keypad_open = true;
+        h.state_mut().number = "0812345678".to_string();
+        h.save_png(&dir.join("dialer-after-keypad.png"))
+            .expect("save keypad shot");
+
+        // Incoming ring + active outgoing call.
+        h.state_mut().keypad_open = false;
+        h.state_mut().call = Some(CallSession::incoming("0812345678".to_string()));
+        h.save_png(&dir.join("dialer-after-incoming.png"))
+            .expect("save incoming shot");
+
+        let mut active = CallSession::outgoing("0865551234".to_string(), None);
+        active.phase = CallPhase::Active;
+        active.secs = 74.0;
+        h.state_mut().call = Some(active);
+        h.save_png(&dir.join("dialer-after-incall.png"))
+            .expect("save in-call shot");
+    }
 }

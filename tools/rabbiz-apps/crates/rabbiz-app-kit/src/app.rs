@@ -69,4 +69,9 @@ pub trait AppState {
     fn title(&self) -> &'static str;
     fn handle_event(&mut self, event: AppEvent, ti: &TextInputCtl) -> AppFrame;
     fn render(&mut self, canvas: &mut Canvas, theme: &Theme);
+
+    /// Work started during rendering can request ticks until its result arrives.
+    fn needs_tick(&self) -> bool {
+        false
+    }
 }

@@ -116,6 +116,26 @@ impl TextInputCtl {
             ti.commit();
         }
     }
+
+    fn attach(&mut self, ti: ZwpTextInputV3) {
+        self.ti = Some(ti);
+    }
+
+    /// Re-send `enable` + `content_type` + `commit` after `zwp_text_input_v3::enter`
+    /// when the app already requested text input (e.g. auto-focus on launch or
+    /// returning from another surface).
+    fn resync_if_active(&self) {
+        if !self.active.get() {
+            return;
+        }
+        if let Some(ti) = &self.ti {
+            ti.enable();
+            if let Some(purpose) = self.purpose.get() {
+                ti.set_content_type(ContentHint::None, purpose);
+            }
+            ti.commit();
+        }
+    }
 }
 
 struct Runner<S: AppState> {
@@ -219,15 +239,26 @@ pub fn run_app<S: AppState + 'static>(state: S) {
     let h = 1600u32;
     let pool = SlotPool::new((w * h * 4 * 2) as usize, &shm).expect("shm pool");
 
+    let seats = SeatState::new(&globals, &qh);
+    // `SeatState::new` binds seats already in the initial registry without
+    // invoking `SeatHandler::new_seat`, so create `zwp_text_input_v3` eagerly
+    // for the existing seat (and fall back to `new_seat` for hotplugged ones).
+    let initial_ti = ti_mgr.as_ref().and_then(|mgr| {
+        seats
+            .seats()
+            .next()
+            .map(|seat| mgr.get_text_input(&seat, &qh, ()))
+    });
+
     let mut runner = Runner {
         reg: RegistryState::new(&globals),
-        seats: SeatState::new(&globals, &qh),
+        seats,
         out: OutputState::new(&globals, &qh),
         shm,
         pool,
         window,
         ti_mgr,
-        ti: TextInputCtl::new(None),
+        ti: TextInputCtl::new(initial_ti),
         ti_focused: false,
         w,
         h,
@@ -250,7 +281,7 @@ pub fn run_app<S: AppState + 'static>(state: S) {
     let backend = conn.backend();
     while !runner.quit {
         if runner.configured {
-            let timeout_ms = if runner.animating { 8 } else { 500 };
+            let timeout_ms = if runner.animating || runner.state.needs_tick() { 8 } else { 500 };
             let mut pfd = libc::pollfd {
                 fd: backend.poll_fd().as_raw_fd(),
                 events: libc::POLLIN,
@@ -271,7 +302,7 @@ pub fn run_app<S: AppState + 'static>(state: S) {
         let now = Instant::now();
         let dt = now.saturating_duration_since(runner.last_tick);
         runner.last_tick = now;
-        if runner.animating {
+        if runner.animating || runner.state.needs_tick() {
             runner.dispatch_app(AppEvent::Tick(dt));
         }
         runner.poll_theme();
@@ -374,7 +405,7 @@ impl<S: AppState + 'static> SeatHandler for Runner<S> {
         if self.ti.ti.is_none() {
             if let Some(mgr) = &self.ti_mgr {
                 let ti = mgr.get_text_input(&seat, qh, ());
-                self.ti = TextInputCtl::new(Some(ti));
+                self.ti.attach(ti);
             }
         }
     }
@@ -569,8 +600,17 @@ impl<S: AppState> KeyboardHandler for Runner<S> {
         _: u32,
         event: KeyEvent,
     ) {
+        // Compositor edge-back / hardware Back arrives as evdev `KEY_BACK`
+        // (raw_code 158) / `XF86Back` (`0x1008_FF26`); normalize both to
+        // Escape (`0xff1b`) so every rabbiz-app responds to swipe-back even
+        // when the XKB keymap leaves keycode 158 unmapped.
+        let keysym = if event.raw_code == 158 || event.keysym.raw() == 0x1008_ff26 {
+            0xff1b
+        } else {
+            event.keysym.raw()
+        };
         self.dispatch_app(AppEvent::Key {
-            keysym: event.keysym.raw(),
+            keysym,
             utf8: event.utf8,
         });
     }
@@ -619,6 +659,7 @@ impl<S: AppState> Dispatch<ZwpTextInputV3, ()> for Runner<S> {
         match event {
             TiEvent::Enter { .. } => {
                 state.ti_focused = true;
+                state.ti.resync_if_active();
             }
             TiEvent::Leave { .. } => {
                 state.ti_focused = false;

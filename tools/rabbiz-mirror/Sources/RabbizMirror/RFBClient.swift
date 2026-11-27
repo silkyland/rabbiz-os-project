@@ -307,10 +307,13 @@ final class RFBClient {
         let height = Int(header[2]) << 8 | Int(header[3])
         let nameLength = Int(header[20]) << 24 | Int(header[21]) << 16
             | Int(header[22]) << 8 | Int(header[23])
+        guard nameLength >= 0, nameLength <= 65_536 else {
+            throw RFBError.protocolViolation("implausible desktop name length \(nameLength)")
+        }
         if nameLength > 0 {
             _ = try readBytes(socket, nameLength)
         }
-        guard width > 0, height > 0, width <= 16_384, height <= 16_384 else {
+        guard width > 0, height > 0, width <= 4_096, height <= 4_096 else {
             throw RFBError.protocolViolation("implausible framebuffer \(width)x\(height)")
         }
         framebuffer.resize(width: width, height: height)
@@ -404,6 +407,9 @@ final class RFBClient {
             case 3:
                 _ = try readBytes(socket, 3) // padding
                 let length = try readUInt32(socket)
+                guard length <= 65_536 else {
+                    throw RFBError.protocolViolation("implausible ServerCutText length \(length)")
+                }
                 if length > 0 { _ = try readBytes(socket, length) }
             default:
                 throw RFBError.protocolViolation("unknown server message \(type)")
@@ -490,10 +496,16 @@ final class RFBClient {
                 changed = true
 
             case -223: // DesktopSize
+                guard width > 0, height > 0, width <= 4_096, height <= 4_096 else {
+                    throw RFBError.protocolViolation("implausible DesktopSize \(width)x\(height)")
+                }
                 framebuffer.resize(width: width, height: height)
                 changed = true
 
             case -239: // Cursor (not requested, but tolerate it)
+                guard width <= 1_024, height <= 1_024 else {
+                    throw RFBError.protocolViolation("implausible Cursor \(width)x\(height)")
+                }
                 _ = try readBytes(socket, width * height * 4 + ((width + 7) / 8) * height)
 
             default:

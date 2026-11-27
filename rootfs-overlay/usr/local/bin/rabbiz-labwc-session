@@ -47,7 +47,8 @@ export LIBSEAT_BACKEND=seatd
 export WLR_RENDERER="${WLR_RENDERER:-gles2}"   # Mali-G52/Panfrost: GLES only
 # Bind strictly to exynos-drm (DSI-1) so wlroots ignores simpledrm (card1).
 if [ -e /dev/dri/by-path/platform-exynos-drm-card ]; then
-    export WLR_DRM_DEVICES="$(readlink -f /dev/dri/by-path/platform-exynos-drm-card)"
+    WLR_DRM_DEVICES="$(readlink -f /dev/dri/by-path/platform-exynos-drm-card)"
+    export WLR_DRM_DEVICES
 elif [ -e /dev/dri/card0 ]; then
     export WLR_DRM_DEVICES=/dev/dri/card0
 fi

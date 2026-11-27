@@ -477,20 +477,33 @@ pub fn save_pin_credential_atomic(path: &Path, cred: &PinCredential) -> std::io:
 /// Default socket path for the root-owned `rabbiz-auth-helper` daemon.
 pub const DEFAULT_AUTH_HELPER_SOCKET: &str = "/run/rabbiz-auth/helper.sock";
 
+/// Validate a POSIX username (`[a-z_][a-z0-9_-]*`, max 32 bytes).
+///
+/// Rejects empty strings, leading `-` (option injection), path separators,
+/// traversal (`..`), NUL, whitespace, and control characters (`SEC-003`).
+#[must_use]
+pub fn is_valid_username(user: &str) -> bool {
+    let bytes = user.as_bytes();
+    if bytes.is_empty() || bytes.len() > 32 {
+        return false;
+    }
+    let first = bytes[0];
+    if !(first.is_ascii_lowercase() || first == b'_') {
+        return false;
+    }
+    bytes[1..]
+        .iter()
+        .all(|&b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_' || b == b'-')
+}
+
 /// Root-owned credential & lockout paths (`/var/lib/rabbiz-auth/<user>/`)
 /// for the privileged `rabbiz-auth-helper` follow-up (`docs/DE-KEYGUARD-AUTH.md` §3).
 #[must_use]
 pub fn root_keyguard_paths(user: &str) -> Option<(PathBuf, PathBuf)> {
-    let clean = user.trim();
-    if clean.is_empty()
-        || clean == "."
-        || clean == ".."
-        || clean.contains('/')
-        || clean.contains('\0')
-    {
+    if !is_valid_username(user) {
         return None;
     }
-    let base = Path::new("/var/lib/rabbiz-auth").join(clean);
+    let base = Path::new("/var/lib/rabbiz-auth").join(user);
     Some((base.join("keyguard.json"), base.join("keyguard.state")))
 }
 
@@ -872,6 +885,11 @@ mod tests {
         assert!(root_keyguard_paths("").is_none());
         assert!(root_keyguard_paths("..").is_none());
         assert!(root_keyguard_paths("a/b").is_none());
+        assert!(root_keyguard_paths("-root").is_none());
+        assert!(root_keyguard_paths("--help").is_none());
+        assert!(root_keyguard_paths("Root").is_none());
+        assert!(root_keyguard_paths("rabbiz\0").is_none());
+        assert!(root_keyguard_paths(" rabbiz").is_none());
         let (cred, state) = root_keyguard_paths("rabbiz").expect("valid user");
         assert_eq!(cred, PathBuf::from("/var/lib/rabbiz-auth/rabbiz/keyguard.json"));
         assert_eq!(

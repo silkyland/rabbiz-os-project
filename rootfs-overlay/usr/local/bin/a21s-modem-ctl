@@ -10,16 +10,23 @@ RADIO_DEV="/dev/disk/by-partlabel/radio"
 cmd="${1:-status}"
 
 fix_perms() {
-  chmod 666 "$FP_SYS/trigger_unlock" "$FP_SYS/sleep_pin" 2>/dev/null || true
-  chmod 666 /dev/esfp0 2>/dev/null || true
-  chgrp video /dev/umts_* 2>/dev/null || true
-  chmod 660 /dev/umts_* 2>/dev/null || true
+  chmod 600 "$FP_SYS/trigger_unlock" "$FP_SYS/sleep_pin" 2>/dev/null || true
+  chown root:root /dev/esfp0 2>/dev/null || true
+  chmod 600 /dev/esfp0 2>/dev/null || true
+  chown root:root /dev/umts_boot0 2>/dev/null || true
+  chmod 600 /dev/umts_boot0 2>/dev/null || true
+  for dev in /dev/umts_*; do
+    [ -e "$dev" ] || continue
+    [ "$dev" = "/dev/umts_boot0" ] && continue
+    chown root:uucp "$dev" 2>/dev/null || true
+    chmod 660 "$dev" 2>/dev/null || true
+  done
 }
 
 case "$cmd" in
   init)
     modprobe a21s-cpif 2>/dev/null || true
-    modprobe a21s-et5xx 2>/dev/null || true
+    # a21s-et5xx disabled until real biometric template verification is implemented (SEC-002).
     fix_perms
     if [ -x /usr/local/bin/a21s-cbd ] && [ -e "$RADIO_DEV" ]; then
       st="$(cat "$CPIF_SYS/phone_state" 2>/dev/null || echo OFFLINE)"

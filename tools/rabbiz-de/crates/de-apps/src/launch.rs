@@ -22,10 +22,29 @@ struct Override {
     env: BTreeMap<String, String>,
 }
 
+/// Validate a freedesktop `desktop_id` (or log stem) against a strict allowlist (`APP-001`).
+///
+/// Rejects empty strings, path separators (`/` and `\`), traversal (`..`), leading `.` or `-`,
+/// NUL, whitespace, and control characters; permits only `[A-Za-z0-9._:-]+`.
+#[must_use]
+pub fn is_valid_desktop_id(id: &str) -> bool {
+    if id.is_empty()
+        || id.len() > 255
+        || id.starts_with('.')
+        || id.starts_with('-')
+        || id.contains("..")
+    {
+        return false;
+    }
+    id.bytes().all(|b| {
+        b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b':' | b'-')
+    })
+}
+
 /// Launch `<desktop-id>` detached from the compositor.
 ///
-/// Resolution order: `launch.toml` override → `<id>.desktop` Exec line →
-/// treat the id itself as a command. Logs land in
+/// Resolution order: `launch.toml` override → `<id>.desktop` Exec line.
+/// Unknown `desktop_id`s are rejected rather than executed verbatim. Logs land in
 /// `$XDG_STATE_HOME/rabbiz-de/apps/<desktop-id>.log` (append).
 pub fn launch(desktop_id: &str) -> Result<i32, String> {
     launch_with_target(desktop_id, None)
@@ -34,12 +53,19 @@ pub fn launch(desktop_id: &str) -> Result<i32, String> {
 /// Launch `<desktop-id>` detached, optionally passing a file path or URI
 /// argument (`target`) to the resolved command.
 pub fn launch_with_target(desktop_id: &str, target: Option<&str>) -> Result<i32, String> {
+    if !is_valid_desktop_id(desktop_id) {
+        return Err(format!("invalid desktop_id: {desktop_id:?}"));
+    }
     let table: LaunchTable =
         toml::from_str(LAUNCH_TOML).map_err(|e| format!("embedded launch.toml is invalid: {e}"))?;
 
     let (cmdline, extra_env) = match table.overrides.get(desktop_id) {
         Some(o) => (o.exec.clone(), o.env.clone()),
-        None => (desktop_exec(desktop_id), BTreeMap::new()),
+        None => {
+            let exec = desktop_exec(desktop_id)
+                .ok_or_else(|| format!("unknown desktop_id: {desktop_id}"))?;
+            (exec, BTreeMap::new())
+        }
     };
     let mut argv = split_shellish(&cmdline);
     if argv.is_empty() {
@@ -103,6 +129,9 @@ fn spawn(
     log_name: &str,
     extra_env: &BTreeMap<String, String>,
 ) -> Result<i32, String> {
+    if !is_valid_desktop_id(log_name) {
+        return Err(format!("invalid log_name: {log_name:?}"));
+    }
     let state = std::env::var("XDG_STATE_HOME")
         .map(PathBuf::from)
         .or_else(|_| std::env::var("HOME").map(|h| PathBuf::from(h).join(".local/state")))
@@ -117,7 +146,10 @@ fn spawn(
     let log_err = log.try_clone().map_err(|e| format!("log clone: {e}"))?;
 
     let mut cmd = Command::new("setsid");
-    cmd.arg(&argv[0]).args(&argv[1..]).stdin(Stdio::null());
+    cmd.arg("--")
+        .arg(&argv[0])
+        .args(&argv[1..])
+        .stdin(Stdio::null());
     cmd.stdout(Stdio::from(log)).stderr(Stdio::from(log_err));
     for (k, v) in de_system::env::app_env() {
         match v {
@@ -146,18 +178,19 @@ fn spawn(
     }
 }
 
-/// Find `<id>.desktop` in the application dirs and extract its `Exec`,
-/// falling back to the bare id as a command name.
-fn desktop_exec(desktop_id: &str) -> String {
+/// Find `<id>.desktop` in the application dirs and extract its `Exec`.
+/// Returns `None` if no matching `.desktop` file exists (never falls back to
+/// executing an arbitrary uncatalogued command string).
+fn desktop_exec(desktop_id: &str) -> Option<String> {
     for dir in crate::catalog::applications_dirs() {
         let f = dir.join(format!("{desktop_id}.desktop"));
         if let Ok(text) = std::fs::read_to_string(&f) {
             if let Some(exec) = parse_desktop_exec(&text) {
-                return exec;
+                return Some(exec);
             }
         }
     }
-    desktop_id.to_string()
+    None
 }
 
 /// Pull `Exec=` out of the `[Desktop Entry]` group and strip field codes.
@@ -291,5 +324,41 @@ mod tests {
             resolve_default_for_mime("application/x-unknown", &entries, &mime_apps),
             None
         );
+    }
+
+    #[test]
+    fn desktop_id_validation_rejects_traversal_and_shell_strings() {
+        for good in [
+            "rabbiz-files",
+            "org.kde.dolphin",
+            "google-chrome",
+            "app_1:main",
+        ] {
+            assert!(is_valid_desktop_id(good), "expected valid: {good}");
+        }
+        for bad in [
+            "",
+            ".",
+            "..",
+            "../etc/passwd",
+            "foo/bar",
+            "foo\\bar",
+            "foo..bar",
+            ".hidden",
+            "-flag",
+            "--help",
+            "sh -c id",
+            "foo\0bar",
+            "foo\nbar",
+        ] {
+            assert!(!is_valid_desktop_id(bad), "expected invalid: {bad:?}");
+        }
+    }
+
+    #[test]
+    fn launch_rejects_unknown_and_malicious_desktop_ids() {
+        assert!(launch("sh -c id").is_err());
+        assert!(launch("../../bin/sh").is_err());
+        assert!(launch("nonexistent-app-id-xyz-999").is_err());
     }
 }

@@ -12,6 +12,7 @@
  * unlock events cleanly without reflashing the DTB.
  */
 #include <linux/atomic.h>
+#include <linux/capability.h>
 #include <linux/delay.h>
 #include <linux/fs.h>
 #include <linux/gpio/consumer.h>
@@ -191,16 +192,23 @@ static ssize_t esfp_write(struct file *filp, const char __user *buf,
 	char cmd[32];
 	size_t n = min_t(size_t, count, sizeof(cmd) - 1);
 
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
 	if (copy_from_user(cmd, buf, n))
 		return -EFAULT;
 	cmd[n] = '\0';
 
-	if (!strncmp(cmd, "reset", 5))
+	if (!strncmp(cmd, "reset", 5)) {
 		et5xx_pulse_reset(g_fp);
-	else
-		et5xx_record_event(g_fp);
-
+		return count;
+	}
+#ifdef CONFIG_A21S_ET5XX_DEBUG_UNLOCK
+	et5xx_record_event(g_fp);
 	return count;
+#else
+	return -EINVAL;
+#endif
 }
 
 static long esfp_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
@@ -298,6 +306,7 @@ static ssize_t sleep_pin_store(struct kobject *kobj,
 }
 static struct kobj_attribute attr_sleep_pin = __ATTR_RW(sleep_pin);
 
+#ifdef CONFIG_A21S_ET5XX_DEBUG_UNLOCK
 static ssize_t trigger_unlock_show(struct kobject *kobj,
 				   struct kobj_attribute *attr, char *buf)
 {
@@ -310,6 +319,8 @@ static ssize_t trigger_unlock_store(struct kobject *kobj,
 {
 	unsigned int val = 1;
 
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
 	if (kstrtouint(buf, 0, &val) && buf[0] != '\n')
 		return -EINVAL;
 	if (val)
@@ -317,6 +328,7 @@ static ssize_t trigger_unlock_store(struct kobject *kobj,
 	return count;
 }
 static struct kobj_attribute attr_trigger_unlock = __ATTR_RW(trigger_unlock);
+#endif
 
 static struct attribute *fp_attrs[] = {
 	&attr_chipid.attr,
@@ -324,7 +336,9 @@ static struct attribute *fp_attrs[] = {
 	&attr_irq_count.attr,
 	&attr_drdy_level.attr,
 	&attr_sleep_pin.attr,
+#ifdef CONFIG_A21S_ET5XX_DEBUG_UNLOCK
 	&attr_trigger_unlock.attr,
+#endif
 	NULL,
 };
 

@@ -274,6 +274,14 @@ play_url_internal() {
     fi
     rm -f "${MPV_PID_FILE}" "${MPV_SOCK}"
 
+    case "${url}" in
+        https://*|http://*|/*) ;;
+        *)
+            printf 'Rejected unsupported URL/path for mpv: %s\n' "${url}" >&2
+            return 2
+            ;;
+    esac
+
     nohup mpv \
         --no-video \
         --no-terminal \
@@ -285,7 +293,7 @@ play_url_internal() {
         --audio-buffer=0.2 \
         --loop-file=no \
         --input-ipc-server="${MPV_SOCK}" \
-        "${url}" \
+        -- "${url}" \
         >"${MPV_LOG_FILE}" 2>&1 </dev/null &
     local pid=$!
     printf '%s\n' "${pid}" > "${MPV_PID_FILE}"
@@ -370,7 +378,7 @@ cmd_web_app() {
             QT_QPA_PLATFORM=wayland \
             QT_QUICK_BACKEND=software \
             QT_QUICK_CONTROLS_MOBILE=1 \
-            QTWEBENGINE_CHROMIUM_FLAGS="--no-sandbox --disable-gpu" \
+            QTWEBENGINE_CHROMIUM_FLAGS="--disable-gpu" \
             angelfish "${target_url}" >/dev/null 2>&1 </dev/null &
         printf 'Launched Spotify Web in Angelfish\n'
         return 0

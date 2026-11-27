@@ -17,6 +17,31 @@ pub enum Radio {
     Bt,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WifiNet {
+    pub ssid: String,
+    pub signal: u8,
+    pub secured: bool,
+    pub active: bool,
+    pub saved: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BtDev {
+    pub mac: String,
+    pub name: String,
+    pub connected: bool,
+    pub paired: bool,
+}
+
+#[derive(Debug, Clone)]
+pub enum NetEvent {
+    WifiScanned(Vec<WifiNet>, Option<String>),
+    WifiAction(String),
+    BtScanned(Vec<BtDev>, Option<String>),
+    BtAction(String),
+}
+
 /// Run a command, capture stdout, bounded to 3 s (stderr suppressed — it can
 /// contain device identities). Returns `None` on spawn failure, non-zero
 /// exit, timeout, or non-UTF8 output.
@@ -236,6 +261,282 @@ pub fn toggle_radio(r: Radio, on: bool, tx: Sender<(Radio, Option<bool>)>) {
             Radio::Bt => bt_state(),
         };
         let _ = tx.send((r, st));
+    });
+}
+
+// ------------------------------------------------------------ Wi-Fi & BT lists
+
+/// Active connected Wi-Fi SSID (fast single nmcli query).
+#[must_use]
+pub fn active_wifi_ssid() -> Option<String> {
+    let out = run(&["nmcli", "-t", "-f", "active,ssid", "dev", "wifi"])?;
+    out.lines()
+        .find_map(|l| l.strip_prefix("yes:"))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// First connected Bluetooth device name.
+#[must_use]
+pub fn active_bt_device() -> Option<String> {
+    let out = run(&["bluetoothctl", "devices", "Connected"])?;
+    out.lines().find_map(|l| {
+        let rest = l.trim().strip_prefix("Device ")?;
+        let (_, name) = rest.split_once(' ')?;
+        let name = name.trim();
+        (!name.is_empty()).then(|| name.to_string())
+    })
+}
+
+/// Parse `nmcli -t -f IN-USE,SSID,SIGNAL,SECURITY dev wifi list` lines.
+pub fn parse_wifi_list(raw: &str, saved_names: &std::collections::HashSet<String>) -> Vec<WifiNet> {
+    let mut by_ssid: std::collections::BTreeMap<String, WifiNet> = std::collections::BTreeMap::new();
+    for line in raw.lines() {
+        let mut parts = line.splitn(4, ':');
+        let in_use = parts.next().unwrap_or_default().trim() == "*";
+        let ssid = parts.next().unwrap_or_default().trim().replace("\\:", ":");
+        if ssid.is_empty() {
+            continue;
+        }
+        let signal: u8 = parts.next().unwrap_or("0").trim().parse().unwrap_or(0);
+        let sec = parts.next().unwrap_or_default().trim();
+        let secured = !sec.is_empty() && sec != "--";
+        let saved = saved_names.contains(&ssid);
+        by_ssid
+            .entry(ssid.clone())
+            .and_modify(|e| {
+                if in_use {
+                    e.active = true;
+                }
+                if signal > e.signal {
+                    e.signal = signal;
+                }
+                e.secured |= secured;
+                e.saved |= saved;
+            })
+            .or_insert(WifiNet {
+                ssid,
+                signal,
+                secured,
+                active: in_use,
+                saved,
+            });
+    }
+    let mut nets: Vec<WifiNet> = by_ssid.into_values().collect();
+    nets.sort_by(|a, b| {
+        b.active
+            .cmp(&a.active)
+            .then_with(|| b.saved.cmp(&a.saved))
+            .then_with(|| b.signal.cmp(&a.signal))
+            .then_with(|| a.ssid.to_lowercase().cmp(&b.ssid.to_lowercase()))
+    });
+    nets.truncate(14);
+    nets
+}
+
+/// Async Wi-Fi scan (runs on a background thread, posts `NetEvent::WifiScanned`).
+pub fn scan_wifi_async(rescan: bool, tx: Sender<NetEvent>) {
+    std::thread::spawn(move || {
+        let mut saved = std::collections::HashSet::new();
+        if let Some(conns) = run(&["nmcli", "-t", "-f", "NAME,TYPE", "connection", "show"]) {
+            for line in conns.lines() {
+                if let Some((name, kind)) = line.rsplit_once(':') {
+                    if kind.contains("wireless") || kind.contains("wifi") {
+                        saved.insert(name.replace("\\:", ":"));
+                    }
+                }
+            }
+        }
+        let mode = if rescan { "yes" } else { "auto" };
+        let raw = run(&[
+            "nmcli",
+            "-t",
+            "-f",
+            "IN-USE,SSID,SIGNAL,SECURITY",
+            "dev",
+            "wifi",
+            "list",
+            "--rescan",
+            mode,
+        ])
+        .unwrap_or_default();
+        let nets = parse_wifi_list(&raw, &saved);
+        let active = nets.iter().find(|n| n.active).map(|n| n.ssid.clone());
+        let _ = tx.send(NetEvent::WifiScanned(nets, active));
+    });
+}
+
+/// Connect to a Wi-Fi network; NetworkManager persists the password profile.
+///
+/// When a passphrase is supplied, it is piped over stdin to `rabbiz-wifi-connect`
+/// so the PSK never appears in `/proc/<pid>/cmdline`.
+pub fn connect_wifi_async(ssid: String, password: Option<String>, tx: Sender<NetEvent>) {
+    std::thread::spawn(move || {
+        if ssid.is_empty() || ssid.chars().any(char::is_control) {
+            let _ = tx.send(NetEvent::WifiAction("Invalid Wi-Fi SSID".into()));
+            return;
+        }
+        let ok = if let Some(pw) = password {
+            let mut pw_bytes = pw.into_bytes();
+            let res = Command::new("rabbiz-wifi-connect")
+                .arg(&ssid)
+                .env("LC_ALL", "C")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()
+                .is_some_and(|mut c| {
+                    if let Some(mut stdin) = c.stdin.take() {
+                        use std::io::Write;
+                        let _ = stdin.write_all(&pw_bytes);
+                        let _ = stdin.write_all(b"\n");
+                        let _ = stdin.flush();
+                    }
+                    pw_bytes.fill(0);
+                    std::hint::black_box(&pw_bytes);
+                    status_bounded(&mut c, 45)
+                });
+            pw_bytes.fill(0);
+            std::hint::black_box(&pw_bytes);
+            res
+        } else {
+            let up = Command::new("nmcli")
+                .args(["connection", "up", "id", "--", &ssid])
+                .env("LC_ALL", "C")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()
+                .is_some_and(|mut c| status_bounded(&mut c, 12));
+            up || Command::new("nmcli")
+                .args(["dev", "wifi", "connect", "--", &ssid])
+                .env("LC_ALL", "C")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()
+                .is_some_and(|mut c| status_bounded(&mut c, 12))
+        };
+        let msg = if ok {
+            format!("Connected to {ssid}")
+        } else {
+            format!("Failed to connect to {ssid}")
+        };
+        let _ = tx.send(NetEvent::WifiAction(msg));
+        scan_wifi_async(false, tx);
+    });
+}
+
+/// Forget a saved Wi-Fi connection profile.
+pub fn forget_wifi_async(ssid: String, tx: Sender<NetEvent>) {
+    std::thread::spawn(move || {
+        if ssid.is_empty() || ssid.chars().any(char::is_control) {
+            let _ = tx.send(NetEvent::WifiAction("Invalid Wi-Fi SSID".into()));
+            return;
+        }
+        let ok = run(&["nmcli", "connection", "delete", "id", "--", &ssid]).is_some();
+        let msg = if ok {
+            format!("Forgot {ssid}")
+        } else {
+            format!("Could not forget {ssid}")
+        };
+        let _ = tx.send(NetEvent::WifiAction(msg));
+        scan_wifi_async(false, tx);
+    });
+}
+
+/// Async Bluetooth device discovery + paired/connected list.
+pub fn scan_bt_async(discover: bool, tx: Sender<NetEvent>) {
+    std::thread::spawn(move || {
+        if discover {
+            if let Ok(mut c) = Command::new("bluetoothctl")
+                .args(["--timeout", "4", "scan", "on"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+            {
+                let _ = status_bounded(&mut c, 5);
+            }
+        }
+        let parse_macs = |out: Option<String>| -> std::collections::HashSet<String> {
+            out.unwrap_or_default()
+                .lines()
+                .filter_map(|l| l.trim().strip_prefix("Device "))
+                .filter_map(|r| r.split_whitespace().next())
+                .map(str::to_string)
+                .collect()
+        };
+        let connected_set = parse_macs(run(&["bluetoothctl", "devices", "Connected"]));
+        let paired_set = parse_macs(run(&["bluetoothctl", "devices", "Paired"]));
+        let all_raw = run(&["bluetoothctl", "devices"]).unwrap_or_default();
+        let mut devs: Vec<BtDev> = all_raw
+            .lines()
+            .filter_map(|l| {
+                let rest = l.trim().strip_prefix("Device ")?;
+                let (mac, name) = rest.split_once(' ')?;
+                let mac = mac.trim().to_string();
+                let name = name.trim().to_string();
+                if mac.is_empty() || name.is_empty() {
+                    return None;
+                }
+                Some(BtDev {
+                    connected: connected_set.contains(&mac),
+                    paired: paired_set.contains(&mac),
+                    mac,
+                    name,
+                })
+            })
+            .collect();
+        devs.sort_by(|a, b| {
+            b.connected
+                .cmp(&a.connected)
+                .then_with(|| b.paired.cmp(&a.paired))
+                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+        });
+        devs.truncate(12);
+        let active = devs.iter().find(|d| d.connected).map(|d| d.name.clone());
+        let _ = tx.send(NetEvent::BtScanned(devs, active));
+    });
+}
+
+/// Connect/pair or disconnect a Bluetooth device off the UI thread.
+pub fn toggle_bt_device_async(
+    mac: String,
+    name: String,
+    currently_connected: bool,
+    tx: Sender<NetEvent>,
+) {
+    std::thread::spawn(move || {
+        let msg = if currently_connected {
+            let ok = run(&["bluetoothctl", "disconnect", &mac]).is_some();
+            if ok {
+                format!("Disconnected {name}")
+            } else {
+                format!("Failed to disconnect {name}")
+            }
+        } else {
+            let _ = run(&["bluetoothctl", "pair", &mac]);
+            let _ = run(&["bluetoothctl", "trust", &mac]);
+            let ok = Command::new("bluetoothctl")
+                .args(["connect", &mac])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .ok()
+                .is_some_and(|mut c| status_bounded(&mut c, 10));
+            if ok {
+                format!("Connected to {name}")
+            } else {
+                format!("Failed to connect {name}")
+            }
+        };
+        let _ = tx.send(NetEvent::BtAction(msg));
+        scan_bt_async(false, tx);
     });
 }
 

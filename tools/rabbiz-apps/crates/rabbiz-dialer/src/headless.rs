@@ -98,10 +98,13 @@ pub fn format_recents(recents: &Recents, now: i64) -> String {
 /// lookup first, otherwise case-insensitive name/number substring filter.
 #[must_use]
 pub fn contact_search(query: &str) -> Vec<Contact> {
-    let all = contacts::resolved();
+    search_contacts(&contacts::resolved(), query)
+}
+
+fn search_contacts(all: &[Contact], query: &str) -> Vec<Contact> {
     let digits = model::digits_only(query);
     if !digits.is_empty() {
-        if let Some(c) = model::lookup_in(&all, query) {
+        if let Some(c) = model::lookup_in(all, query) {
             return vec![c.clone()];
         }
     }
@@ -344,20 +347,21 @@ mod tests {
 
     #[test]
     fn contact_search_by_name_and_number() {
-        let by_name = contact_search("sarah");
+        let all = model::builtin_contacts();
+        let by_name = search_contacts(&all, "sarah");
         assert_eq!(by_name.len(), 1);
         assert_eq!(by_name[0].name, "Sarah Chen");
 
-        let by_number = contact_search("0812345678");
+        let by_number = search_contacts(&all, "0812345678");
         assert_eq!(by_number.len(), 1);
         assert_eq!(by_number[0].name, "Alex");
 
         // International form resolves through lookup_contact.
-        let intl = contact_search("+66 81 234 5678");
+        let intl = search_contacts(&all, "+66 81 234 5678");
         assert_eq!(intl.len(), 1);
         assert_eq!(intl[0].name, "Alex");
 
-        assert!(contact_search("zzz-no-such-person").is_empty());
+        assert!(search_contacts(&all, "zzz-no-such-person").is_empty());
     }
 
     #[test]
@@ -391,15 +395,19 @@ mod tests {
     #[test]
     fn mcp_contact_lookup_handler() {
         let args = serde_json::json!({"query": "mom"});
-        let out = mcp_contact(&args).unwrap();
-        assert!(out.contains("Mom"));
-        assert!(out.contains("086-555-1234"));
+        assert_eq!(
+            mcp_contact(&args).unwrap(),
+            format_contacts(&contact_search("mom"))
+        );
 
         let bad = serde_json::json!({});
         assert!(mcp_contact(&bad).is_err());
 
         let none = serde_json::json!({"query": "zzz"});
-        assert_eq!(mcp_contact(&none).unwrap(), "No contacts match.");
+        assert_eq!(
+            mcp_contact(&none).unwrap(),
+            format_contacts(&contact_search("zzz"))
+        );
     }
 
     #[test]

@@ -505,6 +505,7 @@ dependencies = [
  "de-config",
  "de-core",
  "de-system",
+ "libc",
  "serde_json",
  "smithay",
  "tracing-subscriber",

@@ -17,28 +17,73 @@ SSID="${1:-}"
 [ -n "$SSID" ] || { echo "Error: missing SSID" >&2; exit 2; }
 IFS= read -r PSK || PSK=""
 
-# The pty prompt masks input; --ask connection modify / device connect keep the PSK out
-# of argv. `stty -echo` is set first because stdin is pre-filled (npm-style echo race).
+# Run nmcli --ask in a pty with ECHO disabled before exec so the PSK never
+# appears in argv, never hits a sleep/echo race (PRIV-006), and never passes
+# through shell string interpolation (SVC-003).
 ask() {
-    local what="$1"; shift
-    ( sleep 2; printf '%s\n' "$PSK" ) \
-        | timeout 45 script -qec "stty -echo; nmcli --ask $what" /dev/null
+    printf '%s\n' "$PSK" | timeout 45 python3 -c '
+import os, pty, select, subprocess, sys, termios
+
+psk = sys.stdin.readline()
+argv = ["nmcli", "--ask", *sys.argv[1:]]
+master_fd, slave_fd = pty.openpty()
+try:
+    attrs = termios.tcgetattr(slave_fd)
+    attrs[3] &= ~termios.ECHO
+    termios.tcsetattr(slave_fd, termios.TCSANOW, attrs)
+
+    proc = subprocess.Popen(
+        argv,
+        stdin=slave_fd,
+        stdout=slave_fd,
+        stderr=slave_fd,
+        close_fds=True,
+    )
+    os.close(slave_fd)
+    slave_fd = -1
+
+    sent = False
+    buf = b""
+    while True:
+        r, _, _ = select.select([master_fd], [], [], 0.25)
+        if master_fd in r:
+            try:
+                chunk = os.read(master_fd, 4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            buf += chunk
+            sys.stdout.buffer.write(chunk)
+            sys.stdout.buffer.flush()
+            if not sent and (b":" in buf or b"?" in buf):
+                os.write(master_fd, psk.encode("utf-8"))
+                sent = True
+        if proc.poll() is not None:
+            break
+    sys.exit(proc.wait())
+finally:
+    if slave_fd >= 0:
+        os.close(slave_fd)
+    os.close(master_fd)
+' "$@"
 }
 
 # 1) Find an existing profile for this SSID: `nmcli device wifi connect` otherwise
 #    creates "SSID 1", "SSID 2"... on every join.
 PROFILE=""
-for name in $(nmcli -t -f NAME,TYPE connection show 2>/dev/null \
-        | awk -F: '$2 == "802-11-wireless" { print $1 }'); do
-    if [ "$(nmcli -t -g 802-11-wireless.ssid connection show "$name" 2>/dev/null)" = "$SSID" ]; then
+while IFS= read -r name; do
+    [ -n "$name" ] || continue
+    if [ "$(nmcli -t -g 802-11-wireless.ssid connection show id "$name" 2>/dev/null)" = "$SSID" ]; then
         PROFILE="$name"
         break
     fi
-done
+done < <(nmcli -t -f NAME,TYPE connection show 2>/dev/null \
+    | awk -F: '$2 == "802-11-wireless" { print $1 }')
 
 if [ -n "$PROFILE" ]; then
     if [ -n "$PSK" ]; then
-        ask "connection modify \"$PROFILE\" wifi-sec.psk" || true
+        ask connection modify id "$PROFILE" wifi-sec.psk || true
     fi
     exec timeout 40 nmcli connection up id "$PROFILE"
 fi
@@ -47,5 +92,4 @@ fi
 #    P2P device) and fails with "association took too long / ssid-not-found".
 nmcli device wifi rescan >/dev/null 2>&1 || true   # a radio toggle empties the list
 sleep 1
-QSSID="$(printf '%s' "$SSID" | sed "s/'/'\\\\''/g")"
-ask "device wifi connect '$QSSID' ifname wlan0"
+ask device wifi connect "$SSID" ifname wlan0

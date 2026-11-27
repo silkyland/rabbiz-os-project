@@ -328,17 +328,29 @@ impl De {
     /// Called on the 500 ms loop timer.
     pub(crate) fn poll_power(&mut self) {
         let now = Instant::now();
+        self.check_session_lock_liveness();
         if let Some(action) = self.power.cmd_poll() {
             self.power_cmd(&action);
         }
         if let Some(path) = self.power.shot_poll() {
             self.shot_fx.fire(&path, now);
         }
+        self.poll_recording();
+        if self.tile_shot_pending {
+            self.tile_shot_pending = false;
+            if let Err(e) = self.capture_and_save_screenshot(true) {
+                eprintln!("rabbiz-de: quick-settings screenshot failed: {e}");
+            }
+        }
         match self.power.fp_poll() {
             Some(true) if self.locked() || self.sleeping() => {
-                de_system::fingerprint::arm_trigger();
+                // SEC-002: /dev/esfp0 reports raw DRDY IRQ edges with no biometric
+                // template verification; ignore untrusted unlock triggers until
+                // verified biometric auth (TEE/fprintd) is implemented.
+                eprintln!(
+                    "rabbiz-de: ignoring unverified fingerprint trigger from /dev/esfp0"
+                );
                 self.power_wake();
-                self.lock.unlock_now();
             }
             Some(false) if self.locked() => self.lock.fail_shake(now),
             _ => {}
@@ -470,8 +482,10 @@ impl De {
                 }
             }
             "fp-unlock" => {
+                // SEC-002: Ignore untrusted fp-unlock command from a21s-power.cmd
+                // until verified biometric auth is implemented.
+                eprintln!("rabbiz-de: ignoring untrusted fp-unlock power command");
                 self.power_wake();
-                self.lock.unlock_now();
             }
             "fp-fail" => {
                 if self.locked() {

@@ -16,8 +16,10 @@ or KEY_POWER (`gpio-keys` and `s2mpu12-pwrkey`).
   combo uses the Power key).
 """
 import glob
-import subprocess
+import os
 import pwd
+import signal
+import subprocess
 import time
 from select import select
 
@@ -25,9 +27,13 @@ from evdev import InputDevice, ecodes
 
 from a21s_holdmenu import HoldMenu
 
+# Reap spawned children automatically to prevent zombie accumulation (SVC-009).
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+
 COMBO_COOLDOWN_SEC = 0.70
 VOLUME_DELAY_SEC = 0.20   # hold a lone volume press this long; a combo cancels it (no volume change / OSD)
-MARKER = "/run/user/%d/a21s-key-combo" % pwd.getpwnam("rabbiz").pw_uid
+RABBIZ_PW = pwd.getpwnam("rabbiz")
+MARKER = "/run/user/%d/a21s-key-combo" % RABBIZ_PW.pw_uid
 
 WATCH_KEYS = {
     ecodes.KEY_VOLUMEUP,
@@ -38,15 +44,34 @@ WATCH_KEYS = {
 
 
 def mark_volume_press():
+    dropped = False
     try:
-        with open(MARKER, "w") as f:
-            f.write("1")
+        if os.geteuid() == 0:
+            os.setegid(RABBIZ_PW.pw_gid)
+            os.seteuid(RABBIZ_PW.pw_uid)
+            dropped = True
+        fd = os.open(
+            MARKER,
+            os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW,
+            0o644,
+        )
+        try:
+            os.write(fd, b"1")
+        finally:
+            os.close(fd)
     except OSError:
         pass
+    finally:
+        if dropped:
+            os.seteuid(0)
+            os.setegid(0)
 
 
 def run_async(argv):
-    subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    cmd = list(argv)
+    if os.geteuid() == 0:
+        cmd = ["/usr/bin/runuser", "-u", RABBIZ_PW.pw_name, "--"] + cmd
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def volume_devices():

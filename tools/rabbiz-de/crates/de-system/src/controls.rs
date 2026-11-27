@@ -15,6 +15,7 @@ pub struct Snapshot {
     pub bluetooth: Option<bool>,
     pub bt_device: Option<String>,
     pub airplane: Option<bool>,
+    pub hotspot: Option<bool>,
     pub flashlight: Option<bool>,
     pub battery_saver: Option<bool>,
     pub brightness: Option<f32>,
@@ -28,6 +29,7 @@ pub enum Action {
     Wifi(bool),
     Bluetooth(bool),
     Airplane(bool),
+    Hotspot(bool),
     Flashlight(bool),
     BatterySaver(bool),
     Brightness(f32),
@@ -39,6 +41,7 @@ impl Action {
             Self::Wifi(_) => "wifi",
             Self::Bluetooth(_) => "bluetooth",
             Self::Airplane(_) => "airplane",
+            Self::Hotspot(_) => "hotspot",
             Self::Flashlight(_) => "flashlight",
             Self::BatterySaver(_) => "battery_saver",
             Self::Brightness(_) => "brightness",
@@ -190,6 +193,9 @@ fn poll() -> Snapshot {
         (Some(w), Some(b)) => Some(w && b),
         _ => None,
     };
+    let hotspot = output("nmcli", &["-t", "-f", "NAME", "con", "show", "--active"])
+        .ok()
+        .map(|s| s.lines().any(|l| l.trim() == HOTSPOT_CONNECTION));
     let flashlight = torch()
         .and_then(|p| read_u32(&p.join("brightness")))
         .map(|v| v != 0);
@@ -243,6 +249,7 @@ fn poll() -> Snapshot {
         bluetooth,
         bt_device,
         airplane,
+        hotspot,
         flashlight,
         battery_saver,
         brightness,
@@ -250,6 +257,46 @@ fn poll() -> Snapshot {
         ..Snapshot::default()
     }
 }
+/// NetworkManager connection backing the hotspot tile. NM persists it after
+/// the first creation, so the password lives in system-connections, not here.
+pub const HOTSPOT_CONNECTION: &str = "RabbizOS-Hotspot";
+
+fn hotspot_up() -> Result<(), ()> {
+    let exists = output("nmcli", &["-t", "-f", "NAME", "con", "show"])
+        .map(|s| s.lines().any(|l| l.trim() == HOTSPOT_CONNECTION))
+        .unwrap_or(false);
+    if exists {
+        return output("nmcli", &["--wait", "5", "con", "up", HOTSPOT_CONNECTION]).map(|_| ());
+    }
+    // First use: create the AP connection on the Wi-Fi device with a random
+    // password; NetworkManager saves it under HOTSPOT_CONNECTION (`ifname`
+    // omitted so NM picks the Wi-Fi device itself).
+    let pw: String = {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let seed = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos());
+        let mut x = seed ^ (std::process::id() as u128) << 64;
+        const A: &[u8] = b"abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789";
+        (0..12)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                A[(x % A.len() as u128) as usize] as char
+            })
+            .collect()
+    };
+    output(
+        "nmcli",
+        &[
+            "--wait", "5", "device", "wifi", "hotspot", "con-name", HOTSPOT_CONNECTION, "ssid",
+            "RabbizOS", "password", &pw,
+        ],
+    )
+    .map(|_| ())
+}
+
 fn fraction_value(f: f32, max: u32) -> Result<u32, ()> {
     if !f.is_finite() || max == 0 {
         return Err(());
@@ -313,6 +360,13 @@ fn apply(a: &Action, saved: &mut Option<(bool, bool)>) -> Result<(), ()> {
                 ],
             )?;
             output("wpctl", &["set-mute", "@DEFAULT_AUDIO_SINK@", "0"]).map(|_| ())
+        }
+        Action::Hotspot(on) => {
+            if on {
+                hotspot_up()
+            } else {
+                output("nmcli", &["--wait", "5", "con", "down", HOTSPOT_CONNECTION]).map(|_| ())
+            }
         }
         Action::Flashlight(on) => {
             let p = torch().ok_or(())?;

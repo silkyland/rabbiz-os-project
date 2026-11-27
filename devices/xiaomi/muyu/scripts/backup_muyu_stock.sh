@@ -6,7 +6,7 @@ set -euo pipefail
 # For locked stock HyperOS devices, it identifies the exact installed firmware
 # version so the matching official Fastboot ROM (.tgz) can be downloaded.
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BACKUP_DIR="${REPO_ROOT}/backups/xiaomi-pad-7-pro"
 INFO_DIR="${BACKUP_DIR}/device-info"
 PART_DIR="${BACKUP_DIR}/stock-rom/partitions"

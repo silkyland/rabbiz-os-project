@@ -157,20 +157,49 @@ impl AppManifest {
     /// Validate required fields (`app.id`, `app.name`, `app.version`, `app.exec`).
     pub fn validate(&self) -> Result<(), String> {
         let id = self.app.id.trim();
-        if id.is_empty() {
-            return Err("app.id must not be empty".to_string());
+        if id.is_empty() || id != self.app.id {
+            return Err("app.id must not be empty or have surrounding whitespace".to_string());
         }
-        if id.contains('/') || id.contains('\\') || id.chars().any(char::is_whitespace) {
-            return Err(format!("invalid app.id {id:?}: must not contain slashes or whitespace"));
+        if id.starts_with('.')
+            || id.starts_with('-')
+            || id.contains("..")
+            || !id
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        {
+            return Err(format!(
+                "invalid app.id {id:?}: must match [A-Za-z0-9][A-Za-z0-9._-]* without '..'"
+            ));
         }
-        if self.app.name.trim().is_empty() {
-            return Err("app.name must not be empty".to_string());
+        if self.app.name.trim().is_empty() || self.app.name.chars().any(char::is_control) {
+            return Err("app.name must not be empty or contain control characters".to_string());
         }
-        if self.app.version.trim().is_empty() {
-            return Err("app.version must not be empty".to_string());
+        if self.app.version.trim().is_empty() || self.app.version.chars().any(char::is_control) {
+            return Err("app.version must not be empty or contain control characters".to_string());
         }
-        if self.app.exec.trim().is_empty() {
-            return Err("app.exec must not be empty".to_string());
+        let exec = self.app.exec.trim();
+        if exec.is_empty()
+            || exec.chars().any(char::is_control)
+            || exec.contains('\\')
+            || !is_safe_relative_path(exec)
+        {
+            return Err(format!(
+                "invalid app.exec {exec:?}: must be a relative path without '..' or control characters"
+            ));
+        }
+        if self.app.icon.chars().any(char::is_control)
+            || self.app.icon.contains("..")
+            || self.app.icon.contains('\\')
+        {
+            return Err(format!("invalid app.icon {:?}", self.app.icon));
+        }
+        if self
+            .app
+            .categories
+            .iter()
+            .any(|c| c.chars().any(char::is_control))
+        {
+            return Err("app.categories must not contain control characters".to_string());
         }
         Ok(())
     }
@@ -178,16 +207,23 @@ impl AppManifest {
     /// Generate a valid Freedesktop `.desktop` file compatible with `de-apps/src/catalog.rs`.
     #[must_use]
     pub fn generate_desktop_entry(&self, install_bin_path: &Path) -> String {
-        let mut cats = self.app.categories.join(";");
+        let mut cats = self
+            .app
+            .categories
+            .iter()
+            .map(|c| sanitize_desktop_field(c))
+            .filter(|c| !c.is_empty())
+            .collect::<Vec<_>>()
+            .join(";");
         if !cats.is_empty() && !cats.ends_with(';') {
             cats.push(';');
         }
         if cats.is_empty() {
             cats = "Utility;".to_string();
         }
-        let icon_val = if let Some(parent) = install_bin_path.parent() {
+        let icon_raw = if let Some(parent) = install_bin_path.parent() {
             let candidate = parent.join(&self.app.icon);
-            if candidate.exists() {
+            if is_safe_relative_path(&self.app.icon) && candidate.exists() {
                 candidate.display().to_string()
             } else {
                 self.app.icon.clone()
@@ -195,17 +231,33 @@ impl AppManifest {
         } else {
             self.app.icon.clone()
         };
+        let name = sanitize_desktop_field(&self.app.name);
+        let exec = sanitize_desktop_field(&install_bin_path.display().to_string());
+        let icon_val = sanitize_desktop_field(&icon_raw);
+        let id = sanitize_desktop_field(&self.app.id);
         format!(
-            "[Desktop Entry]\nType=Application\nName={}\nExec={}\nIcon={}\nCategories={}\nTerminal=false\nStartupWMClass={}\nX-Rabbiz-Kind={}\nX-Rabbiz-MCP={}\n",
-            self.app.name,
-            install_bin_path.display(),
-            icon_val,
-            cats,
-            self.app.id,
+            "[Desktop Entry]\nType=Application\nName={name}\nExec={exec}\nIcon={icon_val}\nCategories={cats}\nTerminal=false\nStartupWMClass={id}\nX-Rabbiz-Kind={}\nX-Rabbiz-MCP={}\n",
             self.app.kind.as_str(),
             self.mcp.enabled
         )
     }
+}
+
+fn sanitize_desktop_field(s: &str) -> String {
+    s.chars().filter(|c| !c.is_control()).collect()
+}
+
+fn is_safe_relative_path(p: &str) -> bool {
+    use std::path::Component;
+    if p.is_empty() || p.starts_with('/') || p.contains('\\') || p.chars().any(char::is_control) {
+        return false;
+    }
+    let path = Path::new(p);
+    if path.is_absolute() {
+        return false;
+    }
+    path.components()
+        .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
 }
 
 /// Summary of one file stored inside an `.rbz` bundle.
@@ -382,7 +434,7 @@ fn parse_and_verify_rbz_bytes(raw: &[u8]) -> Result<ParsedRbz, String> {
         let rel_path = std::str::from_utf8(path_slice)
             .map_err(|e| format!("invalid file path UTF-8: {e}"))?
             .to_string();
-        if rel_path.contains("..") || rel_path.starts_with('/') {
+        if !is_safe_relative_path(&rel_path) {
             return Err(format!("unsafe relative path in .rbz: {rel_path:?}"));
         }
         let exec_byte = read_slice(raw, &mut pos, 1)?[0];
@@ -425,11 +477,7 @@ pub fn verify_rbz(rbz_file: &Path) -> Result<RbzMetadata, String> {
     Ok(parse_and_verify_rbz_bytes(&raw)?.metadata)
 }
 
-/// Verify and unpack `rbz_file` into `dest_dir`, writing a `SHA256SUMS` manifest alongside the files.
-pub fn unpack_rbz(rbz_file: &Path, dest_dir: &Path) -> Result<AppManifest, String> {
-    let raw = std::fs::read(rbz_file)
-        .map_err(|e| format!("read {}: {e}", rbz_file.display()))?;
-    let parsed = parse_and_verify_rbz_bytes(&raw)?;
+fn unpack_parsed_rbz(parsed: &ParsedRbz, dest_dir: &Path) -> Result<AppManifest, String> {
     std::fs::create_dir_all(dest_dir)
         .map_err(|e| format!("mkdir {}: {e}", dest_dir.display()))?;
 
@@ -450,24 +498,43 @@ pub fn unpack_rbz(rbz_file: &Path, dest_dir: &Path) -> Result<AppManifest, Strin
     std::fs::write(dest_dir.join("SHA256SUMS"), sums_lines)
         .map_err(|e| format!("write SHA256SUMS: {e}"))?;
 
-    Ok(parsed.metadata.manifest)
+    Ok(parsed.metadata.manifest.clone())
+}
+
+/// Verify and unpack `rbz_file` into `dest_dir`, writing a `SHA256SUMS` manifest alongside the files.
+pub fn unpack_rbz(rbz_file: &Path, dest_dir: &Path) -> Result<AppManifest, String> {
+    let raw = std::fs::read(rbz_file)
+        .map_err(|e| format!("read {}: {e}", rbz_file.display()))?;
+    let parsed = parse_and_verify_rbz_bytes(&raw)?;
+    unpack_parsed_rbz(&parsed, dest_dir)
 }
 
 /// Install `rbz_file` into `<data_home>/rabbiz/apps/<id>/` and register `<data_home>/applications/<id>.desktop`.
 ///
+/// Reads and verifies `rbz_file` once to avoid double-read TOCTOU.
 /// Returns the path to the generated `.desktop` file.
 pub fn install_rbz_local(rbz_file: &Path, data_home: &Path) -> Result<PathBuf, String> {
     let raw = std::fs::read(rbz_file)
         .map_err(|e| format!("read {}: {e}", rbz_file.display()))?;
     let parsed = parse_and_verify_rbz_bytes(&raw)?;
-    let app_id = &parsed.metadata.manifest.app.id;
+    let app_id = parsed.metadata.manifest.app.id.clone();
 
-    let install_dir = data_home.join("rabbiz").join("apps").join(app_id);
-    let manifest = unpack_rbz(rbz_file, &install_dir)?;
+    let install_dir = data_home.join("rabbiz").join("apps").join(&app_id);
+    let manifest = unpack_parsed_rbz(&parsed, &install_dir)?;
 
     let bin_path = install_dir.join(&manifest.app.exec);
     if bin_path.exists() {
-        set_executable_bit(&bin_path);
+        let canon_install = std::fs::canonicalize(&install_dir)
+            .map_err(|e| format!("canonicalize {}: {e}", install_dir.display()))?;
+        let canon_bin = std::fs::canonicalize(&bin_path)
+            .map_err(|e| format!("canonicalize {}: {e}", bin_path.display()))?;
+        if !canon_bin.starts_with(&canon_install) {
+            return Err(format!(
+                "app.exec {} resolves outside install_dir",
+                manifest.app.exec
+            ));
+        }
+        set_executable_bit(&canon_bin);
     }
 
     let apps_dir = data_home.join("applications");

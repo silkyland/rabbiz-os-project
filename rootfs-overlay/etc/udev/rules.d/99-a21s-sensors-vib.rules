@@ -1,2 +1,2 @@
-# Galaxy A21s vibrator & sensor hub permissions
-ACTION=="add", SUBSYSTEM=="leds", KERNEL=="vibrator", RUN+="/bin/chmod 0666 /sys/class/leds/vibrator/brightness /sys/kernel/a21s_vib/duration_ms"
+# Galaxy A21s vibrator & sensor hub permissions (restricted to input group, SEC-004)
+ACTION=="add", SUBSYSTEM=="leds", KERNEL=="vibrator", RUN+="/bin/chgrp input /sys/class/leds/vibrator/brightness /sys/kernel/a21s_vib/duration_ms", RUN+="/bin/chmod 0660 /sys/class/leds/vibrator/brightness /sys/kernel/a21s_vib/duration_ms"

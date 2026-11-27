@@ -435,3 +435,68 @@ fn main() {
     }
     rabbiz_app_kit::run_app(ClockApp::new());
 }
+
+// ---------------------------------------------------------------------------
+// Tests (headless, no Wayland).
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn alarm(id: &str, hour: i32, minute: i32, enabled: bool) -> Alarm {
+        Alarm {
+            id: id.to_string(),
+            hour,
+            minute,
+            enabled,
+            fired_day: String::new(),
+        }
+    }
+
+    /// Evidence screenshots: renders the four tabs to
+    /// `/tmp/rabbiz-shots/clock-<tag>-<state>.png`. `SHOT_TAG` selects the
+    /// filename tag (`before`/`after`); defaults to `current`.
+    #[test]
+    fn shots() {
+        let tag = std::env::var("SHOT_TAG").unwrap_or_else(|_| "current".into());
+        let dir = Path::new("/tmp/rabbiz-shots");
+        let mut h = rabbiz_app_kit::TestHarness::new(ClockApp::new());
+
+        // Use in-memory alarms for both the clock and alarm tab captures.
+        h.state_mut().alarms = vec![
+            alarm("a1", 6, 45, true),
+            alarm("a2", 8, 30, true),
+            alarm("a3", 22, 0, false),
+        ];
+        h.save_png(&dir.join(format!("clock-{tag}-clock.png")))
+            .expect("save clock tab");
+
+        h.state_mut().tab = Tab::Alarm;
+        h.save_png(&dir.join(format!("clock-{tag}-alarm.png")))
+            .expect("save alarm tab");
+
+        // Add-alarm panel open.
+        h.state_mut().adding = true;
+        h.save_png(&dir.join(format!("clock-{tag}-alarm-add.png")))
+            .expect("save add panel");
+        h.state_mut().adding = false;
+
+        // Timer tab (mid-countdown look: running is wall-clock driven, so
+        // just render the idle 5:00 bank).
+        h.state_mut().tab = Tab::Timer;
+        h.save_png(&dir.join(format!("clock-{tag}-timer.png")))
+            .expect("save timer tab");
+
+        // Stopwatch tab with lap rows.
+        h.state_mut().tab = Tab::Stopwatch;
+        h.state_mut().laps = vec![
+            Duration::from_millis(12_340),
+            Duration::from_millis(27_890),
+            Duration::from_millis(40_010),
+        ];
+        h.save_png(&dir.join(format!("clock-{tag}-stopwatch.png")))
+            .expect("save stopwatch tab");
+    }
+}

@@ -15,6 +15,7 @@ members = [
     "crates/rabbiz-pdf",
     "crates/rabbiz-files",
     "crates/rabbiz-store",
+    "crates/rabbiz-search",
 ]
 
 [workspace.package]

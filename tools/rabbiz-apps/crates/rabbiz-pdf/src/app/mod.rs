@@ -18,13 +18,15 @@ pub(super) const OPEN_MS: f32 = 240.0;
 pub(super) const CLOSE_MS: f32 = 180.0;
 pub(super) const SLIDE_MS: f32 = 210.0;
 pub(super) const SETTLE_MS: f32 = 140.0;
+/// Viewer chrome fade duration (seconds).
+pub(super) const CHROME_FADE_S: f32 = 0.18;
 /// Full-page pixmap cache cap in bytes (~120 MB worst case; typical use is
 /// far below since only ±2 pages per zoom bucket are kept).
 const PAGE_CACHE_BYTES: usize = 120 * 1024 * 1024;
 /// Overview thumbnail cache cap (count, not bytes — thumbs are ~300 KB).
 const THUMB_CACHE_CAP: usize = 64;
 /// Picker row height.
-pub(super) const ROW_H: i32 = 92;
+pub(super) const ROW_H: i32 = 72;
 /// Y where the scrollable list/grid starts (below `ui::draw_header`).
 pub(super) const LIST_TOP: i32 = ui::TOP_SAFE + 104;
 
@@ -89,45 +91,65 @@ pub(super) enum NavBtn {
     ZoomLabel,
 }
 
-/// Chrome geometry shared by hit-testing and drawing.
+/// Chrome geometry shared by hit-testing and drawing — keep this the single
+/// source for every interactive viewer rect.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Chrome {
     pub(super) back: Rect,
     pub(super) grid_btn: Rect,
+    /// Full-bleed page area — overlay chrome floats above it.
     pub(super) content: Rect,
+    /// Floating bottom pill backing the nav buttons.
+    pub(super) pill: Rect,
     pub(super) prev: Rect,
     pub(super) next: Rect,
     pub(super) zminus: Rect,
+    /// Center of the pill: zoom percentage. Tap to reset.
     pub(super) zlabel: Rect,
     pub(super) zplus: Rect,
 }
 
 pub(super) fn chrome(w: i32, h: i32) -> Chrome {
+    const BTN: i32 = 48;
+    let counter_w = (w - BTN * 4 - 32).clamp(52, 92);
+    const PAD: i32 = 8;
+    const GAP: i32 = 4;
+    const PILL_H: i32 = 64;
+
     let top_y = ui::TOP_SAFE + 8;
-    let back = Rect::new(ui::MARGIN, top_y, 104, 48);
-    let grid_btn = Rect::new(w - ui::MARGIN - 104, top_y, 104, 48);
-    let content_top = top_y + 48 + 12;
-    let strip_h = 84;
-    let strip_y = h - ui::BOTTOM_SAFE - strip_h;
-    let bw = 64;
-    let gap = 12;
-    let row_w = bw * 5 + gap * 4;
-    let x0 = (w - row_w) / 2;
-    let by = strip_y + 16;
+    let back = Rect::new(ui::MARGIN, top_y, BTN, BTN);
+    let grid_btn = Rect::new(w - ui::MARGIN - BTN, top_y, BTN, BTN);
+
+    // Floating bottom pill: previous, zoom controls, next.
+    let pill_w = PAD * 2 + BTN * 4 + counter_w + GAP * 4;
+    let pill = Rect::new(
+        (w - pill_w) / 2,
+        h - ui::BOTTOM_SAFE - 12 - PILL_H,
+        pill_w,
+        PILL_H,
+    );
+    let by = pill.y + (PILL_H - BTN) / 2;
+    let mut x = pill.x + PAD;
+    let prev = Rect::new(x, by, BTN, BTN);
+    x += BTN + GAP;
+    let zminus = Rect::new(x, by, BTN, BTN);
+    x += BTN + GAP;
+    let zlabel = Rect::new(x, by, counter_w, BTN);
+    x += counter_w + GAP;
+    let zplus = Rect::new(x, by, BTN, BTN);
+    x += BTN + GAP;
+    let next = Rect::new(x, by, BTN, BTN);
+
     Chrome {
         back,
         grid_btn,
-        content: Rect::new(
-            ui::MARGIN,
-            content_top,
-            w - ui::MARGIN * 2,
-            strip_y - content_top,
-        ),
-        prev: Rect::new(x0, by, bw, 48),
-        zminus: Rect::new(x0 + (bw + gap), by, bw, 48),
-        zlabel: Rect::new(x0 + (bw + gap) * 2, by, bw, 48),
-        zplus: Rect::new(x0 + (bw + gap) * 3, by, bw, 48),
-        next: Rect::new(x0 + (bw + gap) * 4, by, bw, 48),
+        content: Rect::new(0, 0, w, h),
+        pill,
+        prev,
+        next,
+        zminus,
+        zlabel,
+        zplus,
     }
 }
 
@@ -197,6 +219,15 @@ pub(super) struct PdfApp {
     pub(super) back_pressed: bool,
     pub(super) grid_pressed: bool,
     pub(super) nav_pressed: Option<NavBtn>,
+    /// Viewer overlay-chrome visibility target; `chrome_fade` animates it.
+    pub(super) chrome_vis: bool,
+    pub(super) chrome_fade: ui::Tween,
+    /// Picker header rescan / empty-state rescan / error retry presses.
+    pub(super) picker_action_pressed: bool,
+    pub(super) rescan_pressed: bool,
+    pub(super) retry_pressed: bool,
+    /// Last path `open_path` was asked to load — the error screen's Retry.
+    pub(super) last_path: Option<PathBuf>,
 }
 
 impl PdfApp {
@@ -231,6 +262,17 @@ impl PdfApp {
             back_pressed: false,
             grid_pressed: false,
             nav_pressed: None,
+            chrome_vis: true,
+            chrome_fade: ui::Tween::new(
+                1.0,
+                1.0,
+                CHROME_FADE_S,
+                de_design::motion::BEZIER_STANDARD,
+            ),
+            picker_action_pressed: false,
+            rescan_pressed: false,
+            retry_pressed: false,
+            last_path: None,
         };
         if let Some(path) = initial {
             app.open_path(&path);
@@ -241,6 +283,7 @@ impl PdfApp {
     // ---------------- document ----------------
 
     pub(super) fn open_path(&mut self, path: &Path) {
+        self.last_path = Some(path.to_path_buf());
         match Doc::open(path) {
             Ok(d) => {
                 self.doc = Some(d);
@@ -280,8 +323,36 @@ impl PdfApp {
         self.settle = None;
         self.screen = Screen::Viewer;
         self.anim = Some(Anim { open: true, t: 0.0 });
+        // Chrome auto-shows on page open (fades in).
+        self.chrome_vis = true;
+        self.chrome_fade =
+            ui::Tween::new(0.0, 1.0, CHROME_FADE_S, de_design::motion::BEZIER_STANDARD);
         self.request_page(self.page, self.zoom_i);
         self.prefetch_neighbors();
+    }
+
+    /// Re-scan the picker roots (header action + empty-state button).
+    pub(super) fn rescan_picker(&mut self) {
+        self.files = doc::scan(&doc::default_dirs());
+        self.picker_scroll = 0.0;
+        self.pressed_file = None;
+    }
+
+    /// Toggle viewer chrome visibility with a fade.
+    pub(super) fn toggle_chrome(&mut self) {
+        self.chrome_vis = !self.chrome_vis;
+        let target = if self.chrome_vis { 1.0 } else { 0.0 };
+        self.chrome_fade = ui::Tween::new(
+            self.chrome_fade.value(),
+            target,
+            CHROME_FADE_S,
+            de_design::motion::BEZIER_STANDARD,
+        );
+    }
+
+    /// Current chrome opacity 0..=1 (drives every chrome draw).
+    pub(super) fn chrome_alpha(&self) -> f32 {
+        self.chrome_fade.value().clamp(0.0, 1.0)
     }
 
     pub(super) fn go_picker(&mut self) {
@@ -295,6 +366,9 @@ impl PdfApp {
         self.back_pressed = false;
         self.grid_pressed = false;
         self.nav_pressed = None;
+        self.picker_action_pressed = false;
+        self.rescan_pressed = false;
+        self.retry_pressed = false;
     }
 
     pub(super) fn page_count(&self) -> usize {
@@ -419,6 +493,7 @@ impl PdfApp {
         self.anim.is_some()
             || self.slide.is_some()
             || self.settle.is_some()
+            || !self.chrome_fade.done()
             || !self.page_queue.is_empty()
             || !self.thumb_queue.is_empty()
     }
@@ -426,4 +501,57 @@ impl PdfApp {
 
 pub fn run(initial: Option<PathBuf>) {
     rabbiz_app_kit::run_app(PdfApp::new(initial));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rabbiz_app_kit::TestHarness;
+    use std::time::Duration;
+
+    /// Drive picker → viewer → chrome-toggle → overview → back and save PNG
+    /// evidence to /tmp/rabbiz-shots/pdf-*.png.
+    #[test]
+    fn evidence_screens() {
+        let home = std::env::temp_dir().join(format!("rabbiz-pdf-home-{}", std::process::id()));
+        let docs = home.join("Documents");
+        std::fs::create_dir_all(&docs).unwrap();
+        let pdf_path = docs.join("hello.pdf");
+        std::fs::write(&pdf_path, crate::doc::tiny_pdf()).unwrap();
+        let shots = std::path::Path::new("/tmp/rabbiz-shots");
+        let mut app = PdfApp::new(None);
+        app.files = doc::scan(&[docs]);
+        let mut h = TestHarness::new(app);
+        let _ = h.render(); // sets cur_w/cur_h
+        h.save_png(&shots.join("pdf-picker.png")).unwrap();
+
+        // Open the first document row.
+        h.tap(Point::new(360, LIST_TOP + ROW_H / 2));
+        h.settle(120, Duration::from_millis(16));
+        h.save_png(&shots.join("pdf-viewer-on.png")).unwrap();
+
+        // Single tap on the page (chrome toggle after the restyle).
+        h.tap(Point::new(360, 800));
+        h.settle(60, Duration::from_millis(16));
+        h.save_png(&shots.join("pdf-viewer-tap.png")).unwrap();
+
+        assert!(!h.state().chrome_vis);
+
+        // Reveal the chrome again with a separate tap, then open the page overview.
+        h.tap(Point::new(240, 800));
+        h.settle(60, Duration::from_millis(16));
+        let ch = chrome(720, 1600);
+        h.tap(ch.grid_btn.center());
+        h.settle(120, Duration::from_millis(16));
+        assert_eq!(h.state().screen, Screen::Overview);
+        h.save_png(&shots.join("pdf-overview.png")).unwrap();
+
+        // Back from overview — should return to the viewer.
+        h.tap(ch.back.center());
+        h.settle(120, Duration::from_millis(16));
+        assert_eq!(h.state().screen, Screen::Viewer);
+        h.save_png(&shots.join("pdf-after-back.png")).unwrap();
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }

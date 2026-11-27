@@ -28,6 +28,7 @@
 #define DEFAULT_DEV		"/dev/umts_boot0"
 #define SYSFS_CPIF_DIR		"/sys/devices/platform/soc@0/14020000.cpif"
 #define CHUNK_SIZE		(64 * 1024)
+#define MAX_CHUNK_SIZE		(16 * 1024 * 1024)
 #define CP_MEM_BASE_ADDR	0x40000000U
 #define MAX_TOC_ENTRIES		16
 
@@ -203,8 +204,20 @@ int main(int argc, char **argv)
 			radio_size = strtoull(argv[++i], NULL, 0);
 		else if (!strcmp(argv[i], "--dev") && i + 1 < argc)
 			dev = argv[++i];
-		else if (!strcmp(argv[i], "--chunk") && i + 1 < argc)
-			chunk = strtoul(argv[++i], NULL, 0);
+		else if (!strcmp(argv[i], "--chunk") && i + 1 < argc) {
+			char *endp = NULL;
+			unsigned long val;
+			errno = 0;
+			val = strtoul(argv[++i], &endp, 0);
+			if (errno != 0 || !endp || *endp != '\0' ||
+			    val == 0 || val > MAX_CHUNK_SIZE) {
+				fprintf(stderr,
+					"invalid --chunk size (must be 1..%u)\n",
+					(unsigned)MAX_CHUNK_SIZE);
+				return 1;
+			}
+			chunk = (size_t)val;
+		}
 		else if (!strcmp(argv[i], "--load-only"))
 			load_only = 1;
 		else if (!strcmp(argv[i], "--boot"))
@@ -244,8 +257,21 @@ int main(int argc, char **argv)
 		total = (uint64_t)st.st_size;
 	} else {
 		off_t end = lseek(src, 0, SEEK_END);
-		total = radio_size ? radio_size : (uint64_t)(end - (off_t)radio_off);
-		lseek(src, (off_t)radio_off, SEEK_SET);
+		if (end < 0) {
+			perror("lseek SEEK_END");
+			close(src);
+			return 1;
+		}
+		if (!radio_size) {
+			if (radio_off > (uint64_t)end) {
+				fprintf(stderr, "offset exceeds input size\n");
+				close(src);
+				return 1;
+			}
+			total = (uint64_t)end - radio_off;
+		} else {
+			total = radio_size;
+		}
 	}
 
 	if (lseek(src, (off_t)radio_off, SEEK_SET) < 0 ||

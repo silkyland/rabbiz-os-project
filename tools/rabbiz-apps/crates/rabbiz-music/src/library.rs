@@ -276,6 +276,72 @@ pub fn auto_next_index(index: Option<usize>, count: usize) -> Option<usize> {
     }
 }
 
+/// Repeat mode for the GUI transport (headless playback leaves it at `Off`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Repeat {
+    /// Stop at the end of the library.
+    #[default]
+    Off,
+    /// Wrap to the first track at the end of the library.
+    All,
+    /// Replay the current track.
+    One,
+}
+
+impl Repeat {
+    /// Transport-button cycle: Off → All → One → Off (Material convention).
+    #[must_use]
+    pub fn cycle(self) -> Self {
+        match self {
+            Self::Off => Self::All,
+            Self::All => Self::One,
+            Self::One => Self::Off,
+        }
+    }
+}
+
+/// Random-ish index in `0..count` different from `current` (when `count > 1`),
+/// driven by a caller-supplied seed — deterministic per (seed, current, count)
+/// so tests can assert it; callers mix in wall-clock nanos for real entropy.
+/// xorshift64* — enough for "not the same song twice in a row".
+#[must_use]
+pub fn shuffle_next_index(current: Option<usize>, count: usize, seed: u64) -> Option<usize> {
+    if count == 0 {
+        return None;
+    }
+    if count == 1 {
+        return Some(0);
+    }
+    let mut x = seed.max(1);
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    let mut i = (x % count as u64) as usize;
+    if Some(i) == current {
+        i = (i + 1) % count;
+    }
+    Some(i)
+}
+
+/// Which track plays next at end-of-file under `repeat`/`shuffle`.
+/// Repeat-one replays first; shuffle keeps picking random tracks (any mode);
+/// repeat-all wraps; off stops at the end of the list.
+#[must_use]
+pub fn finish_next_index(
+    current: Option<usize>,
+    count: usize,
+    repeat: Repeat,
+    shuffle: bool,
+    seed: u64,
+) -> Option<usize> {
+    match repeat {
+        Repeat::One => (count > 0).then_some(current.unwrap_or(0)),
+        _ if shuffle => shuffle_next_index(current, count, seed),
+        Repeat::All => next_index(current, count),
+        Repeat::Off => auto_next_index(current, count),
+    }
+}
+
 /// "0:05", "3:07", "1:02:03"; unknown lengths print "--:--" (never a fake 0).
 #[must_use]
 pub fn format_time(seconds: f64) -> String {
@@ -344,6 +410,52 @@ mod tests {
         assert_eq!(auto_next_index(Some(1), 3), Some(2));
         assert_eq!(auto_next_index(Some(2), 3), None);
         assert_eq!(auto_next_index(None, 0), None);
+    }
+
+    #[test]
+    fn shuffle_never_repeats_current_and_covers_range() {
+        for count in [2usize, 5, 17] {
+            for current in [None, Some(0), Some(count - 1)] {
+                for seed in 0..40u64 {
+                    let i = shuffle_next_index(current, count, seed).unwrap();
+                    assert!(i < count);
+                    assert_ne!(Some(i), current, "shuffle repeated current");
+                }
+            }
+        }
+        assert_eq!(shuffle_next_index(Some(0), 1, 7), Some(0));
+        assert_eq!(shuffle_next_index(Some(0), 0, 7), None);
+        // Deterministic per seed.
+        assert_eq!(
+            shuffle_next_index(Some(2), 9, 1234),
+            shuffle_next_index(Some(2), 9, 1234)
+        );
+        // Different seeds reach different indices (not a fixed rotation).
+        let hits: std::collections::BTreeSet<_> = (0..32u64)
+            .map(|s| shuffle_next_index(Some(0), 4, s).unwrap())
+            .collect();
+        assert!(hits.len() > 1);
+    }
+
+    #[test]
+    fn finish_next_honors_repeat_and_shuffle() {
+        assert_eq!(
+            finish_next_index(Some(1), 3, Repeat::One, false, 0),
+            Some(1)
+        );
+        assert_eq!(
+            finish_next_index(Some(2), 3, Repeat::All, false, 0),
+            Some(0)
+        );
+        assert_eq!(finish_next_index(Some(2), 3, Repeat::Off, false, 0), None);
+        // Shuffle + repeat-off still keeps playing (random ≠ current).
+        let i = finish_next_index(Some(0), 4, Repeat::Off, true, 9).unwrap();
+        assert_ne!(i, 0);
+        assert_eq!(finish_next_index(None, 0, Repeat::One, true, 0), None);
+        // Cycle order.
+        assert_eq!(Repeat::Off.cycle(), Repeat::All);
+        assert_eq!(Repeat::All.cycle(), Repeat::One);
+        assert_eq!(Repeat::One.cycle(), Repeat::Off);
     }
 
     #[test]

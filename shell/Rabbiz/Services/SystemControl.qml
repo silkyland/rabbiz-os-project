@@ -112,7 +112,8 @@ QtObject {
         if (root.flashlightHardware && root._torchPath.length > 0) {
             var val = next ? "255" : "0"
             _runCmd(["sh", "-c",
-                "echo " + val + " > " + root._torchPath + "/brightness 2>/dev/null || true"])
+                "printf '%s\\n' \"$1\" > \"$2/brightness\" 2>/dev/null || true",
+                "_", val, root._torchPath])
             ShellState.torchOverlayOpen = false
         } else {
             // Built-in OLED screen torch fallback when kernel camera flash LED is not yet wired
@@ -177,13 +178,18 @@ QtObject {
         _runCmd(["rabbiz-osk-ctl", "lang-next"])
     }
 
+    function _isValidGovernor(name) {
+        return name === "schedutil" || name === "performance" || name === "powersave"
+    }
+
     function setGovernor(name) {
-        if (!name || name.length === 0)
+        if (!_isValidGovernor(name))
             return
         root.cpuGovernor = name
         _runCmd(["sh", "-c",
             "for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do "
-          + "echo " + name + " > \"$g\" 2>/dev/null || true; done"])
+          + "printf '%s\\n' \"$1\" > \"$g\" 2>/dev/null || true; done",
+            "_", name])
     }
 
     function toggleGovernor() {
@@ -191,23 +197,29 @@ QtObject {
     }
 
     function _applyDisplayPower(blPower, brightnessRaw, gov, savedRaw) {
-        var saveSnippet = savedRaw >= 0
-            ? "RT=\"${XDG_RUNTIME_DIR:-/run/user/1001}\"; "
-              + "mkdir -p \"$RT\" 2>/dev/null || true; "
-              + "printf '%s\\n' '" + savedRaw + "' > \"$RT/a21s-saved-brightness\"; "
-            : ""
-        var govSnippet = (gov && gov.length > 0)
-            ? "; for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do "
-              + "echo " + gov + " > \"$g\" 2>/dev/null || true; done"
-            : ""
-        var blOrder = blPower === 0
-            ? "echo 0 > \"$b/bl_power\" 2>/dev/null || true; echo " + brightnessRaw + " > \"$b/brightness\" 2>/dev/null || true"
-            : "echo " + brightnessRaw + " > \"$b/brightness\" 2>/dev/null || true; echo " + blPower + " > \"$b/bl_power\" 2>/dev/null || true"
+        var safeGov = _isValidGovernor(gov) ? gov : ""
+        var safeSaved = savedRaw >= 0 ? String(Math.round(savedRaw)) : ""
+        var safeBl = String(Math.round(blPower))
+        var safeBr = String(Math.round(brightnessRaw))
         powerProc.command = ["sh", "-c",
-            saveSnippet
+            "if [ -n \"$1\" ]; then "
+          + "RT=\"${XDG_RUNTIME_DIR:-/run/user/1001}\"; "
+          + "mkdir -p \"$RT\" 2>/dev/null || true; "
+          + "printf '%s\\n' \"$1\" > \"$RT/a21s-saved-brightness\"; "
+          + "fi; "
           + "for b in /sys/class/backlight/*; do [ -d \"$b\" ] || continue; "
-          + blOrder + "; done"
-          + govSnippet]
+          + "if [ \"$2\" = \"0\" ]; then "
+          + "printf '0\\n' > \"$b/bl_power\" 2>/dev/null || true; "
+          + "printf '%s\\n' \"$3\" > \"$b/brightness\" 2>/dev/null || true; "
+          + "else "
+          + "printf '%s\\n' \"$3\" > \"$b/brightness\" 2>/dev/null || true; "
+          + "printf '%s\\n' \"$2\" > \"$b/bl_power\" 2>/dev/null || true; "
+          + "fi; done; "
+          + "if [ -n \"$4\" ]; then "
+          + "for g in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do "
+          + "printf '%s\\n' \"$4\" > \"$g\" 2>/dev/null || true; done; "
+          + "fi",
+            "_", safeSaved, safeBl, safeBr, safeGov]
         powerProc.running = true
     }
 

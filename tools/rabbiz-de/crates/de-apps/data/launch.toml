@@ -7,12 +7,14 @@
 #
 # Exact desktop-id matches only — no globs. Chrome uses its own native
 # google-chrome.desktop identity with the A21s Wayland/software-GPU flags.
+# Scale 1.25 keeps logical width (720/1.25 = 576 DIP) above Chrome's ~532 DIP
+# desktop min width (1.5 → 480 DIP gets clamped to 798 px, overflowing right).
 
 [overrides."google-chrome"]
-exec = "/opt/google/chrome/google-chrome --disable-gpu --ozone-platform=wayland --no-first-run --no-default-browser-check --touch-events=enabled --enable-pinch --force-device-scale-factor=1.5 --disable-component-update --password-store=basic --enable-wayland-ime"
+exec = "/opt/google/chrome/google-chrome --disable-gpu --ozone-platform=wayland --no-first-run --no-default-browser-check --touch-events=enabled --enable-pinch --force-device-scale-factor=1.25 --disable-component-update --password-store=basic --enable-wayland-ime"
 
 [overrides."com.google.Chrome"]
-exec = "/opt/google/chrome/google-chrome --disable-gpu --ozone-platform=wayland --no-first-run --no-default-browser-check --touch-events=enabled --enable-pinch --force-device-scale-factor=1.5 --disable-component-update --password-store=basic --enable-wayland-ime"
+exec = "/opt/google/chrome/google-chrome --disable-gpu --ozone-platform=wayland --no-first-run --no-default-browser-check --touch-events=enabled --enable-pinch --force-device-scale-factor=1.25 --disable-component-update --password-store=basic --enable-wayland-ime"
 
 [overrides."ai.opencode"]
 exec = "/opt/OpenCode/ai.opencode --no-sandbox --disable-gpu --ozone-platform=wayland --force-device-scale-factor=0.7 --enable-wayland-ime"

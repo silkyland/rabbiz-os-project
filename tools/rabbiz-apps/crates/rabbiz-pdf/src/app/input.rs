@@ -122,21 +122,33 @@ impl PdfApp {
         }
         match self.screen {
             Screen::Picker => {
-                let idx = ((pos.y - LIST_TOP + self.picker_scroll as i32) / ROW_H).max(0) as usize;
-                self.pressed_file = Some(idx);
+                if super::screens::refresh_rect(self.cur_w).contains(pos) {
+                    self.picker_action_pressed = true;
+                    return;
+                }
+                if self.files.is_empty()
+                    && super::screens::state_action_rect(self.cur_w, self.cur_h).contains(pos)
+                {
+                    self.rescan_pressed = true;
+                    return;
+                }
+                if pos.y >= LIST_TOP && pos.y < self.cur_h - ui::BOTTOM_SAFE {
+                    let idx = ((pos.y - LIST_TOP + self.picker_scroll as i32) / ROW_H) as usize;
+                    self.pressed_file = self.files.get(idx).map(|_| idx);
+                }
                 self.touch = Some(self.new_touch(id, pos));
             }
             Screen::Viewer => {
                 let ch = chrome(self.cur_w, self.cur_h);
-                if ch.back.contains(pos) {
+                if self.chrome_vis && ch.back.contains(pos) {
                     self.back_pressed = true;
                     return;
                 }
-                if ch.grid_btn.contains(pos) {
+                if self.chrome_vis && ch.grid_btn.contains(pos) {
                     self.grid_pressed = true;
                     return;
                 }
-                if let Some(b) = nav_hit(ch, pos) {
+                if let Some(b) = nav_hit(ch, pos).filter(|_| self.chrome_vis) {
                     self.nav_pressed = Some(b);
                     return;
                 }
@@ -156,6 +168,12 @@ impl PdfApp {
                 self.touch = Some(self.new_touch(id, pos));
             }
             Screen::Error => {
+                if self.last_path.is_some()
+                    && super::screens::state_action_rect(self.cur_w, self.cur_h).contains(pos)
+                {
+                    self.retry_pressed = true;
+                    return;
+                }
                 let ch = chrome(self.cur_w, self.cur_h);
                 if ch.back.contains(pos) {
                     self.back_pressed = true;
@@ -233,25 +251,42 @@ impl PdfApp {
     }
 
     fn touch_up(&mut self, id: i32, pos: Point) {
-        if self.back_pressed {
-            self.back_pressed = false;
-            self.leave_chrome();
+        let ch = chrome(self.cur_w, self.cur_h);
+        let action = super::screens::state_action_rect(self.cur_w, self.cur_h);
+        if std::mem::take(&mut self.picker_action_pressed) {
+            if super::screens::refresh_rect(self.cur_w).contains(pos) {
+                self.rescan_picker();
+            }
             return;
         }
-        if self.grid_pressed {
-            self.grid_pressed = false;
-            match self.screen {
-                Screen::Viewer => self.enter_overview(),
-                Screen::Overview => {
-                    self.screen = Screen::Viewer;
-                    self.anim = Some(Anim { open: true, t: 0.0 });
-                }
-                _ => {}
+        if std::mem::take(&mut self.rescan_pressed) {
+            if action.contains(pos) {
+                self.rescan_picker();
+            }
+            return;
+        }
+        if std::mem::take(&mut self.retry_pressed) {
+            if let Some(path) = self.last_path.clone().filter(|_| action.contains(pos)) {
+                self.open_path(&path);
+            }
+            return;
+        }
+        if std::mem::take(&mut self.back_pressed) {
+            if ch.back.contains(pos) {
+                self.leave_chrome();
+            }
+            return;
+        }
+        if std::mem::take(&mut self.grid_pressed) {
+            if ch.grid_btn.contains(pos) {
+                self.enter_overview();
             }
             return;
         }
         if let Some(btn) = self.nav_pressed.take() {
-            self.nav_action(btn);
+            if nav_hit(ch, pos) == Some(btn) {
+                self.nav_action(btn);
+            }
             return;
         }
         let Some(t) = self.touch.take() else {
@@ -301,8 +336,12 @@ impl PdfApp {
                     let now = Instant::now();
                     if view::is_double_tap(self.last_up, now, pos) {
                         self.toggle_zoom(pos);
+                        self.toggle_chrome();
+                        self.last_up = None;
+                    } else {
+                        self.toggle_chrome();
+                        self.last_up = Some((now, pos));
                     }
-                    self.last_up = Some((now, pos));
                 }
                 _ => {}
             },
@@ -312,7 +351,8 @@ impl PdfApp {
 
     fn leave_chrome(&mut self) {
         match self.screen {
-            Screen::Viewer | Screen::Overview | Screen::Error => self.go_picker(),
+            Screen::Viewer | Screen::Error => self.go_picker(),
+            Screen::Overview => self.screen = Screen::Viewer,
             Screen::Picker => {}
         }
     }
@@ -340,7 +380,10 @@ impl PdfApp {
 
     fn tick(&mut self, dt: std::time::Duration) -> AppFrame {
         let ms = dt.as_secs_f32() * 1000.0;
-        let mut dirty = false;
+        let mut dirty = !self.chrome_fade.done();
+        if dirty {
+            self.chrome_fade.tick(dt);
+        }
         if let Some(a) = &mut self.anim {
             a.t += ms / if a.open { OPEN_MS } else { CLOSE_MS };
             dirty = true;

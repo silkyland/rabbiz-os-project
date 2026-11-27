@@ -190,8 +190,8 @@ Environment=RABBIZ_DEVICE_CODENAME=${CODENAME}
 Environment=RABBIZ_FORM_FACTOR=${FORM_FACTOR}
 Environment=RABBIZ_DRM_DRIVER=virtio_gpu
 Environment=RABBIZ_MOCK_SYSTEM=1
-Environment=RABBIZ_EMU_LISTEN=0.0.0.0:5910
-Environment=RABBIZ_CTL_LISTEN=0.0.0.0:5911
+Environment=RABBIZ_EMU_LISTEN=127.0.0.1:5910
+Environment=RABBIZ_CTL_LISTEN=127.0.0.1:5911
 EOF
 
 VM_ENV_PATH="${OUT_DIR}/overlay/etc/rabbiz/emu-vm.env"

@@ -16,6 +16,7 @@
  *  - verify wait timeouts (vendor uses ~1s for VGPIO_TX_MONITOR).
  */
 #include <linux/arm-smccc.h>
+#include <linux/capability.h>
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/io.h>
@@ -227,11 +228,17 @@ int cpif_reg_peek(struct cpif_dev *c, int which, u32 off, u32 *val)
 {
 	unsigned long lo, hi;
 
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
 	if (which == 0)
 		return regmap_read(c->pmu, off, val);
 	if (which == 1) {
 		if (!c->vgpio)
 			return -ENODEV;
+		if ((off & 3) || c->vgpio_size < sizeof(u32) ||
+		    off > c->vgpio_size - sizeof(u32))
+			return -EINVAL;
 		*val = readl(c->vgpio + off);
 		return 0;
 	}
@@ -251,9 +258,11 @@ int cpif_reg_peek(struct cpif_dev *c, int which, u32 off, u32 *val)
 			CPIF_SHMEM_IPC, CPIF_SHMEM_BTL,
 			CPIF_SHMEM_CP, CPIF_SHMEM_VSS,
 		};
+		size_t sz = c->shmem[idx[which - 3]].size;
 		void __iomem *m = c->shmem[idx[which - 3]].map;
 
-		if (!m || off >= c->shmem[idx[which - 3]].size)
+		if (!m || (off & 3) || sz < sizeof(u32) ||
+		    off > sz - sizeof(u32))
 			return -EINVAL;
 		*val = readl(m + off);
 		return 0;
@@ -270,7 +279,11 @@ int cpif_lin_peek(struct cpif_dev *c, u32 off, u32 *val)
 	unsigned long pa;
 	void *p;
 
-	if (off >= c->cp_size)
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	if ((off & 3) || c->cp_size < sizeof(u32) ||
+	    off > c->cp_size - sizeof(u32))
 		return -EINVAL;
 	pa = (unsigned long)(c->cp_base + off);
 	if (!pfn_valid(pa >> PAGE_SHIFT))
@@ -287,7 +300,11 @@ int cpif_lin_poke(struct cpif_dev *c, u32 off, u32 val)
 	unsigned long pa;
 	void *p;
 
-	if (off >= c->cp_size)
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	if ((off & 3) || c->cp_size < sizeof(u32) ||
+	    off > c->cp_size - sizeof(u32))
 		return -EINVAL;
 	pa = (unsigned long)(c->cp_base + off);
 	if (!pfn_valid(pa >> PAGE_SHIFT))

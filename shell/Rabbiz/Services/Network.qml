@@ -251,7 +251,11 @@ QtObject {
     property var connProc: Process {
         stdinEnabled: true
         // rabbiz-wifi-connect reads the PSK from stdin (never argv) and joins the network.
-        onStarted: connProc.write((root._connPsk.length > 0 ? root._connPsk : "") + "\n")
+        onStarted: {
+            var psk = root._connPsk
+            root._connPsk = ""
+            connProc.write((psk.length > 0 ? psk : "") + "\n")
+        }
         function _dispatch() {
             if (root._connQueue.length > 0 && !connProc.running) {
                 connProc.command = root._connQueue.shift()

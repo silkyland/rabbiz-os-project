@@ -4,6 +4,7 @@
  *
  ****************************************************************************/
 
+#include <linux/capability.h>
 #include <linux/proc_fs.h>
 #include <linux/version.h>
 #include <linux/seq_file.h>
@@ -156,6 +157,9 @@ static ssize_t mx_procfs_mx_panic_write(struct file *file, const char __user *us
 {
 	char value = 0;
 	struct mxproc *mxproc = file->private_data;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
 
 	OS_UNUSED_PARAMETER(value);
 	OS_UNUSED_PARAMETER(file);
@@ -416,10 +420,10 @@ int mxproc_create_ctrl_proc_dir(struct mxproc *mxproc, struct mxman *mxman)
 	mxproc->mxman = mxman;
 	mxproc->procfs_ctrl_dir = parent;
 	mxproc->procfs_ctrl_dir_num = proc_count;
-	MX_PROCFS_ADD_FILE(mxproc, mx_fail, parent, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-	MX_PROCFS_ADD_FILE(mxproc, mx_freeze, parent, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
-	MX_PROCFS_ADD_FILE(mxproc, mx_panic, parent, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-	MX_PROCFS_ADD_FILE(mxproc, mx_suspend, parent, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH);
+	MX_PROCFS_ADD_FILE(mxproc, mx_fail, parent, S_IRUSR | S_IWUSR);
+	MX_PROCFS_ADD_FILE(mxproc, mx_freeze, parent, S_IRUSR | S_IWUSR);
+	MX_PROCFS_ADD_FILE(mxproc, mx_panic, parent, S_IRUSR | S_IWUSR);
+	MX_PROCFS_ADD_FILE(mxproc, mx_suspend, parent, S_IRUSR | S_IWUSR);
 	MX_PROCFS_ADD_FILE(mxproc, mx_suspend_count, parent, S_IRUSR | S_IRGRP | S_IROTH);
 	MX_PROCFS_ADD_FILE(mxproc, mx_recovery_count, parent, S_IRUSR | S_IRGRP | S_IROTH);
 	MX_PROCFS_ADD_FILE(mxproc, mx_status, parent, S_IRUSR | S_IRGRP | S_IROTH);

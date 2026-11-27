@@ -47,7 +47,6 @@ impl SessionLockTracker {
     }
 
     /// Current lock ownership state.
-    #[allow(dead_code)] // Read by recovery UI / diagnostics once wired
     #[must_use]
     pub const fn owner(&self) -> LockOwner {
         self.owner
@@ -78,7 +77,6 @@ impl SessionLockTracker {
     ///
     /// Fail-closed: transitions `ExternalActive -> RecoveryRequired` and never
     /// unlocks the session.
-    #[allow(dead_code)] // Triggered by client disconnect hook once wired
     pub fn on_external_client_died(&mut self) {
         if self.owner == LockOwner::ExternalActive {
             self.owner = LockOwner::RecoveryRequired;
@@ -88,7 +86,6 @@ impl SessionLockTracker {
     /// Record successful built-in recovery authentication (PIN/PAM).
     ///
     /// Transitions `RecoveryRequired -> Unlocked`.
-    #[allow(dead_code)] // Triggered by recovery bouncer once wired
     pub fn on_recovery_authenticated(&mut self) {
         if self.owner == LockOwner::RecoveryRequired {
             self.owner = LockOwner::Unlocked;
@@ -104,10 +101,37 @@ impl SessionLockTracker {
 
     /// Whether the built-in recovery bouncer must be presented because the
     /// external locker died without unlocking.
-    #[allow(dead_code)] // Read by recovery bouncer UI once wired
     #[must_use]
     pub const fn needs_recovery_bouncer(&self) -> bool {
         matches!(self.owner, LockOwner::RecoveryRequired)
+    }
+}
+
+impl De {
+    /// Detect unexpected disconnection of an active `ext-session-lock-v1` locker
+    /// and fail closed into the built-in recovery bouncer (`SEC-008`).
+    pub(crate) fn check_session_lock_liveness(&mut self) {
+        use smithay::reexports::wayland_server::Resource as _;
+
+        if self.session_lock_tracker.owner() != LockOwner::ExternalActive {
+            return;
+        }
+        let dead = self
+            .active_session_lock
+            .as_ref()
+            .is_none_or(|lock| !lock.is_alive());
+        if dead {
+            self.active_session_lock = None;
+            self.session_lock_tracker.on_external_client_died();
+            if self.session_lock_tracker.needs_recovery_bouncer() {
+                eprintln!(
+                    "rabbiz-de: external session lock client died without unlocking; entering recovery bouncer"
+                );
+                self.lock.open();
+                self.lock.open_bouncer();
+                self.needs_present = true;
+            }
+        }
     }
 }
 
@@ -123,12 +147,14 @@ impl SessionLockHandler for De {
             // as required by the spec.
             return;
         }
+        self.active_session_lock = Some(confirmation.ext_session_lock().clone());
         self.power_lock();
         confirmation.lock();
         self.needs_present = true;
     }
 
     fn unlock(&mut self) {
+        self.active_session_lock = None;
         self.session_lock_tracker.on_external_unlock();
         if !self.session_lock_tracker.is_locked() {
             self.lock.unlock_now();

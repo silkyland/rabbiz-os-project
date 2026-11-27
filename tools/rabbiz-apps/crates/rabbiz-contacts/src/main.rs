@@ -766,4 +766,41 @@ mod tests {
             vec!["--to".to_string(), "+66 81 234 5678".to_string()]
         );
     }
+
+    /// Drives the app through list/detail/form and saves PNGs (the
+    /// before/after evidence contract). `XDG_DATA_HOME` is pointed at a
+    /// fresh temp dir so the deterministic demo seed loads and nothing in
+    /// the real store is touched; no other test in this binary reads the
+    /// env var, so mutating it here is safe.
+    #[test]
+    fn renders_main_screens_to_png() {
+        let dir =
+            std::env::temp_dir().join(format!("rabbiz-contacts-shots-{}", std::process::id()));
+        std::env::set_var("XDG_DATA_HOME", &dir);
+        let shots = std::path::PathBuf::from("/tmp/rabbiz-shots");
+        let _ = std::fs::create_dir_all(&shots);
+
+        let mut h = rabbiz_app_kit::TestHarness::new(ContactsApp::new());
+        assert_eq!(h.state().contacts.len(), 8, "expected demo seed");
+        // Skip the wall-clock intro stagger for deterministic shots.
+        h.state_mut().intro_start = Instant::now() - std::time::Duration::from_secs(10);
+
+        h.save_png(&shots.join("contacts-after-list.png"))
+            .expect("save list shot");
+
+        let id = h.state().contacts[0].id.clone();
+        h.state_mut().open_id = id;
+        h.state_mut().screen = Screen::Detail;
+        h.save_png(&shots.join("contacts-after-detail.png"))
+            .expect("save detail shot");
+
+        let ct = h.state().contacts[0].clone();
+        h.state_mut().form = Form::from_contact(&ct);
+        h.state_mut().editing_id = Some(ct.id.clone());
+        h.state_mut().screen = Screen::Form;
+        h.save_png(&shots.join("contacts-after-form.png"))
+            .expect("save form shot");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

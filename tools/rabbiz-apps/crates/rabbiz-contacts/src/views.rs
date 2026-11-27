@@ -2,7 +2,7 @@
 
 use de_design::motion::{bezier_eval, BEZIER_ENTER, STAGGER_MAX, STAGGER_MS};
 use rabbiz_app_kit::ui as kit_ui;
-use rabbiz_app_kit::{Point, Rect};
+use rabbiz_app_kit::{widgets::TopAppBar, Point, Rect, Size};
 
 use crate::{model, ContactsApp, Focus, Hit, Screen};
 
@@ -10,7 +10,7 @@ use crate::{model, ContactsApp, Focus, Hit, Screen};
 pub(crate) const SEARCH_H: i32 = 56;
 pub(crate) const ROW_PITCH: i32 = 100;
 pub(crate) const ROW_H: i32 = 88;
-pub(crate) const FAV_CARD_H: i32 = 104;
+pub(crate) const FAV_CARD_H: i32 = 120;
 pub(crate) const FAB_D: i32 = 56;
 pub(crate) const FIELD_H: i32 = 76;
 pub(crate) const PHONE_CARD_H: i32 = 128;
@@ -118,22 +118,25 @@ pub(crate) fn save_bar(w: i32, h: i32) -> Rect {
     )
 }
 
-pub(crate) fn call_bar(w: i32, h: i32) -> Rect {
-    Rect::new(
-        kit_ui::MARGIN,
-        h - kit_ui::BOTTOM_SAFE - 16 - 72,
-        w - kit_ui::MARGIN * 2 - 140,
-        72,
-    )
+fn detail_actions(w: i32, h: i32) -> (Rect, Rect) {
+    let bar = save_bar(w, h);
+    let gap = 12;
+    let call = Rect::new(bar.x, bar.y, (bar.w - gap) / 2, bar.h);
+    let message = Rect::new(
+        call.right() + gap,
+        bar.y,
+        bar.right() - call.right() - gap,
+        bar.h,
+    );
+    (call, message)
 }
 
-pub(crate) fn message_bar(w: i32, h: i32) -> Rect {
-    Rect::new(
-        w - kit_ui::MARGIN - 132,
-        h - kit_ui::BOTTOM_SAFE - 16 - 72,
-        132,
-        72,
-    )
+pub(crate) fn contact_form_bar(w: i32, h: i32) -> Rect {
+    TopAppBar::layout(Size::new(w, h), kit_ui::TOP_SAFE)
+}
+
+pub(crate) fn row_call_button(row: Rect) -> Rect {
+    Rect::new(row.right() - 72, row.y + (row.h - 56) / 2, 56, 56)
 }
 
 impl ContactsApp {
@@ -152,7 +155,7 @@ impl ContactsApp {
             favs_label_y = y;
             y += 24;
             favs_top = y;
-            y += FAV_CARD_H + 14;
+            y += FAV_CARD_H + 20;
         }
         let section_y = y;
         y += 26; // caption + gap before the rows
@@ -181,23 +184,37 @@ impl ContactsApp {
         let edit = Rect::new(del.x - 92 - 8, y, 92, 48);
         let fav = Rect::new(edit.x - 52 - 8, y, 52, 48);
         let vp_top = y + 48 + 12;
-        let vp = Rect::new(m, vp_top, w - m * 2, h - kit_ui::BOTTOM_SAFE - 16 - vp_top);
+        let (call, message) = if self
+            .open_contact()
+            .and_then(|contact| contact.primary_phone())
+            .is_some()
+        {
+            detail_actions(w, h)
+        } else {
+            (Rect::new(0, 0, 0, 0), Rect::new(0, 0, 0, 0))
+        };
+        let bottom = if call.is_empty() {
+            h - kit_ui::BOTTOM_SAFE - 16
+        } else {
+            call.y - 12
+        };
+        let vp = Rect::new(m, vp_top, w - m * 2, bottom - vp_top);
         DetailGeom {
             back,
             edit,
             del,
             fav,
-            call: call_bar(w, h),
-            message: message_bar(w, h),
+            call,
+            message,
             vp,
         }
     }
 
     pub(crate) fn form_geom(&self, w: i32, h: i32) -> FormGeom {
         let m = kit_ui::MARGIN;
-        let y = kit_ui::TOP_SAFE + 12;
-        let back = Rect::new(m, y, 110, 48);
-        let vp_top = y + 48 + 12;
+        let bar = contact_form_bar(w, h);
+        let back = TopAppBar::back_rect(bar);
+        let vp_top = bar.bottom() + 16;
         // Leave room for the fixed Save bar at the bottom.
         let vp = Rect::new(
             m,
@@ -208,9 +225,9 @@ impl ContactsApp {
         FormGeom { back, vp }
     }
 
-    /// Contact index under `pos` in the list viewport, honoring scroll and
+    /// Visible row and contact index under `pos`, honoring scroll and
     /// the first-paint stagger offset.
-    pub(crate) fn list_row_at(&self, g: &ListGeom, pos: Point) -> Option<usize> {
+    fn list_row_at(&self, g: &ListGeom, pos: Point) -> Option<(usize, usize)> {
         if !g.vp.contains(pos) {
             return None;
         }
@@ -225,7 +242,7 @@ impl ContactsApp {
         if pos.y < staggered_top || pos.y >= staggered_top + ROW_H {
             return None;
         }
-        ids.get(vis as usize).copied()
+        ids.get(vis as usize).map(|&index| (vis as usize, index))
     }
 
     // ---------------- detail items (shared by render + hit-test) -----------
@@ -252,7 +269,7 @@ impl ContactsApp {
             .filter(|(_, p)| !p.number.trim().is_empty())
             .collect();
         if !phones.is_empty() {
-            items.push(DetailItem::Label("PHONES", y));
+            items.push(DetailItem::Label("Phones", y));
             y += 26;
             for (idx, _) in &phones {
                 let row_y = y;
@@ -278,7 +295,7 @@ impl ContactsApp {
             .filter(|(_, e)| !e.address.trim().is_empty())
             .collect();
         if !emails.is_empty() {
-            items.push(DetailItem::Label("EMAILS", y));
+            items.push(DetailItem::Label("Emails", y));
             y += 26;
             for (idx, _) in &emails {
                 items.push(DetailItem::Email {
@@ -293,7 +310,7 @@ impl ContactsApp {
 
         // Note.
         if !c.note.trim().is_empty() {
-            items.push(DetailItem::Label("NOTE", y));
+            items.push(DetailItem::Label("Note", y));
             y += 26;
             let lines = c.note.lines().count().max(1) as i32;
             let h = (40 + lines * 30).clamp(72, 220);
@@ -328,7 +345,7 @@ impl ContactsApp {
         y += FIELD_H + SECTION_GAP;
 
         // Phones.
-        items.push(FormItem::Label("PHONES", y));
+        items.push(FormItem::Label("Phones", y));
         y += 26;
         for i in 0..self.form.phones.len() {
             let card = Rect::new(0, y, inner_w, PHONE_CARD_H);
@@ -350,7 +367,7 @@ impl ContactsApp {
         y += 48 + SECTION_GAP;
 
         // Emails (label always shown so the first address can be added).
-        items.push(FormItem::Label("EMAILS", y));
+        items.push(FormItem::Label("Emails", y));
         y += 26;
         for i in 0..self.form.emails.len() {
             let card = Rect::new(0, y, inner_w, EMAIL_CARD_H);
@@ -372,7 +389,7 @@ impl ContactsApp {
         y += 48 + SECTION_GAP;
 
         // Note.
-        items.push(FormItem::Label("NOTE", y));
+        items.push(FormItem::Label("Note", y));
         y += 26;
         items.push(FormItem::Note {
             card: Rect::new(0, y, inner_w, NOTE_H),
@@ -423,28 +440,24 @@ impl ContactsApp {
                 return Some(Hit::EmptyAdd);
             }
         }
+        if g.fab.contains(pos) && !self.search_focus && !self.contacts.is_empty() {
+            return Some(Hit::Fab);
+        }
         if g.vp.contains(pos) {
-            if let Some(ci) = self.list_row_at(&g, pos) {
-                // Quick-dial button on the row's right edge.
-                let row_top = g.vp.y
-                    + self
-                        .filtered()
-                        .iter()
-                        .position(|&x| x == ci)
-                        .map(|v| v as i32)
-                        .unwrap_or(0)
-                        * ROW_PITCH
-                    - self.scroll;
-                let call_btn = Rect::new(g.vp.x + g.vp.w - 72, row_top + (ROW_H - 56) / 2, 56, 56);
-                if call_btn.contains(pos) {
+            if let Some((index, ci)) = self.list_row_at(&g, pos) {
+                let row_top =
+                    g.vp.y + index as i32 * ROW_PITCH - self.scroll + self.stagger_offset(index);
+                let row = Rect::new(g.vp.x, row_top, g.vp.w, ROW_H);
+                let call_btn = row_call_button(row);
+                if self.contacts[ci].primary_phone().is_some()
+                    && call_btn.intersect(g.vp) == Some(call_btn)
+                    && call_btn.contains(pos)
+                {
                     return Some(Hit::DialRow(ci));
                 }
                 return Some(Hit::Row(ci));
             }
             return Some(Hit::List);
-        }
-        if g.fab.contains(pos) && !self.search_focus && !self.contacts.is_empty() {
-            return Some(Hit::Fab);
         }
         None
     }

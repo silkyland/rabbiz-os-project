@@ -1,2 +1,1 @@
 ACTION=="add", SUBSYSTEM=="backlight", RUN+="/bin/chgrp video /sys/class/backlight/%k/brightness /sys/class/backlight/%k/bl_power", RUN+="/bin/chmod g+w /sys/class/backlight/%k/brightness /sys/class/backlight/%k/bl_power"
-ACTION=="add", SUBSYSTEM=="cpu", KERNEL=="cpu[0-9]*", RUN+="/bin/chgrp video /sys/devices/system/cpu/%k/cpufreq/scaling_governor", RUN+="/bin/chmod g+w /sys/devices/system/cpu/%k/cpufreq/scaling_governor"

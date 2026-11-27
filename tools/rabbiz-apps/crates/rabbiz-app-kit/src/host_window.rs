@@ -470,7 +470,7 @@ impl<S: AppState + 'static> ApplicationHandler for HostSimApp<S> {
         let dt = now.saturating_duration_since(self.last_tick);
         self.last_tick = now;
 
-        if self.animating {
+        if self.animating || self.app.needs_tick() {
             self.dispatch(AppEvent::Tick(dt));
         }
 
@@ -494,7 +494,7 @@ impl<S: AppState + 'static> ApplicationHandler for HostSimApp<S> {
             }
         }
 
-        let wait_dur = if self.animating {
+        let wait_dur = if self.animating || self.app.needs_tick() {
             Duration::from_millis(16)
         } else {
             Duration::from_millis(250)

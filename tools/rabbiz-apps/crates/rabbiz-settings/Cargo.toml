@@ -15,3 +15,4 @@ de-design.workspace = true
 de-paint.workspace = true
 rabbiz-app-kit.workspace = true
 serde_json.workspace = true
+wayland-protocols.workspace = true

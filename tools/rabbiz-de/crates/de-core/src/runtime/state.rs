@@ -151,6 +151,10 @@ pub struct De {
     pub(crate) session_lock_state: SessionLockManagerState,
     /// Single-lock and fail-closed recovery tracker for `ext-session-lock-v1`.
     pub(crate) session_lock_tracker: crate::protocols::session_lock::SessionLockTracker,
+    /// Active external `ext-session-lock-v1` object tracked for client disconnect liveness (`SEC-008`).
+    pub(crate) active_session_lock: Option<
+        smithay::reexports::wayland_protocols::ext::session_lock::v1::server::ext_session_lock_v1::ExtSessionLockV1,
+    >,
 
     // --- standard extras (`protocols/standards.rs`, audit 2026-11-21) ---
     #[allow(dead_code)]
@@ -296,6 +300,11 @@ pub struct De {
     pub(crate) lock: crate::lock_ui::LockUi,
     /// Screenshot flash + toast (`shot_ui.rs`).
     pub(crate) shot_fx: crate::shot_ui::ShotFx,
+    /// Quick Settings screenshot tile tapped: capture on the next power poll,
+    /// after the panel-close animation has left the frame.
+    pub(crate) tile_shot_pending: bool,
+    /// Screen recording child state (`shell_ui/record_ui.rs`).
+    pub(crate) record: crate::record_ui::RecordState,
     /// Transient volume / brightness OSD pill (`osd_ui.rs`).
     pub(crate) osd_fx: crate::osd_ui::OsdFx,
     /// Heads-up notification banner controller (`hun_ui.rs`).
@@ -733,6 +742,7 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
         pointer_constraints_state,
         session_lock_state,
         session_lock_tracker: crate::protocols::session_lock::SessionLockTracker::new(),
+        active_session_lock: None,
         single_pixel_buffer_state,
         cursor_shape_state,
         xdg_foreign_state,
@@ -815,6 +825,8 @@ pub fn init(flags: &Flags, display: &mut Display<De>) -> Result<De, InitError> {
             lock
         },
         shot_fx: crate::shot_ui::ShotFx::default(),
+        tile_shot_pending: false,
+        record: crate::record_ui::RecordState::default(),
         osd_fx: crate::osd_ui::OsdFx::default(),
         hun_fx: crate::hun_ui::HunFx::default(),
         last_hun_notif_id: 0,

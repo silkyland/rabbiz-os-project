@@ -13,6 +13,15 @@ ExecStart=/bin/sh -c 'for d in exynos-drm 13060000.display-controller 13070000.d
 # otherwise pokes drm_fb_helper_set_par/pan_display mid-handoff and queues
 # a commit that wedges the DSI link. vtcon0 (dummy) stays bound.
 ExecStartPost=/bin/sh -c 'echo 0 > /sys/class/vtconsole/vtcon1/bind 2>/dev/null || true'
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateNetwork=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target

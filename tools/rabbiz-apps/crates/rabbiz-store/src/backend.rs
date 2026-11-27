@@ -35,10 +35,15 @@ pub enum JobEvent {
     Done(JobResult),
 }
 
+/// Unit tests exercise the UI without probing or changing the host.
+pub fn dry_run() -> bool {
+    cfg!(test) || std::env::var_os("RABBIZ_STORE_DRY_RUN").is_some()
+}
+
 /// Whether `bin` resolves on `PATH` (disabled when `RABBIZ_STORE_DRY_RUN=1`).
 #[must_use]
 pub fn available(bin: &str) -> bool {
-    if std::env::var_os("RABBIZ_STORE_DRY_RUN").is_some() {
+    if dry_run() {
         return false;
     }
     std::env::var_os("PATH").is_some_and(|paths| {
@@ -62,7 +67,7 @@ pub fn xdg_data_home() -> PathBuf {
 /// Check if an application `.desktop` file exists in standard XDG dirs.
 #[must_use]
 pub fn desktop_exists(desktop_id: &str) -> bool {
-    if std::env::var_os("RABBIZ_STORE_DRY_RUN").is_some() {
+    if dry_run() {
         return false;
     }
     let name = format!("{desktop_id}.desktop");
@@ -77,7 +82,7 @@ pub fn desktop_exists(desktop_id: &str) -> bool {
 
 /// Notify the running `rabbiz-de` compositor to rescan `.desktop` files immediately.
 pub fn notify_de_reload_apps() {
-    if std::env::var_os("RABBIZ_STORE_DRY_RUN").is_some() {
+    if dry_run() {
         return;
     }
     let msg = b"{\"id\":1,\"cmd\":\"reload_apps\"}\n";
@@ -98,71 +103,134 @@ pub fn notify_de_reload_apps() {
     }
 }
 
-/// Run a shell command on a background thread, streaming stdout/stderr lines
-/// in real time via [`JobEvent::Line`] before emitting [`JobEvent::Done`].
-pub fn spawn_shell_job(
+/// Validate a package or app ID before passing it to package managers or paths.
+///
+/// Allows only `[A-Za-z0-9._@+-]+`, rejects empty strings, leading `-` or `.`,
+/// and `..` path traversal sequences.
+#[must_use]
+pub fn is_valid_pkg_id(id: &str) -> bool {
+    !id.is_empty()
+        && id.len() <= 128
+        && !id.starts_with('-')
+        && !id.starts_with('.')
+        && !id.contains("..")
+        && id.chars().all(|c| {
+            c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '@' | '+' | '-')
+        })
+}
+
+/// One direct subprocess invocation in a background job (never invokes `sh -c`).
+#[derive(Debug, Clone)]
+pub struct CommandStep {
+    pub program: String,
+    pub args: Vec<String>,
+    pub envs: Vec<(String, String)>,
+    pub allow_nonzero: bool,
+}
+
+impl CommandStep {
+    pub fn new(program: impl Into<String>, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
+        Self {
+            program: program.into(),
+            args: args.into_iter().map(Into::into).collect(),
+            envs: Vec::new(),
+            allow_nonzero: false,
+        }
+    }
+
+    pub fn env(mut self, key: impl Into<String>, val: impl Into<String>) -> Self {
+        self.envs.push((key.into(), val.into()));
+        self
+    }
+
+    pub fn allow_nonzero(mut self) -> Self {
+        self.allow_nonzero = true;
+        self
+    }
+
+    fn display_line(&self) -> String {
+        if self.args.is_empty() {
+            format!("$ {}", self.program)
+        } else {
+            format!("$ {} {}", self.program, self.args.join(" "))
+        }
+    }
+}
+
+/// Run one or more direct commands sequentially on a background thread (no shell),
+/// streaming stdout/stderr lines in real time via [`JobEvent::Line`] before emitting
+/// [`JobEvent::Done`].
+pub fn spawn_command_job(
     item_id: Option<String>,
     install_intent: Option<bool>,
     label: String,
-    script: String,
+    steps: Vec<CommandStep>,
     reload_apps: bool,
     tx: Sender<JobEvent>,
 ) {
-    let _ = tx.send(JobEvent::Line(format!("$ {script}")));
     std::thread::spawn(move || {
-        let spawn_res = Command::new("sh")
-            .args(["-c", &script])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn();
-        let mut child = match spawn_res {
-            Ok(c) => c,
-            Err(e) => {
-                let _ = tx.send(JobEvent::Line(format!("error: {e}")));
-                let _ = tx.send(JobEvent::Done(JobResult {
-                    item_id,
-                    install_intent,
-                    label,
-                    ok: false,
-                    stdout: String::new(),
-                    stderr: e.to_string(),
-                }));
-                return;
+        let mut stdout_buf = String::new();
+        let mut stderr_buf = String::new();
+        let mut all_ok = true;
+
+        for step in steps {
+            let _ = tx.send(JobEvent::Line(step.display_line()));
+            let mut cmd = Command::new(&step.program);
+            cmd.args(&step.args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped());
+            for (k, v) in &step.envs {
+                cmd.env(k, v);
             }
-        };
 
-        let out_pipe = child.stdout.take();
-        let err_pipe = child.stderr.take();
+            let mut child = match cmd.spawn() {
+                Ok(c) => c,
+                Err(e) => {
+                    let _ = tx.send(JobEvent::Line(format!("error: {e}")));
+                    stderr_buf.push_str(&e.to_string());
+                    stderr_buf.push('\n');
+                    all_ok = false;
+                    break;
+                }
+            };
 
-        let tx_err = tx.clone();
-        let err_handle = std::thread::spawn(move || {
-            let mut buf = String::new();
-            if let Some(pipe) = err_pipe {
+            let out_pipe = child.stdout.take();
+            let err_pipe = child.stderr.take();
+
+            let tx_err = tx.clone();
+            let err_handle = std::thread::spawn(move || {
+                let mut buf = String::new();
+                if let Some(pipe) = err_pipe {
+                    for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+                        let _ = tx_err.send(JobEvent::Line(line.clone()));
+                        buf.push_str(&line);
+                        buf.push('\n');
+                    }
+                }
+                buf
+            });
+
+            if let Some(pipe) = out_pipe {
                 for line in BufReader::new(pipe).lines().map_while(Result::ok) {
-                    let _ = tx_err.send(JobEvent::Line(line.clone()));
-                    buf.push_str(&line);
-                    buf.push('\n');
+                    let _ = tx.send(JobEvent::Line(line.clone()));
+                    stdout_buf.push_str(&line);
+                    stdout_buf.push('\n');
                 }
             }
-            buf
-        });
+            stderr_buf.push_str(&err_handle.join().unwrap_or_default());
 
-        let mut stdout_buf = String::new();
-        if let Some(pipe) = out_pipe {
-            for line in BufReader::new(pipe).lines().map_while(Result::ok) {
-                let _ = tx.send(JobEvent::Line(line.clone()));
-                stdout_buf.push_str(&line);
-                stdout_buf.push('\n');
+            let step_ok = child.wait().is_ok_and(|s| s.success());
+            if !step_ok && !step.allow_nonzero {
+                all_ok = false;
+                break;
             }
         }
-        let stderr_buf = err_handle.join().unwrap_or_default();
 
-        let ok = child.wait().is_ok_and(|s| s.success());
-        if ok && reload_apps {
+        if all_ok && reload_apps {
             notify_de_reload_apps();
         }
-        let _ = tx.send(JobEvent::Line(if ok {
+        let _ = tx.send(JobEvent::Line(if all_ok {
             format!("[done] {label} (exit 0)")
         } else {
             format!("[failed] {label}")
@@ -171,7 +239,7 @@ pub fn spawn_shell_job(
             item_id,
             install_intent,
             label,
-            ok,
+            ok: all_ok,
             stdout: stdout_buf,
             stderr: stderr_buf,
         }));
@@ -191,6 +259,12 @@ pub fn install_curated_rbz_app_in(
     name: &str,
     install: bool,
 ) -> Result<String, String> {
+    if !is_valid_pkg_id(id) {
+        return Err(format!("invalid app id: {id:?}"));
+    }
+    if name.trim().is_empty() || name.chars().any(char::is_control) {
+        return Err("invalid app name".to_string());
+    }
     let apps_dir = data_home.join("applications");
     let icons_dir = data_home.join("icons/hicolor/scalable/apps");
     let bin_dir = data_home.join("bin");
@@ -218,10 +292,10 @@ pub fn install_curated_rbz_app_in(
 "##;
     std::fs::write(&icon_path, svg).map_err(|e| format!("write icon: {e}"))?;
 
-    // Launch a real Rabbiz Terminal session displaying live weather / app info
-    let script = format!(
-        "#!/bin/sh\nexec rabbiz-terminal --title \"{name}\"\n"
-    );
+    // Launch a real Rabbiz Terminal session displaying live weather / app info.
+    // Single-quote `name` safely so shell metacharacters cannot execute.
+    let quoted_name = name.replace('\'', "'\\''");
+    let script = format!("#!/bin/sh\nexec rabbiz-terminal --title '{quoted_name}'\n");
     std::fs::write(&bin_path, script).map_err(|e| format!("write bin: {e}"))?;
     #[cfg(unix)]
     {
@@ -282,14 +356,12 @@ mod tests {
 
     #[test]
     fn dry_run_hides_every_tool() {
-        std::env::set_var("RABBIZ_STORE_DRY_RUN", "1");
         assert!(!available("sh"));
     }
 
     #[test]
     fn curated_rbz_app_installs_and_removes_desktop_and_icon() {
         let tmp = std::env::temp_dir().join(format!("rabbiz-store-rbz-{}", std::process::id()));
-        std::env::set_var("RABBIZ_STORE_DRY_RUN", "1");
 
         let msg = install_curated_rbz_app_in(
             &tmp,

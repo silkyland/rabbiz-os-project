@@ -2,11 +2,21 @@
 
 use de_api::Rect;
 use rabbiz_app_kit::ui;
-use rabbiz_app_kit::{Canvas, Theme};
+use rabbiz_app_kit::widgets::{self, IconBtnStyle};
+use rabbiz_app_kit::{icons, Canvas, Theme};
 
 use crate::{doc, view};
 
 use super::{chrome, overview_view, PdfApp, LIST_TOP, ROW_H};
+
+pub(super) fn refresh_rect(w: i32) -> Rect {
+    Rect::new(w - ui::MARGIN - 48, ui::TOP_SAFE + 16, 48, 48)
+}
+
+pub(super) fn state_action_rect(w: i32, h: i32) -> Rect {
+    let y = (h / 2 + 128).min(h - ui::BOTTOM_SAFE - 56);
+    Rect::new((w - 144) / 2, y, 144, 48)
+}
 
 impl PdfApp {
     // ---------------- picker ----------------
@@ -14,6 +24,86 @@ impl PdfApp {
     pub(super) fn render_picker(&mut self, canvas: &mut Canvas, theme: &Theme) {
         let w = canvas.size().w;
         let h = canvas.size().h;
+        let list_top = LIST_TOP;
+        self.picker_scroll = view::clamp_scroll(self.picker_scroll, self.picker_max_scroll());
+
+        if self.files.is_empty() {
+            self.render_picker_header(canvas, theme);
+            widgets::EmptyState::render(
+                canvas,
+                Rect::new(0, list_top, w, (h - list_top - ui::BOTTOM_SAFE).max(0)),
+                theme,
+                icons::DESCRIPTION,
+                "No PDFs found",
+                "Add a PDF to Documents or Downloads",
+            );
+            ui::draw_pill_button(
+                canvas,
+                theme,
+                state_action_rect(w, h),
+                "Rescan",
+                false,
+                self.rescan_pressed,
+            );
+            return;
+        }
+
+        for (i, f) in self.files.iter().enumerate() {
+            let sy = list_top + i as i32 * ROW_H - self.picker_scroll as i32;
+            if sy + ROW_H <= list_top || sy >= h {
+                continue;
+            }
+            let r = Rect::new(ui::MARGIN, sy, w - ui::MARGIN * 2, ROW_H);
+            if self.pressed_file == Some(i) {
+                canvas.fill_rounded_rect(r, 12.0, theme.surface2);
+            }
+            widgets::icon_btn(
+                canvas,
+                theme,
+                Rect::new(r.x, r.y + 12, 48, 48),
+                icons::DESCRIPTION,
+                IconBtnStyle::Tonal,
+                false,
+                false,
+            );
+            let x = r.x + 64;
+            let text_w = (r.right() - x).max(0);
+            ui::draw_text(
+                canvas,
+                &f.name,
+                &ui::body(theme.text),
+                x,
+                r.y + 10,
+                Some(text_w),
+            );
+            let directory = f
+                .path
+                .parent()
+                .and_then(|parent| parent.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or("Files");
+            let details = format!("{directory} · {}", doc::format_bytes(f.bytes));
+            ui::draw_text(
+                canvas,
+                &details,
+                &ui::caption(theme.text2),
+                x,
+                r.y + 39,
+                Some(text_w),
+            );
+            canvas.fill_rect(Rect::new(x, r.bottom() - 1, text_w, 1), theme.line);
+        }
+
+        canvas.fill_rect(Rect::new(0, 0, w, list_top), theme.bg);
+        canvas.fill_rect(
+            Rect::new(0, h - ui::BOTTOM_SAFE, w, ui::BOTTOM_SAFE),
+            theme.bg,
+        );
+        self.render_picker_header(canvas, theme);
+    }
+
+    fn render_picker_header(&self, canvas: &mut Canvas, theme: &Theme) {
+        let w = canvas.size().w;
         let after = ui::draw_header(
             canvas,
             theme,
@@ -26,50 +116,16 @@ impl PdfApp {
         );
         let list_top = after + 8;
         debug_assert_eq!(list_top, LIST_TOP);
-        self.picker_scroll = view::clamp_scroll(self.picker_scroll, self.picker_max_scroll());
 
-        if self.files.is_empty() {
-            ui::draw_centered(
-                canvas,
-                "No PDFs found",
-                &ui::body(theme.text3),
-                Rect::new(0, h / 2 - 40, w, 80),
-            );
-            ui::draw_centered(
-                canvas,
-                "Drop a .pdf into ~/Documents or ~/Downloads,\nor open one from a file manager",
-                &ui::caption(theme.text3),
-                Rect::new(0, h / 2 + 40, w, 64),
-            );
-            return;
-        }
-
-        for (i, f) in self.files.iter().enumerate() {
-            let sy = list_top + i as i32 * ROW_H - self.picker_scroll as i32;
-            if sy + ROW_H < list_top || sy > h {
-                continue;
-            }
-            let r = Rect::new(ui::MARGIN, sy, w - ui::MARGIN * 2, ROW_H - 12);
-            ui::draw_card(canvas, theme, r, self.pressed_file == Some(i));
-            let name = ui::body(theme.text);
-            ui::draw_text(canvas, &f.name, &name, r.x + 20, r.y + 16, Some(r.w - 40));
-            let sub = format!(
-                "{}  ·  {}",
-                f.path
-                    .parent()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_default(),
-                doc::format_bytes(f.bytes)
-            );
-            ui::draw_text(
-                canvas,
-                &sub,
-                &ui::caption(theme.text3),
-                r.x + 20,
-                r.y + 48,
-                Some(r.w - 40),
-            );
-        }
+        widgets::icon_btn(
+            canvas,
+            theme,
+            refresh_rect(w),
+            icons::REFRESH,
+            IconBtnStyle::Plain,
+            false,
+            self.picker_action_pressed,
+        );
     }
 
     // ---------------- overview ----------------
@@ -82,7 +138,15 @@ impl PdfApp {
         self.ov_scroll = view::clamp_scroll(self.ov_scroll, self.ov_max_scroll());
 
         let back_r = Rect::new(ch.back.x, ch.back.y, ch.back.w, ch.back.h);
-        ui::draw_pill_button(canvas, theme, back_r, "‹ Back", false, self.back_pressed);
+        widgets::icon_btn(
+            canvas,
+            theme,
+            back_r,
+            icons::BACK,
+            IconBtnStyle::Plain,
+            false,
+            self.back_pressed,
+        );
         // Compact title beside the back button (no draw_header — it would
         // collide with the pill).
         ui::draw_text(
@@ -178,25 +242,32 @@ impl PdfApp {
         let h = canvas.size().h;
         let ch = chrome(w, h);
         let back_r = Rect::new(ch.back.x, ch.back.y, ch.back.w, ch.back.h);
-        ui::draw_pill_button(canvas, theme, back_r, "‹ Files", false, self.back_pressed);
-        let cy = h / 2 - 40;
-        ui::draw_centered(
+        widgets::icon_btn(
             canvas,
+            theme,
+            back_r,
+            icons::BACK,
+            IconBtnStyle::Plain,
+            false,
+            self.back_pressed,
+        );
+        widgets::EmptyState::render(
+            canvas,
+            Rect::new(0, LIST_TOP, w, (h - LIST_TOP - ui::BOTTOM_SAFE).max(0)),
+            theme,
+            icons::DESCRIPTION,
             "Can't open PDF",
-            &ui::title(theme.text),
-            Rect::new(0, cy, w, 60),
-        );
-        ui::draw_centered(
-            canvas,
             &self.error,
-            &ui::body(theme.text2),
-            Rect::new(ui::MARGIN * 2, cy + 70, w - ui::MARGIN * 4, 80),
         );
-        ui::draw_centered(
-            canvas,
-            "The file may be corrupt or password-protected.",
-            &ui::caption(theme.text3),
-            Rect::new(0, cy + 160, w, 40),
-        );
+        if self.last_path.is_some() {
+            ui::draw_pill_button(
+                canvas,
+                theme,
+                state_action_rect(w, h),
+                "Retry",
+                false,
+                self.retry_pressed,
+            );
+        }
     }
 }

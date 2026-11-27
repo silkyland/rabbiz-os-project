@@ -1,13 +1,18 @@
-// Allow the phone-shell user to hand the seat between the two session
+// Allow the active local phone-shell user to hand the seat between the two session
 // units — used by rabbiz-session-switch and steamos-session ExecStopPost
-// (a21s-return-phone). All other units still require auth.
+// (a21s-return-phone). Requires an active local seat (SEC-005); all other units
+// and non-local/SSH callers still require auth.
 polkit.addRule(function(action, subject) {
     if (action.id === "org.freedesktop.systemd1.manage-units" &&
-        subject.user === "rabbiz") {
+        subject.user === "rabbiz" &&
+        subject.active &&
+        subject.local) {
         var unit = action.lookup("unit");
-        if (unit === "steamos-session.service" ||
-            unit === "rabbiz-session.service" ||
-            unit === "a21s-phone-session.service") { // pre-rename unit alias
+        var verb = action.lookup("verb");
+        if ((verb === "start" || verb === "restart") &&
+            (unit === "steamos-session.service" ||
+             unit === "rabbiz-session.service" ||
+             unit === "a21s-phone-session.service")) { // pre-rename unit alias
             return polkit.Result.YES;
         }
     }

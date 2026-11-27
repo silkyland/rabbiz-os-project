@@ -77,18 +77,28 @@ if [ "$PRINT_MODE" = "1" ]; then
     exit 0
 fi
 
-if [ "$MODE" != "de" ]; then
-    exec "$LABWC_LAUNCHER"
-fi
-
-# --- DE mode ---------------------------------------------------------------
-FAIL_FILE="$XDG_RUNTIME_DIR/rabbiz-de.fail"
-READY_FILE="$XDG_RUNTIME_DIR/rabbiz-de.ready"
-SOCKET="$XDG_RUNTIME_DIR/wayland-0"
-
 keyguard_requires_lock() {
+    local user_name
+    user_name="$(id -un 2>/dev/null || echo rabbiz)"
+    local root_auth="/var/lib/rabbiz-auth/${user_name}/keyguard.json"
     local prefs="$XDG_CONFIG_HOME/rabbiz-shell/prefs.json"
     local keyguard="$XDG_CONFIG_HOME/rabbiz-shell/keyguard.json"
+
+    # Check root-owned credential store before user-writable prefs.json (BOOT-002).
+    if [ -e "$root_auth" ]; then
+        return 0
+    fi
+    # When /var/lib/rabbiz-auth is root-only (0700) and the auth helper socket is
+    # active alongside /etc/rabbiz-de/enabled, fail closed rather than allowing a
+    # downgrade to unlocked labwc via user-writable prefs.json.
+    if [ -S /run/rabbiz-auth/helper.sock ] && [ ! -r /var/lib/rabbiz-auth ]; then
+        if [ -e "$keyguard" ] || [ -e /etc/rabbiz-de/enabled ]; then
+            return 0
+        fi
+    fi
+    if [ -e "$keyguard" ]; then
+        return 0
+    fi
     if [ -r "$prefs" ]; then
         local method=""
         if command -v python3 >/dev/null 2>&1; then
@@ -115,8 +125,26 @@ except Exception:
             return 1
         fi
     fi
-    [ -e "$keyguard" ]
+    return 1
 }
+
+if [ "$MODE" != "de" ]; then
+    if keyguard_requires_lock; then
+        echo "rabbiz-session: refusing non-de mode ($MODE) because keyguard lock is configured (fail-closed)" >&2
+        if [ -x "$DE_BIN" ]; then
+            MODE=de
+        else
+            exit 1
+        fi
+    else
+        exec "$LABWC_LAUNCHER"
+    fi
+fi
+
+# --- DE mode ---------------------------------------------------------------
+FAIL_FILE="$XDG_RUNTIME_DIR/rabbiz-de.fail"
+READY_FILE="$XDG_RUNTIME_DIR/rabbiz-de.ready"
+SOCKET="$XDG_RUNTIME_DIR/wayland-0"
 
 to_labwc() {
     if keyguard_requires_lock; then

@@ -16,6 +16,7 @@
  *  - netdev backend for rmnet0-7 (SIOCIF/link_device net path)
  *  - crash/dump support (cp_debug, modem_dump)
  */
+#include <linux/capability.h>
 #include <linux/io.h>
 #include <linux/mfd/syscon.h>
 #include <linux/module.h>
@@ -222,7 +223,16 @@ static char peek_buf[64];
 static ssize_t peek_show(struct device *dev, struct device_attribute *attr,
 			 char *buf)
 {
-	return sysfs_emit(buf, "%s\n", peek_buf);
+	struct cpif_dev *c = dev_get_drvdata(dev);
+	ssize_t ret;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
+
+	mutex_lock(&c->lock);
+	ret = sysfs_emit(buf, "%s\n", peek_buf);
+	mutex_unlock(&c->lock);
+	return ret;
 }
 
 static ssize_t peek_store(struct device *dev, struct device_attribute *attr,
@@ -233,6 +243,9 @@ static ssize_t peek_store(struct device *dev, struct device_attribute *attr,
 	unsigned int off, wval = 0;
 	u32 val = 0;
 	int ret, w, nw;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
 
 	nw = sscanf(buf, "%7s %i %i", which, &off, &wval);
 	if (nw < 2)
@@ -271,13 +284,13 @@ static ssize_t peek_store(struct device *dev, struct device_attribute *attr,
 	} else {
 		ret = cpif_reg_peek(c, w, off, &val);
 	}
-	mutex_unlock(&c->lock);
 	if (ret) {
 		snprintf(peek_buf, sizeof(peek_buf), "error %d", ret);
 	} else {
 		snprintf(peek_buf, sizeof(peek_buf), "%s 0x%x = 0x%08x",
 			 which, off, val);
 	}
+	mutex_unlock(&c->lock);
 	return count;
 }
 static DEVICE_ATTR_RW(peek);

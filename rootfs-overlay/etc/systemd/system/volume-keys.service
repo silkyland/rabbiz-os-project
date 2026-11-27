@@ -3,9 +3,21 @@ Description=Hardware volume keys -> PipeWire default sink
 After=sound.target bluetooth.service
 
 [Service]
+User=rabbiz
+Group=rabbiz
+SupplementaryGroups=input audio video
 ExecStart=/usr/local/bin/volume-keys.py
 Restart=always
 RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target

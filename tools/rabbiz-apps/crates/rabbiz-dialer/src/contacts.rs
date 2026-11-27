@@ -86,19 +86,14 @@ pub fn load_from(path: &Path) -> Option<Vec<Contact>> {
     Some(out)
 }
 
-/// Load from the real data dir.
-#[must_use]
-pub fn load() -> Option<Vec<Contact>> {
-    load_from(&store_path())
+/// Load from the shared store; a valid empty store stays empty.
+fn resolve_from(path: &Path) -> Vec<Contact> {
+    load_from(path).unwrap_or_else(model::builtin_contacts)
 }
 
-/// The contact list every dialer surface shares: store contacts when
-/// `contacts.json` exists and parses (even an empty list — a user who
-/// deleted every contact must not get the demo seed back), else the
-/// built-in demo contacts.
 #[must_use]
 pub fn resolved() -> Vec<Contact> {
-    load().unwrap_or_else(model::builtin_contacts)
+    resolve_from(&store_path())
 }
 
 /// Look up a dialed/received number in the resolved list.
@@ -121,23 +116,11 @@ fn label_display(raw: &str) -> String {
     }
 }
 
-/// Avatar tint — same 6-colour palette + hash the contacts app uses, so a
-/// contact looks identical in both apps.
+/// Avatar tint — the shared app-kit palette (`ui::avatar_tint`), so a
+/// contact looks identical in the dialer, contacts and sms apps.
 fn avatar_tint(name: &str, number: &str) -> [u8; 4] {
-    const PALETTE: [[u8; 4]; 6] = [
-        [0x3B, 0x82, 0xF6, 0xFF],
-        [0x10, 0xB9, 0x81, 0xFF],
-        [0xF5, 0x9E, 0x0B, 0xFF],
-        [0xEC, 0x48, 0x99, 0xFF],
-        [0x8B, 0x5C, 0xF6, 0xFF],
-        [0x06, 0xB6, 0xD4, 0xFF],
-    ];
     let seed = if name.trim().is_empty() { number } else { name };
-    let mut h: u32 = 0;
-    for b in seed.bytes() {
-        h = h.wrapping_mul(31).wrapping_add(u32::from(b)) & 0xFFFF;
-    }
-    PALETTE[(h as usize) % PALETTE.len()]
+    rabbiz_app_kit::ui::avatar_tint(seed)
 }
 
 #[cfg(test)]
@@ -226,29 +209,22 @@ mod tests {
 
     #[test]
     fn resolved_prefers_store_over_builtin() {
-        // Only env reader in this test binary — safe to mutate XDG_DATA_HOME.
         let dir = tmpdir("xdg");
-        let store_dir = dir.join("rabbiz-contacts");
-        std::fs::create_dir_all(&store_dir).unwrap();
-        std::fs::write(store_dir.join("contacts.json"), FIXTURE).unwrap();
+        let path = dir.join("contacts.json");
+        std::fs::write(&path, FIXTURE).unwrap();
 
-        let old = std::env::var_os("XDG_DATA_HOME");
-        std::env::set_var("XDG_DATA_HOME", &dir);
-
-        let contacts = resolved();
+        let contacts = resolve_from(&path);
         assert_eq!(contacts.len(), 2);
         assert!(contacts.iter().all(|c| c.name == "Store Person"));
 
-        // Corrupt the store → resolved() falls back to the demo list.
-        std::fs::write(store_dir.join("contacts.json"), "{oops").unwrap();
-        let contacts = resolved();
+        std::fs::write(&path, r#"{"version":1,"contacts":[]}"#).unwrap();
+        assert!(resolve_from(&path).is_empty());
+
+        std::fs::write(&path, "{oops").unwrap();
+        let contacts = resolve_from(&path);
         assert_eq!(contacts.len(), model::builtin_contacts().len());
         assert!(contacts.iter().any(|c| c.name == "Mom"));
 
-        match old {
-            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
-            None => std::env::remove_var("XDG_DATA_HOME"),
-        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

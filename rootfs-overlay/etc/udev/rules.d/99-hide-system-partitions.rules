@@ -1,12 +1,19 @@
-# Hide Android/Samsung-internal eMMC partitions and the pmOS system
+# Hide Android/Samsung-internal eMMC, UFS (Phase 2 muyu), and pmOS system
 # partitions from udisks-based file-manager UIs (Dolphin Places,
 # Index Drives) — they're system storage, not user-removable media,
-# and listing 13 raw Android partitions makes the sidebar useless.
-# UDISKS_IGNORE only affects udisks' presentation; mounting still works.
+# and listing raw Android partitions makes the sidebar useless.
+# UDISKS_IGNORE only affects udisks' presentation; critical firmware/NV
+# partitions are additionally marked read-only at the block layer (OTA-010).
 ACTION=="remove", GOTO="a21s_hide_end"
 SUBSYSTEM!="block", GOTO="a21s_hide_end"
 
 KERNEL=="mmcblk0p*", ENV{UDISKS_IGNORE}="1"
 KERNEL=="loop0p*",  ENV{UDISKS_IGNORE}="1"
+# Non-removable internal UFS LUN partitions (e.g. Xiaomi Pad 7 Pro / muyu)
+KERNEL=="sd[a-f][0-9]*", ATTRS{removable}=="0", ENV{UDISKS_IGNORE}="1"
+
+# Mark non-updateable firmware/NV partitions read-only at the kernel block layer
+# to prevent accidental overwrite of EFS/IMEI/bootloader calibration data.
+ENV{ID_PART_ENTRY_NAME}=="BOOTLOADER|EFS|SEC_EFS|CPEFS|KEYSTORAGE|VBMETA|PIT|efs|sec_efs|cpefs|persist|modemst1|modemst2|fsg|fsc", RUN+="/usr/bin/blockdev --setro /dev/%k"
 
 LABEL="a21s_hide_end"

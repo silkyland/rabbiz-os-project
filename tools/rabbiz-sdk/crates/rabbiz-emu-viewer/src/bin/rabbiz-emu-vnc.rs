@@ -4,10 +4,16 @@
 #![forbid(unsafe_code)]
 
 use std::io::{Read, Write};
-use std::net::{TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use rabbiz_emu_proto::{client_handshake, client_poll_raw_if_newer};
+
+const MAX_CONCURRENT_CLIENTS: usize = 8;
+const MAX_RFB_ENCODINGS: usize = 1024;
+const MAX_CUT_TEXT_BYTES: usize = 65_536;
 
 fn main() {
     let emu_addr = std::env::args()
@@ -20,16 +26,35 @@ fn main() {
         .nth(3)
         .unwrap_or_else(|| "127.0.0.1:5900".to_string());
 
-    let listener = TcpListener::bind(&vnc_addr).expect("bind VNC 5900");
-    eprintln!("rabbiz-emu-vnc: listening on {vnc_addr} -> emu {emu_addr} (ctl {ctl_addr})");
+    let parsed_vnc: SocketAddr = vnc_addr
+        .parse()
+        .unwrap_or_else(|e| panic!("invalid VNC listen address {vnc_addr:?}: {e}"));
+    if !parsed_vnc.ip().is_loopback() {
+        eprintln!(
+            "rabbiz-emu-vnc: refusing non-loopback listen address {parsed_vnc}; bind 127.0.0.1 or [::1]"
+        );
+        std::process::exit(2);
+    }
 
+    let listener = TcpListener::bind(parsed_vnc).expect("bind VNC loopback");
+    eprintln!("rabbiz-emu-vnc: listening on {parsed_vnc} -> emu {emu_addr} (ctl {ctl_addr})");
+
+    let active_clients = Arc::new(AtomicUsize::new(0));
     for stream in listener.incoming().flatten() {
+        let prev = active_clients.fetch_add(1, Ordering::AcqRel);
+        if prev >= MAX_CONCURRENT_CLIENTS {
+            active_clients.fetch_sub(1, Ordering::AcqRel);
+            eprintln!("rabbiz-emu-vnc: rejecting client (limit {MAX_CONCURRENT_CLIENTS} reached)");
+            continue;
+        }
         let emu = emu_addr.clone();
         let ctl = ctl_addr.clone();
+        let counter = Arc::clone(&active_clients);
         std::thread::spawn(move || {
             if let Err(e) = serve_client(stream, &emu, &ctl) {
                 eprintln!("rabbiz-emu-vnc client ended: {e}");
             }
+            counter.fetch_sub(1, Ordering::AcqRel);
         });
     }
 }
@@ -92,6 +117,9 @@ fn serve_client(mut vnc: TcpStream, emu_addr: &str, ctl_addr: &str) -> Result<()
                     let mut n = [0u8; 2];
                     vnc.read_exact(&mut n).map_err(|e| e.to_string())?;
                     let count = u16::from_be_bytes(n) as usize;
+                    if count > MAX_RFB_ENCODINGS {
+                        return Err(format!("SetEncodings count too large: {count}"));
+                    }
                     let mut encs = vec![0u8; count * 4];
                     vnc.read_exact(&mut encs).map_err(|e| e.to_string())?;
                 }
@@ -128,7 +156,10 @@ fn serve_client(mut vnc: TcpStream, emu_addr: &str, ctl_addr: &str) -> Result<()
                     let mut len_b = [0u8; 4];
                     vnc.read_exact(&mut len_b).map_err(|e| e.to_string())?;
                     let len = u32::from_be_bytes(len_b) as usize;
-                    let mut txt = vec![0u8; len.min(65536)];
+                    if len > MAX_CUT_TEXT_BYTES {
+                        return Err(format!("ClientCutText too large: {len} bytes"));
+                    }
+                    let mut txt = vec![0u8; len];
                     vnc.read_exact(&mut txt).map_err(|e| e.to_string())?;
                 }
                 _ => {}

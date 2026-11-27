@@ -7,6 +7,12 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/root/audio-up.sh
 TimeoutStartSec=60
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target

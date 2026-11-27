@@ -5,13 +5,25 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 use std::time::Instant;
 
-use crate::library::{self, auto_next_index, seek_seconds, Track};
+use crate::library::{self, finish_next_index, seek_seconds, Repeat, Track};
 use crate::player::{self, socket_path, Line, Mpv};
+
+/// Cheap entropy for shuffle picks — subsec nanos of the wall clock.
+fn shuffle_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| (d.as_nanos() & 0xFFFF_FFFF_FFFF_FFFF) as u64)
+        .unwrap_or(0x9E3779B9)
+}
 
 pub(crate) struct Player {
     pub(crate) mpv: Option<Mpv>,
     /// `mpv --version` probe result from startup; gates the honest banner.
     pub(crate) mpv_ok: bool,
+    /// GUI transport toggles — shuffle picks a random track on advance.
+    pub(crate) shuffle: bool,
+    /// Repeat mode honored at end-of-file (off/all/one).
+    pub(crate) repeat: Repeat,
     /// Properties subscribed for the current connection.
     observed: bool,
     /// Commands issued while the socket isn't up yet (FIFO, flushed on connect).
@@ -37,6 +49,8 @@ impl Player {
         Self {
             mpv: None,
             mpv_ok,
+            shuffle: false,
+            repeat: Repeat::Off,
             observed: false,
             pending_cmds: VecDeque::new(),
             current: None,
@@ -374,10 +388,16 @@ impl Player {
         }
     }
 
-    /// End of the current file: advance to the next library track, or park
-    /// paused at the end of the list (no infinite loop).
+    /// End of the current file: advance per repeat/shuffle, or park paused
+    /// at the end of the list (repeat-off never loops).
     fn finish_track(&mut self, tracks: &[Track]) {
-        match auto_next_index(self.current, tracks.len()) {
+        match finish_next_index(
+            self.current,
+            tracks.len(),
+            self.repeat,
+            self.shuffle,
+            shuffle_seed(),
+        ) {
             Some(i) => self.play_track(i, tracks),
             None => self.pause = true,
         }

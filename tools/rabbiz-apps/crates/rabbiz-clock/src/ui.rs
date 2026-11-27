@@ -324,55 +324,37 @@ fn draw_control(app: &ClockApp, canvas: &mut Canvas, theme: &Theme, c: &Control)
 
 fn render_clock(app: &ClockApp, canvas: &mut Canvas, theme: &Theme, w: i32, top: i32, bottom: i32) {
     let now = local_now();
-    // Big time, in the upper part of the content area.
-    let time_rect = Rect::new(
-        ui::MARGIN,
-        top + (bottom - top) / 5,
-        w - ui::MARGIN * 2,
-        150,
-    );
+    let height = (bottom - top).max(0);
+    let width = w - 2 * ui::MARGIN;
+    let time_size = (width as f32 / 3.6).min(height as f32 * 0.28).clamp(24.0, 120.0);
+    let time_h = (time_size * 1.18) as i32;
+    // Place the clock cluster just above center, keeping the anchor stable when
+    // the next alarm appears or is cleared.
+    let context_h = 116;
+    let cluster_y = top + (height - time_h - context_h).max(0) * 2 / 5;
+    let time = Rect::new(ui::MARGIN, cluster_y, width, time_h);
     ui::draw_centered(
         canvas,
         &format!("{:02}:{:02}", now.hour, now.minute),
-        &ui::styled(104.0, 600, theme.text),
-        time_rect,
+        &ui::styled(time_size, 500, theme.text),
+        time,
     );
-    let date_rect = Rect::new(ui::MARGIN, time_rect.bottom() + 8, w - ui::MARGIN * 2, 44);
-    ui::draw_centered(
-        canvas,
-        &format_date(&now),
-        &ui::body(theme.text2),
-        date_rect,
-    );
+    let date = Rect::new(ui::MARGIN, time.bottom() + 4, width, 36);
+    ui::draw_centered(canvas, &format_date(&now), &ui::body(theme.text2), date);
 
-    // Next-alarm card pinned above the bottom edge.
-    let sorted: Vec<&Alarm> = {
-        let mut v: Vec<&Alarm> = app.alarms.iter().collect();
-        v.sort_by_key(|a| (a.hour, a.minute));
-        v
-    };
-    let card_h = 88;
-    let card = Rect::new(ui::MARGIN, bottom - card_h, w - ui::MARGIN * 2, card_h);
-    canvas.fill_rounded_rect(card, tokens::RADIUS_CARD, theme.surface1);
-    if let Some(text) = next_alarm_text(&sorted, &now) {
-        ui::draw_text(
-            canvas,
-            &text,
-            &ui::label(theme.text),
-            card.x + 24,
-            card.y + 18,
-            Some(card.w - 48),
-        );
-        ui::draw_text(
+    let alarms: Vec<&Alarm> = app.alarms.iter().collect();
+    let next = Rect::new(ui::MARGIN, date.bottom() + 8, width, 32);
+    if let Some(text) = next_alarm_text(&alarms, &now) {
+        ui::draw_centered(canvas, &text, &ui::label(theme.accent), next);
+        let context = Rect::new(ui::MARGIN, next.bottom() + 4, width, 32);
+        ui::draw_centered(
             canvas,
             "Alarms ring while Clock is open",
-            &ui::caption(theme.text3),
-            card.x + 24,
-            card.y + 50,
-            Some(card.w - 48),
+            &ui::caption(theme.text2),
+            context,
         );
     } else {
-        ui::draw_centered(canvas, "No alarms set", &ui::body(theme.text3), card);
+        ui::draw_centered(canvas, "No alarms set", &ui::caption(theme.text2), next);
     }
 }
 

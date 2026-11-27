@@ -1,49 +1,319 @@
 #!/usr/bin/python3
-# rabbiz-splash — paint the RabbizOS wordmark on the framebuffer instead of the verbose boot console.
-# Input: a top-down 32-bpp BMP (BGRA, BITFIELDS) made from assets/branding/rabbizos-wordmark-on-cream.png.
-# The first pixel is the background colour; the image is centred on a full-screen fill of it.
-# Runs early (rabbiz-splash.service); labwc takes the display over later. Never fails the boot.
-import mmap, os, struct, sys, time
+# rabbiz-splash — paint the RabbizOS wordmark and a 1-100% loading bar on the
+# framebuffer during boot instead of the verbose boot console.
+# Input: a top-down 32-bpp BMP (BGRA, BITFIELDS) made from
+# assets/branding/rabbizos-wordmark-on-cream.png.
+# The first pixel is the background colour; the image is centred above a
+# [|||||...] 1-100% progress bar in RabbizOS brand colours.
+# Runs early (rabbiz-splash.service, Type=notify); exits cleanly once the
+# Wayland compositor takes over or on SIGTERM. Never fails the boot.
+import math
+import mmap
+import os
+import signal
+import struct
+import sys
+import time
+import socket
 
 BMP = "/usr/share/rabbiz/rabbizos-splash.bmp"
 FB = "/dev/fb0"
 SYS = "/sys/class/graphics/fb0/"
 
+# RabbizOS palette (BGRA 32-bpp, docs/BRAND.md)
+PLUM = b"\x3d\x26\x38\xff"    # #38263D — brackets, percentage text
+COPPER = b"\x32\x5c\xa5\xff"  # #A55C32 — filled | ticks
+SAND = b"\xb3\xc9\xda\xff"    # #DAC9B3 — unfilled | track
+
+MAX_WAIT_S = 25.0
+FRAME_DT = 0.05
+
+# 5x7 bitmap font for digits, '%', '[', ']', ' '
+FONT_5X7 = {
+    "0": (0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110),
+    "1": (0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110),
+    "2": (0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111),
+    "3": (0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110),
+    "4": (0b00010, 0b00110, 0b01010, 0b10010, 0b11111, 0b00010, 0b00010),
+    "5": (0b11111, 0b10000, 0b11110, 0b00001, 0b00001, 0b10001, 0b01110),
+    "6": (0b00110, 0b01000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110),
+    "7": (0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000),
+    "8": (0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110),
+    "9": (0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00010, 0b01100),
+    "%": (0b11001, 0b11010, 0b00010, 0b00100, 0b01000, 0b01011, 0b10011),
+    "[": (0b01110, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b01110),
+    "]": (0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110),
+    " ": (0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00000),
+}
+
+
 def rd(name):
     with open(SYS + name) as f:
         return f.read().strip()
 
+
+def sd_notify_ready():
+    addr = os.environ.get("NOTIFY_SOCKET")
+    if not addr:
+        return
+    if addr.startswith("@"):
+        addr = "\0" + addr[1:]
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as s:
+            s.connect(addr)
+            s.sendall(b"READY=1")
+    except OSError:
+        pass
+
+
+def fill_rect(buf, stride, fw, fh, x, y, w, h, color):
+    x0 = max(0, x)
+    y0 = max(0, y)
+    x1 = min(fw, x + w)
+    y1 = min(fh, y + h)
+    if x0 >= x1 or y0 >= y1:
+        return
+    row = color * (x1 - x0)
+    span = (x1 - x0) * 4
+    for py in range(y0, y1):
+        p = py * stride + x0 * 4
+        buf[p:p + span] = row
+
+
+def draw_glyph(buf, stride, fw, fh, ch, x, y, scale, color):
+    rows = FONT_5X7.get(ch)
+    if not rows:
+        return
+    for ry, bits in enumerate(rows):
+        for rx in range(5):
+            if bits & (1 << (4 - rx)):
+                fill_rect(
+                    buf, stride, fw, fh,
+                    x + rx * scale, y + ry * scale,
+                    scale, scale, color,
+                )
+
+
+def draw_text(buf, stride, fw, fh, text, x, y, scale, color):
+    adv = 6 * scale
+    for i, ch in enumerate(text):
+        draw_glyph(buf, stride, fw, fh, ch, x + i * adv, y, scale, color)
+
+
+def compute_bar_layout(fw, fh, logo_y, logo_h):
+    """Compute centered geometry for `[||||...||||] 100%` below the logo."""
+    scale = max(2, min(4, fw // 240))
+    char_adv = 6 * scale
+    glyph_h = 7 * scale
+    tick_h = glyph_h + 2 * scale
+    tick_w = max(2, scale + 1)
+    tick_gap = max(3, scale * 2)
+    tick_pitch = tick_w + tick_gap
+
+    pct_w = 5 * char_adv          # " 100%"
+    bracket_w = char_adv          # "[" or "]"
+    gap_after_bracket = scale * 2
+    gap_before_pct = scale * 3
+
+    max_row_w = min(640, int(fw * 0.88))
+    avail_ticks_w = max(
+        tick_pitch * 10,
+        max_row_w - 2 * bracket_w - 2 * gap_after_bracket - gap_before_pct - pct_w,
+    )
+    num_ticks = max(10, min(60, avail_ticks_w // tick_pitch))
+    ticks_span = (num_ticks - 1) * tick_pitch + tick_w
+
+    total_w = (
+        bracket_w + gap_after_bracket
+        + ticks_span + gap_after_bracket
+        + bracket_w + gap_before_pct + pct_w
+    )
+    left_x = max(0, (fw - total_w) // 2)
+    ticks_x = left_x + bracket_w + gap_after_bracket
+    right_x = ticks_x + ticks_span + gap_after_bracket
+    pct_x = right_x + bracket_w + gap_before_pct
+
+    bar_y = min(fh - tick_h - 16, logo_y + logo_h + max(24, fh // 36))
+    bar_y = max(0, bar_y)
+    text_y = bar_y + (tick_h - glyph_h) // 2
+
+    return {
+        "scale": scale,
+        "bar_y": bar_y,
+        "text_y": text_y,
+        "tick_h": tick_h,
+        "tick_w": tick_w,
+        "tick_pitch": tick_pitch,
+        "num_ticks": num_ticks,
+        "left_x": left_x,
+        "ticks_x": ticks_x,
+        "right_x": right_x,
+        "pct_x": pct_x,
+        "total_w": total_w,
+    }
+
+
+def draw_progress(buf, stride, fw, fh, bg, layout, pct):
+    pct = max(0, min(100, int(pct)))
+    scale = layout["scale"]
+    bar_y = layout["bar_y"]
+    text_y = layout["text_y"]
+    tick_h = layout["tick_h"]
+    tick_w = layout["tick_w"]
+    tick_pitch = layout["tick_pitch"]
+    num_ticks = layout["num_ticks"]
+
+    # Clear only the progress row region
+    fill_rect(buf, stride, fw, fh, layout["left_x"], bar_y, layout["total_w"], tick_h, bg)
+
+    draw_glyph(buf, stride, fw, fh, "[", layout["left_x"], text_y, scale, PLUM)
+
+    filled = round(pct * num_ticks / 100)
+    if pct > 0 and filled == 0:
+        filled = 1
+    for i in range(num_ticks):
+        tx = layout["ticks_x"] + i * tick_pitch
+        color = COPPER if i < filled else SAND
+        fill_rect(buf, stride, fw, fh, tx, bar_y, tick_w, tick_h, color)
+
+    draw_glyph(buf, stride, fw, fh, "]", layout["right_x"], text_y, scale, PLUM)
+    draw_text(buf, stride, fw, fh, f"{pct:3d}%", layout["pct_x"], text_y, scale, PLUM)
+
+
+def probe_milestones():
+    exists = os.path.exists
+    wayland = any(
+        exists(p)
+        for p in (
+            "/run/user/1001/wayland-0",
+            "/run/user/1001/rabbiz-de.ready",
+            "/run/user/1000/wayland-0",
+            "/run/user/1000/rabbiz-de.ready",
+        )
+    )
+    user_bus = exists("/run/user/1001/bus") or exists("/run/user/1000/bus")
+    seatd = exists("/run/seatd.sock")
+    dbus = exists("/run/dbus/system_bus_socket")
+    return {
+        "wayland": wayland,
+        "user_bus": user_bus,
+        "seatd": seatd,
+        "dbus": dbus,
+    }
+
+
+def compute_target_pct(elapsed, milestones):
+    if milestones.get("wayland") or elapsed >= MAX_WAIT_S:
+        return 100
+    pct = 1 + int(90.0 * (1.0 - math.exp(-max(0.0, elapsed) / 4.5)))
+    if milestones.get("dbus"):
+        pct = max(pct, 25)
+    if milestones.get("seatd"):
+        pct = max(pct, 45)
+    if milestones.get("user_bus"):
+        pct = max(pct, 65)
+    return min(95, max(1, pct))
+
+
+MAX_BMP_DIM = 4096
+MAX_BMP_PIXEL_BYTES = MAX_BMP_DIM * MAX_BMP_DIM * 4
+
+
+def paint_splash_base(buf, stride, fw, fh, bmp_bytes):
+    if len(bmp_bytes) < 54 or bmp_bytes[:2] != b"BM":
+        return None
+    off = struct.unpack_from("<I", bmp_bytes, 10)[0]
+    w, h, _planes, ibpp = struct.unpack_from("<iiHH", bmp_bytes, 18)
+    if ibpp != 32 or h >= 0:
+        return None
+    h = -h
+    if w < 1 or w > MAX_BMP_DIM or h < 1 or h > MAX_BMP_DIM:
+        return None
+    if fw <= 0 or fh <= 0 or stride < fw * 4 or w > fw or h > fh:
+        return None
+    pixel_bytes = w * h * 4
+    if pixel_bytes > MAX_BMP_PIXEL_BYTES or off > len(bmp_bytes) or off + pixel_bytes > len(bmp_bytes):
+        return None
+    bg = bmp_bytes[off:off + 4]
+    x0 = (fw - w) // 2
+    y0 = max(0, (fh - h) // 2 - max(20, fh // 40))
+
+    buf[0:stride * fh] = bg * (stride * fh // 4)
+    for y in range(h):
+        if y0 + y >= fh:
+            break
+        row = bmp_bytes[off + y * w * 4: off + (y + 1) * w * 4]
+        p = (y0 + y) * stride + x0 * 4
+        buf[p:p + w * 4] = row
+    return bg, y0, h
+
+
 def main():
+    stop = False
+
+    def handle_sig(_signum, _frame):
+        nonlocal stop
+        stop = True
+
+    signal.signal(signal.SIGTERM, handle_sig)
+    signal.signal(signal.SIGINT, handle_sig)
+
     for _ in range(50):                       # wait up to 5 s for the exynos-drm fbdev
         if os.path.exists(FB) and os.path.exists(SYS + "virtual_size"):
             break
         time.sleep(0.1)
     else:
+        sd_notify_ready()
         return 0
+
     fw, fh = map(int, rd("virtual_size").split(","))
     bpp, stride = int(rd("bits_per_pixel")), int(rd("stride"))
     if bpp != 32:
+        sd_notify_ready()
         return 0
-    d = open(BMP, "rb").read()
-    off = struct.unpack_from("<I", d, 10)[0]
-    w, h, _planes, ibpp = struct.unpack_from("<iiHH", d, 18)
-    if ibpp != 32 or h >= 0:
-        return 0                              # only top-down 32-bpp supported
-    h = -h
-    bg = d[off:off + 4]
-    x0, y0 = (fw - w) // 2, (fh - h) // 2
+
+    with open(BMP, "rb") as f:
+        bmp_bytes = f.read()
+
     with open(FB, "r+b") as f:
         m = mmap.mmap(f.fileno(), stride * fh)
-        m[0:stride * fh] = bg * (stride * fh // 4)
-        for y in range(h):
-            row = d[off + y * w * 4: off + (y + 1) * w * 4]
-            p = (y0 + y) * stride + x0 * 4
-            m[p:p + w * 4] = row
-        m.close()
+        try:
+            base = paint_splash_base(m, stride, fw, fh, bmp_bytes)
+            if base is None:
+                sd_notify_ready()
+                return 0
+            bg, logo_y, logo_h = base
+            layout = compute_bar_layout(fw, fh, logo_y, logo_h)
+            shown_pct = 1
+            draw_progress(m, stride, fw, fh, bg, layout, shown_pct)
+            sd_notify_ready()
+
+            t0 = time.monotonic()
+            while not stop:
+                elapsed = time.monotonic() - t0
+                milestones = probe_milestones()
+                target = compute_target_pct(elapsed, milestones)
+                if shown_pct < target:
+                    if target == 100:
+                        step = max(1, (100 - shown_pct + 3) // 4)
+                    else:
+                        step = 1 if target - shown_pct <= 4 else max(1, (target - shown_pct) // 3)
+                    shown_pct = min(target, shown_pct + step)
+                    draw_progress(m, stride, fw, fh, bg, layout, shown_pct)
+
+                if shown_pct >= 100:
+                    time.sleep(0.15)
+                    break
+                time.sleep(FRAME_DT)
+        finally:
+            m.close()
     return 0
 
-try:
-    sys.exit(main())
-except Exception as e:                        # a splash must never block boot
-    print("rabbiz-splash:", e, file=sys.stderr)
-    sys.exit(0)
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except Exception as e:                        # a splash must never block boot
+        print("rabbiz-splash:", e, file=sys.stderr)
+        sd_notify_ready()
+        sys.exit(0)

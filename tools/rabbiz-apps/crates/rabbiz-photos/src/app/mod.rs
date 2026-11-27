@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 
 use de_api::{Pixels, Point};
 use de_design::motion::{bezier_eval, BEZIER_STANDARD};
-use rabbiz_app_kit::{AppEvent, AppFrame, AppState, Canvas, TextInputCtl, Theme};
+use rabbiz_app_kit::ui::Tween;
+use rabbiz_app_kit::{AppEvent, AppFrame, AppState, Canvas, ScrollView, TextInputCtl, Theme};
 
 use crate::decode;
 use crate::layout::{self, Group, Layout};
@@ -22,6 +23,10 @@ const OPEN_MS: f32 = 240.0;
 const CLOSE_MS: f32 = 180.0;
 const SLIDE_MS: f32 = 210.0;
 const SETTLE_MS: f32 = 140.0;
+/// Viewer chrome fade duration (seconds).
+const CHROME_FADE_S: f32 = 0.18;
+/// How long a transient toast stays up.
+const TOAST_MS: u64 = 2500;
 /// Decodes per event/tick — keeps each frame under ~50 ms of decode work.
 const PUMP_EVENTS: usize = 2;
 const PUMP_TICK: usize = 1;
@@ -83,13 +88,16 @@ pub(crate) struct PhotosApp {
     layout: Layout,
     view_top: i32,
     view_h: i32,
-    scroll: f32,
-    scroll_start: f32,
-    scroll_down_y: i32,
+    /// Scroll physics (drag, rubber-band, fling) — `offset()` is the scroll.
+    sv: ScrollView,
+    /// Monotonic epoch for `ScrollView`'s velocity sampling.
+    clock0: Instant,
     pressed_cell: Option<usize>,
     pending: VecDeque<usize>,
     thumbs: HashMap<usize, Pixels>,
     thumb_failed: HashSet<usize>,
+    refresh_pressed: bool,
+    rescan_pressed: bool,
 
     // ---- viewer ----
     v_index: usize,
@@ -105,6 +113,20 @@ pub(crate) struct PhotosApp {
     settle: Option<(f32, f32)>, // (start_dx, t)
     anim: Option<Anim>,
     back_pressed: bool,
+    info_pressed: bool,
+    delete_pressed: bool,
+    /// Overlay chrome visibility target; `chrome_fade` animates the alpha.
+    chrome_vis: bool,
+    chrome_fade: Tween,
+    /// Expanded metadata line in the bottom strip (info action).
+    show_info: bool,
+    info_dimensions: Option<(i32, i32)>,
+    /// Delete-confirmation dialog is up.
+    del_dialog: bool,
+    del_pressed: Option<usize>,
+    del_scrim: bool,
+    /// Transient snackbar message + expiry.
+    toast: Option<(String, Instant)>,
 }
 
 pub fn run() {
@@ -114,23 +136,7 @@ pub fn run() {
 impl PhotosApp {
     fn new() -> Self {
         let photos = photos::scan(&photos::default_dirs());
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
-        // Photos arrive mtime-sorted, so equal days are contiguous.
-        let mut groups: Vec<Group> = Vec::new();
-        for (i, p) in photos.iter().enumerate() {
-            let label = photos::format_day(p.mtime, now);
-            match groups.last_mut() {
-                Some(g) if g.label == label => g.end = i + 1,
-                _ => groups.push(Group {
-                    label,
-                    first: i,
-                    end: i + 1,
-                }),
-            }
-        }
+        let groups = Self::day_groups(&photos);
         Self {
             photos,
             groups,
@@ -140,13 +146,14 @@ impl PhotosApp {
             layout: Layout::default(),
             view_top: 0,
             view_h: 0,
-            scroll: 0.0,
-            scroll_start: 0.0,
-            scroll_down_y: 0,
+            sv: ScrollView::new(),
+            clock0: Instant::now(),
             pressed_cell: None,
             pending: VecDeque::new(),
             thumbs: HashMap::new(),
             thumb_failed: HashSet::new(),
+            refresh_pressed: false,
+            rescan_pressed: false,
             v_index: 0,
             v_zoom: 1.0,
             v_pan: (0.0, 0.0),
@@ -159,11 +166,106 @@ impl PhotosApp {
             settle: None,
             anim: None,
             back_pressed: false,
+            info_pressed: false,
+            delete_pressed: false,
+            chrome_vis: true,
+            chrome_fade: Tween::new(1.0, 1.0, CHROME_FADE_S, BEZIER_STANDARD),
+            show_info: false,
+            info_dimensions: None,
+            del_dialog: false,
+            del_pressed: None,
+            del_scrim: false,
+            toast: None,
         }
     }
 
-    fn max_scroll(&self) -> i32 {
-        (self.layout.content_h - self.view_h).max(0)
+    /// Group an mtime-sorted photo list into contiguous day buckets.
+    fn day_groups(photos: &[Photo]) -> Vec<Group> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let mut groups: Vec<Group> = Vec::new();
+        for (i, p) in photos.iter().enumerate() {
+            let label = photos::format_day(p.mtime, now);
+            match groups.last_mut() {
+                Some(g) if g.label == label => g.end = i + 1,
+                _ => groups.push(Group {
+                    label,
+                    first: i,
+                    end: i + 1,
+                }),
+            }
+        }
+        groups
+    }
+
+    /// Milliseconds since app start for `ScrollView` velocity sampling.
+    fn now_ms(&self) -> u64 {
+        self.clock0.elapsed().as_millis() as u64
+    }
+
+    /// Re-scan the library roots and reset every derived cache — wired to
+    /// the grid header action, the empty-state button, and delete.
+    fn rescan(&mut self) {
+        self.photos = photos::scan(&photos::default_dirs());
+        self.show_info = false;
+        self.info_dimensions = None;
+        self.last_up = None;
+        self.groups = Self::day_groups(&self.photos);
+        self.layout = Layout::default();
+        self.pending.clear();
+        self.thumbs.clear();
+        self.thumb_failed.clear();
+        self.v_px.clear();
+        self.v_queued.clear();
+        self.pressed_cell = None;
+        self.sv.scroll_to(0.0);
+        if self.screen == Screen::Viewer {
+            if self.photos.is_empty() {
+                self.screen = Screen::Grid;
+                self.anim = None;
+                self.del_dialog = false;
+            } else {
+                self.v_index = self.v_index.min(self.photos.len() - 1);
+                self.v_zoom = 1.0;
+                self.v_pan = (0.0, 0.0);
+                self.request_viewer(self.v_index);
+            }
+        }
+    }
+
+    /// Delete the currently viewed photo from disk (dialog-confirmed), then
+    /// rescan so the grid and viewer indexes stay consistent.
+    fn delete_current(&mut self) {
+        let Some(p) = self.photos.get(self.v_index).cloned() else {
+            return;
+        };
+        let msg = match std::fs::remove_file(&p.path) {
+            Ok(()) => {
+                self.rescan();
+                format!("Deleted {}", p.name)
+            }
+            Err(e) => format!("Couldn't delete {}: {e}", p.name),
+        };
+        self.toast = Some((msg, Instant::now() + Duration::from_millis(TOAST_MS)));
+    }
+
+    /// Toggle viewer chrome visibility with a fade.
+    fn toggle_chrome(&mut self) {
+        self.chrome_vis = !self.chrome_vis;
+        let target = if self.chrome_vis { 1.0 } else { 0.0 };
+        self.chrome_fade = Tween::new(
+            self.chrome_fade.value(),
+            target,
+            CHROME_FADE_S,
+            BEZIER_STANDARD,
+        );
+    }
+
+    /// Current chrome opacity 0..=1 (drives every chrome draw).
+    fn chrome_alpha(&self) -> f32 {
+        self.chrome_fade.value().clamp(0.0, 1.0)
     }
 
     // ---------------- decode pump ----------------
@@ -233,7 +335,9 @@ impl PhotosApp {
         self.anim.is_some()
             || self.slide.is_some()
             || self.settle.is_some()
-            || (self.screen == Screen::Grid && !self.pending.is_empty())
+            || !self.chrome_fade.done()
+            || self.toast.is_some()
+            || (self.screen == Screen::Grid && (!self.pending.is_empty() || self.sv.is_animating()))
             || !self.v_queued.is_empty()
     }
 
@@ -266,6 +370,9 @@ impl PhotosApp {
             u,
             t: 0.0,
         });
+        self.show_info = false;
+        self.info_dimensions = None;
+        self.last_up = None;
         self.v_index = to;
         self.v_zoom = 1.0;
         self.v_pan = (0.0, 0.0);
@@ -281,6 +388,15 @@ impl PhotosApp {
         self.settle = None;
         self.screen = Screen::Viewer;
         self.anim = Some(Anim { open: true, t: 0.0 });
+        // Chrome auto-shows on page open (fades in).
+        self.chrome_vis = true;
+        self.chrome_fade = Tween::new(0.0, 1.0, CHROME_FADE_S, BEZIER_STANDARD);
+        self.show_info = false;
+        self.info_dimensions = None;
+        self.last_up = None;
+        self.del_dialog = false;
+        self.del_pressed = None;
+        self.del_scrim = false;
         // Grid decode queue is irrelevant while the viewer is up.
         self.pending.clear();
         self.request_viewer(idx);
@@ -302,6 +418,11 @@ impl PhotosApp {
         self.settle = None;
         self.drag_dx = 0.0;
         self.back_pressed = false;
+        self.info_pressed = false;
+        self.delete_pressed = false;
+        self.del_dialog = false;
+        self.del_pressed = None;
+        self.del_scrim = false;
     }
 
     fn toggle_zoom(&mut self, tap: Point) {
@@ -365,6 +486,21 @@ impl PhotosApp {
                 self.drag_dx = *from * (1.0 - k);
             }
         }
+        if !self.chrome_fade.done() {
+            self.chrome_fade.tick(dt);
+            dirty = true;
+        }
+        if self.screen == Screen::Grid {
+            let was = self.sv.offset_i32();
+            let flinging = self.sv.tick(dt.as_secs_f32());
+            dirty |= flinging || self.sv.offset_i32() != was;
+        }
+        if let Some((_, until)) = &self.toast {
+            if Instant::now() >= *until {
+                self.toast = None;
+                dirty = true;
+            }
+        }
         self.pump(PUMP_TICK);
         AppFrame {
             dirty,
@@ -374,11 +510,101 @@ impl PhotosApp {
     }
 
     fn rebuild_pending(&mut self) {
-        let vis = layout::visible_indices(&self.layout, self.view_h, self.scroll);
+        let vis = layout::visible_indices(&self.layout, self.view_h, self.sv.offset());
         self.pending = vis
             .into_iter()
             .filter(|i| !self.thumbs.contains_key(i) && !self.thumb_failed.contains(i))
             .collect();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use de_api::Size;
+    use rabbiz_app_kit::TestHarness;
+    use std::path::Path;
+    use std::time::Duration;
+
+    fn write_photo(dir: &Path, name: &str, w: i32, h: i32, rgb: [u8; 3]) {
+        let mut px = Pixels::empty(Size::new(w, h));
+        for i in (0..px.data.len()).step_by(4) {
+            px.data[i] = rgb[0];
+            px.data[i + 1] = rgb[1];
+            px.data[i + 2] = rgb[2];
+            px.data[i + 3] = 255;
+        }
+        std::fs::write(dir.join(name), de_paint::encode_png(&px).unwrap()).unwrap();
+    }
+
+    /// Drive the app through grid → viewer → chrome-toggle and save PNG
+    /// evidence to /tmp/rabbiz-shots/photos-*.png.
+    #[test]
+    fn evidence_screens() {
+        let home = std::env::temp_dir().join(format!("rabbiz-photos-home-{}", std::process::id()));
+        let pics = home.join("Pictures");
+        std::fs::create_dir_all(&pics).unwrap();
+        for i in 0..6i32 {
+            write_photo(
+                &pics,
+                &format!("p{i}.png"),
+                40 + i * 8,
+                30 + i * 4,
+                [40 + (i as u8) * 30, 90, 220 - (i as u8) * 20],
+            );
+        }
+        let shots = Path::new("/tmp/rabbiz-shots");
+
+        // --- populated library ---
+        let mut app = PhotosApp::new();
+        app.photos = photos::scan(&[pics]);
+        app.groups = PhotosApp::day_groups(&app.photos);
+        let mut h = TestHarness::new(app);
+        let _ = h.render(); // builds layout + queues thumbs
+        for _ in 0..60 {
+            h.tick(Duration::from_millis(16));
+            if !h.last_frame().animating {
+                break;
+            }
+        }
+        h.save_png(&shots.join("photos-grid.png")).unwrap();
+
+        let cell = h.state().layout.cells[0].rect;
+        let top = h.state().view_top;
+        let scroll = h.state().sv.offset();
+        h.tap(Point::new(
+            cell.x + cell.w / 2,
+            top + cell.y - scroll as i32 + cell.h / 2,
+        ));
+        h.settle(80, Duration::from_millis(16));
+        h.save_png(&shots.join("photos-viewer-on.png")).unwrap();
+
+        // Single tap on the photo (chrome toggle after the restyle).
+        h.tap(Point::new(360, 800));
+        h.settle(60, Duration::from_millis(16));
+        h.save_png(&shots.join("photos-viewer-tap.png")).unwrap();
+
+        assert!(!h.state().chrome_vis);
+
+        // Restore the controls with a separate tap before going back.
+        h.tap(Point::new(240, 800));
+        h.settle(60, Duration::from_millis(16));
+        assert!(h.state().chrome_vis);
+        let m = rabbiz_app_kit::ui::MARGIN;
+        let ts = rabbiz_app_kit::ui::TOP_SAFE;
+        h.tap(Point::new(m + 24, ts + 36));
+        h.settle(80, Duration::from_millis(16));
+        assert_eq!(h.state().screen, Screen::Grid);
+        h.save_png(&shots.join("photos-back.png")).unwrap();
+
+        // --- empty library ---
+        let mut app = PhotosApp::new();
+        app.photos.clear();
+        app.groups.clear();
+        let mut h2 = TestHarness::new(app);
+        h2.save_png(&shots.join("photos-empty.png")).unwrap();
+
+        let _ = std::fs::remove_dir_all(&home);
     }
 }
 

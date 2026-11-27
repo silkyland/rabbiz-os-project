@@ -1,26 +1,35 @@
 //! Music GUI application state, layout geometry, hit-testing, and input handling.
+//!
+//! Material You media conventions: a `TopAppBar` library screen (title +
+//! rescan action, scope chips, flat track rows with inset dividers) and a
+//! ~104 px mini-player pinned above the gesture bar that expands on tap into
+//! a fullscreen player (big art, slider seek, 5-way transport with real
+//! shuffle/repeat). The list scrolls through `ScrollView` (fling + rubber
+//! band); the expand is a ~300 ms fade+translate driven by `AppEvent::Tick`.
 
 use std::path::PathBuf;
 use std::time::Instant;
 
 use de_design::motion::{bezier_eval, BEZIER_STANDARD, RUBBER_FACTOR};
-use rabbiz_app_kit::{ui, AppEvent, AppFrame, AppState, Canvas, Point, Rect, TextInputCtl, Theme};
+use rabbiz_app_kit::widgets::{self, TopAppBar};
+use rabbiz_app_kit::{
+    ui, AppEvent, AppFrame, AppState, Canvas, Point, Rect, ScrollView, Size, TextInputCtl, Theme,
+};
 
-use crate::library::{self, next_index, prev_index, Scope, Track};
+use crate::library::{self, next_index, prev_index, shuffle_next_index, Scope, Track};
 use crate::playback::Player;
 use crate::player::mpv_available;
 
-// Row metrics (pitch includes the gap).
-pub(crate) const ROW_H: i32 = 76;
-pub(crate) const ROW_PITCH: i32 = 84;
-/// Now-playing card height (art row + seek + times + transport + padding).
-pub(crate) const NP_H: i32 = 272;
-/// Seek thumb radius / track height.
-pub(crate) const SEEK_THUMB: i32 = 9;
-pub(crate) const SEEK_TRACK_H: i32 = 8;
-/// Scroll settle duration — inside the ≤600 ms motion budget, on the
-/// `DURATIONS_MS` 160/240 ladder.
-const SCROLL_SETTLE_S: f32 = 0.18;
+/// Flat list row height (title + caption + 56 px art tile).
+pub(crate) const ROW_H: i32 = 84;
+/// Mini-player band height, including the 3 px progress hairline.
+pub(crate) const MINI_H: i32 = 104;
+/// Status banner (mpv missing / playback error) height and vertical gap.
+pub(crate) const BANNER_H: i32 = 64;
+const BANNER_GAP: i32 = 8;
+/// Mini → fullscreen expand/collapse duration — inside the ≤600 ms motion
+/// budget, on the emphasized 300 ms rung.
+const EXPAND_S: f32 = 0.30;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Hit {
@@ -31,7 +40,14 @@ pub(crate) enum Hit {
     Prev,
     Toggle,
     Next,
-    Stop,
+    Shuffle,
+    RepeatBtn,
+    /// Mini-player body — expands to the fullscreen player.
+    ExpandPlayer,
+    /// Fullscreen player top chevron — collapses back to the library.
+    CollapsePlayer,
+    MiniToggle,
+    MiniNext,
     EmptyAction,
 }
 
@@ -41,39 +57,54 @@ pub(crate) struct MusicApp {
     pub(crate) player: Player,
     /// Last rendered size — hit-testing uses it between frames.
     vp: (i32, i32),
-    /// List scroll offset px (content pixels).
-    pub(crate) scroll: i32,
-    max_scroll: i32,
-    /// List drag: (start_y, scroll_at_start, moved).
-    drag: Option<(i32, i32, bool)>,
-    /// Scroll settle animation: (from, to, elapsed s).
-    scroll_anim: Option<(f32, f32, f32)>,
+    /// Library list scroll physics (fling + rubber-band overscroll).
+    pub(crate) list_sv: ScrollView,
+    /// Touch id that went down inside the list viewport.
+    list_touch: Option<i32>,
+    /// Monotonic clock for ScrollView velocity timestamps.
+    t0: Instant,
     /// Seek drag: (touch id, raw fraction — may leave 0..=1 for rubber band).
     pub(crate) seek_drag: Option<(i32, f32)>,
+    /// Fullscreen player is the input owner (mini is its collapsed form).
+    player_open: bool,
+    /// 0.0 = mini docked, 1.0 = fullscreen (animated by `expand_anim`).
+    pub(crate) expand_v: f32,
+    /// Expand tween: (from, to, progress 0..=1).
+    expand_anim: Option<(f32, f32, f32)>,
+    /// Scope-chip rects measured at render time — hit-testing matches pixels.
+    pub(crate) chip_rects: Vec<Rect>,
     pub(crate) pressed: Option<Hit>,
-    last_instant: Option<Instant>,
 }
 
-/// Everything `render` needs that `hit_at` must agree on.
+/// Everything `render` needs for the library screen (hit-testing agrees).
+#[derive(Debug, Clone, Copy)]
 pub(crate) struct Layout {
-    pub(crate) header_bottom: i32,
+    pub(crate) bar: Rect,
     pub(crate) rescan: Rect,
-    pub(crate) chips: [Rect; 3],
+    /// Top y of the first status banner (banners stack with `BANNER_GAP`).
+    pub(crate) banner_top: i32,
+    /// Top y of the scope chip row (0 when the library is empty).
+    pub(crate) chips_y: i32,
+    /// Top y of the "Library / N tracks" section label line.
+    pub(crate) label_y: i32,
     pub(crate) list: Rect,
-    pub(crate) np: Option<Rect>,
+    pub(crate) mini: Option<Rect>,
     pub(crate) empty_btn: Option<Rect>,
 }
 
-/// Rubber-band response past a `[0, max]` limit (de-design §7.17a):
-/// displacement = RUBBER_FACTOR × overshoot.
-pub(crate) fn rubber_scroll(raw: i32, max: i32) -> i32 {
-    if raw < 0 {
-        (raw as f32 * RUBBER_FACTOR) as i32
-    } else if raw > max {
-        max + ((raw - max) as f32 * RUBBER_FACTOR) as i32
-    } else {
-        raw
-    }
+/// Fullscreen-player geometry, shared by draw + hit-test.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PlayerGeom {
+    pub(crate) bar: Rect,
+    pub(crate) collapse: Rect,
+    pub(crate) art: Rect,
+    pub(crate) title: Rect,
+    pub(crate) subtitle: Rect,
+    /// Slider lane (also the seek touch target, ~48 px tall).
+    pub(crate) seek_lane: Rect,
+    pub(crate) times: Rect,
+    /// shuffle / prev / hero / next / repeat.
+    pub(crate) transport: [Rect; 5],
 }
 
 /// Seek-bar rubber: fraction may leave 0..=1 while dragging.
@@ -87,6 +118,13 @@ pub(crate) fn rubber_frac(raw: f32) -> f32 {
     }
 }
 
+fn now_seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| (d.as_nanos() & 0xFFFF_FFFF_FFFF_FFFF) as u64)
+        .unwrap_or(0x9E37_79B9)
+}
+
 impl MusicApp {
     pub(crate) fn new() -> Self {
         let home = std::env::var_os("HOME")
@@ -98,13 +136,15 @@ impl MusicApp {
             scope: Scope::All,
             player: Player::new(mpv_available()),
             vp: (720, 1600),
-            scroll: 0,
-            max_scroll: 0,
-            drag: None,
-            scroll_anim: None,
+            list_sv: ScrollView::new(),
+            list_touch: None,
+            t0: Instant::now(),
             seek_drag: None,
+            player_open: false,
+            expand_v: 0.0,
+            expand_anim: None,
+            chip_rects: Vec::new(),
             pressed: None,
-            last_instant: None,
         }
     }
 
@@ -112,178 +152,225 @@ impl MusicApp {
         library::visible_indices(&self.tracks, self.scope)
     }
 
-    // ---------------- wall-clock pump (runs on events AND render) ---------
+    fn now_ms(&self) -> u64 {
+        self.t0.elapsed().as_millis() as u64
+    }
+
+    // ---------------- wall-clock pump (mpv IPC; anims tick via Tick dt) ---
 
     fn pump(&mut self) -> bool {
-        let now = Instant::now();
-        let dt = self
-            .last_instant
-            .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
-        self.last_instant = Some(now);
-        let mut changed = false;
+        self.player.pump(&self.tracks)
+    }
 
-        if let Some((from, to, t)) = self.scroll_anim {
-            let nt = t + dt / SCROLL_SETTLE_S;
-            if nt >= 1.0 {
-                self.scroll = to.round() as i32;
-                self.scroll_anim = None;
-            } else {
-                let e = bezier_eval(BEZIER_STANDARD, nt);
-                self.scroll = (from + (to - from) * e).round() as i32;
-                self.scroll_anim = Some((from, to, nt));
-            }
-            changed = true;
+    /// Advance the expand tween by `dt` seconds. Returns true while running.
+    fn tick_expand(&mut self, dt: f32) -> bool {
+        let Some((from, to, t)) = self.expand_anim else {
+            return false;
+        };
+        let nt = t + dt / EXPAND_S;
+        if nt >= 1.0 {
+            self.expand_v = to;
+            self.expand_anim = None;
+        } else {
+            let e = bezier_eval(BEZIER_STANDARD, nt);
+            self.expand_v = from + (to - from) * e;
+            self.expand_anim = Some((from, to, nt));
         }
-        changed |= self.player.pump(&self.tracks);
-        changed
+        true
     }
 
     // ---------------- layout ----------------------------------------------
 
     pub(crate) fn layout(&self, w: i32, h: i32) -> Layout {
-        // draw_header returns TOP_SAFE+16 + 44 + 24 when a subtitle is set.
-        let header_bottom = ui::TOP_SAFE + 16 + 80;
+        let size = Size::new(w, h);
+        let bar = TopAppBar::layout(size, ui::TOP_SAFE);
+        let rescan = TopAppBar::action_rect(bar);
 
-        let rescan = Rect::new(w - ui::MARGIN - 48, ui::TOP_SAFE + 16, 48, 48);
-        let mut y = header_bottom + 8;
-        let mut banner_h = 0;
+        // Banners: each reserves BANNER_H + BANNER_GAP below the bar —
+        // `draw_banners` paints at exactly this top, same step. (The old
+        // code reserved 96/banner but painted at header_bottom, an 8 px
+        // mismatch that nudged the chips row off-grid.)
+        let banner_top = bar.bottom() + BANNER_GAP;
+        let mut y = banner_top;
         if !self.player.mpv_ok {
-            banner_h += 88 + 8;
+            y += BANNER_H + BANNER_GAP;
         }
         if self.player.error.is_some() {
-            banner_h += 88 + 8;
+            y += BANNER_H + BANNER_GAP;
         }
-        y += banner_h;
 
-        let mut chips = [Rect::ZERO; 3];
-        let mut empty_btn = None;
+        let mut chips_y = 0;
+        let mut label_y = 0;
         if !self.tracks.is_empty() {
-            let gap = 8;
-            let cw = (w - ui::MARGIN * 2 - gap * 2) / 3;
-            for (i, chip) in chips.iter_mut().enumerate() {
-                *chip = Rect::new(ui::MARGIN + i as i32 * (cw + gap), y, cw, 48);
-            }
-            y += 48 + 8 + 26; // chips + gap + section label line
+            chips_y = y;
+            label_y = y + widgets::CHIP_H + 10;
+            y = label_y + 24 + 8;
         } else {
             y += 8;
         }
 
-        let np = if self.player.has_track() {
-            Some(Rect::new(
-                ui::MARGIN,
-                h - ui::BOTTOM_SAFE - 8 - NP_H,
-                w - ui::MARGIN * 2,
-                NP_H,
-            ))
+        let mini = if self.player.has_track() {
+            Some(Rect::new(0, h - ui::BOTTOM_SAFE - MINI_H, w, MINI_H))
         } else {
             None
         };
-        let list_bottom = np.map_or(h - ui::BOTTOM_SAFE - 8, |r| r.y - 8);
-        let list = Rect::new(ui::MARGIN, y, w - ui::MARGIN * 2, (list_bottom - y).max(80));
+        let list_bottom = mini.map_or(h - ui::BOTTOM_SAFE, |r| r.y - 8);
+        // Flat rows span the full width; content indents by ui::MARGIN.
+        let list = Rect::new(0, y, w, (list_bottom - y).max(80));
 
+        let mut empty_btn = None;
         if self.tracks.is_empty() || self.visible().is_empty() {
-            empty_btn = Some(Rect::new(w / 2 - 110, list.y + list.h / 2 + 90, 220, 48));
+            empty_btn = Some(Rect::new(w / 2 - 110, list.y + list.h / 2 + 100, 220, 48));
         }
 
         Layout {
-            header_bottom,
+            bar,
             rescan,
-            chips,
+            banner_top,
+            chips_y,
+            label_y,
             list,
-            np,
+            mini,
             empty_btn,
         }
     }
 
-    fn subtitle(&self) -> String {
-        if self.tracks.is_empty() {
-            return "No audio in ~/Music or ~/Downloads".into();
+    /// Fullscreen-player geometry for a `w`×`h` surface.
+    pub(crate) fn player_geom(&self, w: i32, h: i32) -> PlayerGeom {
+        let size = Size::new(w, h);
+        let bar = TopAppBar::layout(size, ui::TOP_SAFE);
+        let collapse = TopAppBar::back_rect(bar);
+
+        // Reserve the track details and transport before sizing the art.
+        let controls_h = 28 + 30 + 44 + 30 + 36 + 48 + 2 + 24 + 56 + 96;
+        let art_room = (h - ui::BOTTOM_SAFE - bar.bottom() - controls_h).max(0);
+        let side = (w * 4 / 5).min(h * 36 / 100).min(576).min(art_room);
+        let art = Rect::new((w - side) / 2, bar.bottom() + 28, side, side);
+        let title = Rect::new(ui::MARGIN, art.bottom() + 30, w - ui::MARGIN * 2, 44);
+        let subtitle = Rect::new(ui::MARGIN, title.bottom(), w - ui::MARGIN * 2, 30);
+        let seek_lane = Rect::new(
+            ui::MARGIN + 8,
+            subtitle.bottom() + 36,
+            w - (ui::MARGIN + 8) * 2,
+            48,
+        );
+        let times = Rect::new(seek_lane.x, seek_lane.bottom() + 2, seek_lane.w, 24);
+
+        // Transport: shuffle(56) prev(64) hero(96) next(64) repeat(56),
+        // evenly spaced and centered on the hero.
+        let sizes = if w >= 360 {
+            [56, 64, 96, 64, 56]
+        } else {
+            [48, 48, 72, 48, 48]
+        };
+        let gap = ((w - sizes.iter().sum::<i32>() - ui::MARGIN * 2) / 4).clamp(0, 32);
+        let total: i32 = sizes.iter().sum::<i32>() + gap * 4;
+        let ty = times.bottom() + 56;
+        let mut transport = [Rect::ZERO; 5];
+        let mut tx = (w - total) / 2;
+        for (i, s) in sizes.iter().enumerate() {
+            transport[i] = Rect::new(tx, ty + (sizes[2] - s) / 2, *s, *s);
+            tx += s + gap;
         }
-        let n = self.tracks.len();
-        format!("{n} track{} · newest first", if n == 1 { "" } else { "s" })
+
+        PlayerGeom {
+            bar,
+            collapse,
+            art,
+            title,
+            subtitle,
+            seek_lane,
+            times,
+            transport,
+        }
     }
 
-    fn update_scroll_limits(&mut self, w: i32, h: i32) {
-        let l = self.layout(w, h);
-        let content = self.visible().len() as i32 * ROW_PITCH;
-        self.max_scroll = (content - l.list.h).max(0);
-        // Rubber-band drags and the settle animation may legitimately sit
-        // outside [0, max_scroll]; only snap when idle.
-        if self.drag.is_none() && self.scroll_anim.is_none() {
-            self.scroll = self.scroll.clamp(0, self.max_scroll);
+    // ---------------- mini-player geometry ---------------------------------
+
+    pub(crate) fn mini_tile_rect(np: Rect) -> Rect {
+        Rect::new(np.x + 16, np.y + (np.h - 56) / 2 + 2, 56, 56)
+    }
+
+    pub(crate) fn mini_play_rect(np: Rect) -> Rect {
+        Rect::new(np.right() - 16 - 48, np.y + (np.h - 48) / 2 + 2, 48, 48)
+    }
+
+    pub(crate) fn mini_next_rect(np: Rect) -> Rect {
+        Rect::new(np.right() - 16 - 96, np.y + (np.h - 48) / 2 + 2, 48, 48)
+    }
+
+    pub(crate) fn mini_text_rect(np: Rect) -> Rect {
+        let tile = Self::mini_tile_rect(np);
+        let next = Self::mini_next_rect(np);
+        Rect::new(
+            tile.right() + 16,
+            np.y,
+            (next.x - 12 - tile.right() - 16).max(0),
+            np.h,
+        )
+    }
+
+    /// Fraction (0..=1, unclamped for rubber) of a point inside the seek lane.
+    pub(crate) fn seek_fraction(lane: Rect, pos: Point) -> f32 {
+        if lane.w <= 0 {
+            return 0.0;
         }
+        (pos.x - lane.x) as f32 / lane.w as f32
     }
 
     // ---------------- hit testing ------------------------------------------
 
-    pub(crate) fn seek_touch_rect(np: Rect) -> Rect {
-        Rect::new(np.x + 16, np.y + 16 + 72 + 10, np.w - 32, 44)
-    }
-
-    pub(crate) fn seek_track_rect(np: Rect) -> Rect {
-        let t = Self::seek_touch_rect(np);
-        Rect::new(t.x, t.y + (t.h - SEEK_TRACK_H) / 2, t.w, SEEK_TRACK_H)
-    }
-
-    pub(crate) fn transport_rects(np: Rect) -> [Rect; 3] {
-        // Row of prev(56) / play(72) / next(56) centered in the card's
-        // bottom 84 px band.
-        let y = np.y + NP_H - 16 - 84;
-        let total = 56 + 28 + 72 + 28 + 56;
-        let x0 = np.x + (np.w - total) / 2;
-        [
-            Rect::new(x0, y + 14, 56, 56),
-            Rect::new(x0 + 84, y, 72, 72),
-            Rect::new(x0 + 184, y + 14, 56, 56),
-        ]
-    }
-
-    pub(crate) fn stop_rect(np: Rect) -> Rect {
-        Rect::new(np.x + np.w - 16 - 44, np.y + 16, 44, 44)
-    }
-
-    /// Fraction (0..=1, unclamped for rubber) of a point inside the seek
-    /// track rect.
-    fn seek_fraction(np: Rect, pos: Point) -> f32 {
-        let t = Self::seek_track_rect(np);
-        if t.w <= 0 {
-            return 0.0;
-        }
-        (pos.x - t.x) as f32 / t.w as f32
-    }
-
     fn hit_at(&self, w: i32, h: i32, pos: Point) -> Option<Hit> {
-        let l = self.layout(w, h);
-        // Now-playing zone first (it sits below the list; no overlap anyway).
-        if let Some(np) = l.np {
-            if Self::stop_rect(np).contains(pos) {
-                return Some(Hit::Stop);
+        if self.player_open {
+            let g = self.player_geom(w, h);
+            if g.collapse.contains(pos) {
+                return Some(Hit::CollapsePlayer);
             }
-            if Self::seek_touch_rect(np).contains(pos) {
+            if g.seek_lane.contains(pos) {
                 return Some(Hit::Seek);
             }
-            for (i, r) in Self::transport_rects(np).iter().enumerate() {
+            for (i, r) in g.transport.iter().enumerate() {
                 if r.contains(pos) {
-                    return Some([Hit::Prev, Hit::Toggle, Hit::Next][i]);
+                    return Some(
+                        [
+                            Hit::Shuffle,
+                            Hit::Prev,
+                            Hit::Toggle,
+                            Hit::Next,
+                            Hit::RepeatBtn,
+                        ][i],
+                    );
                 }
             }
+            return None;
         }
-        // Track rows inside the list viewport.
+
+        let l = self.layout(w, h);
+        // Mini-player first: its buttons, then the whole body expands.
+        if let Some(np) = l.mini {
+            if Self::mini_play_rect(np).contains(pos) {
+                return Some(Hit::MiniToggle);
+            }
+            if Self::mini_next_rect(np).contains(pos) {
+                return Some(Hit::MiniNext);
+            }
+            if np.contains(pos) {
+                return Some(Hit::ExpandPlayer);
+            }
+        }
+        // Track rows inside the list viewport (rows are contiguous, ROW_H
+        // pitch, divider painted inside the row bottom).
         if l.list.contains(pos) {
             let vis = self.visible();
-            let row_i = (pos.y - l.list.y + self.scroll) / ROW_PITCH;
+            let row_i = (pos.y - l.list.y + self.list_sv.offset_i32()) / ROW_H;
             if row_i >= 0 && (row_i as usize) < vis.len() {
-                let track_idx = vis[row_i as usize];
-                let row_top = l.list.y + row_i * ROW_PITCH - self.scroll;
-                if pos.y >= row_top && pos.y < row_top + ROW_H {
-                    return Some(Hit::Row(track_idx));
-                }
+                return Some(Hit::Row(vis[row_i as usize]));
             }
-            return None; // inside list but not on a row → scroll drag only
+            return None; // inside list but past the last row → scroll drag only
         }
-        for (i, r) in l.chips.iter().enumerate() {
+        for (i, r) in self.chip_rects.iter().enumerate() {
             if r.contains(pos) {
-                return Some(Hit::Chip(Scope::ALL[i]));
+                return Some(Hit::Chip(Scope::ALL[i.min(Scope::ALL.len() - 1)]));
             }
         }
         if l.rescan.contains(pos) {
@@ -307,6 +394,32 @@ impl MusicApp {
         }
     }
 
+    /// Next-track honoring shuffle (random pick ≠ current) vs sequential.
+    fn next_track(&mut self) {
+        let n = self.tracks.len();
+        let i = if self.player.shuffle {
+            shuffle_next_index(self.player.current, n, now_seed())
+        } else {
+            next_index(self.player.current, n)
+        };
+        if let Some(i) = i {
+            self.player.play_track(i, &self.tracks);
+        }
+    }
+
+    fn open_player(&mut self) {
+        if !self.player.has_track() {
+            return;
+        }
+        self.player_open = true;
+        self.expand_anim = Some((self.expand_v, 1.0, 0.0));
+    }
+
+    fn close_player(&mut self) {
+        self.player_open = false;
+        self.expand_anim = Some((self.expand_v, 0.0, 0.0));
+    }
+
     fn rescan(&mut self) {
         // Keep `current` pointed at the same file across re-sorts: match by
         // path, not index. A vanished file stops playback honestly.
@@ -326,8 +439,7 @@ impl MusicApp {
                 None => self.player.stop(),
             }
         }
-        self.scroll = 0;
-        self.scroll_anim = None;
+        self.list_sv.scroll_to(0.0);
     }
 
     fn dispatch(&mut self, hit: Hit) {
@@ -335,8 +447,7 @@ impl MusicApp {
             Hit::Rescan => self.rescan(),
             Hit::Chip(s) => {
                 self.scope = s;
-                self.scroll = 0;
-                self.scroll_anim = None;
+                self.list_sv.scroll_to(0.0);
             }
             Hit::Row(i) => {
                 if self.player.current == Some(i) {
@@ -351,19 +462,18 @@ impl MusicApp {
                     self.player.play_track(i, &self.tracks);
                 }
             }
-            Hit::Next => {
-                if let Some(i) = next_index(self.player.current, self.tracks.len()) {
-                    self.player.play_track(i, &self.tracks);
-                }
-            }
-            Hit::Toggle => self.toggle_play(),
-            Hit::Stop => self.player.stop(),
+            Hit::Next | Hit::MiniNext => self.next_track(),
+            Hit::Toggle | Hit::MiniToggle => self.toggle_play(),
+            Hit::Shuffle => self.player.shuffle = !self.player.shuffle,
+            Hit::RepeatBtn => self.player.repeat = self.player.repeat.cycle(),
+            Hit::ExpandPlayer => self.open_player(),
+            Hit::CollapsePlayer => self.close_player(),
             Hit::EmptyAction => {
                 if self.tracks.is_empty() {
                     self.rescan();
                 } else {
                     self.scope = Scope::All;
-                    self.scroll = 0;
+                    self.list_sv.scroll_to(0.0);
                 }
             }
         }
@@ -385,37 +495,31 @@ impl AppState for MusicApp {
 
         match event {
             AppEvent::TouchDown { id, pos } => {
-                self.update_scroll_limits(w, h);
                 let hit = self.hit_at(w, h, pos);
                 self.pressed = hit;
                 self.seek_drag = None;
-                self.drag = None;
-                // Seek drag captures the touch anywhere in its band.
+                self.list_touch = None;
+                // Seek drag captures the touch anywhere in its lane.
                 if hit == Some(Hit::Seek) {
-                    if let Some(np) = self.layout(w, h).np {
-                        self.seek_drag = Some((id, Self::seek_fraction(np, pos)));
-                    }
-                } else if self.layout(w, h).list.contains(pos) {
-                    self.drag = Some((pos.y, self.scroll, false));
+                    let lane = self.player_geom(w, h).seek_lane;
+                    self.seek_drag = Some((id, Self::seek_fraction(lane, pos)));
+                } else if !self.player_open && self.layout(w, h).list.contains(pos) {
+                    self.list_touch = Some(id);
+                    self.list_sv.on_touch_down(pos.y as f32, self.now_ms());
                 }
                 dirty = true;
             }
             AppEvent::TouchMove { id, pos } => {
                 if let Some((did, _)) = self.seek_drag {
                     if did == id {
-                        if let Some(np) = self.layout(w, h).np {
-                            self.seek_drag = Some((id, Self::seek_fraction(np, pos)));
-                            dirty = true;
-                        }
+                        let lane = self.player_geom(w, h).seek_lane;
+                        self.seek_drag = Some((id, Self::seek_fraction(lane, pos)));
+                        dirty = true;
                     }
-                } else if let Some((sy, ss, _)) = self.drag {
-                    if (sy - pos.y).abs() > 10 {
-                        self.drag = Some((sy, ss, true));
-                        self.pressed = None;
+                } else if self.list_touch == Some(id) {
+                    if self.list_sv.on_touch_move(pos.y as f32, self.now_ms()) {
+                        self.pressed = None; // gesture became a scroll
                     }
-                    let raw = ss + sy - pos.y;
-                    self.scroll_anim = None;
-                    self.scroll = rubber_scroll(raw, self.max_scroll);
                     dirty = true;
                 }
             }
@@ -427,19 +531,14 @@ impl AppState for MusicApp {
                         self.pressed = None;
                         dirty = true;
                     }
-                } else if let Some((_, _, moved)) = self.drag.take() {
+                } else if self.list_touch == Some(id) {
+                    self.list_touch = None;
+                    let was_drag = self.list_sv.on_touch_up(self.now_ms());
                     self.pressed = None;
-                    if !moved {
+                    if !was_drag {
                         if let Some(hit) = self.hit_at(w, h, pos) {
                             self.dispatch(hit);
                         }
-                    }
-                    // Settle back inside bounds with a short ease.
-                    let clamped = self.scroll.clamp(0, self.max_scroll);
-                    if (self.scroll - clamped).abs() > 1 {
-                        self.scroll_anim = Some((self.scroll as f32, clamped as f32, 0.0));
-                    } else {
-                        self.scroll = clamped;
                     }
                     dirty = true;
                 } else {
@@ -453,17 +552,29 @@ impl AppState for MusicApp {
                     dirty = true;
                 }
             }
+            AppEvent::Scroll { dy, .. } => {
+                if !self.player_open {
+                    self.list_sv.scroll_by(dy);
+                    dirty = true;
+                }
+            }
             AppEvent::Key { utf8: Some(s), .. } if s == " " => {
                 self.toggle_play();
                 dirty = true;
             }
-            AppEvent::Tick(_) => dirty = true,
+            AppEvent::Tick(dt) => {
+                dirty = true;
+                let _ = self.list_sv.tick(dt.as_secs_f32());
+                let _ = self.tick_expand(dt.as_secs_f32());
+            }
             _ => {}
         }
 
         AppFrame {
             dirty,
-            animating: self.player.has_track() || self.scroll_anim.is_some() || self.drag.is_some(),
+            animating: self.player.has_track()
+                || self.list_sv.is_animating()
+                || self.expand_anim.is_some(),
             quit: false,
         }
     }
@@ -474,18 +585,34 @@ impl AppState for MusicApp {
         let size = canvas.size();
         let (w, h) = (size.w, size.h);
         self.vp = (w, h);
-        self.update_scroll_limits(w, h);
         let l = self.layout(w, h);
+        let content = self.visible().len() as i32 * ROW_H;
+        self.list_sv.set_bounds(content as f32, l.list.h as f32);
 
-        ui::draw_header(canvas, theme, "Music", &self.subtitle());
-        self.draw_rescan(canvas, theme, l.rescan);
-        self.draw_banners(canvas, theme, l.header_bottom);
+        // Fully expanded: the player owns the surface, nothing underneath.
+        if self.expand_v >= 1.0 {
+            self.draw_player(canvas, theme, w, h);
+            return;
+        }
+
+        self.draw_bar(canvas, theme, &l);
+        self.draw_banners(canvas, theme, l.banner_top);
         self.draw_chips(canvas, theme, &l);
         self.draw_section_label(canvas, theme, &l);
         self.draw_list(canvas, theme, &l);
         self.draw_empty(canvas, theme, &l);
-        if let Some(np) = l.np {
-            self.draw_now_playing(canvas, theme, np);
+        if let Some(np) = l.mini {
+            self.draw_mini(canvas, theme, np);
+        }
+
+        // Expanding/collapsing: shared-axis fade + vertical translate of the
+        // player screen over the library (~300 ms).
+        if self.expand_v > 0.0 {
+            let mut off = Canvas::new(size);
+            self.draw_player(&mut off, theme, w, h);
+            let px = off.into_pixels();
+            let dy = ((1.0 - self.expand_v) * 160.0).round() as i32;
+            canvas.blit_scaled(&px, Rect::new(0, dy, w, h), self.expand_v);
         }
     }
 }
@@ -506,47 +633,134 @@ mod tests {
     }
 
     #[test]
-    fn rubber_scroll_respects_bounds() {
-        assert_eq!(rubber_scroll(50, 100), 50);
-        assert_eq!(rubber_scroll(-100, 100), (-100.0 * RUBBER_FACTOR) as i32);
-        assert_eq!(
-            rubber_scroll(200, 100),
-            100 + ((100.0) * RUBBER_FACTOR) as i32
-        );
+    fn seek_fraction_maps_lane_width() {
+        let app = MusicApp::new();
+        let g = app.player_geom(720, 1600);
+        let mid = g.seek_lane.center();
+        assert!((MusicApp::seek_fraction(g.seek_lane, mid) - 0.5).abs() < 0.01);
+        let left = Point::new(g.seek_lane.x - 40, mid.y);
+        assert!(MusicApp::seek_fraction(g.seek_lane, left) < 0.0);
+        let right = Point::new(g.seek_lane.right() + 40, mid.y);
+        assert!(MusicApp::seek_fraction(g.seek_lane, right) > 1.0);
     }
 
     #[test]
-    fn seek_fraction_maps_track_width() {
-        let np = Rect::new(24, 1200, 672, NP_H);
-        let t = MusicApp::seek_track_rect(np);
-        let mid = Point::new(t.x + t.w / 2, t.y + t.h / 2);
-        assert!((MusicApp::seek_fraction(np, mid) - 0.5).abs() < 0.01);
-        let left = Point::new(t.x - 40, mid.y);
-        assert!(MusicApp::seek_fraction(np, left) < 0.0);
-        let right = Point::new(t.x + t.w + 40, mid.y);
-        assert!(MusicApp::seek_fraction(np, right) > 1.0);
-    }
-
-    #[test]
-    fn transport_rects_are_distinct_and_inside_card() {
-        let np = Rect::new(24, 1200, 672, NP_H);
-        let [a, b, c] = MusicApp::transport_rects(np);
-        assert!(a.w == 56 && b.w == 72 && c.w == 56);
-        assert!(a.x < b.x && b.x < c.x);
-        assert!(b.y >= np.y && c.y + c.h <= np.y + np.h);
+    fn player_transport_is_five_centered_targets() {
+        let app = MusicApp::new();
+        let g = app.player_geom(720, 1600);
+        let [sh, prev, hero, next, rep] = g.transport;
+        // Hero is the biggest, centered horizontally on the surface.
+        assert_eq!(hero.w, 96);
+        assert_eq!(hero.center().x, 360);
+        assert!(sh.w >= 48 && rep.w >= 48 && prev.w >= 48 && next.w >= 48);
+        assert!(sh.center().x < prev.center().x && prev.center().x < hero.center().x);
+        assert!(hero.center().x < next.center().x && next.center().x < rep.center().x);
+        // Everything inside the surface and below the app bar.
+        for r in g.transport {
+            assert!(r.y >= g.bar.bottom());
+            assert!(r.bottom() <= 1600 - ui::BOTTOM_SAFE);
+            assert!(r.x >= 0 && r.right() <= 720);
+        }
     }
 
     #[test]
     fn layout_never_hardcodes_panel_size() {
         let app = MusicApp::new();
-        for (w, h) in [(720, 1600), (1080, 2400), (540, 960)] {
+        for (w, h) in [(720, 1600), (1080, 2400), (540, 960), (320, 640)] {
             let l = app.layout(w, h);
-            assert!(l.list.x >= ui::MARGIN);
-            assert!(l.list.x + l.list.w <= w - ui::MARGIN + 1);
+            for button in app.player_geom(w, h).transport {
+                assert!(button.x >= 0 && button.right() <= w);
+                assert!(button.bottom() <= h - ui::BOTTOM_SAFE);
+            }
+            assert_eq!(l.list.x, 0);
+            assert!(l.list.w <= w);
             assert!(l.list.y < l.list.y + l.list.h);
-            if let Some(np) = l.np {
+            if let Some(np) = l.mini {
                 assert!(np.y + np.h <= h - ui::BOTTOM_SAFE);
+                assert!(np.h <= 112);
             }
         }
+    }
+
+    fn fake_tracks(n: usize) -> Vec<Track> {
+        (0..n)
+            .map(|i| Track {
+                path: PathBuf::from(format!(
+                    "/m/{}/song_{i}.mp3",
+                    if i % 3 == 0 { "Downloads" } else { "Music" }
+                )),
+                title: ["Aurora", "Breeze", "Copper Pots", "Daybreak"][i % 4].into(),
+                ext: "mp3".into(),
+                folder: if i % 3 == 0 {
+                    crate::library::Folder::Downloads
+                } else {
+                    crate::library::Folder::Music
+                },
+                subfolder: "Albums".into(),
+                mtime: i as i64,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn harness_renders_and_expands_player() {
+        let dir = std::path::Path::new("/tmp/rabbiz-shots");
+        let mut app = MusicApp::new();
+        app.tracks = fake_tracks(24);
+        app.player.mpv_ok = true; // hide the install banner for the main shots
+        let mut h = rabbiz_app_kit::TestHarness::new(app);
+        h.save_png(&dir.join("music-after-library.png")).unwrap();
+
+        // Load a fake track → mini-player docks; seek to a mid position.
+        h.state_mut().player.current = Some(1);
+        h.state_mut().player.file_path = "/m/Music/song_1.mp3".into();
+        h.state_mut().player.duration = 210.0;
+        h.state_mut().player.seek_to_fraction(0.42);
+        let _ = h.render();
+        h.save_png(&dir.join("music-after-mini.png")).unwrap();
+
+        // Tap the mini-player body → fullscreen player.
+        let l = h.state().layout(720, 1600);
+        let np = l.mini.expect("mini player docked");
+        h.tap(Point::new(np.x + np.w / 2, np.center().y));
+        assert!(h.state().player_open);
+        h.settle(30, std::time::Duration::from_millis(50));
+        h.save_png(&dir.join("music-after-player.png")).unwrap();
+
+        // Toggle shuffle + repeat → glyphs re-render selected.
+        let g = h.state().player_geom(720, 1600);
+        h.tap(g.transport[0].center());
+        h.tap(g.transport[4].center());
+        assert!(h.state().player.shuffle);
+        assert_eq!(h.state().player.repeat, crate::library::Repeat::All);
+        h.save_png(&dir.join("music-after-player-active.png"))
+            .unwrap();
+
+        // Collapse back to the library.
+        h.tap(g.collapse.center());
+        h.settle(30, std::time::Duration::from_millis(50));
+        assert!(!h.state().player_open);
+    }
+
+    #[test]
+    fn harness_renders_banners_and_empty_states() {
+        let dir = std::path::Path::new("/tmp/rabbiz-shots");
+        // mpv missing → honest banner over an empty library.
+        let mut app = MusicApp::new();
+        app.tracks.clear();
+        app.player.mpv_ok = false;
+        let mut h = rabbiz_app_kit::TestHarness::new(app);
+        h.save_png(&dir.join("music-after-empty.png")).unwrap();
+
+        // Playback error banner over the library + mini player.
+        let mut app2 = MusicApp::new();
+        app2.tracks = fake_tracks(8);
+        app2.player.mpv_ok = false;
+        app2.player.error =
+            Some("mpv reported a playback error — the file may be unsupported.".into());
+        app2.player.current = Some(0);
+        app2.player.file_path = "/m/Music/song_0.mp3".into();
+        let mut h2 = rabbiz_app_kit::TestHarness::new(app2);
+        h2.save_png(&dir.join("music-after-banner.png")).unwrap();
     }
 }

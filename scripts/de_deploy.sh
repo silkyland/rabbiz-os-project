@@ -31,47 +31,54 @@ for f in "$OVL/usr/local/bin/rabbiz-session" \
     [[ -f "$f" ]] || { echo "missing $f" >&2; exit 2; }
 done
 
-scp -q "$BIN" "$HOST:/tmp/rabbiz-de.new"
+REMOTE_STAGE=$(ssh "$HOST" 'umask 077 && mktemp -d /root/.deploy.XXXXXX')
+REMOTE_SCRIPT=$(mktemp)
+trap 'rm -f "$REMOTE_SCRIPT"; ssh -q "$HOST" "rm -rf -- \"\$1\"" _ "$REMOTE_STAGE" 2>/dev/null || true' EXIT
+
+scp -q "$BIN" "$HOST:$REMOTE_STAGE/rabbiz-de.new"
 HELPER_BIN="$(dirname "$BIN")/rabbiz-auth-helper"
 if [[ -f "$HELPER_BIN" ]]; then
-  scp -q "$HELPER_BIN" "$HOST:/tmp/rabbiz-auth-helper.new"
+  scp -q "$HELPER_BIN" "$HOST:$REMOTE_STAGE/rabbiz-auth-helper.new"
 fi
-scp -q "$OVL/usr/local/bin/rabbiz-session" "$HOST:/tmp/rabbiz-session.new"
-scp -q "$OVL/usr/local/bin/a21s-power-key" "$HOST:/tmp/a21s-power-key.new"
+scp -q "$OVL/usr/local/bin/rabbiz-session" "$HOST:$REMOTE_STAGE/rabbiz-session.new"
+scp -q "$OVL/usr/local/bin/a21s-power-key" "$HOST:$REMOTE_STAGE/a21s-power-key.new"
 scp -q "$OVL/etc/systemd/system/rabbiz-session.service" \
-    "$HOST:/tmp/rabbiz-session.service.new"
+    "$HOST:$REMOTE_STAGE/rabbiz-session.service.new"
 scp -q "$OVL/etc/systemd/system/rabbiz-auth-helper.service" \
-    "$HOST:/tmp/rabbiz-auth-helper.service.new"
+    "$HOST:$REMOTE_STAGE/rabbiz-auth-helper.service.new"
 scp -q "$OVL/usr/share/xdg-desktop-portal/rabbiz-portals.conf" \
-    "$HOST:/tmp/rabbiz-portals.conf.new"
-scp -q "$OVL/etc/xdg/mimeapps.list" "$HOST:/tmp/rabbiz-mimeapps.list.new"
+    "$HOST:$REMOTE_STAGE/rabbiz-portals.conf.new"
+scp -q "$OVL/etc/xdg/mimeapps.list" "$HOST:$REMOTE_STAGE/rabbiz-mimeapps.list.new"
 scp -q "$OVL/etc/xdg/autostart/rabbiz-keyring.desktop" \
-    "$HOST:/tmp/rabbiz-keyring.desktop.new"
+    "$HOST:$REMOTE_STAGE/rabbiz-keyring.desktop.new"
 
-REMOTE_SCRIPT=$(mktemp)
-trap 'rm -f "$REMOTE_SCRIPT"' EXIT
-cat > "$REMOTE_SCRIPT" <<'REMOTE'
-set -e
-install -m 0755 -o root -g root /tmp/rabbiz-de.new /usr/local/bin/rabbiz-de
-if [ -f /tmp/rabbiz-auth-helper.new ]; then
-  install -m 0755 -o root -g root /tmp/rabbiz-auth-helper.new /usr/local/bin/rabbiz-auth-helper
+SKIP_PROBE="${DE_DEPLOY_SKIP_PROBE:-0}"
+case "$SKIP_PROBE" in
+  0|1) ;;
+  *) echo "DE_DEPLOY_SKIP_PROBE must be 0 or 1 (got: $SKIP_PROBE)" >&2; exit 2 ;;
+esac
+
+cat > "$REMOTE_SCRIPT" <<REMOTE
+set -eu
+STAGE='$REMOTE_STAGE'
+trap 'rm -rf -- "\$STAGE"' EXIT
+install -m 0755 -o root -g root "\$STAGE/rabbiz-de.new" /usr/local/bin/rabbiz-de
+if [ -f "\$STAGE/rabbiz-auth-helper.new" ]; then
+  install -m 0755 -o root -g root "\$STAGE/rabbiz-auth-helper.new" /usr/local/bin/rabbiz-auth-helper
 fi
-install -m 0755 -o root -g root /tmp/rabbiz-session.new /usr/local/bin/rabbiz-session
-install -m 0755 -o root -g root /tmp/a21s-power-key.new /usr/local/bin/a21s-power-key
-install -m 0644 -o root -g root /tmp/rabbiz-session.service.new \
+install -m 0755 -o root -g root "\$STAGE/rabbiz-session.new" /usr/local/bin/rabbiz-session
+install -m 0755 -o root -g root "\$STAGE/a21s-power-key.new" /usr/local/bin/a21s-power-key
+install -m 0644 -o root -g root "\$STAGE/rabbiz-session.service.new" \\
   /etc/systemd/system/rabbiz-session.service
-install -m 0644 -o root -g root /tmp/rabbiz-auth-helper.service.new \
+install -m 0644 -o root -g root "\$STAGE/rabbiz-auth-helper.service.new" \\
   /etc/systemd/system/rabbiz-auth-helper.service
 mkdir -p /usr/share/xdg-desktop-portal /etc/xdg/autostart
-install -m 0644 -o root -g root /tmp/rabbiz-portals.conf.new \
+install -m 0644 -o root -g root "\$STAGE/rabbiz-portals.conf.new" \\
   /usr/share/xdg-desktop-portal/rabbiz-portals.conf
-install -m 0644 -o root -g root /tmp/rabbiz-mimeapps.list.new /etc/xdg/mimeapps.list
-install -m 0644 -o root -g root /tmp/rabbiz-keyring.desktop.new \
+install -m 0644 -o root -g root "\$STAGE/rabbiz-mimeapps.list.new" /etc/xdg/mimeapps.list
+install -m 0644 -o root -g root "\$STAGE/rabbiz-keyring.desktop.new" \\
   /etc/xdg/autostart/rabbiz-keyring.desktop
-rm -f /tmp/rabbiz-de.new /tmp/rabbiz-auth-helper.new /tmp/rabbiz-session.new \
-      /tmp/a21s-power-key.new /tmp/rabbiz-session.service.new \
-      /tmp/rabbiz-auth-helper.service.new /tmp/rabbiz-portals.conf.new \
-      /tmp/rabbiz-mimeapps.list.new /tmp/rabbiz-keyring.desktop.new
+rm -rf -- "\$STAGE"
 
 systemctl daemon-reload
 
@@ -83,35 +90,33 @@ if systemctl is-enabled a21s-phone-session.service >/dev/null 2>&1; then
   systemctl disable a21s-phone-session.service
 fi
 rm -f /etc/systemd/system/a21s-phone-session.service
-if [ "${was_enabled:-0}" = "1" ]; then
+if [ "\${was_enabled:-0}" = "1" ]; then
   systemctl enable rabbiz-session.service
 fi
 # Stale launchers — superseded by rabbiz-session / rabbiz-labwc-session.
 rm -f /usr/local/bin/a21s-session /usr/local/bin/a21s-phone-session
 
 # Verify the unit really starts the selector wrapper.
-es=$(systemctl cat rabbiz-session.service | awk '/^ExecStart=/{print $1}')
-[ "$es" = "ExecStart=/usr/local/bin/rabbiz-session" ] || {
-  echo "ExecStart mismatch: $es" >&2; exit 1; }
+es=\$(systemctl cat rabbiz-session.service | awk '/^ExecStart=/{print \$1}')
+[ "\$es" = "ExecStart=/usr/local/bin/rabbiz-session" ] || {
+  echo "ExecStart mismatch: \$es" >&2; exit 1; }
 
 # Probe sanity check — skipped when DE_DEPLOY_SKIP_PROBE=1 (expanded on the
 # host before this script is sent): stopping the running session then
 # committing can hit the Exynos cold-enable DSI wedge (devices/samsung/a21s/docs/HANDOFF.md §0);
 # probe is proven separately by de_probe.sh.
-if [ "__SKIP_PROBE__" != "1" ]; then
+if [ "$SKIP_PROBE" != "1" ]; then
   unit=rabbiz-session.service
-  was_active=$(systemctl is-active "$unit" || true)
-  [ "$was_active" = "active" ] && systemctl stop "$unit"
-  trap '[ "$was_active" = "active" ] && systemctl start "$unit" || true' EXIT
+  was_active=\$(systemctl is-active "\$unit" || true)
+  [ "\$was_active" = "active" ] && systemctl stop "\$unit"
+  trap '[ "\$was_active" = "active" ] && systemctl start "\$unit" || true; rm -rf -- "\$STAGE"' EXIT
   sleep 1
-  runuser -u rabbiz -- env LIBSEAT_BACKEND=seatd \
-    XDG_RUNTIME_DIR=/run/user/$(id -u rabbiz) \
+  runuser -u rabbiz -- env LIBSEAT_BACKEND=seatd \\
+    XDG_RUNTIME_DIR=/run/user/\$(id -u rabbiz) \\
     /usr/local/bin/rabbiz-de probe --json
 fi
 REMOTE
 
-sed -i.bak "s/__SKIP_PROBE__/${DE_DEPLOY_SKIP_PROBE:-0}/g" "$REMOTE_SCRIPT"
-rm -f "$REMOTE_SCRIPT.bak"
 "$REPO_ROOT/scripts/device_session.sh" "$HOST" < "$REMOTE_SCRIPT"
 
 echo "de_deploy: installed; DE remains opt-in (rabbiz-session default = labwc)"

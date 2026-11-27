@@ -7,6 +7,8 @@ pub mod harness;
 pub mod icons;
 pub mod intent;
 pub mod mcp;
+pub mod preview;
+pub mod raster_image;
 pub mod scroll;
 pub mod sim_config;
 pub mod text_input;
@@ -31,9 +33,10 @@ pub use text_input::{ContentPurpose, TextBuffer};
 pub use theme_watch::ThemeWatcher;
 pub use wayland::{run_app, TextInputCtl};
 
-/// Load active Light/Dark `Theme` from `de-config::Prefs`.
+/// Load active Light/Dark `Theme` from `de-config::Prefs`, with the
+/// persisted `deAccent` ramp applied.
 #[must_use]
 pub fn load_theme() -> Theme {
     let prefs = de_config::Prefs::load();
-    de_design::theme::theme_for(&prefs.theme_mode)
+    de_design::theme::theme_with(&prefs.theme_mode, &prefs.accent)
 }

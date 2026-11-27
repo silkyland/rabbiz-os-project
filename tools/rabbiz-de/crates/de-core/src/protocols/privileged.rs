@@ -31,10 +31,14 @@ pub struct ClientIdentity {
 static POLICY: OnceLock<Policy> = OnceLock::new();
 static LOGGED: OnceLock<Mutex<HashSet<(String, Privileged)>>> = OnceLock::new();
 
-/// Load the policy once at startup. `RABBIZ_DE_PRIVILEGED_POLICY` overrides the file path (tests, bring-up).
+/// Load the policy once at startup. `RABBIZ_DE_PRIVILEGED_POLICY` overrides the file path
+/// in debug/emulator builds only (disabled in production release builds — `SEC-009`).
 pub(crate) fn init_policy() {
+    #[cfg(any(debug_assertions, feature = "emu"))]
     let path = std::env::var_os("RABBIZ_DE_PRIVILEGED_POLICY")
         .map_or_else(|| PathBuf::from(POLICY_FILE), PathBuf::from);
+    #[cfg(not(any(debug_assertions, feature = "emu")))]
+    let path = PathBuf::from(POLICY_FILE);
     let (policy, warning) = Policy::load(&path);
     if let Some(w) = warning {
         eprintln!("rabbiz-de: privileged-client policy: {w}; using the built-in list");

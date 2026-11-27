@@ -765,3 +765,60 @@ fn main() {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rabbiz_app_kit::TestHarness;
+
+    /// Deterministic listing fixture for render-evidence shots.
+    fn shot_dir() -> PathBuf {
+        let d = std::env::temp_dir().join(format!("rabbiz-files-shot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("Documents")).unwrap();
+        std::fs::create_dir_all(d.join("Photos")).unwrap();
+        std::fs::write(d.join("notes.txt"), b"hello").unwrap();
+        std::fs::write(d.join("song.mp3"), vec![0u8; 2048]).unwrap();
+        std::fs::write(d.join("pic.png"), vec![0u8; 10_000]).unwrap();
+        d
+    }
+
+    #[test]
+    fn harness_renders_files_and_saves_shots() {
+        let dir = shot_dir();
+        let mut h = TestHarness::new(FilesApp::new(None));
+        h.state_mut().home = dir.clone();
+        h.state_mut().cwd = dir.clone();
+        h.state_mut().reload();
+
+        h.save_png(std::path::Path::new("/tmp/rabbiz-shots/files-list.png"))
+            .expect("files-list.png");
+        // sync() ran during the first render — items are populated now.
+        assert!(!h.state().items.is_empty());
+        assert_eq!(h.state().crumb_targets, [dir.clone()]);
+        assert_eq!(h.state().crumbs[0].0, "Home");
+        h.state_mut().navigate(dir.join("Documents"));
+        let _ = h.render();
+        assert_eq!(
+            h.state().crumb_targets,
+            [dir.clone(), dir.join("Documents")]
+        );
+        h.state_mut().navigate(dir.clone());
+
+        h.state_mut().grid = true;
+        h.save_png(std::path::Path::new("/tmp/rabbiz-shots/files-grid.png"))
+            .expect("files-grid.png");
+        h.state_mut().grid = false;
+
+        let path = (0..h.state().items.len())
+            .find_map(|i| h.state().item_path(i))
+            .expect("a selectable item");
+        h.state_mut().enter_selection(path);
+        h.save_png(std::path::Path::new(
+            "/tmp/rabbiz-shots/files-selection.png",
+        ))
+        .expect("files-selection.png");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

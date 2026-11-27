@@ -349,14 +349,28 @@ pub fn capture_is_blank(screen: de_ui::nav::Screen) -> bool {
     screen == de_ui::nav::Screen::Lock
 }
 
+/// Whether external capture must return a blank frame given Keyguard state,
+/// external `ext-session-lock-v1` state, and the current navigation screen (`CHAL-002`).
+#[must_use]
+pub fn should_blank_capture(
+    keyguard_locked: bool,
+    session_locked: bool,
+    screen: de_ui::nav::Screen,
+) -> bool {
+    keyguard_locked || session_locked || capture_is_blank(screen)
+}
+
 /// What an external capture client may see: the composited output, or a blank frame on the lock screen.
 #[must_use]
 pub fn capture_output(de: &De) -> Option<Pixels> {
-    let full = composite_output(de)?;
-    if capture_is_blank(de.nav.current) {
-        return Some(Canvas::filled(full.size, CLEAR).into_pixels());
+    if should_blank_capture(de.lock.shown(), de.is_session_locked(), de.nav.current) {
+        let size = Size::new(de.output.width as i32, de.output.height as i32);
+        if size.w <= 0 || size.h <= 0 {
+            return None;
+        }
+        return Some(Canvas::filled(size, CLEAR).into_pixels());
     }
-    Some(full)
+    composite_output(de)
 }
 
 /// Crop `px` to `rect` (clamped to the image).
@@ -458,6 +472,10 @@ fn shm_pixels(buffer: &WlBuffer) -> Option<Pixels> {
 #[allow(unsafe_code)] // shm pool is only reachable through the raw pointer
 fn read_shm(ptr: *const u8, len: usize, data: shm::BufferData) -> Option<Pixels> {
     const NO_ALPHA: usize = usize::MAX;
+    const MAX_SHM_DIM: usize = 16_384;
+    if ptr.is_null() {
+        return None;
+    }
     let (r, g, b, a) = match data.format {
         wl_shm::Format::Argb8888 | wl_shm::Format::Xrgb8888 => (2usize, 1usize, 0usize, 3usize),
         wl_shm::Format::Abgr8888 | wl_shm::Format::Xbgr8888 => (0, 1, 2, 3),
@@ -467,40 +485,54 @@ fn read_shm(ptr: *const u8, len: usize, data: shm::BufferData) -> Option<Pixels>
         wl_shm::Format::Argb8888 | wl_shm::Format::Abgr8888 => a,
         _ => NO_ALPHA,
     };
-    let (w, h) = (data.width, data.height);
-    if w <= 0 || h <= 0 || data.offset < 0 || data.stride < w * 4 {
+    if data.width <= 0 || data.height <= 0 || data.offset < 0 || data.stride <= 0 {
         return None;
     }
-    let need = data.offset as usize + (h as usize - 1) * data.stride as usize + w as usize * 4;
+    let w = usize::try_from(data.width).ok()?;
+    let h = usize::try_from(data.height).ok()?;
+    if w > MAX_SHM_DIM || h > MAX_SHM_DIM {
+        return None;
+    }
+    let offset = usize::try_from(data.offset).ok()?;
+    let stride = usize::try_from(data.stride).ok()?;
+    let row_bytes = w.checked_mul(4)?;
+    if stride < row_bytes {
+        return None;
+    }
+    let last_row = offset.checked_add(h.checked_sub(1)?.checked_mul(stride)?)?;
+    let need = last_row.checked_add(row_bytes)?;
     if need > len {
         return None;
     }
-    let mut out = vec![0u8; (w * h * 4) as usize];
+    let out_len = w.checked_mul(h)?.checked_mul(4)?;
+    // SAFETY: `ptr` is non-null and valid for `len` bytes for the duration of
+    // Smithay's `with_buffer_contents` callback; `need <= len` is verified above.
+    let src = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let mut out = vec![0u8; out_len];
     for y in 0..h {
-        let row = (data.offset + y * data.stride) as usize;
-        for x in 0..w {
-            let s = row + x as usize * 4;
-            let d = (y * w + x) as usize * 4;
-            // SAFETY: bounds checked above against the pool length `len`;
-            // the client may write concurrently, which can only tear pixels.
-            unsafe {
-                *out.get_unchecked_mut(d) = *ptr.add(s + r);
-                *out.get_unchecked_mut(d + 1) = *ptr.add(s + g);
-                *out.get_unchecked_mut(d + 2) = *ptr.add(s + b);
-                *out.get_unchecked_mut(d + 3) = if a == NO_ALPHA { 255 } else { *ptr.add(s + a) };
-            }
+        let src_start = offset.checked_add(y.checked_mul(stride)?)?;
+        let src_row = src.get(src_start..src_start.checked_add(row_bytes)?)?;
+        let dst_start = y.checked_mul(row_bytes)?;
+        let dst_row = out.get_mut(dst_start..dst_start.checked_add(row_bytes)?)?;
+        for (s_px, d_px) in src_row.chunks_exact(4).zip(dst_row.chunks_exact_mut(4)) {
+            d_px[0] = s_px[r];
+            d_px[1] = s_px[g];
+            d_px[2] = s_px[b];
+            d_px[3] = if a == NO_ALPHA { 255 } else { s_px[a] };
         }
     }
     Some(Pixels {
-        size: Size::new(w, h),
+        size: Size::new(data.width, data.height),
         data: out,
     })
 }
 
 #[cfg(test)]
 mod capture_policy_tests {
-    use super::capture_is_blank;
+    use super::{capture_is_blank, read_shm, should_blank_capture};
     use de_ui::nav::Screen;
+    use smithay::reexports::wayland_server::protocol::wl_shm;
+    use smithay::wayland::shm;
 
     #[test]
     fn only_the_lock_screen_blanks_captures() {
@@ -516,5 +548,50 @@ mod capture_policy_tests {
         ] {
             assert!(!capture_is_blank(s), "{s:?}");
         }
+    }
+
+    #[test]
+    fn locked_keyguard_or_session_lock_always_blanks_capture() {
+        // CHAL-002: even when nav.current stays Screen::Home, active Keyguard or
+        // external session lock must blank all external captures.
+        assert!(should_blank_capture(true, false, Screen::Home));
+        assert!(should_blank_capture(false, true, Screen::Home));
+        assert!(should_blank_capture(true, true, Screen::Drawer));
+        assert!(should_blank_capture(false, false, Screen::Lock));
+        assert!(!should_blank_capture(false, false, Screen::Home));
+    }
+
+    #[test]
+    fn read_shm_rejects_overflow_and_oversized_dimensions() {
+        let buf = [0u8; 64];
+        // Crafted i32 overflow dimensions (CHAL-001)
+        let overflow = shm::BufferData {
+            offset: 0,
+            width: 32_768,
+            height: 32_768,
+            stride: 32_768 * 4,
+            format: wl_shm::Format::Argb8888,
+        };
+        assert!(read_shm(buf.as_ptr(), usize::MAX, overflow).is_none());
+
+        let wrap_stride = shm::BufferData {
+            offset: 0,
+            width: 0x4000_0000,
+            height: 1,
+            stride: 4,
+            format: wl_shm::Format::Argb8888,
+        };
+        assert!(read_shm(buf.as_ptr(), buf.len(), wrap_stride).is_none());
+
+        let valid = shm::BufferData {
+            offset: 0,
+            width: 2,
+            height: 1,
+            stride: 8,
+            format: wl_shm::Format::Xrgb8888,
+        };
+        let src = [0x11, 0x22, 0x33, 0x00, 0x44, 0x55, 0x66, 0x00];
+        let px = read_shm(src.as_ptr(), src.len(), valid).expect("valid shm");
+        assert_eq!(px.data, vec![0x33, 0x22, 0x11, 255, 0x66, 0x55, 0x44, 255]);
     }
 }

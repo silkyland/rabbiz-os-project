@@ -4,13 +4,25 @@ Before=rabbiz-session.service
 
 [Service]
 Type=simple
+Group=rabbiz
 ExecStart=/usr/local/bin/rabbiz-auth-helper
 RuntimeDirectory=rabbiz-auth
-RuntimeDirectoryMode=0755
+RuntimeDirectoryMode=0750
 StateDirectory=rabbiz-auth
 StateDirectoryMode=0700
 Restart=on-failure
 RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+ProtectHome=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=multi-user.target

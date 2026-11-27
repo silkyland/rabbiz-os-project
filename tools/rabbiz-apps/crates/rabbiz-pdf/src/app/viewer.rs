@@ -3,7 +3,8 @@
 use de_api::Rect;
 use de_design::motion::{bezier_eval, BEZIER_ENTER, BEZIER_EXIT, BEZIER_STANDARD};
 use rabbiz_app_kit::ui;
-use rabbiz_app_kit::{Canvas, Theme};
+use rabbiz_app_kit::widgets::{self, IconBtnStyle};
+use rabbiz_app_kit::{icons, Canvas, Theme};
 
 use crate::view;
 
@@ -143,63 +144,87 @@ impl PdfApp {
             );
         }
 
-        // ---- chrome (rides the same rise) ----
+        // Keep an opaque reading surface behind the title and float navigation
+        // above the document where it can be hidden with a tap.
+        let opacity = self.chrome_alpha() * e;
+        if opacity == 0.0 {
+            return;
+        }
+        let fade = |color: [u8; 4]| ui::with_alpha(color, (f32::from(color[3]) * opacity) as u8);
+        let chrome_theme = Theme {
+            text: fade(theme.text),
+            text2: fade(theme.text2),
+            surface2: fade(theme.surface2),
+            ..*theme
+        };
         let ry = rise as i32;
-        let back_r = Rect::new(ch.back.x, ch.back.y + ry, ch.back.w, ch.back.h);
-        ui::draw_pill_button(canvas, theme, back_r, "‹ Files", false, self.back_pressed);
-        let grid_r = Rect::new(
-            ch.grid_btn.x,
-            ch.grid_btn.y + ry,
-            ch.grid_btn.w,
-            ch.grid_btn.h,
-        );
-        ui::draw_pill_button(canvas, theme, grid_r, "Pages", false, self.grid_pressed);
-        if n > 0 {
-            let counter = format!("{} / {}", self.page + 1, n);
-            let mid_w = (grid_r.x - ch.back.right() - 16).max(40);
-            let mid = Rect::new(ch.back.right() + 8, ch.back.y + ry, mid_w, ch.back.h);
-            ui::draw_centered(canvas, &counter, &ui::label(theme.text), mid);
-        }
-
-        // ---- bottom nav strip ----
-        let strip_y = ch.prev.y - 20 + ry;
+        let back = ch.back.translate(0, ry);
+        let grid = ch.grid_btn.translate(0, ry);
         canvas.fill_rect(
-            Rect::new(
-                0,
-                strip_y - 8,
-                self.cur_w,
-                self.cur_h - strip_y + ui::BOTTOM_SAFE,
-            ),
-            theme.scrim,
+            Rect::new(0, ry, self.cur_w, back.bottom() - ry + 8),
+            fade(theme.bg),
         );
-        let zlabel = format!("{}%", (self.zoom * 100.0) as i32);
-        let btns: [(Rect, &str, NavBtn, bool); 5] = [
-            (ch.prev, "‹", NavBtn::Prev, true),
-            (ch.zminus, "−", NavBtn::ZoomMinus, false),
-            (ch.zlabel, zlabel.as_str(), NavBtn::ZoomLabel, false),
-            (ch.zplus, "+", NavBtn::ZoomPlus, false),
-            (ch.next, "›", NavBtn::Next, true),
-        ];
-        for (r, label, btn, primary) in btns {
-            let rr = Rect::new(r.x, r.y + ry, r.w, r.h);
-            ui::draw_pill_button(
-                canvas,
-                theme,
-                rr,
-                label,
-                primary,
-                self.nav_pressed == Some(btn),
-            );
-        }
-        if let Some(d) = self.doc.as_ref() {
+        widgets::icon_btn(
+            canvas,
+            &chrome_theme,
+            back,
+            icons::BACK,
+            IconBtnStyle::Plain,
+            false,
+            self.back_pressed,
+        );
+        widgets::icon_btn(
+            canvas,
+            &chrome_theme,
+            grid,
+            icons::GRID_VIEW,
+            IconBtnStyle::Plain,
+            false,
+            self.grid_pressed,
+        );
+        let title_x = back.right() + 12;
+        let title_w = (grid.x - title_x - 8).max(0);
+        if let Some(doc) = &self.doc {
             ui::draw_text(
                 canvas,
-                &d.name,
-                &ui::caption(theme.text3),
-                ui::MARGIN,
-                strip_y - 26 + ry,
-                Some(self.cur_w - ui::MARGIN * 2),
+                &doc.name,
+                &ui::label(chrome_theme.text),
+                title_x,
+                back.y,
+                Some(title_w),
+            );
+            ui::draw_text(
+                canvas,
+                &format!("Page {} of {}", self.page + 1, n),
+                &ui::caption(chrome_theme.text2),
+                title_x,
+                back.y + 24,
+                Some(title_w),
             );
         }
+        let pill = ch.pill.translate(0, ry);
+        canvas.fill_rounded_rect(pill, pill.h as f32 / 2.0, chrome_theme.surface2);
+        for (r, icon, button) in [
+            (ch.prev, icons::CHEVRON_LEFT, NavBtn::Prev),
+            (ch.zminus, icons::ZOOM_OUT, NavBtn::ZoomMinus),
+            (ch.zplus, icons::ZOOM_IN, NavBtn::ZoomPlus),
+            (ch.next, icons::CHEVRON_RIGHT, NavBtn::Next),
+        ] {
+            widgets::icon_btn(
+                canvas,
+                &chrome_theme,
+                r.translate(0, ry),
+                icon,
+                IconBtnStyle::Plain,
+                false,
+                self.nav_pressed == Some(button),
+            );
+        }
+        ui::draw_centered(
+            canvas,
+            &format!("{}%", (self.zoom * 100.0) as i32),
+            &ui::label(chrome_theme.text),
+            ch.zlabel.translate(0, ry),
+        );
     }
 }

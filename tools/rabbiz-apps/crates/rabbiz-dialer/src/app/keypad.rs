@@ -1,40 +1,25 @@
-//! Keypad tab renderer and per-key press/pop animation.
+//! Keypad sheet renderer — M3 bottom-sheet overlay with circular
+//! borderless T9 keys, a centered call FAB, backspace and a hide chevron.
 
-use rabbiz_app_kit::{ui, Canvas, Rect, Theme};
+use de_api::Size;
+use rabbiz_app_kit::{icons, text, ui, widgets, Canvas, Rect, Theme};
 
 use crate::model::{self, DialKey, SubLabel, KEYS};
 
-use super::chrome::{alpha, draw_icon, fit_style, mix};
+use super::chrome::{draw_icon, fit_style};
 use super::{DialerApp, Hit, POP_S, PRESS_SHRINK};
+use rabbiz_app_kit::ui::{mix, with_alpha as alpha};
 
 impl DialerApp {
-    pub(super) fn render_keypad(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
-        let top = self.content_top();
+    /// The keypad bottom sheet: scrim + rounded sheet + drag handle, then
+    /// number display, caller-ID pill, 12 circular keys and the action row.
+    pub(super) fn render_keypad_sheet(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
+        let sheet = self.keypad_sheet(w, h);
+        widgets::BottomSheet::render_backdrop_and_sheet(c, Size::new(w, h), sheet, t, "");
 
-        // Caller-ID pill.
-        if !self.number.is_empty() {
-            if let Some(ct) = model::lookup_in(&self.contacts, &self.number) {
-                let pill = Rect::new(w / 2 - 180, top, 360, 40);
-                c.fill_rounded_rect(pill, 20.0, t.surface1);
-                draw_icon(c, "\u{e7fd}", 16.0, ct.color, pill.x + 22, pill.y + 20);
-                let txt = format!("{} · {}", ct.name, ct.label.as_str());
-                ui::draw_centered(
-                    c,
-                    &txt,
-                    &ui::styled(16.0, 600, t.text),
-                    Rect::new(pill.x + 38, pill.y, pill.w - 44, pill.h),
-                );
-            }
-        }
-
-        let keys = self.pad_key_rects(w, h);
-        let grid_top = keys.first().map_or(top + 200, |r| r.y);
-        let disp = Rect::new(
-            ui::MARGIN,
-            top + 56,
-            w - ui::MARGIN * 2,
-            (grid_top - top - 72).max(80),
-        );
+        // Number display (big, fit-shrunk), vertically centered in the
+        // display band under the handle.
+        let disp = Rect::new(ui::MARGIN, sheet.y + 36, w - ui::MARGIN * 2, 88);
         let shown = if self.number.is_empty() {
             "Enter number".to_string()
         } else {
@@ -47,49 +32,80 @@ impl DialerApp {
         };
         let st = fit_style(
             &shown,
-            &[52.0, 46.0, 40.0, 34.0, 28.0],
+            &[48.0, 42.0, 36.0, 30.0, 26.0],
             600,
             col,
             disp.w - 16,
         );
         ui::draw_centered(c, &shown, &st, disp);
 
-        for (i, r) in keys.iter().enumerate() {
+        // Caller-ID pill under the display — measured width, never fixed.
+        if !self.number.is_empty() {
+            if let Some(ct) = model::lookup_in(&self.contacts, &self.number) {
+                let txt = format!("{} · {}", ct.name, ct.label.as_str());
+                let st = ui::styled(16.0, 600, t.text);
+                let tw = text::label(&txt, st, None).map_or(120, |px| px.width() as i32);
+                let pw = (tw + 60).clamp(120, w - ui::MARGIN * 2);
+                let pill = Rect::new(w / 2 - pw / 2, sheet.y + 108, pw, 40);
+                c.fill_rounded_rect(pill, 20.0, t.surface2);
+                draw_icon(c, icons::PERSON, 16.0, ct.color, pill.x + 24, pill.y + 20);
+                ui::draw_text(
+                    c,
+                    &txt,
+                    &st,
+                    pill.x + 44,
+                    pill.y + (pill.h - 24) / 2,
+                    Some(pill.w - 52),
+                );
+            }
+        }
+
+        for (i, r) in self.pad_key_rects(w, h).iter().enumerate() {
             self.draw_pad_key(c, t, *r, KEYS[i], i);
         }
 
-        // Action row: backspace + call FAB.
-        let (bk, call) = self.action_row(w, h);
-        let bk_pressed = self.pressed == Some(Hit::Bksp);
-        c.fill_rounded_rect(bk, 26.0, if bk_pressed { t.surface3 } else { t.surface1 });
-        draw_icon(
+        // Action row: hide chevron | centered call FAB | backspace.
+        let (hide, call, bksp) = self.action_row(w, h);
+        widgets::icon_btn(
             c,
-            "\u{e14a}",
-            32.0,
-            t.text,
-            bk.x + bk.w / 2,
-            bk.y + bk.h / 2,
+            t,
+            hide,
+            icons::EXPAND_MORE,
+            widgets::IconBtnStyle::Plain,
+            false,
+            self.pressed == Some(Hit::KeypadHide),
+        );
+        widgets::icon_btn(
+            c,
+            t,
+            bksp,
+            icons::BACKSPACE,
+            widgets::IconBtnStyle::Plain,
+            false,
+            self.pressed == Some(Hit::Bksp),
         );
 
+        // Centered accent call FAB (round, ~96px).
         let call_pressed = self.pressed == Some(Hit::Call);
         let call_col = if call_pressed {
             mix(t.success, [0, 0, 0, 255], 0.15)
         } else {
             t.success
         };
+        c.fill_rounded_rect(call.translate(0, 4), call.h as f32 / 2.0, t.shadow);
         c.fill_rounded_rect(call, call.h as f32 / 2.0, call_col);
         draw_icon(
             c,
-            "\u{e0b0}",
-            46.0,
+            icons::CALL,
+            44.0,
             t.text_on_accent,
             call.x + call.w / 2,
             call.y + call.h / 2,
         );
     }
 
-    /// One pad key: surface card, accent state-layer when pressed, and a
-    /// decaying scale "pop" for ~POP_S after release.
+    /// One pad key: a circular borderless target — press = tonal state
+    /// layer, release = the existing decaying "pop" scale.
     fn draw_pad_key(&self, c: &mut Canvas, t: &Theme, r: Rect, key: DialKey, idx: usize) {
         let mut scale = 1.0f32;
         if let Some((pi, pt)) = self.pop {
@@ -114,17 +130,19 @@ impl DialerApp {
             let dh = (r.h as f32 * (scale - 1.0)) as i32;
             rr = Rect::new(r.x - dw / 2, r.y - dh / 2, r.w + dw, r.h + dh);
         }
-        let radius = (rr.h as f32 / 2.0).min(30.0);
-        c.fill_rounded_rect(rr, radius, t.surface1);
+        let radius = rr.h as f32 / 2.0;
+        // Borderless: the circle only gains a fill while pressed (and a
+        // hairline tonal wash on the pop so the key still reads as a key).
         if pressed {
             c.fill_rounded_rect(rr, radius, alpha(t.accent, 0x30));
+        } else {
+            c.fill_rounded_rect(rr, radius, alpha(t.text, 0x08));
         }
-        let digit_st = ui::styled(36.0, 600, t.text);
         ui::draw_centered(
             c,
             key.digit,
-            &digit_st,
-            Rect::new(rr.x, rr.y + rr.h / 2 - 32, rr.w, 46),
+            &ui::styled(38.0, 600, t.text),
+            Rect::new(rr.x, rr.y + rr.h / 2 - 30, rr.w, 42),
         );
         match key.sub {
             SubLabel::None => {}
@@ -132,12 +150,12 @@ impl DialerApp {
                 ui::draw_centered(
                     c,
                     s,
-                    &ui::styled(14.0, 600, t.text3),
-                    Rect::new(rr.x, rr.y + rr.h / 2 + 6, rr.w, 22),
+                    &ui::styled(13.0, 600, t.text3),
+                    Rect::new(rr.x, rr.y + rr.h / 2 + 10, rr.w, 20),
                 );
             }
             SubLabel::Icon(cp) => {
-                draw_icon(c, cp, 16.0, t.text3, rr.x + rr.w / 2, rr.y + rr.h / 2 + 20);
+                draw_icon(c, cp, 15.0, t.text3, rr.x + rr.w / 2, rr.y + rr.h / 2 + 22);
             }
         }
     }

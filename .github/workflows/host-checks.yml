@@ -3,6 +3,8 @@ on:
   pull_request:
   push:
     branches: [main]
+permissions:
+  contents: read
 jobs:
   fast:
     runs-on: ubuntu-latest
@@ -20,6 +22,17 @@ jobs:
           python3 -B -m unittest discover -s tools/qt-scanout/tests
           python3 -B tests/test_holdmenu.py
           python3 -B tests/test_volume_keys.py
+          python3 -B tests/test_rabbiz_splash.py
+      - name: ShellCheck scripts and rootfs-overlay helpers
+        run: |
+          set -euo pipefail
+          shellcheck -S warning scripts/*.sh scripts/release/*.sh devices/xiaomi/muyu/scripts/*.sh
+          for f in rootfs-overlay/usr/local/bin/*; do
+            [ -f "$f" ] || continue
+            if head -n 1 "$f" | grep -qE '^#!.*(sh|bash)'; then
+              shellcheck -S error "$f"
+            fi
+          done
 
   rabbiz-de:
     runs-on: ubuntu-latest
@@ -53,6 +66,6 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Run workspace tests (includes Phases 1-6 regressions)
-        run: cargo test --workspace
+        run: cargo test --locked --workspace

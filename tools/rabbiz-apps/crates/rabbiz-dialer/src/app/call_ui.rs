@@ -1,11 +1,13 @@
-//! In-call screen renderer (caller banner, call controls, incoming actions, DTMF pad).
+//! In-call screen renderer (caller card, toggle grid, incoming actions,
+//! DTMF pad).
 
-use rabbiz_app_kit::{ui, Canvas, Rect, Theme};
+use rabbiz_app_kit::{icons, ui, Canvas, Rect, Theme};
 
 use crate::model::{self, CallDir, CallPhase, SubLabel, KEYS};
 
-use super::chrome::{alpha, draw_icon, hash_color, mix};
+use super::chrome::{draw_avatar, draw_icon, hash_color};
 use super::{DialerApp, Hit, PRESS_SHRINK};
+use rabbiz_app_kit::ui::{mix, with_alpha as alpha};
 
 impl DialerApp {
     pub(super) fn render_call(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
@@ -38,15 +40,14 @@ impl DialerApp {
         };
         let cx = w / 2;
 
-        // Avatar.
-        let av = Rect::new(cx - 66, ui::TOP_SAFE + 150, 132, 132);
-        c.fill_rounded_rect(av, 66.0, alpha(tint, 0x30));
-        if name.is_empty() {
-            draw_icon(c, "\u{e7fd}", 56.0, tint, cx, av.y + av.h / 2);
-        } else {
-            let initial: String = name.chars().next().unwrap_or('?').to_uppercase().collect();
-            ui::draw_centered(c, &initial, &ui::styled(56.0, 600, tint), av);
-        }
+        // Caller card: a surface panel so the avatar+identity sit on a real
+        // container instead of the flat page bg.
+        let card = self.caller_card(w);
+        c.fill_rounded_rect(card, 36.0, t.surface1);
+
+        // Big centered avatar.
+        let av = Rect::new(cx - 66, card.y + 42, 132, 132);
+        draw_avatar(c, av, &name, tint);
 
         let display_name = if name.is_empty() {
             model::format_number(&number)
@@ -56,15 +57,15 @@ impl DialerApp {
         ui::draw_centered(
             c,
             &display_name,
-            &ui::styled(32.0, 600, t.text),
-            Rect::new(ui::MARGIN, av.y + av.h + 26, w - ui::MARGIN * 2, 48),
+            &ui::styled(30.0, 600, t.text),
+            Rect::new(card.x + 16, av.bottom() + 20, card.w - 32, 44),
         );
         if !name.is_empty() {
             ui::draw_centered(
                 c,
                 &model::format_number(&number),
                 &ui::caption(t.text3),
-                Rect::new(ui::MARGIN, av.y + av.h + 76, w - ui::MARGIN * 2, 30),
+                Rect::new(card.x + 16, av.bottom() + 68, card.w - 32, 28),
             );
         }
 
@@ -74,7 +75,7 @@ impl DialerApp {
             c,
             &status,
             &ui::styled(24.0, if active { 600 } else { 400 }, st_col),
-            Rect::new(ui::MARGIN, av.y + av.h + 116, w - ui::MARGIN * 2, 40),
+            Rect::new(card.x + 16, card.bottom() - 60, card.w - 32, 40),
         );
 
         if dtmf_open {
@@ -95,10 +96,9 @@ impl DialerApp {
             .map_or((false, false, false), |c| (c.muted, c.speaker, c.dtmf_open));
 
         if incoming {
-            // Decline (left, danger) / Answer (right, success).
-            let by = h - ui::BOTTOM_SAFE - 330;
-            let dec = Rect::new(w / 2 - 150, by, 120, 120);
-            let ans = Rect::new(w / 2 + 30, by, 120, 120);
+            // Decline (left, danger) / Answer (right, success) — labeled
+            // circles like the AOSP incoming-call screen.
+            let (dec, ans, dec_lbl, ans_lbl) = self.incoming_rects(w, h);
             c.fill_rounded_rect(
                 dec,
                 60.0,
@@ -110,12 +110,13 @@ impl DialerApp {
             );
             draw_icon(
                 c,
-                "\u{e0b1}",
-                48.0,
+                icons::CALL_END,
+                44.0,
                 t.text_on_accent,
                 dec.x + 60,
                 dec.y + 60,
             );
+            ui::draw_centered(c, "Decline", &ui::label(t.text), dec_lbl);
             c.fill_rounded_rect(
                 ans,
                 60.0,
@@ -127,64 +128,91 @@ impl DialerApp {
             );
             draw_icon(
                 c,
-                "\u{e0b0}",
-                48.0,
+                icons::CALL,
+                44.0,
                 t.text_on_accent,
                 ans.x + 60,
                 ans.y + 60,
             );
+            ui::draw_centered(c, "Answer", &ui::label(t.text), ans_lbl);
             return;
         }
 
-        // Toggle row: mute / keypad / speaker.
-        let ty = h - ui::BOTTOM_SAFE - 310;
-        let tw = 84;
-        let gap = (w - ui::MARGIN * 2 - tw * 3) / 2;
-        let toggles: [(Hit, &'static str, &'static str, bool); 3] = [
+        // 2×3 tonal-circle grid. Row 0 wires the real toggles; row 1 keeps
+        // the AOSP six-slot anatomy with the unwired slots drawn disabled.
+        let grid = self.in_call_grid(w, h);
+        let real: [(Hit, &str, &str, bool); 3] = [
             (
-                Hit::Pad(90),
-                if muted { "\u{e02b}" } else { "\u{e029}" },
+                Hit::Mute,
+                if muted { icons::MIC_OFF } else { icons::MIC },
                 if muted { "Unmute" } else { "Mute" },
                 muted,
             ),
-            (Hit::Pad(91), "\u{e0bc}", "Keypad", dtmf),
+            (Hit::DtmfToggle, icons::DIALPAD, "Keypad", dtmf),
             (
-                Hit::Pad(92),
-                "\u{e32d}",
+                Hit::Speaker,
+                icons::VOLUME_UP,
                 if speaker { "Earpiece" } else { "Speaker" },
                 speaker,
             ),
         ];
-        for (i, (hit, ic, label, on)) in toggles.iter().enumerate() {
-            let r = Rect::new(ui::MARGIN + i as i32 * (tw + gap), ty, tw, tw);
+        for (i, (hit, ic, label, on)) in real.iter().enumerate() {
+            let r = grid[0][i];
             let pressed = self.pressed == Some(*hit);
             c.fill_rounded_rect(
                 r,
-                42.0,
-                if pressed || *on {
+                r.h as f32 / 2.0,
+                if *on {
                     alpha(t.accent, 0x40)
                 } else {
-                    t.surface1
+                    t.surface2
                 },
             );
+            if pressed {
+                ui::press_overlay(c, t, r, r.h as f32 / 2.0, 0.10);
+            }
             draw_icon(
                 c,
                 ic,
-                34.0,
+                32.0,
                 if *on { t.accent } else { t.text },
                 r.x + r.w / 2,
-                r.y + r.w / 2,
+                r.y + r.h / 2,
             );
             ui::draw_centered(
                 c,
                 label,
                 &ui::styled(14.0, 400, if *on { t.accent } else { t.text2 }),
-                Rect::new(r.x, r.y + tw + 8, r.w, 22),
+                Rect::new(r.x - 22, r.y + r.h + 6, r.w + 44, 22),
+            );
+        }
+        // Reserved slots (hold / add call / video) — visibly disabled.
+        let stubs: [(&str, &str); 3] = [
+            (icons::PAUSE, "Hold"),
+            (icons::ADD, "Add call"),
+            (icons::VIDEOCAM, "Video"),
+        ];
+        for (i, (ic, label)) in stubs.iter().enumerate() {
+            let r = grid[1][i];
+            c.fill_rounded_rect(r, r.h as f32 / 2.0, t.surface1);
+            draw_icon(
+                c,
+                ic,
+                32.0,
+                alpha(t.text3, 0x80),
+                r.x + r.w / 2,
+                r.y + r.h / 2,
+            );
+            ui::draw_centered(
+                c,
+                label,
+                &ui::styled(14.0, 400, alpha(t.text3, 0x80)),
+                Rect::new(r.x - 22, r.y + r.h + 6, r.w + 44, 22),
             );
         }
 
-        // End-call FAB.
-        let end = Rect::new(w / 2 - 60, h - ui::BOTTOM_SAFE - 170, 120, 120);
+        // Big red end-call circle, bottom center.
+        let end = self.end_call_rect(w, h);
         c.fill_rounded_rect(
             end,
             60.0,
@@ -196,8 +224,8 @@ impl DialerApp {
         );
         draw_icon(
             c,
-            "\u{e0b1}",
-            50.0,
+            icons::CALL_END,
+            48.0,
             t.text_on_accent,
             end.x + 60,
             end.y + 60,
@@ -205,6 +233,17 @@ impl DialerApp {
     }
 
     fn render_dtmf(&mut self, c: &mut Canvas, t: &Theme, w: i32, h: i32) {
+        // Panel behind the pad so keys read over the caller card.
+        let sheet = self.keypad_sheet(w, h);
+        c.fill_rounded_rect(sheet, 36.0, t.surface1);
+        let r = (36.0f32) as i32;
+        if sheet.h > r {
+            c.fill_rect(
+                Rect::new(sheet.x, sheet.y + r, sheet.w, sheet.h - r),
+                t.surface1,
+            );
+        }
+
         for (i, r) in self.dtmf_key_rects(w, h).iter().enumerate() {
             let digit = model::DTMF_KEYS[i];
             let pressed = self.pressed == Some(Hit::Dtmf(i));
@@ -219,30 +258,35 @@ impl DialerApp {
                     (r.h - dh).max(1),
                 );
             }
+            let radius = rr.h as f32 / 2.0;
             c.fill_rounded_rect(
                 rr,
-                (rr.h as f32 / 2.0).min(26.0),
-                if pressed { t.surface3 } else { t.surface1 },
+                radius,
+                if pressed {
+                    alpha(t.accent, 0x30)
+                } else {
+                    t.surface2
+                },
             );
             ui::draw_centered(
                 c,
                 digit,
                 &ui::styled(34.0, 600, t.text),
-                Rect::new(rr.x, rr.y + rr.h / 2 - 28, rr.w, 42),
+                Rect::new(rr.x, rr.y + rr.h / 2 - 26, rr.w, 40),
             );
-            // Letters under digits 2-9 (indices 1-8; same T9 map as the dial pad).
+            // Letters under digits 2-9 (indices 1-8; same T9 map as the pad).
             if (1..=8).contains(&i) {
                 if let SubLabel::Letters(s) = KEYS[i].sub {
                     ui::draw_centered(
                         c,
                         s,
-                        &ui::styled(13.0, 600, t.text3),
-                        Rect::new(rr.x, rr.y + rr.h / 2 + 8, rr.w, 20),
+                        &ui::styled(12.0, 600, t.text3),
+                        Rect::new(rr.x, rr.y + rr.h / 2 + 10, rr.w, 18),
                     );
                 }
             }
         }
-        let hide = Rect::new(w / 2 - 90, h - ui::BOTTOM_SAFE - 70, 180, 52);
+        let hide = self.dtmf_hide_rect(w, h);
         ui::draw_pill_button(
             c,
             t,

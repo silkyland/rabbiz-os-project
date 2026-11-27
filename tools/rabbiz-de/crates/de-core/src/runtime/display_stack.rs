@@ -64,7 +64,7 @@ mod tests {
     fn strictly_locked_first_frame_contains_only_keyguard_and_above() {
         let mut stack = RenderStack::new();
         stack.push(DisplayArea::Wallpaper, "wall");
-        stack.push(DisplayArea::Shell, "home");
+        stack.push(DisplayArea::Home, "home");
         stack.extend_front_to_back(DisplayArea::App, vec!["app"]);
         stack.push(DisplayArea::Shade, "shade");
         stack.push(DisplayArea::Keyguard, "lock");

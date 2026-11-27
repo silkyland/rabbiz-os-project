@@ -16,6 +16,7 @@
  * 900d/a00d and 9f00/af00 through read/write before waiting for PHONE_START.
  * Only these four-byte boot controls are supported, not general UDL transfers.
  */
+#include <linux/capability.h>
 #include <linux/fs.h>
 #include <linux/io.h>
 #include <linux/delay.h>
@@ -343,6 +344,9 @@ static long cpif_boot_ioctl(struct file *filp, unsigned int cmd,
 {
 	struct cpif_dev *c = cpif_dev_get();
 	int ret = 0;
+
+	if (!capable(CAP_SYS_ADMIN))
+		return -EPERM;
 
 	if (!c)
 		return -ENODEV;

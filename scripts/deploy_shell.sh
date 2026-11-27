@@ -77,14 +77,19 @@ PACKAGES=(
   mgba-qt                # standalone touch-friendly GBA emulator
   noto-fonts
   ttf-nerd-fonts-symbols # icon glyphs used by the shell
-  upower                 # battery service consumed by Rabbiz.Services
+  upower                 # battery service consumed by Rabbiz.Services + third-party widgets
   brightnessctl          # XF86 brightness keybinds / shade slider
+  xdg-desktop-portal     # portal frontend — FileChooser/OpenURI/Settings for sandboxed & native apps
+  xdg-desktop-portal-gtk # GTK backend selected by rabbiz-portals.conf (XDG_CURRENT_DESKTOP=Rabbiz)
+  gnome-keyring          # org.freedesktop.secrets — Chromium/Electron password store
+  power-profiles-daemon  # org.freedesktop.UPower.PowerProfiles — battery-saver standard API
+  wf-recorder            # screen recording behind the compositor's private screencopy grant
 )
 
 print_packages() {
   echo "Install on the device as root:"
   echo
-  echo "  pacman -Sy --needed ${PACKAGES[*]}"
+  echo "  pacman -Syu --needed ${PACKAGES[*]}"
   echo
   echo "Notes:"
   echo "  - 'ttf-nerd-fonts-symbols' is unverified against"
@@ -122,7 +127,7 @@ fi
 echo ">> shell/ -> /usr/share/rabbiz-shell/"
 ssh "${TARGET}" "mkdir -p /usr/share/rabbiz-shell"
 COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/shell" -cf - . \
-  | ssh "${TARGET}" "tar -C /usr/share/rabbiz-shell -xf -"
+  | ssh "${TARGET}" "tar -C /usr/share/rabbiz-shell --no-same-owner --no-overwrite-dir -xf -"
 
 # --- prune trees that were removed from the repo (tar never deletes) ---
 echo ">> pruning removed QML apps + superseded shell dirs"
@@ -157,7 +162,7 @@ ssh "${TARGET}" "
 # --- deploy rootfs overlay (merge into /) --------------------------------
 echo ">> rootfs-overlay/ -> /"
 COPYFILE_DISABLE=1 tar -C "${REPO_ROOT}/rootfs-overlay" -cf - . \
-  | ssh "${TARGET}" "tar -C / -xf -"
+  | ssh "${TARGET}" "tar -C / --no-same-owner --no-overwrite-dir -xf -"
 
 # --- fix ownership / permissions remotely --------------------------------
 echo ">> Fixing permissions + daemon-reload"
@@ -191,7 +196,6 @@ ssh "${TARGET}" "
   chmod g+w /sys/class/backlight/*/brightness /sys/class/backlight/*/bl_power 2>/dev/null || true
   chgrp video /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
   chmod g+w /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor 2>/dev/null || true
-  chmod 666 /sys/kernel/a21s_fp/trigger_unlock /sys/kernel/a21s_fp/sleep_pin /dev/esfp0 2>/dev/null || true
   chgrp video /dev/umts_* 2>/dev/null || true
   chmod 660 /dev/umts_* 2>/dev/null || true
   chown rabbiz:rabbiz /run/user/\$(id -u rabbiz)/a21s-power.cmd 2>/dev/null || true
@@ -228,7 +232,7 @@ cat <<'EOF'
 >> Deploy complete. On the device:
 
   1. Install packages (or run './scripts/deploy_shell.sh --packages'):
-       pacman -Sy --needed labwc quickshell qt6-declarative qt6-svg \
+       pacman -Syu --needed labwc quickshell qt6-declarative qt6-svg \
          qt6-wayland dolphin calindori kclock kalk kweather krecorder \
          marknote qmlkonsole elisa xorg-xwayland squeekboard \
          noto-fonts ttf-nerd-fonts-symbols upower brightnessctl

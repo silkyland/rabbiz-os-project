@@ -31,8 +31,8 @@ pub(crate) use model::{eval_expr, format_num, strip_pending_ops};
 
 use model::{push_input, toggle_sign, HistEntry, KeyKind, HISTORY_CAP};
 use ui::{
-    history_btn_rect, history_panel, history_rows, keypad_layout, Hit, HIST_CLOSE_S, HIST_OPEN_S,
-    PRESS_FADE_S,
+    history_btn_rect, history_layout, history_panel, keypad_layout, Hit, BACKSPACE_HOLD_MS,
+    HIST_CLOSE_S, HIST_OPEN_S, PRESS_FADE_S,
 };
 
 // ---------------------------------------------------------------------------
@@ -52,6 +52,15 @@ pub(crate) struct CalcApp {
     pub(crate) flash: Option<(Hit, f32)>, // released hit fading out
     pub(crate) history_open: bool,
     hist_tween: kit_ui::Tween,
+    /// Drag/fling scroll of the history list (content is `history_layout`).
+    pub(crate) hist_scroll: rabbiz_app_kit::ScrollView,
+    /// Monotonic ms fed by Tick — the clock for `hist_scroll` velocity and
+    /// the backspace long-press timer.
+    now_ms: u64,
+    /// Elapsed ms of the current hold (drives long-press ⌫ = clear all).
+    press_ms: f32,
+    /// Set when the backspace long-press already fired `clear()`.
+    long_fired: bool,
 }
 
 impl CalcApp {
@@ -68,6 +77,10 @@ impl CalcApp {
             flash: None,
             history_open: false,
             hist_tween: kit_ui::Tween::new(0.0, 0.0, 0.001, BEZIER_ENTER),
+            hist_scroll: rabbiz_app_kit::ScrollView::new(),
+            now_ms: 0,
+            press_ms: 0.0,
+            long_fired: false,
         }
     }
 
@@ -165,6 +178,7 @@ impl CalcApp {
             return;
         }
         self.history_open = true;
+        self.hist_scroll.scroll_to(0.0);
         let from = self.hist_tween.value();
         self.hist_tween = kit_ui::Tween::new(from, 1.0, HIST_OPEN_S, BEZIER_ENTER);
     }
@@ -184,6 +198,35 @@ impl CalcApp {
 
     // -- hit testing -----------------------------------------------------------
 
+    /// Scroll offset clamped to the current list bounds (content-space rows
+    /// shift up by this much on screen).
+    fn hist_offset(&self) -> i32 {
+        let panel = history_panel(self.size.w, self.size.h, self.history_progress());
+        let hl = history_layout(panel, self.history.len());
+        self.hist_scroll
+            .offset_i32()
+            .clamp(0, (hl.content_h - hl.viewport.h).max(0))
+    }
+
+    /// Feed the current list bounds to `hist_scroll` (content height grows
+    /// with history; viewport follows the sheet tween).
+    fn sync_hist_bounds(&mut self) {
+        let panel = history_panel(self.size.w, self.size.h, self.history_progress());
+        let hl = history_layout(panel, self.history.len());
+        self.hist_scroll
+            .set_bounds(hl.content_h as f32, hl.viewport.h as f32);
+    }
+
+    /// Screen-space rect of history row `i` (content space + scroll).
+    fn hist_row_rect(&self, i: usize) -> Rect {
+        let panel = history_panel(self.size.w, self.size.h, self.history_progress());
+        let hl = history_layout(panel, self.history.len());
+        hl.rows
+            .get(i)
+            .map(|r| r.translate(0, hl.viewport.y - self.hist_offset()))
+            .unwrap_or(Rect::ZERO)
+    }
+
     fn history_hit(&self, pos: Point) -> Option<Hit> {
         let p = self.history_progress();
         if p <= 0.5 {
@@ -191,14 +234,17 @@ impl CalcApp {
         }
         let panel = history_panel(self.size.w, self.size.h, p);
         if panel.contains(pos) {
-            let (_, clear, rows) = history_rows(panel, self.history.len());
-            if clear.contains(pos) {
+            let hl = history_layout(panel, self.history.len());
+            if hl.clear.contains(pos) {
                 return Some(Hit::HistClear);
             }
-            // Rows are stored top→bottom = newest→oldest.
-            for (i, r) in rows.iter().enumerate() {
-                if r.contains(pos) {
-                    return Some(Hit::HistRow(i));
+            // Rows are stored top→bottom = newest→oldest; only hits inside
+            // the list viewport land on a row.
+            if hl.viewport.contains(pos) {
+                for i in 0..hl.rows.len() {
+                    if self.hist_row_rect(i).contains(pos) {
+                        return Some(Hit::HistRow(i));
+                    }
                 }
             }
             return Some(Hit::Panel);
@@ -232,17 +278,11 @@ impl CalcApp {
                 .keys
                 .get(i)
                 .map_or(Rect::ZERO, |k| k.rect),
-            Hit::HistRow(i) => {
-                let p = self.history_progress();
-                let panel = history_panel(self.size.w, self.size.h, p);
-                let (_, _, rows) = history_rows(panel, self.history.len());
-                rows.get(i).copied().unwrap_or(Rect::ZERO)
-            }
+            Hit::HistRow(i) => self.hist_row_rect(i),
             Hit::HistClear => {
                 let p = self.history_progress();
                 let panel = history_panel(self.size.w, self.size.h, p);
-                let (_, clear, _) = history_rows(panel, self.history.len());
-                clear
+                history_layout(panel, self.history.len()).clear
             }
             Hit::HistToggle => history_btn_rect(self.size.w),
             _ => Rect::ZERO,
@@ -285,6 +325,7 @@ impl CalcApp {
             }
             Hit::HistClear => {
                 self.history.clear();
+                self.hist_scroll.scroll_to(0.0);
             }
             Hit::Scrim => self.close_history(),
             Hit::Panel => {}
@@ -302,10 +343,15 @@ impl CalcApp {
     }
 
     fn tick_anims(&mut self, dt: Duration) -> bool {
+        self.now_ms += dt.as_millis() as u64;
         let mut running = false;
         if !self.hist_tween.done() {
             running |= self.hist_tween.tick(dt);
         }
+        if self.history_open || !self.hist_tween.done() {
+            self.sync_hist_bounds();
+        }
+        running |= self.hist_scroll.tick(dt.as_secs_f32());
         if let Some((_, t)) = &mut self.flash {
             *t += dt.as_secs_f32() / PRESS_FADE_S;
             if *t >= 1.0 {
@@ -314,10 +360,25 @@ impl CalcApp {
                 running = true;
             }
         }
-        if self.pressed.is_some() {
+        if let Some((_, hit, inside)) = self.pressed {
             self.press_t = (self.press_t + dt.as_secs_f32() / PRESS_FADE_S).min(1.0);
             if self.press_t < 1.0 {
                 running = true;
+            }
+            // Long-press ⌫ clears the whole expression (AOSP behavior).
+            if inside && !self.long_fired {
+                self.press_ms += dt.as_millis() as f32;
+                if self.press_ms >= BACKSPACE_HOLD_MS {
+                    if let Hit::Key(i) = hit {
+                        let layout = keypad_layout(self.size.w, self.size.h);
+                        if layout.keys.get(i).is_some_and(|k| k.kind == KeyKind::Backspace) {
+                            self.long_fired = true;
+                            self.clear();
+                            self.flash = Some((hit, 0.0));
+                        }
+                    }
+                }
+                running = true; // keep the hold timer ticking
             }
         }
         running
@@ -343,6 +404,14 @@ impl AppState for CalcApp {
                 };
                 self.pressed = Some((id, hit, true));
                 self.press_t = 0.0;
+                self.press_ms = 0.0;
+                self.long_fired = false;
+                // A press that starts inside the history sheet can become a
+                // list scroll (touch slop decides in TouchMove).
+                if matches!(hit, Hit::HistRow(_) | Hit::Panel | Hit::HistClear) {
+                    self.sync_hist_bounds();
+                    self.hist_scroll.on_touch_down(pos.y as f32, self.now_ms);
+                }
                 self.frame(true, true)
             }
             AppEvent::TouchMove { id, pos } => {
@@ -351,6 +420,9 @@ impl AppState for CalcApp {
                 };
                 if tid != id {
                     return self.frame(false, false);
+                }
+                if self.hist_scroll.on_touch_move(pos.y as f32, self.now_ms) {
+                    return self.frame(true, true);
                 }
                 let now_inside = self.hit_inside(hit, pos);
                 if now_inside != inside {
@@ -368,8 +440,10 @@ impl AppState for CalcApp {
                     self.pressed = Some((tid, hit, inside));
                     return self.frame(false, false);
                 }
+                // A scroll drag is consumed by the list, not treated as a tap.
+                let was_drag = self.hist_scroll.on_touch_up(self.now_ms);
                 let still_inside = self.hit_inside(hit, pos);
-                if inside && still_inside {
+                if inside && still_inside && !was_drag && !self.long_fired {
                     self.activate(hit);
                 }
                 if matches!(hit, Hit::Key(_)) {
@@ -495,5 +569,40 @@ mod tests {
 
         let after_px = h.render();
         assert_ne!(initial_px.data, after_px.data);
+    }
+
+    /// Evidence screenshots: renders the main screens to
+    /// `/tmp/rabbiz-shots/calculator-<tag>-<state>.png`. `SHOT_TAG` selects
+    /// the filename tag (`before`/`after`); defaults to `current`.
+    #[test]
+    fn shots() {
+        use std::path::Path;
+        let tag = std::env::var("SHOT_TAG").unwrap_or_else(|_| "current".into());
+        let dir = Path::new("/tmp/rabbiz-shots");
+        let mut h = rabbiz_app_kit::TestHarness::new(CalcApp::new());
+
+        h.save_png(&dir.join(format!("calculator-{tag}-idle.png")))
+            .expect("save idle");
+
+        // Expression with a pending operator (accent highlight on ×).
+        h.type_text("7×69");
+        assert_eq!(h.state().expr, "7×69");
+        h.save_png(&dir.join(format!("calculator-{tag}-expr.png")))
+            .expect("save expr");
+
+        // Commit a few results so history has content.
+        h.type_text("=");
+        h.type_text("9+9=");
+        h.type_text("100×3=");
+        h.type_text("50-8=");
+        assert_eq!(h.state().history.len(), 4);
+
+        // Open the history sheet via its affordance button and let the
+        // slide-down tween finish.
+        let r = history_btn_rect(720);
+        h.tap(Point::new(r.x + r.w / 2, r.y + r.h / 2));
+        h.settle(60, Duration::from_millis(16));
+        h.save_png(&dir.join(format!("calculator-{tag}-history.png")))
+            .expect("save history");
     }
 }

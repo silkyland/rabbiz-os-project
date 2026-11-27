@@ -2,12 +2,12 @@
 //! full-screen viewer (double-tap zoom, drag pan, swipe paging).
 //!
 //! Decode path: `de-paint`'s resvg pipeline (zune-jpeg / image-webp / gif /
-//! PNG) wrapped in a one-image SVG — see `decode.rs`. Thumbnails decode
+//! PNG) wrapped in a one-image SVG — see the app-kit raster image module. Thumbnails decode
 //! lazily into a bounded cache; the viewer decodes on demand through the
 //! same pump so the UI never blocks on a 12 MP JPEG.
 
 mod app;
-mod decode;
+use rabbiz_app_kit::raster_image as decode;
 mod headless;
 mod layout;
 mod photos;

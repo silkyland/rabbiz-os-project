@@ -9,7 +9,7 @@ set -eu
 
 RABBIZ_UID="$(id -u rabbiz)"
 RUNTIME="/run/user/${RABBIZ_UID}"
-LOG="/tmp/rabbiz-osk.log"
+LOG="${RUNTIME}/rabbiz-osk.log"
 
 # `setsid` needs a real program, not a shell function, so the env is spelled out where we detach.
 as_rabbiz() {
@@ -42,14 +42,14 @@ case "${1:-status}" in
     setsid runuser -u rabbiz -- env \
       XDG_RUNTIME_DIR="$RUNTIME" WAYLAND_DISPLAY=wayland-0 \
       DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME}/bus" \
-      /usr/local/bin/rabbiz-osk >"$LOG" 2>&1 &
+      sh -c 'exec /usr/local/bin/rabbiz-osk >"$1" 2>&1' _ "$LOG" &
     sleep 1.5
     if pgrep -x rabbiz-osk >/dev/null 2>&1; then
       echo "rabbiz-osk running (log: $LOG)"
-      tail -n 2 "$LOG" 2>/dev/null || true
+      as_rabbiz tail -n 2 "$LOG" 2>/dev/null || true
     else
       echo "rabbiz-osk failed to start:" >&2
-      cat "$LOG" >&2
+      as_rabbiz cat "$LOG" >&2 || true
       exit 1
     fi
     ;;

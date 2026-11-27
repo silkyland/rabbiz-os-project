@@ -10,7 +10,7 @@
 # runuser/su callers inherit the *parent's* XDG_RUNTIME_DIR (e.g. /run/user/0)
 # — repoint at the runtime dir actually owned by the current uid.
 RD="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
-[ -O "$RD" ] || RD="/run/user/$(id -u)"
+[ "$(stat -c %u "$RD" 2>/dev/null || echo -1)" = "$(id -u)" ] || RD="/run/user/$(id -u)"
 export XDG_RUNTIME_DIR="$RD"
 export DBUS_SESSION_BUS_ADDRESS="unix:path=$RD/bus"
 

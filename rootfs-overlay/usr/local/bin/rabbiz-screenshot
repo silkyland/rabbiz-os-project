@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+RABBIZ_USER="rabbiz"
+RABBIZ_UID="$(id -u "${RABBIZ_USER}" 2>/dev/null || echo 1001)"
+
+# Never touch user-owned /run/user/<uid> or ~/Pictures paths as root (SVC-001).
+if [ "$(id -u)" -eq 0 ]; then
+    exec runuser -u "${RABBIZ_USER}" -- env \
+        XDG_RUNTIME_DIR="/run/user/${RABBIZ_UID}" \
+        HOME="/home/${RABBIZ_USER}" \
+        "$0" "$@"
+fi
+
 DELAY_MS=0
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -14,13 +25,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-RABBIZ_USER="rabbiz"
-RABBIZ_UID="$(id -u "${RABBIZ_USER}" 2>/dev/null || echo 1001)"
-if [ "$(id -u)" -eq 0 ]; then
-    RUNTIME_DIR="/run/user/${RABBIZ_UID}"
-else
-    RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${RABBIZ_UID}}"
-fi
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/${RABBIZ_UID}}"
 WAYLAND_SOCK="${WAYLAND_DISPLAY:-wayland-0}"
 if [ ! -S "${RUNTIME_DIR}/${WAYLAND_SOCK}" ]; then
     found_sock="$(find "${RUNTIME_DIR}" -maxdepth 1 -type s -name 'wayland-[0-9]*' 2>/dev/null | head -n1 || true)"
@@ -38,9 +43,6 @@ if [ "${DELAY_MS}" -gt 0 ] 2>/dev/null; then
 fi
 
 mkdir -p "${SCREENSHOT_DIR}" "${RUNTIME_DIR}" 2>/dev/null || true
-if [ "$(id -u)" -eq 0 ]; then
-    chown "${RABBIZ_USER}:${RABBIZ_USER}" "/home/${RABBIZ_USER}/Pictures" "${SCREENSHOT_DIR}" 2>/dev/null || true
-fi
 
 STAMP="$(date +%Y%m%d_%H%M%S)"
 FILENAME="Screenshot_${STAMP}.png"
@@ -51,29 +53,16 @@ if [ -e "${OUT_PATH}" ]; then
     OUT_PATH="${SCREENSHOT_DIR}/${FILENAME}"
 fi
 
-if [ "$(id -u)" -eq 0 ]; then
-    runuser -u "${RABBIZ_USER}" -- env \
-        XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
-        WAYLAND_DISPLAY="${WAYLAND_SOCK}" \
-        HOME="/home/${RABBIZ_USER}" \
-        grim "${OUT_PATH}"
-    chown "${RABBIZ_USER}:${RABBIZ_USER}" "${OUT_PATH}" 2>/dev/null || true
-else
-    env \
-        XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
-        WAYLAND_DISPLAY="${WAYLAND_SOCK}" \
-        grim "${OUT_PATH}"
-fi
+env \
+    XDG_RUNTIME_DIR="${RUNTIME_DIR}" \
+    WAYLAND_DISPLAY="${WAYLAND_SOCK}" \
+    grim "${OUT_PATH}"
 
 chmod 644 "${OUT_PATH}" 2>/dev/null || true
 
 NONCE="$(date +%s%N 2>/dev/null || date +%s)-$$"
-TMP_STATE="${STATE_FILE}.tmp.$$"
+TMP_STATE="$(mktemp "${STATE_FILE}.tmp.XXXXXX")"
 printf '%s|%s|%s\n' "${OUT_PATH}" "${FILENAME}" "${NONCE}" > "${TMP_STATE}"
 mv -f "${TMP_STATE}" "${STATE_FILE}"
-if [ "$(id -u)" -eq 0 ]; then
-    chown "${RABBIZ_USER}:${RABBIZ_USER}" "${STATE_FILE}" 2>/dev/null || true
-fi
-chmod 664 "${STATE_FILE}" 2>/dev/null || true
 
 printf '%s\n' "${OUT_PATH}"

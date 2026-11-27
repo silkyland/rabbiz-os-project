@@ -9,6 +9,10 @@ enum DeviceMirrorService {
             completion("Enter the device address first.")
             return
         }
+        guard isValidHost(trimmed) else {
+            completion("Invalid device address.")
+            return
+        }
         let target = trimmed.contains("@") ? trimmed : "root@\(trimmed)"
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
@@ -16,6 +20,7 @@ enum DeviceMirrorService {
             "-o", "BatchMode=yes",
             "-o", "ConnectTimeout=6",
             "-o", "StrictHostKeyChecking=accept-new",
+            "--",
             target,
             "rabbiz-mirror", "start"
         ]
@@ -44,6 +49,27 @@ enum DeviceMirrorService {
                 completion("Could not run ssh: \(error.localizedDescription)")
             }
         }
+    }
+
+    private static func isValidHost(_ host: String) -> Bool {
+        guard !host.isEmpty, host.count <= 255, !host.hasPrefix("-") else {
+            return false
+        }
+        let allowed = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.-_:@[]")
+        guard host.unicodeScalars.allSatisfy({ allowed.contains($0) }) else {
+            return false
+        }
+        let parts = host.split(separator: "@", omittingEmptySubsequences: false)
+        if parts.count > 2 { return false }
+        if parts.count == 2 {
+            let user = parts[0]
+            let hostname = parts[1]
+            guard !user.isEmpty, !hostname.isEmpty,
+                  !user.hasPrefix("-"), !hostname.hasPrefix("-") else {
+                return false
+            }
+        }
+        return true
     }
 
     private static func firstLines(_ text: String) -> String {

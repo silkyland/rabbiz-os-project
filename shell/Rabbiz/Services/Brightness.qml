@@ -75,10 +75,10 @@ QtObject {
                 "busctl call org.freedesktop.login1 "
               + "/org/freedesktop/login1/session/auto "
               + "org.freedesktop.login1.Session SetBrightness ssu "
-              + "backlight " + root._dev + " " + raw + " 2>/dev/null "
-              + "|| brightnessctl -d " + root._dev + " set " + v + "% 2>/dev/null "
-              + "|| echo " + raw + " > /sys/class/backlight/" + root._dev
-              + "/brightness 2>/dev/null || true"]
+              + "backlight \"$1\" \"$2\" 2>/dev/null "
+              + "|| brightnessctl -d \"$1\" set \"$3%\" 2>/dev/null "
+              + "|| printf '%s\\n' \"$2\" > \"/sys/class/backlight/$1/brightness\" 2>/dev/null || true",
+                "_", root._dev, String(raw), String(v)]
             if (!setProc.running)
                 setProc.running = true
         } else if (root._backend === "brightnessctl") {

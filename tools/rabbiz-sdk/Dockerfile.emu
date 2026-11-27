@@ -19,6 +19,6 @@ ENV RABBIZ_FORCE_SOFTWARE=1
 
 EXPOSE 5910 5911
 
-RUN printf '#!/bin/sh\nset -e\nmkdir -p "$XDG_RUNTIME_DIR"\nchmod 700 "$XDG_RUNTIME_DIR"\nexec rabbiz-de run --backend=virtual --size=${RABBIZ_EMU_SIZE:-720x1600} --emu-listen=0.0.0.0:5910 --ctl-listen=0.0.0.0:5911 "$@"\n' > /usr/local/bin/rabbiz-emu-entrypoint && chmod +x /usr/local/bin/rabbiz-emu-entrypoint
+RUN printf '#!/bin/sh\nset -e\nmkdir -p "$XDG_RUNTIME_DIR"\nchmod 700 "$XDG_RUNTIME_DIR"\nexec rabbiz-de run --backend=virtual --size=${RABBIZ_EMU_SIZE:-720x1600} --emu-listen=127.0.0.1:5910 --ctl-listen=127.0.0.1:5911 "$@"\n' > /usr/local/bin/rabbiz-emu-entrypoint && chmod +x /usr/local/bin/rabbiz-emu-entrypoint
 
 ENTRYPOINT ["/usr/local/bin/rabbiz-emu-entrypoint"]

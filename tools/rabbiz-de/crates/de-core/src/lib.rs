@@ -12,7 +12,8 @@ pub use runtime::{composite, frame, input, launch, snapshots, state};
 pub(crate) use runtime::{ctl_ipc, cursor, display_stack, haptics, osk, power, rotation};
 pub use shell_ui::shell;
 pub(crate) use shell_ui::{
-    home_ui, hun_ui, lock_ui, media_ui, morph, navigation, osd_ui, panel_ui, shell_menu, shot_ui,
+    home_ui, hun_ui, lock_ui, media_ui, morph, navigation, osd_ui, panel_ui, record_ui,
+    shell_menu, shot_ui,
 };
 
 pub use runtime::frame::{event_loop, Run};

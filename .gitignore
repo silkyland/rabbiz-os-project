@@ -20,6 +20,7 @@ tools/rabbiz-osk/spikes/*/Cargo.lock
 # rabbiz-apps: pure-Rust Wayland apps build products
 tools/rabbiz-apps/**/target/
 tools/rabbiz-apps/target-*/
+tools/rabbiz-camera/target/
 
 # rabbiz-sdk: SDK and emulator build products
 tools/rabbiz-sdk/**/target/
@@ -37,6 +38,7 @@ docs/.deep-plan/
 # Out-of-tree kernel module build artifacts
 *.o
 *.ko
+*.ko.zst
 *.mod
 *.mod.c
 .*.cmd
@@ -45,8 +47,9 @@ modules.order
 .tmp_versions/
 
 
-# Rabbiz Mirror: SwiftPM build products, cached device packages, bundled .app
+# Rabbiz Mirror: SwiftPM build products, Linux Rust target, cached device packages, bundled .app
 tools/rabbiz-mirror/.build/
+tools/rabbiz-mirror/linux/target/
 tools/rabbiz-mirror/.cache/
 dist/
 

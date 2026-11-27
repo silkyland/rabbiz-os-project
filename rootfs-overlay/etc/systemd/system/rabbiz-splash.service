@@ -1,15 +1,27 @@
 [Unit]
-Description=RabbizOS boot splash (logo instead of the verbose console)
+Description=RabbizOS boot splash (logo + loading bar instead of the verbose console)
 DefaultDependencies=no
 After=systemd-journald.socket
 Before=sysinit.target rabbiz-session.service
 
 [Service]
-Type=oneshot
-# Silence the kernel console on the panel, hide the cursor, then paint the logo.
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=10
+# Silence the kernel console on the panel, hide the cursor, then paint the logo + progress bar.
 ExecStartPre=-/usr/bin/dmesg -n 1
 ExecStartPre=-/bin/sh -c 'echo 0 > /sys/class/graphics/fbcon/cursor_blink; printf "\\033[?25l\\033[2J" > /dev/tty1'
 ExecStart=/usr/local/bin/rabbiz-splash
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateNetwork=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
 
 [Install]
 WantedBy=sysinit.target

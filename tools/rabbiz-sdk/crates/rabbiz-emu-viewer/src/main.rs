@@ -163,7 +163,7 @@ fn ensure_linux_backend_running(emu_addr: &str, ctl_addr: &str) -> Option<Child>
             "ln -sf /src/tools/rabbiz-osk/target-linux-arm64/release/rabbiz-osk /usr/local/bin/rabbiz-osk 2>/dev/null || true && ",
             "cp -f /src/rootfs-overlay/usr/share/applications/*.desktop /usr/share/applications/ 2>/dev/null || true && ",
             "cp -f /src/rootfs-overlay/usr/share/icons/hicolor/scalable/apps/*.svg /usr/share/icons/hicolor/scalable/apps/ 2>/dev/null || true && ",
-            "exec {} run --backend=virtual --size=720x1600 --emu-listen=0.0.0.0:5910 --ctl-listen=0.0.0.0:5911"
+            "exec {} run --backend=virtual --size=720x1600 --emu-listen=127.0.0.1:5910 --ctl-listen=127.0.0.1:5911"
         ),
         de_container_bin
     );
@@ -177,9 +177,9 @@ fn ensure_linux_backend_running(emu_addr: &str, ctl_addr: &str) -> Option<Child>
             "--name",
             "rabbiz-emu-live",
             "-p",
-            "5910:5910",
+            "127.0.0.1:5910:5910",
             "-p",
-            "5911:5911",
+            "127.0.0.1:5911:5911",
             "-v",
             &mount_arg,
             "-e",

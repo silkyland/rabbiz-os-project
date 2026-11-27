@@ -1,9 +1,8 @@
 //! Versioned C99 ABI (`librabbiz_sdk_c`) for C, C++, Qt, GTK, and Dart FFI
 //! applications targeting RabbizOS.
 
-#![allow(clippy::missing_safety_doc)]
-
 use std::ffi::{c_char, c_void, CStr, CString};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
 
 use de_api::{Rect, Size};
@@ -203,61 +202,85 @@ pub extern "C" fn rabbiz_sdk_abi_version() -> u32 {
 }
 
 /// Populate `out` with the active system Light/Dark [`RabbizThemeC`].
+///
+/// # Safety
+/// If non-null, `out` must be valid for writes of a `RabbizThemeC`.
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_theme_load(out: *mut RabbizThemeC) {
-    if out.is_null() {
-        return;
-    }
-    let theme = rabbiz_app_kit::load_theme();
-    // SAFETY: `out` was checked for non-null above.
-    unsafe {
-        *out = RabbizThemeC::from(&theme);
-    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if out.is_null() {
+            return;
+        }
+        let theme = rabbiz_app_kit::load_theme();
+        // SAFETY: `out` was checked for non-null above.
+        unsafe {
+            *out = RabbizThemeC::from(&theme);
+        }
+    }));
 }
 
 /// Query pixel dimensions of `c` (returns `0x0` if `c` is null).
+///
+/// # Safety
+/// If non-null, `c` must point to a valid [`RabbizCanvasC`] provided by the runtime.
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_canvas_size(c: *const RabbizCanvasC) -> RabbizSize {
-    if c.is_null() {
-        return RabbizSize { w: 0, h: 0 };
-    }
-    // SAFETY: `c` is non-null.
-    let size = unsafe { (*c).inner.size() };
-    RabbizSize {
-        w: size.w,
-        h: size.h,
-    }
+    catch_unwind(AssertUnwindSafe(|| {
+        if c.is_null() {
+            return RabbizSize { w: 0, h: 0 };
+        }
+        // SAFETY: `c` is non-null.
+        let size = unsafe { (*c).inner.size() };
+        RabbizSize {
+            w: size.w,
+            h: size.h,
+        }
+    }))
+    .unwrap_or(RabbizSize { w: 0, h: 0 })
 }
 
 /// Fill the entire canvas with `color`.
+///
+/// # Safety
+/// If non-null, `c` must point to a valid mutable [`RabbizCanvasC`].
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_canvas_clear(c: *mut RabbizCanvasC, color: RabbizColor) {
-    if c.is_null() {
-        return;
-    }
-    // SAFETY: `c` is non-null.
-    unsafe {
-        (*c).inner.clear(color.to_rgba());
-    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if c.is_null() {
+            return;
+        }
+        // SAFETY: `c` is non-null.
+        unsafe {
+            (*c).inner.clear(color.to_rgba());
+        }
+    }));
 }
 
 /// Fill an axis-aligned rectangle on `c`.
+///
+/// # Safety
+/// If non-null, `c` must point to a valid mutable [`RabbizCanvasC`].
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_canvas_fill_rect(
     c: *mut RabbizCanvasC,
     rect: RabbizRect,
     color: RabbizColor,
 ) {
-    if c.is_null() {
-        return;
-    }
-    // SAFETY: `c` is non-null.
-    unsafe {
-        (*c).inner.fill_rect(Rect::from(rect), color.to_rgba());
-    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if c.is_null() {
+            return;
+        }
+        // SAFETY: `c` is non-null.
+        unsafe {
+            (*c).inner.fill_rect(Rect::from(rect), color.to_rgba());
+        }
+    }));
 }
 
 /// Fill a rounded rectangle on `c`.
+///
+/// # Safety
+/// If non-null, `c` must point to a valid mutable [`RabbizCanvasC`].
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_canvas_fill_rounded_rect(
     c: *mut RabbizCanvasC,
@@ -265,18 +288,24 @@ pub unsafe extern "C" fn rabbiz_canvas_fill_rounded_rect(
     radius: f32,
     color: RabbizColor,
 ) {
-    if c.is_null() {
-        return;
-    }
-    // SAFETY: `c` is non-null.
-    unsafe {
-        (*c).inner
-            .fill_rounded_rect(Rect::from(rect), radius, color.to_rgba());
-    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if c.is_null() {
+            return;
+        }
+        // SAFETY: `c` is non-null.
+        unsafe {
+            (*c).inner
+                .fill_rounded_rect(Rect::from(rect), radius, color.to_rgba());
+        }
+    }));
 }
 
 /// Draw a UTF-8 text label at `(x, y)` with `size_px` and `color`, returning the
 /// painted bounding [`RabbizRect`].
+///
+/// # Safety
+/// If non-null, `c` must point to a valid mutable [`RabbizCanvasC`] and `utf8` must be a
+/// valid NUL-terminated C string.
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_canvas_draw_text(
     c: *mut RabbizCanvasC,
@@ -286,77 +315,97 @@ pub unsafe extern "C" fn rabbiz_canvas_draw_text(
     size_px: f32,
     color: RabbizColor,
 ) -> RabbizRect {
-    if c.is_null() || utf8.is_null() {
-        return RabbizRect { x, y, w: 0, h: 0 };
-    }
-    // SAFETY: `c` and `utf8` are non-null.
-    let Some(text_str) = (unsafe { cstr_to_str(utf8) }) else {
-        return RabbizRect { x, y, w: 0, h: 0 };
-    };
-    let style = rabbiz_app_kit::ui::styled(size_px.max(8.0), 500, color.to_rgba());
-    // SAFETY: `c` is non-null.
-    let rect = unsafe {
-        rabbiz_app_kit::ui::draw_text(&mut (*c).inner, text_str, &style, x, y, None)
-    };
-    RabbizRect::from(rect)
+    catch_unwind(AssertUnwindSafe(|| {
+        if c.is_null() || utf8.is_null() {
+            return RabbizRect { x, y, w: 0, h: 0 };
+        }
+        // SAFETY: `c` and `utf8` are non-null.
+        let Some(text_str) = (unsafe { cstr_to_str(utf8) }) else {
+            return RabbizRect { x, y, w: 0, h: 0 };
+        };
+        let style = rabbiz_app_kit::ui::styled(size_px.max(8.0), 500, color.to_rgba());
+        // SAFETY: `c` is non-null.
+        let rect = unsafe {
+            rabbiz_app_kit::ui::draw_text(&mut (*c).inner, text_str, &style, x, y, None)
+        };
+        RabbizRect::from(rect)
+    }))
+    .unwrap_or(RabbizRect { x, y, w: 0, h: 0 })
 }
 
 /// Request on-screen keyboard / IME activation with `purpose` (`0 = Normal`, `1 = Number`, `2 = Phone`, `3 = Password`, `4 = Search`, `5 = Email`).
+///
+/// # Safety
+/// If non-null, `ti` must point to a valid [`RabbizTextInputC`].
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_text_input_activate(ti: *mut RabbizTextInputC, purpose: u32) {
-    if ti.is_null() {
-        return;
-    }
-    let p = match purpose {
-        1 => ContentPurpose::Digits,
-        2 => ContentPurpose::Phone,
-        3 => ContentPurpose::Password,
-        5 => ContentPurpose::Email,
-        _ => ContentPurpose::Normal,
-    };
-    // SAFETY: `ti` is non-null.
-    unsafe {
-        (*ti).inner.activate(p);
-    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if ti.is_null() {
+            return;
+        }
+        let p = match purpose {
+            1 => ContentPurpose::Digits,
+            2 => ContentPurpose::Phone,
+            3 => ContentPurpose::Password,
+            5 => ContentPurpose::Email,
+            _ => ContentPurpose::Normal,
+        };
+        // SAFETY: `ti` is non-null.
+        unsafe {
+            (*ti).inner.activate(p);
+        }
+    }));
 }
 
 /// Deactivate on-screen keyboard / IME.
+///
+/// # Safety
+/// If non-null, `ti` must point to a valid [`RabbizTextInputC`].
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_text_input_deactivate(ti: *mut RabbizTextInputC) {
-    if ti.is_null() {
-        return;
-    }
-    // SAFETY: `ti` is non-null.
-    unsafe {
-        (*ti).inner.deactivate();
-    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        if ti.is_null() {
+            return;
+        }
+        // SAFETY: `ti` is non-null.
+        unsafe {
+            (*ti).inner.deactivate();
+        }
+    }));
 }
 
 /// Write the NUL-terminated app data directory path for `app_id` into `buf` (up to `cap` bytes).
 ///
 /// Returns the byte length of the path (excluding the NUL terminator), or `0` on invalid input.
+///
+/// # Safety
+/// If non-null, `app_id` must be a valid NUL-terminated C string and `buf` must be writable
+/// for at least `cap` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_storage_data_dir(
     app_id: *const c_char,
     buf: *mut c_char,
     cap: usize,
 ) -> usize {
-    // SAFETY: `cstr_to_str` checks for null.
-    let Some(id) = (unsafe { cstr_to_str(app_id) }) else {
-        return 0;
-    };
-    let path = rabbiz_sdk::storage::data_dir(id);
-    let path_str = path.to_string_lossy();
-    let bytes = path_str.as_bytes();
-    if !buf.is_null() && cap > 0 {
-        let copy_len = bytes.len().min(cap - 1);
-        // SAFETY: `buf` is valid for `cap` bytes.
-        unsafe {
-            ptr::copy_nonoverlapping(bytes.as_ptr().cast::<c_char>(), buf, copy_len);
-            *buf.add(copy_len) = 0;
+    catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: `cstr_to_str` checks for null.
+        let Some(id) = (unsafe { cstr_to_str(app_id) }) else {
+            return 0;
+        };
+        let path = rabbiz_sdk::storage::data_dir(id);
+        let path_str = path.to_string_lossy();
+        let bytes = path_str.as_bytes();
+        if !buf.is_null() && cap > 0 {
+            let copy_len = bytes.len().min(cap - 1);
+            // SAFETY: `buf` is valid for `cap` bytes.
+            unsafe {
+                ptr::copy_nonoverlapping(bytes.as_ptr().cast::<c_char>(), buf, copy_len);
+                *buf.add(copy_len) = 0;
+            }
         }
-    }
-    bytes.len()
+        bytes.len()
+    }))
+    .unwrap_or(0)
 }
 
 struct CCallbackApp {
@@ -497,35 +546,49 @@ impl AppState for CCallbackApp {
 }
 
 /// Run a C callback-based RabbizOS application (Wayland on Linux, host simulator on macOS).
+///
+/// # Safety
+/// If non-null, `cb` must point to a valid [`RabbizAppCallbacksC`] whose string fields
+/// are either null or valid NUL-terminated C strings.
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_app_run(cb: *const RabbizAppCallbacksC) -> i32 {
-    if cb.is_null() {
-        return -1;
-    }
-    // SAFETY: `cb` was checked for non-null.
-    let cfg = unsafe { *cb };
-    // SAFETY: `cstr_to_str` handles null pointers safely.
-    let app_id_str = unsafe { cstr_to_str(cfg.app_id) }.unwrap_or("rabbiz-c-app");
-    // SAFETY: `cstr_to_str` handles null pointers safely.
-    let title_str = unsafe { cstr_to_str(cfg.title) }.unwrap_or("Rabbiz C App");
+    catch_unwind(AssertUnwindSafe(|| {
+        if cb.is_null() {
+            return -1;
+        }
+        // SAFETY: `cb` was checked for non-null.
+        let cfg = unsafe { *cb };
+        // SAFETY: `cstr_to_str` handles null pointers safely.
+        let app_id_str = unsafe { cstr_to_str(cfg.app_id) }.unwrap_or("rabbiz-c-app");
+        // SAFETY: `cstr_to_str` handles null pointers safely.
+        let title_str = unsafe { cstr_to_str(cfg.title) }.unwrap_or("Rabbiz C App");
 
-    let leaked_id: &'static str = Box::leak(app_id_str.to_string().into_boxed_str());
-    let leaked_title: &'static str = Box::leak(title_str.to_string().into_boxed_str());
+        let leaked_id: &'static str = Box::leak(app_id_str.to_string().into_boxed_str());
+        let leaked_title: &'static str = Box::leak(title_str.to_string().into_boxed_str());
 
-    let app = CCallbackApp {
-        app_id: leaked_id,
-        title: leaked_title,
-        userdata: cfg.userdata,
-        on_event: cfg.on_event,
-        on_render: cfg.on_render,
-    };
-    rabbiz_app_kit::run_app(app);
-    0
+        let app = CCallbackApp {
+            app_id: leaked_id,
+            title: leaked_title,
+            userdata: cfg.userdata,
+            on_event: cfg.on_event,
+            on_render: cfg.on_render,
+        };
+        rabbiz_app_kit::run_app(app);
+        0
+    }))
+    .unwrap_or(-1)
 }
+
+/// Maximum width/height accepted by [`rabbiz_app_render_headless`].
+const MAX_HEADLESS_DIM: i32 = 8192;
 
 /// Render a single frame of a C application headlessly at `width x height` into `out_rgba`.
 ///
 /// Returns the required byte size (`width * height * 4`), or `0` on invalid arguments.
+///
+/// # Safety
+/// If non-null, `cb` must point to a valid [`RabbizAppCallbacksC`], and if `out_rgba` is
+/// non-null it must be writable for at least `cap` bytes.
 #[no_mangle]
 pub unsafe extern "C" fn rabbiz_app_render_headless(
     cb: *const RabbizAppCallbacksC,
@@ -534,28 +597,45 @@ pub unsafe extern "C" fn rabbiz_app_render_headless(
     out_rgba: *mut u8,
     cap: usize,
 ) -> usize {
-    if cb.is_null() || width <= 0 || height <= 0 {
-        return 0;
-    }
-    let needed = (width as usize) * (height as usize) * 4;
-    // SAFETY: `cb` is non-null.
-    let cfg = unsafe { *cb };
-    let theme = rabbiz_app_kit::load_theme();
-    let mut c_canvas = RabbizCanvasC {
-        inner: Canvas::filled(Size::new(width, height), theme.bg),
-    };
-    let c_theme = RabbizThemeC::from(&theme);
-    if let Some(on_render) = cfg.on_render {
-        on_render(cfg.userdata, &raw mut c_canvas, &raw const c_theme);
-    }
-    let px = c_canvas.inner.into_pixels();
-    if !out_rgba.is_null() && cap >= needed {
-        // SAFETY: `out_rgba` has capacity at least `needed` bytes.
-        unsafe {
-            ptr::copy_nonoverlapping(px.data.as_ptr(), out_rgba, needed);
+    catch_unwind(AssertUnwindSafe(|| {
+        if cb.is_null()
+            || width <= 0
+            || height <= 0
+            || width > MAX_HEADLESS_DIM
+            || height > MAX_HEADLESS_DIM
+        {
+            return 0;
         }
-    }
-    needed
+        let Some(needed) = (width as usize)
+            .checked_mul(height as usize)
+            .and_then(|px_count| px_count.checked_mul(4))
+        else {
+            return 0;
+        };
+        // SAFETY: `cb` is non-null.
+        let cfg = unsafe { *cb };
+        let theme = rabbiz_app_kit::load_theme();
+        let mut c_canvas = RabbizCanvasC {
+            inner: Canvas::filled(Size::new(width, height), theme.bg),
+        };
+        let c_theme = RabbizThemeC::from(&theme);
+        if let Some(on_render) = cfg.on_render {
+            on_render(cfg.userdata, &raw mut c_canvas, &raw const c_theme);
+        }
+        let px = c_canvas.inner.into_pixels();
+        if !out_rgba.is_null() && cap >= needed {
+            assert!(
+                px.data.len() >= needed,
+                "canvas pixel buffer smaller than width*height*4"
+            );
+            // SAFETY: `out_rgba` has capacity at least `needed` bytes and `px.data.len() >= needed`.
+            unsafe {
+                ptr::copy_nonoverlapping(px.data.as_ptr(), out_rgba, needed);
+            }
+        }
+        needed
+    }))
+    .unwrap_or(0)
 }
 
 #[cfg(test)]

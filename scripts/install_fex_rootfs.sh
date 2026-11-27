@@ -15,8 +15,10 @@ TARGET="${1:-root@172.16.42.1}"
 SQSH_URL="https://rootfs.fex-emu.gg/ArchLinux/2026-08-11/ArchLinux.sqsh"
 SQSH_SHA256="5d0c1a38590c68e5c2597c2c8a26d2f80170b1b738c857d63e1cdadada5f5f2a"
 
-ssh "${TARGET}" bash -s <<EOF
+ssh "${TARGET}" 'bash -se' -- "${SQSH_URL}" "${SQSH_SHA256}" <<'EOF'
 set -euo pipefail
+SQSH_URL="$1"
+SQSH_SHA256="$2"
 
 pacman -S --noconfirm --needed squashfuse
 
@@ -38,8 +40,8 @@ mkdir -p /home/rabbiz/.steam/sdkarm64
 cat > /home/rabbiz/.steam/sdkarm64/steam-launch-wrapper <<'SHIM'
 #!/bin/bash
 # Minimal arm64 shim for steam-launch-wrapper (scope/journal mgmt skipped)
-while [ \$# -gt 0 ]; do
-  case "\$1" in
+while [ $# -gt 0 ]; do
+  case "$1" in
     --) shift; break ;;
     --app-id|--game-bin|--oom-score-adjust) shift 2 ;;
     --version) echo 'steam-launch-wrapper shim 1.0'; exit 0 ;;
@@ -47,7 +49,7 @@ while [ \$# -gt 0 ]; do
     *) break ;;
   esac
 done
-exec "\$@"
+exec "$@"
 SHIM
 chmod 755 /home/rabbiz/.steam/sdkarm64/steam-launch-wrapper
 chown -R rabbiz:rabbiz /home/rabbiz/.steam/sdkarm64

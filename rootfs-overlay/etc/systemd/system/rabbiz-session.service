@@ -21,10 +21,10 @@ Conflicts=steamos-session.service
 Wants=seatd.service dbus.service NetworkManager.service bluetooth.service
 After=seatd.service dbus.service NetworkManager.service bluetooth.service
 # User manager for rabbiz provides the user D-Bus session + systemd --user
-# services (pipewire, xdg-desktop-portal). PAMName=login below also triggers
-# it via pam_systemd; ordering here just avoids a startup race.
-Wants=user@1001.service
-After=user@1001.service systemd-user-sessions.service
+# services (pipewire, xdg-desktop-portal). PAMName=login below creates
+# /run/user/<uid> and starts user@<uid>.service dynamically via pam_systemd
+# without hardcoding a UID (BOOT-005).
+After=systemd-user-sessions.service
 
 [Service]
 Type=simple
@@ -33,10 +33,6 @@ User=rabbiz
 # entries for rabbiz are missing (seatd socket is group `seat`).
 SupplementaryGroups=seat input video render audio
 PAMName=login
-# /run/user/1001 + XDG_RUNTIME_DIR are normally created by pam_systemd, but
-# set explicitly so the session never starts without a valid runtime dir.
-Environment=XDG_RUNTIME_DIR=/run/user/1001
-Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1001/bus
 Environment=LANG=C.UTF-8
 Environment=XDG_SESSION_TYPE=wayland
 # Force libseat onto the seatd backend (no logind seat-claim attempt).

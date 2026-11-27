@@ -57,10 +57,11 @@ if [ -z "$IDENTITY" ]; then
         | sed -n 's/.*"\(Apple Development:.*\)"/\1/p' | head -1)
 fi
 if [ -n "$IDENTITY" ]; then
-    echo "==> Signing with $IDENTITY"
-    codesign --force --sign "$IDENTITY" "$APP" >/dev/null 2>&1 || true
+    echo "==> Signing with $IDENTITY (Hardened Runtime)"
+    codesign --force --options runtime --sign "$IDENTITY" "$APP"
 else
-    codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+    echo "==> Signing ad-hoc"
+    codesign --force --sign - "$APP"
 fi
 
 echo "==> Built $APP"

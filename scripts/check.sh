@@ -15,6 +15,7 @@ node shell/tests/notificationgroups.test.mjs  # Shade notification grouping (no 
 python3 -B -m unittest discover -s tools/qt-scanout/tests  # Mesa version gate (no device)
 python3 -B tests/test_holdmenu.py                           # Vol Down + Power hold-to-menu (no evdev, no device)
 python3 -B tests/test_volume_keys.py                       # Actual key loop with deterministic evdev events
+python3 -B tests/test_rabbiz_splash.py                    # Boot splash 1-100% progress bar (no fbdev, no device)
 node shell/tests/chargingevents.test.mjs                    # Stable charging connection notifications
 
 # rabbiz-de host gate (M0): only when the workspace exists (integration worktree)

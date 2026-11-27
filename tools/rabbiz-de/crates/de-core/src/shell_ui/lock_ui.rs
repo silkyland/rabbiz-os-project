@@ -19,7 +19,6 @@ use de_system::auth::{
 };
 use de_ui::lock::{LockModel, QuickAction};
 use de_ui::lock_bouncer::{BouncerHit, BouncerModel};
-use de_ui::nav::Screen;
 use de_ui::notification_groups::{redact_for_lockscreen, LockscreenPrivacy};
 
 use crate::state::De;
@@ -295,6 +294,20 @@ impl LockUi {
         self.slide.target = pos;
     }
 
+    /// Open the PIN/Passphrase bouncer overlay without unlocking.
+    pub fn open_bouncer(&mut self) {
+        zeroize_secret(&mut self.pin_buf);
+        self.bouncer_open = true;
+        self.bouncer_error = if self.pin_cred.is_none() {
+            Some("Keyguard credential missing or unreadable — cannot unlock".to_string())
+        } else {
+            None
+        };
+        self.slide.retarget(0.0);
+        self.slide.snap();
+        self.stale = true;
+    }
+
     /// Finger up: `vy` is the release velocity in px/s (negative = up).
     /// Judge the drag by `target` — during a pull only the target tracks
     /// the finger, so a fast release between frames still counts.
@@ -309,16 +322,7 @@ impl LockUi {
         let pos = self.slide.value.max(self.slide.target);
         if pos > UNLOCK_PX || vy < FLICK_VY {
             if self.requires_pin(lock_method) {
-                zeroize_secret(&mut self.pin_buf);
-                self.bouncer_open = true;
-                self.bouncer_error = if self.pin_cred.is_none() {
-                    Some("Keyguard credential missing or unreadable — cannot unlock".to_string())
-                } else {
-                    None
-                };
-                self.slide.retarget(0.0);
-                self.slide.snap();
-                self.stale = true;
+                self.open_bouncer();
             } else {
                 self.unlocking = true;
                 self.slide.retarget_with_velocity(h * 1.1, (-vy).max(0.0));
@@ -678,6 +682,7 @@ impl De {
             self.lock.apply_verify_result(res, now_epoch_secs()),
             BouncerTapOutcome::Unlocked
         ) {
+            self.session_lock_tracker.on_recovery_authenticated();
             self.shell_dirty = true;
         }
         self.needs_present = true;
@@ -688,6 +693,7 @@ impl De {
         let size = Size::new(self.output.width as i32, self.output.height as i32);
         match self.lock.handle_bouncer_tap(pos, size, now_epoch_secs()) {
             BouncerTapOutcome::Unlocked => {
+                self.session_lock_tracker.on_recovery_authenticated();
                 self.shell_dirty = true;
                 self.needs_present = true;
             }
@@ -714,11 +720,10 @@ impl De {
                 self.lock.stale = true;
             }
             Some(de_ui::lock::LockHit::Quick) => {
-                if let Some(id) = self.lock.quick_id.clone() {
-                    self.lock.unlock_now();
-                    self.nav.current = Screen::Home;
-                    self.shell_dirty = true;
-                    self.try_launch(&id, Some(de_api::Rect::new(size.w / 2, size.h - 200, 1, 1)));
+                if self.lock.quick_id.is_some() {
+                    // SEC-001: Never bypass PIN/Passphrase Keyguard from a lock-screen
+                    // Quick Action tap; open the auth bouncer instead of unlocking.
+                    self.lock.open_bouncer();
                 }
             }
             None => {}
@@ -954,7 +959,7 @@ mod tests {
 
         l.open();
         l.begin_drag();
-        l.drag_to(500.0);
+        l.drag(-500.0, 1600.0);
         l.release(-800.0, 1600.0, "pin");
         assert!(l.shown());
         assert!(!l.is_unlocking());

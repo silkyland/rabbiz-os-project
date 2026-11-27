@@ -723,16 +723,21 @@ static long slsi_cdev_ioctl(struct file *filp, unsigned int cmd, unsigned long a
 		char build_info[200];
 		int len = 0;
 #ifndef SLSI_TEST_DEV
-		memset(build_info, 0, 200);
-		mxman_get_fw_version(build_info, 200);
-		len = strlen(build_info);
-		sprintf(build_info + len, " ");
-		if (len >= 200) {
-			build_info[len - 1] = '.';
-			build_info[len - 2] = '.';
-			build_info[len - 3] = '.';
+		memset(build_info, 0, sizeof(build_info));
+		mxman_get_fw_version(build_info, sizeof(build_info));
+		build_info[sizeof(build_info) - 1] = '\0';
+		len = strnlen(build_info, sizeof(build_info));
+		if (len < sizeof(build_info) - 2) {
+			len += scnprintf(build_info + len,
+					 sizeof(build_info) - len, " ");
+			mxman_get_driver_version(build_info + len,
+						 sizeof(build_info) - len);
+			build_info[sizeof(build_info) - 1] = '\0';
+		} else {
+			build_info[sizeof(build_info) - 2] = '.';
+			build_info[sizeof(build_info) - 3] = '.';
+			build_info[sizeof(build_info) - 4] = '.';
 		}
-		mxman_get_driver_version(build_info + len + 1, 200 - len - 1);
 #else
 		memset(build_info, 0, 200);
 		strcpy(build_info, "UT Build");

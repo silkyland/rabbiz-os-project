@@ -44,10 +44,11 @@ pub struct Layout {
     pub content_h: i32,
 }
 
-/// Columns: aim for ~220 px cells, clamped to a sane phone range.
+/// Columns: aim for ~180 px cells (4 across on a 720 px phone), clamped to
+/// a sane phone range.
 #[must_use]
 pub fn cols_for(view_w: i32) -> i32 {
-    (view_w / 220).clamp(2, 5)
+    (view_w / 180).clamp(2, 5)
 }
 
 /// Build the full content layout for `groups` inside `view_w`.
@@ -97,20 +98,35 @@ pub fn build(view_w: i32, groups: &[Group]) -> Layout {
     }
 }
 
-/// Clamp a scroll offset into `[0, max_scroll]`.
-#[must_use]
-pub fn clamp_scroll(scroll: f32, max_scroll: i32) -> f32 {
-    scroll.clamp(0.0, max_scroll.max(0) as f32)
-}
-
 /// Cell index under `pos` (canvas coords), honoring `scroll` and `view_top`.
+///
+/// Cells are emitted in row-major order with non-decreasing `rect.y`, so a
+/// binary search finds the candidate row and only its few cells are probed
+/// for the x hit — O(log n + cols) instead of scanning every cell.
 #[must_use]
 pub fn hit_cell(layout: &Layout, view_top: i32, scroll: f32, pos: de_api::Point) -> Option<usize> {
-    let sy = (pos.y - view_top) as f32;
-    for c in &layout.cells {
-        let top = c.rect.y as f32 - scroll;
-        let bottom = top + c.rect.h as f32;
-        if sy >= top && sy < bottom && pos.x >= c.rect.x && pos.x < c.rect.x + c.rect.w {
+    let content_y = pos.y as f32 - view_top as f32 + scroll;
+    if content_y < 0.0 || layout.cells.is_empty() {
+        return None;
+    }
+    // Last cell whose row starts at or above content_y — partition_point is
+    // valid because cell tops are non-decreasing in paint order.
+    let probe = layout
+        .cells
+        .partition_point(|c| (c.rect.y as f32) <= content_y);
+    if probe == 0 {
+        return None;
+    }
+    let row_y = layout.cells[probe - 1].rect.y;
+    let mut start = probe - 1;
+    while start > 0 && layout.cells[start - 1].rect.y == row_y {
+        start -= 1;
+    }
+    for c in &layout.cells[start..probe] {
+        if content_y < (c.rect.y + c.rect.h) as f32
+            && pos.x >= c.rect.x
+            && pos.x < c.rect.x + c.rect.w
+        {
             return Some(c.photo);
         }
     }
@@ -145,9 +161,9 @@ mod tests {
     }
 
     #[test]
-    fn three_cols_on_phone_width() {
+    fn four_cols_on_phone_width() {
         let l = build(720, &groups(10));
-        assert_eq!(cols_for(720), 3);
+        assert_eq!(cols_for(720), 4);
         assert_eq!(l.cells.len(), 10);
         assert!(l.content_h > 0);
     }
@@ -183,24 +199,61 @@ mod tests {
     }
 
     #[test]
-    fn scroll_clamps() {
-        assert_eq!(clamp_scroll(-50.0, 1000), 0.0);
-        assert_eq!(clamp_scroll(5000.0, 1000), 1000.0);
-        assert_eq!(clamp_scroll(500.0, 1000), 500.0);
-        assert_eq!(clamp_scroll(10.0, 0), 0.0);
-    }
-
-    #[test]
     fn hit_and_visible_use_scroll() {
         let l = build(720, &groups(30));
         // First cell sits under the first header.
         let p = de_api::Point::new(l.cells[0].rect.x + 4, l.cells[0].rect.y + 4);
         assert_eq!(hit_cell(&l, 0, 0.0, p), Some(0));
-        // Scrolled past it: same canvas point now hits a lower cell or none.
-        let hit_scrolled = hit_cell(&l, 0, l.cells[3].rect.y as f32, p);
+        // Scrolled past it (first cell of row 1): same canvas point now
+        // hits a lower cell or none.
+        let hit_scrolled = hit_cell(&l, 0, l.cells[4].rect.y as f32, p);
         assert!(hit_scrolled.is_none() || hit_scrolled != Some(0));
         let vis = visible_indices(&l, 800, 0.0);
         assert!(vis.len() >= 6 && vis.len() < 30);
         assert!(vis.contains(&0));
+    }
+
+    #[test]
+    fn hit_cell_matches_brute_force_across_groups() {
+        let gs = vec![
+            Group {
+                label: "Today".into(),
+                first: 0,
+                end: 5,
+            },
+            Group {
+                label: "Yesterday".into(),
+                first: 5,
+                end: 13,
+            },
+            Group {
+                label: "Last week".into(),
+                first: 13,
+                end: 20,
+            },
+        ];
+        let l = build(720, &gs);
+        // Every cell center hits its own photo at several scroll offsets.
+        for scroll in [0.0, 40.0, 300.0, 900.0] {
+            for c in &l.cells {
+                let p = de_api::Point::new(
+                    c.rect.x + c.rect.w / 2,
+                    c.rect.y - scroll as i32 + c.rect.h / 2,
+                );
+                assert_eq!(
+                    hit_cell(&l, 0, scroll, p),
+                    Some(c.photo),
+                    "cell {} at scroll {scroll}",
+                    c.photo
+                );
+            }
+        }
+        // The gap column between cells hits nothing.
+        let gap_p = de_api::Point::new(l.cells[0].rect.x + l.cells[0].rect.w + 1, l.cells[0].rect.y + 4);
+        assert_eq!(hit_cell(&l, 0, 0.0, gap_p), None);
+        // A header row hits nothing.
+        let hd = l.headers[1].rect;
+        let hp = de_api::Point::new(hd.x + 20, hd.y + hd.h / 2);
+        assert_eq!(hit_cell(&l, 0, 0.0, hp), None);
     }
 }

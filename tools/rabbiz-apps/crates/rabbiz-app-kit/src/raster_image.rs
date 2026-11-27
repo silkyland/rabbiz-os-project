@@ -1,15 +1,8 @@
-//! Raster decode for arbitrary photo files.
+//! Fit local raster images into UI preview and viewer rectangles.
 //!
-//! There is no JPEG decoder in the app-kit surface, but `de-paint` already
-//! pulls in `resvg` with its `raster-images` feature (zune-jpeg, image-webp,
-//! gif, tiny-skia PNG). usvg's default `href` resolver reads raster files
-//! straight from disk, so wrapping the path in a one-image SVG gives us
-//! JPEG/PNG/WebP/GIF decode with zero new dependencies.
-//!
-//! Cost note: resvg decodes the *full-resolution* image regardless of the
-//! requested output size, so each call is bounded by decode time (~100-300 ms
-//! for a 12 MP phone photo) and transient RAM (~4 bytes/px of the source).
-//! Callers must decode lazily and cache — see `ThumbCache` in `main.rs`.
+//! The existing resvg pipeline supports PNG, JPEG, WebP and GIF. It decodes
+//! the full source image before scaling, so UI callers should schedule work
+//! for visible items only and retain the scaled result.
 
 use std::path::Path;
 
@@ -56,7 +49,17 @@ fn mime_for(path: &Path) -> &'static str {
 /// through usvg's data-URL resolver — the same code path resvg uses for
 /// embedded raster assets, and immune to odd characters in file paths.
 fn svg_for(path: &Path, w: i32, h: i32, fit: Fit) -> Result<String, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    use std::io::Read;
+    const MAX_SOURCE_BYTES: u64 = 64 * 1024 * 1024;
+    let file = std::fs::File::open(path).map_err(|e| format!("open {}: {e}", path.display()))?;
+    if !file.metadata().is_ok_and(|m| m.is_file() && m.len() <= MAX_SOURCE_BYTES) {
+        return Err("unsupported image size".to_string());
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_SOURCE_BYTES + 1).read_to_end(&mut bytes).map_err(|e| format!("read {}: {e}", path.display()))?;
+    if bytes.len() as u64 > MAX_SOURCE_BYTES {
+        return Err("unsupported image size".to_string());
+    }
     let b64 = base64_encode(&bytes);
     let href = format!("data:{};base64,{}", mime_for(path), b64);
     // The SVG is built from a base64 data URL, so no user-controlled text
@@ -102,7 +105,11 @@ pub fn rasterize(path: &Path, w: i32, h: i32, fit: Fit) -> Result<Pixels, String
         return Err("empty target".to_string());
     }
     let svg = svg_for(path, w, h, fit)?;
-    svg::rasterize(svg.as_bytes(), w as u32).map_err(|e| e.to_string())
+    let pixels = svg::rasterize(svg.as_bytes(), w as u32).map_err(|e| e.to_string())?;
+    if pixels.data.chunks_exact(4).all(|px| px[3] == 0) {
+        return Err("empty image".to_string());
+    }
+    Ok(pixels)
 }
 
 /// Rasterize for the viewer: decode at `target_w` wide with a square

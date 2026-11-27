@@ -19,7 +19,7 @@ sleep 1
 load_module exynos3830-aud3004x
 sleep 1
 v=
-for i in $(seq 1 20); do
+for _ in $(seq 1 20); do
   v=$(cat /sys/devices/platform/soc@0/14a50000.abox/calliope_version 2>/dev/null || true)
   [ -n "$v" ] && break
   sleep 0.5
