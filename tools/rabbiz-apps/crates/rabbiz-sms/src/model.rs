@@ -28,6 +28,15 @@ pub struct Message {
     pub ts: i64,
     #[serde(default)]
     pub state: MsgState,
+    /// Read flag for incoming messages (outgoing messages are always
+    /// "read" — we wrote them). Legacy stores predate the field and count
+    /// as read, so upgrading never floods the list with false unread dots.
+    #[serde(default = "default_read")]
+    pub read: bool,
+}
+
+fn default_read() -> bool {
+    true
 }
 
 impl Message {
@@ -44,6 +53,8 @@ impl Message {
             } else {
                 MsgState::Sent
             },
+            // Incoming messages arrive unread; outgoing ones we obviously read.
+            read: outgoing,
         }
     }
 }

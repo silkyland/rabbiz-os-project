@@ -164,7 +164,10 @@ impl DialerApp {
             contacts: contacts::resolved(),
             call: None,
             keypad_open,
-            sheet_anim: 0.0,
+            // Start settled at the initial state: cold-start ticks are not
+            // guaranteed before the first input event, so a prefilled
+            // `--dial` sheet must not depend on the animation to appear.
+            sheet_anim: if keypad_open { 1.0 } else { 0.0 },
             pressed: None,
             pop: None,
             scroll: 0,

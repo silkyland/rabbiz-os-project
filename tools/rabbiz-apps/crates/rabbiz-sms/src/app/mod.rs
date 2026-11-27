@@ -18,7 +18,6 @@ pub(super) const GUTTER: i32 = 16;
 pub(super) const BUBBLE_MAX_PCT: i32 = 72; // max bubble width, % of content width
 pub(super) const BUBBLE_PAD_X: i32 = 18;
 pub(super) const BUBBLE_PAD_Y: i32 = 10;
-pub(super) const STATE_H: i32 = 24; // delivery-state line inside outgoing bubbles
 pub(super) const RUN_GAP: i32 = 4; // between bubbles of one run
 pub(super) const RUN_SEP: i32 = 14; // between runs
 pub(super) const DAY_SEP_H: i32 = 30;
@@ -26,7 +25,6 @@ pub(super) const TIME_CAPTION_H: i32 = 24;
 pub(super) const ROW_H: i32 = 92;
 const ANIM_ENTER_MS: u32 = 360; // list → thread (BEZIER_ENTER)
 const ANIM_EXIT_MS: u32 = 160; // thread → list (BEZIER_EXIT)
-pub(super) const SEND_W: i32 = 104;
 pub(super) const FIELD_LINE_H: i32 = 28; // wrapped body line height inside the field
 
 // ---- View/state types ----
@@ -42,6 +40,8 @@ pub(super) enum Focus {
     None,
     To,
     Body,
+    /// Conversation-list search pill.
+    Search,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -52,6 +52,10 @@ pub(super) enum Hit {
     Send,
     ToField,
     BodyField,
+    /// Thread-header shortcut: hand the peer number to the dialer.
+    CallPeer,
+    Search,
+    SearchClear,
 }
 
 pub(super) struct Transition {
@@ -89,11 +93,20 @@ pub struct SmsApp {
     pub(super) drag_last_y: Option<i32>,
     pub(super) pressed: Option<Hit>,
     pub(super) transition: Option<Transition>,
+    /// Conversation-list search query (filters by peer name/number/body).
+    pub(super) query: String,
     backend: Backend,
     next_id: u64,
+    /// Where messages persist — a field (not the env-global helper) so
+    /// tests can point the app at a tempdir and never touch the real
+    /// user store.
+    pub(super) store_path: std::path::PathBuf,
     pub(super) status: String,
     // Hit-test rects captured during the last render.
     pub(super) row_rects: Vec<(usize, Rect)>,
+    pub(super) call_rect: Rect,
+    pub(super) search_rect: Rect,
+    pub(super) search_clear_rect: Rect,
     pub(super) new_msg_rect: Rect,
     pub(super) back_rect: Rect,
     pub(super) send_rect: Rect,
@@ -128,10 +141,15 @@ impl SmsApp {
             drag_last_y: None,
             pressed: None,
             transition: None,
+            query: String::new(),
             backend,
             next_id,
+            store_path: store::store_path(),
             status,
             row_rects: Vec::new(),
+            call_rect: Rect::new(0, 0, 0, 0),
+            search_rect: Rect::new(0, 0, 0, 0),
+            search_clear_rect: Rect::new(0, 0, 0, 0),
             new_msg_rect: Rect::new(0, 0, 0, 0),
             back_rect: Rect::new(0, 0, 0, 0),
             send_rect: Rect::new(0, 0, 0, 0),
@@ -180,7 +198,7 @@ impl SmsApp {
     }
 
     fn save(&self) {
-        let _ = store::save(&store::store_path(), &self.msgs);
+        let _ = store::save(&self.store_path.clone(), &self.msgs);
     }
 
     pub(super) fn now_ts() -> i64 {
@@ -196,7 +214,70 @@ impl SmsApp {
         model::threads(&self.msgs)
     }
 
+    /// Threads visible under the current search query — matches the
+    /// display name, the raw number, or any message body in the thread.
+    pub(super) fn filtered_threads(&self) -> Vec<(String, String, usize)> {
+        let q = self.query.trim().to_lowercase();
+        let all = self.threads();
+        if q.is_empty() {
+            return all;
+        }
+        all.into_iter()
+            .filter(|(key, peer, _)| {
+                self.display_peer(peer).to_lowercase().contains(&q)
+                    || key.contains(self.query.trim())
+                    || self.msgs.iter().any(|m| {
+                        crate::model::thread_key(&m.peer) == *key
+                            && m.body.to_lowercase().contains(&q)
+                    })
+            })
+            .collect()
+    }
+
+    /// Unread incoming count within one thread key.
+    pub(super) fn unread_in(&self, key: &str) -> usize {
+        self.msgs
+            .iter()
+            .filter(|m| !m.outgoing && !m.read && crate::model::thread_key(&m.peer) == key)
+            .count()
+    }
+
+    /// Hand the peer's number to the dialer (`--dial` prefill, no
+    /// auto-call). Honest failure: a status line when the dialer binary
+    /// cannot be spawned.
+    pub(super) fn call_peer(&mut self) {
+        let num = if self.is_new {
+            self.to_draft.trim().to_string()
+        } else {
+            self.peer_label.clone()
+        };
+        if num.is_empty() {
+            self.status = "No number to call yet".to_string();
+            return;
+        }
+        match std::process::Command::new("rabbiz-dialer")
+            .arg("--dial")
+            .arg(&num)
+            .spawn()
+        {
+            Ok(_) => self.status.clear(),
+            Err(_) => self.status = "Could not open the Phone app".to_string(),
+        }
+    }
+
     pub(super) fn open_thread(&mut self, key: String, peer: String, is_new: bool) {
+        // Opening a conversation reads it: flip every unread incoming
+        // message of this thread, persist when anything changed.
+        let mut touched = false;
+        for m in &mut self.msgs {
+            if !m.outgoing && !m.read && crate::model::thread_key(&m.peer) == key {
+                m.read = true;
+                touched = true;
+            }
+        }
+        if touched {
+            self.save();
+        }
         self.peer_key = key;
         self.peer_label = peer;
         self.is_new = is_new;
@@ -286,6 +367,7 @@ impl SmsApp {
         match self.focus {
             Focus::To => self.to_draft.push_str(s),
             Focus::Body => self.body_draft.push_str(s),
+            Focus::Search => self.query.push_str(s),
             Focus::None => {}
         }
     }
@@ -294,6 +376,7 @@ impl SmsApp {
         match self.focus {
             Focus::To => ti.set_surrounding(&self.to_draft, self.to_draft.len()),
             Focus::Body => ti.set_surrounding(&self.body_draft, self.body_draft.len()),
+            Focus::Search => ti.set_surrounding(&self.query, self.query.len()),
             Focus::None => {}
         }
     }
@@ -344,18 +427,20 @@ mod tests {
             ),
             Message::new(2, "0812345678", "Yes! See you at 7.", true, now - 7_140),
             Message::new(3, "0812345678", "Don't be late.", false, now - 7_080),
-            Message::new(4, "0812345678", "สวัสดีครับ เจอกันครับ", true, now - 3_600),
+            Message::new(4, "0812345678", "สวัสดีครับ เจอกันครับ", false, now - 3_600),
         ];
         // Long thread list so scrolling is exercised.
         for i in 0..14 {
             let peer = format!("089111{:04}", i);
-            msgs.push(Message::new(
+            let mut m = Message::new(
                 100 + i as u64,
                 &peer,
                 &format!("Thread message {}", i + 1),
                 i % 3 == 0,
                 now - 86_400 + i * 600,
-            ));
+            );
+            m.read = true; // old conversations: realistic read state
+            msgs.push(m);
         }
         let mut failed = Message::new(
             200,
@@ -366,6 +451,11 @@ mod tests {
         );
         failed.state = MsgState::Failed;
         msgs.push(failed);
+        // Alex's two incoming messages are unread — the list row shows
+        // the accent dot + bold preview until the thread is opened.
+        for m in msgs.iter_mut().filter(|m| !m.outgoing && m.peer == "0812345678") {
+            m.read = false;
+        }
         app.msgs = msgs;
     }
 
@@ -375,6 +465,9 @@ mod tests {
     fn renders_main_screens_to_png() {
         let dir = shot_dir();
         let mut h = TestHarness::new(SmsApp::new(None));
+        h.state_mut().store_path =
+            std::env::temp_dir().join(format!("rabbiz-sms-pngtest-{}", std::process::id()));
+        h.state_mut().contacts = crate::contacts::Contacts::demo_entries();
         seed_msgs(h.state_mut());
 
         h.save_png(&dir.join("sms-after-list.png"))
@@ -402,5 +495,21 @@ mod tests {
         h.state_mut().transition = None;
         h.save_png(&dir.join("sms-after-thread.png"))
             .expect("save thread shot");
+
+        // Dark plum — the on-device product theme. Re-seed because
+        // opening Alex's thread above marked his messages read.
+        h.set_theme(de_design::tokens::DARK);
+        seed_msgs(h.state_mut());
+        h.state_mut().list_scroll = 0;
+        h.state_mut().view = View::List;
+        h.state_mut().peer_key.clear();
+        h.save_png(&dir.join("sms-dark-list.png"))
+            .expect("save dark list shot");
+        h.state_mut()
+            .open_thread("0812345678".into(), "0812345678".into(), false);
+        h.state_mut().transition = None;
+        h.state_mut().body_draft = "On my way!".to_string();
+        h.save_png(&dir.join("sms-dark-thread.png"))
+            .expect("save dark thread shot");
     }
 }

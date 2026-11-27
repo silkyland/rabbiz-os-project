@@ -41,7 +41,14 @@ impl SmsApp {
                 self.drag_origin_y = None;
                 match self.view {
                     View::List => {
-                        if self.new_msg_rect.contains(pos) {
+                        if !self.query.is_empty() && self.search_clear_rect.contains(pos) {
+                            self.pressed = Some(Hit::SearchClear);
+                        } else if self.search_rect.contains(pos) {
+                            self.pressed = Some(Hit::Search);
+                            self.focus = Focus::Search;
+                            ti.activate(ContentPurpose::Normal);
+                            ti.set_surrounding(&self.query, self.query.len());
+                        } else if self.new_msg_rect.contains(pos) {
                             self.pressed = Some(Hit::NewMsg);
                         } else {
                             if self.list_area.contains(pos) {
@@ -60,6 +67,8 @@ impl SmsApp {
                     View::Thread => {
                         if self.back_rect.contains(pos) {
                             self.pressed = Some(Hit::Back);
+                        } else if !self.is_new && self.call_rect.contains(pos) {
+                            self.pressed = Some(Hit::CallPeer);
                         } else if self.send_rect.contains(pos) {
                             self.pressed = Some(Hit::Send);
                         } else if self.is_new && self.to_rect.contains(pos) {
@@ -115,7 +124,7 @@ impl SmsApp {
                             .iter()
                             .any(|(index, rect)| *index == i && rect.contains(pos)) =>
                     {
-                        let threads = self.threads();
+                        let threads = self.filtered_threads();
                         if let Some((key, peer, _)) = threads.get(i) {
                             let (k, p) = (key.clone(), peer.clone());
                             self.open_thread(k, p, false);
@@ -123,6 +132,12 @@ impl SmsApp {
                     }
                     Some(Hit::Back) if self.back_rect.contains(pos) => self.close_thread(ti),
                     Some(Hit::Send) if self.send_rect.contains(pos) => self.send(ti),
+                    Some(Hit::CallPeer) if self.call_rect.contains(pos) => self.call_peer(),
+                    Some(Hit::Search) => {} // focus already grabbed on TouchDown
+                    Some(Hit::SearchClear) if self.search_clear_rect.contains(pos) => {
+                        self.query.clear();
+                        ti.set_surrounding("", 0);
+                    }
                     _ => {}
                 }
                 self.drag_last_y = None;
@@ -146,6 +161,7 @@ impl SmsApp {
                 match self.focus {
                     Focus::To => delete_before(&mut self.to_draft, bytes),
                     Focus::Body => delete_before(&mut self.body_draft, bytes),
+                    Focus::Search => delete_before(&mut self.query, bytes),
                     Focus::None => {}
                 }
                 self.sync_surrounding(ti);
@@ -157,6 +173,9 @@ impl SmsApp {
                     (0xff1b, _) => {
                         if self.view == View::Thread {
                             self.close_thread(ti);
+                        } else if self.focus == Focus::Search {
+                            self.focus = Focus::None;
+                            ti.deactivate();
                         }
                     }
                     (0xff0d, _) => {
@@ -171,6 +190,9 @@ impl SmsApp {
                             }
                             Focus::Body => {
                                 self.body_draft.pop();
+                            }
+                            Focus::Search => {
+                                self.query.pop();
                             }
                             Focus::None => {}
                         }

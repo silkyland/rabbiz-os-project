@@ -4,12 +4,12 @@ use rabbiz_app_kit::{icons, ui, widgets};
 use rabbiz_app_kit::{Canvas, Point, Rect, Size, Theme};
 
 use crate::model::{
-    day_label, format_time, local_time, same_run, state_label, thread_key, Message,
+    day_label, format_time, local_time, same_run, state_label, thread_key, Message, MsgState,
 };
 
 use super::{
     Focus, Hit, SmsApp, View, BUBBLE_MAX_PCT, BUBBLE_PAD_X, BUBBLE_PAD_Y, DAY_SEP_H, FIELD_LINE_H,
-    GUTTER, ROW_H, RUN_GAP, RUN_SEP, SEND_W, STATE_H, TIME_CAPTION_H,
+    GUTTER, ROW_H, RUN_GAP, RUN_SEP, TIME_CAPTION_H,
 };
 
 // ---- Cached text rasterization ----
@@ -67,6 +67,28 @@ fn field_height(lines: i32) -> i32 {
     (lines * (FIELD_LINE_H + 6) + 16).clamp(56, 140)
 }
 
+/// Bubble corner radius — large, M3 conversation shape.
+const BUBBLE_R: f32 = 24.0;
+
+/// Square off one corner of an already-rounded bubble by overpainting a
+/// same-color patch — the canvas has one radius per rect, so the M3
+/// "tail" corners (small/sharp) are faked by flattening the curve.
+fn square_corner(c: &mut Canvas, r: Rect, col: [u8; 4], right: bool, bottom: bool) {
+    const PATCH: i32 = 16;
+    let x = if right { r.right() - PATCH } else { r.x };
+    let y = if bottom { r.bottom() - PATCH } else { r.y };
+    c.fill_rect(Rect::new(x, y, PATCH, PATCH), col);
+}
+
+fn draw_icon_centered(c: &mut Canvas, icon: &str, size: f32, col: [u8; 4], cx: i32, cy: i32) {
+    if let Some(px) = text::icon(icon, size, col) {
+        let w = px.width() as i32;
+        let h = px.height() as i32;
+        let p = de_api::Pixels::new(Size::new(w, h), px.data().to_vec());
+        c.blit(&p, Point::new(cx - w / 2, cy - h / 2));
+    }
+}
+
 // ---- Thread layout types ----
 
 /// A laid-out element in thread content coordinates (y measured from the top
@@ -76,10 +98,13 @@ enum Elem {
         y: i32,
         label: String,
     },
-    Time {
+    /// Time+state caption under the LAST bubble of a run — replaces the
+    /// detached floating timestamps of the old design.
+    Caption {
         y: i32,
         right: bool,
         label: String,
+        failed: bool,
     },
     Bubble {
         y: i32,
@@ -87,6 +112,7 @@ enum Elem {
         right: bool,
         w: i32,
         h: i32,
+        first_in_run: bool,
     },
 }
 
@@ -97,14 +123,14 @@ struct ThreadLayout {
 
 fn elem_y(e: &Elem) -> i32 {
     match e {
-        Elem::Day { y, .. } | Elem::Time { y, .. } | Elem::Bubble { y, .. } => *y,
+        Elem::Day { y, .. } | Elem::Caption { y, .. } | Elem::Bubble { y, .. } => *y,
     }
 }
 
 fn elem_h(e: &Elem) -> i32 {
     match e {
         Elem::Day { .. } => DAY_SEP_H,
-        Elem::Time { .. } => TIME_CAPTION_H,
+        Elem::Caption { .. } => TIME_CAPTION_H,
         Elem::Bubble { h, .. } => *h,
     }
 }
@@ -155,16 +181,18 @@ impl SmsApp {
 
         let mut elems: Vec<Elem> = Vec::new();
         let mut y = 8;
-        let mut prev: Option<&Message> = None;
-        // Index of the next message in this thread (for run-gap decisions).
-        let mut iter = self
+        // Collect this thread's messages once so next-in-run lookups are easy.
+        let thread: Vec<(usize, &Message)> = self
             .msgs
             .iter()
             .enumerate()
             .filter(|(_, m)| thread_key(&m.peer) == self.peer_key)
-            .peekable();
+            .collect();
 
-        while let Some((mi, m)) = iter.next() {
+        for (pos, (mi, m)) in thread.iter().enumerate() {
+            let prev = pos.checked_sub(1).and_then(|p| thread.get(p).map(|t| t.1));
+            let next = thread.get(pos + 1).map(|t| t.1);
+
             let new_day = prev.is_none_or(|p| {
                 let (a, b) = (local_time(p.ts), local_time(m.ts));
                 a.year != b.year || a.yday != b.yday
@@ -176,32 +204,46 @@ impl SmsApp {
                 });
                 y += DAY_SEP_H;
             }
-            let new_run = prev.is_none_or(|p| !same_run(p, m));
-            if new_run {
-                elems.push(Elem::Time {
-                    y,
-                    right: m.outgoing,
-                    label: format_time(m.ts),
-                });
-                y += TIME_CAPTION_H;
+            let first_in_run = prev.is_none_or(|p| !same_run(p, m));
+            let last_in_run = next.is_none_or(|n| !same_run(m, n));
+            if first_in_run && !new_day {
+                y += RUN_SEP; // breathing room between runs
             }
+
             let (tw, th) = label_px(&m.body, body_style, Some(max_text_w), usize::MAX)
                 .map(|px| (px.size.w, px.size.h))
-                .unwrap_or((max_text_w / 2, body_style.line_height as i32));
+                .unwrap_or((max_text_w, 28));
             let bw = bubble_width(tw, max_bubble_w);
-            let extra = if m.outgoing { STATE_H } else { 0 };
-            let bh = th + BUBBLE_PAD_Y * 2 + extra;
+            let bh = th + BUBBLE_PAD_Y * 2;
             elems.push(Elem::Bubble {
                 y,
-                msg: mi,
+                msg: *mi,
                 right: m.outgoing,
                 w: bw,
                 h: bh,
+                first_in_run,
             });
             y += bh;
-            let next_same_run = iter.peek().is_some_and(|(_, n)| same_run(m, n));
-            y += if next_same_run { RUN_GAP } else { RUN_SEP };
-            prev = Some(m);
+
+            if last_in_run {
+                // Caption under the run: time for incoming, state + time for
+                // outgoing — honest delivery states stay visible.
+                let label = if m.outgoing {
+                    format!("{} · {}", state_label(m.state), format_time(m.ts))
+                } else {
+                    format_time(m.ts)
+                };
+                y += 4;
+                elems.push(Elem::Caption {
+                    y,
+                    right: m.outgoing,
+                    label,
+                    failed: m.outgoing && m.state == MsgState::Failed,
+                });
+                y += TIME_CAPTION_H;
+            } else {
+                y += RUN_GAP;
+            }
         }
         let _ = view_h;
 
@@ -215,44 +257,70 @@ impl SmsApp {
 
     fn render_list(&mut self, canvas: &mut Canvas, theme: &Theme, w: i32, h: i32) {
         let header_end = ui::draw_header(canvas, theme, "Messages", "");
-        ui::divider_inset(canvas, theme, ui::MARGIN, w - ui::MARGIN, header_end);
+
+        // SearchPill under the header — filters by name/number/body text.
+        let pill = Rect::new(
+            ui::MARGIN,
+            header_end + 12,
+            w - ui::MARGIN * 2,
+            widgets::SearchPill::HEIGHT,
+        );
+        self.search_rect = pill;
+        let clear_r = widgets::SearchPill::clear_rect(pill);
+        self.search_clear_rect = clear_r;
+        widgets::SearchPill::render(
+            canvas,
+            pill,
+            theme,
+            &self.query,
+            "Search conversations",
+            self.focus == Focus::Search,
+        );
 
         let bottom = h - ui::BOTTOM_SAFE;
-        let control_height = 56;
-        let compose = Rect::new(
-            w - ui::MARGIN - 180,
-            bottom - control_height - 12,
-            180,
-            control_height,
+        // Circular compose FAB with a soft shadow — same family as the
+        // dialer's keypad FAB.
+        let fab_d = 88;
+        let fab = Rect::new(
+            w - ui::MARGIN - fab_d,
+            bottom - fab_d - 20,
+            fab_d,
+            fab_d,
         );
-        self.new_msg_rect = compose;
-        let area = Rect::new(0, header_end + 8, w, (compose.y - 20 - header_end).max(0));
+        self.new_msg_rect = fab;
+        let area = Rect::new(0, pill.bottom() + 8, w, (fab.y - 20 - pill.bottom() - 8).max(0));
         self.list_area = area;
         self.row_rects.clear();
 
-        let threads = self.threads();
+        let threads = self.filtered_threads();
         let content_h = threads.len() as i32 * ROW_H;
         self.list_scroll = clamp_scroll(self.list_scroll, content_h - area.h);
         if !area.is_empty() && threads.is_empty() {
+            let searching = !self.query.trim().is_empty();
             widgets::EmptyState::render(
                 canvas,
                 area,
                 theme,
                 icons::MESSAGE,
-                "No conversations",
-                "Start a conversation to send an SMS.",
+                if searching {
+                    "No matches"
+                } else {
+                    "No conversations"
+                },
+                if searching {
+                    "Try a different name, number or text"
+                } else {
+                    "Start a conversation to send an SMS."
+                },
             );
         } else if !area.is_empty() {
             // A viewport-sized canvas clips rows at the toolbar and compose action.
             let mut list = Canvas::filled(Size::new(area.w, area.h), theme.bg);
-            let name_style = ui::styled(23.0, 600, theme.text);
-            let preview_style = ui::caption(theme.text2);
-            let time_style = ui::caption(theme.text2);
             let now = Self::now_ts();
             let today = local_time(now);
             let viewport = Rect::new(0, 0, area.w, area.h);
             let first = (self.list_scroll / ROW_H) as usize;
-            for (i, (_, peer, last_idx)) in threads.iter().enumerate().skip(first) {
+            for (i, (key, peer, last_idx)) in threads.iter().enumerate().skip(first) {
                 let y = i as i32 * ROW_H - self.list_scroll;
                 if y >= area.h {
                     break;
@@ -268,6 +336,7 @@ impl SmsApp {
 
                 let m = &self.msgs[*last_idx];
                 let name = self.display_peer(peer);
+                let unread = self.unread_in(key);
                 let avatar = Rect::new(ui::MARGIN, y + 20, 52, 52);
                 let known = self.contacts.name_for(peer);
                 widgets::avatar(
@@ -285,8 +354,18 @@ impl SmsApp {
                 } else {
                     day_label(m.ts, now)
                 };
+                // Unread: name/preview go bold+bright, the timestamp flips
+                // to accent ink and a dot sits ahead of the preview.
+                let hot = unread > 0;
+                let name_style = ui::styled(
+                    23.0,
+                    if hot { 700 } else { 600 },
+                    theme.text,
+                );
+                let preview_style = ui::caption(if hot { theme.text } else { theme.text2 });
                 let mut name_right = text_right;
-                if let Some(px) = label_px(&when, time_style, Some((w / 4).max(1)), 1) {
+                let when_style = ui::caption(if hot { theme.accent } else { theme.text2 });
+                if let Some(px) = label_px(&when, when_style, Some((w / 4).max(1)), 1) {
                     name_right -= px.size.w + 12;
                     list.blit(&px, Point::new(text_right - px.size.w, y + 18));
                 }
@@ -299,13 +378,26 @@ impl SmsApp {
                     Some((name_right - text_x).max(1)),
                     1,
                 );
+                // Preview: outgoing messages carry the "You: " prefix like
+                // Google Messages; unread threads get an accent dot first.
+                let mut preview_x = text_x;
+                if hot {
+                    let dot = Rect::new(text_x, y + 58, 12, 12);
+                    list.fill_rounded_rect(dot, 6.0, theme.accent);
+                    preview_x += 22;
+                }
+                let preview = if m.outgoing {
+                    format!("You: {}", m.body)
+                } else {
+                    m.body.clone()
+                };
                 blit_label(
                     &mut list,
-                    &m.body,
+                    &preview,
                     preview_style,
-                    text_x,
+                    preview_x,
                     y + 48,
-                    Some((text_right - text_x).max(1)),
+                    Some((text_right - preview_x).max(1)),
                     1,
                 );
                 ui::divider_inset(&mut list, theme, text_x, text_right, row.bottom() - 1);
@@ -320,18 +412,34 @@ impl SmsApp {
             );
         }
 
-        ui::draw_pill_button(
+        // Compose FAB: shadow disc + accent circle + edit glyph.
+        let pressed_fab = self.pressed == Some(Hit::NewMsg);
+        canvas.fill_rounded_rect(
+            Rect::new(fab.x + 3, fab.y + 6, fab.w, fab.h),
+            fab.h as f32 / 2.0,
+            ui::with_alpha(theme.shadow, 0x30),
+        );
+        canvas.fill_rounded_rect(
+            fab,
+            fab.h as f32 / 2.0,
+            if pressed_fab {
+                ui::mix(theme.accent, [0, 0, 0, 255], 0.15)
+            } else {
+                theme.accent
+            },
+        );
+        draw_icon_centered(
             canvas,
-            theme,
-            compose,
-            "New message",
-            true,
-            self.pressed == Some(Hit::NewMsg),
+            icons::EDIT,
+            34.0,
+            theme.text_on_accent,
+            fab.x + fab.w / 2,
+            fab.y + fab.h / 2,
         );
         widgets::Toast::render(
             canvas,
             Size::new(w, h),
-            ui::BOTTOM_SAFE + control_height + 24,
+            ui::BOTTOM_SAFE + 112,
             theme,
             &self.status,
         );
@@ -342,7 +450,8 @@ impl SmsApp {
     /// Compose-bar rects (absolute coords). Returns
     /// `(to_rect, body_rect, send_rect, msg_area)`.
     fn compose_layout(&self, theme: &Theme, w: i32, h: i32) -> (Rect, Rect, Rect, Rect) {
-        let field_w = w - GUTTER * 2 - SEND_W - 12;
+        let send_d = 64;
+        let field_w = w - GUTTER * 2 - send_d - 14;
         let body_style = ui::styled(22.0, 400, theme.text);
         let lines = if self.body_draft.trim().is_empty() {
             1
@@ -354,11 +463,11 @@ impl SmsApp {
         let field_h = field_height(lines);
 
         let bottom = h - ui::BOTTOM_SAFE - 12; // bottom edge of the compose block
-        let send_r = Rect::new(w - GUTTER - SEND_W, bottom - field_h, SEND_W, field_h);
+        let send_r = Rect::new(w - GUTTER - send_d, bottom - send_d, send_d, send_d);
         let body_r = Rect::new(GUTTER, bottom - field_h, field_w, field_h);
         let header_end = ui::TOP_SAFE + widgets::TopAppBar::HEIGHT;
         let to_r = if self.is_new {
-            Rect::new(GUTTER, header_end + 12, w - GUTTER * 2, 52)
+            Rect::new(GUTTER, header_end + 12, w - GUTTER * 2, 56)
         } else {
             Rect::new(0, 0, 0, 0)
         };
@@ -367,22 +476,73 @@ impl SmsApp {
         (to_r, body_r, send_r, msg_area)
     }
 
-    fn render_thread(&mut self, canvas: &mut Canvas, theme: &Theme, w: i32, h: i32) {
-        let title = if self.is_new {
-            // Compose for a known contact shows their name; otherwise the
-            // generic "New message" caption.
-            self.contacts
-                .name_for(&self.to_draft)
-                .map_or_else(|| "New message".to_string(), str::to_string)
-        } else {
-            self.display_peer(&self.peer_label)
-        };
+    /// Thread header: back arrow, then (for existing threads) the peer's
+    /// avatar + name over their number, and a tonal call shortcut trailing
+    /// — the same anatomy as the Google Messages conversation app bar.
+    fn render_thread_header(&mut self, canvas: &mut Canvas, theme: &Theme, w: i32, h: i32) {
         let bar = widgets::TopAppBar::layout(Size::new(w, h), ui::TOP_SAFE);
         self.back_rect = widgets::TopAppBar::back_rect(bar);
-        widgets::TopAppBar::render(canvas, bar, theme, &title, true, None);
+
+        if self.is_new {
+            widgets::TopAppBar::render(canvas, bar, theme, "New message", true, None);
+        } else {
+            widgets::TopAppBar::render(canvas, bar, theme, "", true, None);
+            let peer = self.peer_label.clone();
+            let name = self.display_peer(&peer);
+            let known = self.contacts.name_for(&peer);
+            let tint = ui::avatar_tint(known.unwrap_or(&peer));
+            let av = Rect::new(bar.x + 64, bar.y + (bar.h - 48) / 2, 48, 48);
+            widgets::avatar(canvas, known.unwrap_or(""), av, tint, theme.text);
+            let tx = av.right() + 16;
+            blit_label(
+                canvas,
+                &name,
+                ui::styled(23.0, 600, theme.text),
+                tx,
+                bar.y + 12,
+                Some(w - tx - 140),
+                1,
+            );
+            let sub = crate::model::format_phone(&peer);
+            if sub != name {
+                blit_label(
+                    canvas,
+                    &sub,
+                    ui::caption(theme.text2),
+                    tx,
+                    bar.y + 46,
+                    Some(w - tx - 140),
+                    1,
+                );
+            }
+            // Tonal call shortcut — hands the number to the dialer.
+            let call = Rect::new(w - ui::MARGIN - 52, bar.y + (bar.h - 52) / 2, 52, 52);
+            self.call_rect = call;
+            widgets::icon_btn(
+                canvas,
+                theme,
+                call,
+                icons::CALL,
+                widgets::IconBtnStyle::Tonal,
+                false,
+                self.pressed == Some(Hit::CallPeer),
+            );
+        }
         if self.pressed == Some(Hit::Back) {
             ui::press_overlay(canvas, theme, self.back_rect, 24.0, 0.10);
         }
+        // Hairline under the bar so the scrolling bubbles read as passing beneath.
+        ui::divider_inset(
+            canvas,
+            theme,
+            0,
+            w,
+            bar.bottom(),
+        );
+    }
+
+    fn render_thread(&mut self, canvas: &mut Canvas, theme: &Theme, w: i32, h: i32) {
+        self.render_thread_header(canvas, theme, w, h);
 
         let (to_r, body_r, send_r, msg_area) = self.compose_layout(theme, w, h);
         self.to_rect = to_r;
@@ -415,7 +575,6 @@ impl SmsApp {
 
         let mut messages = Canvas::filled(Size::new(area.w, area.h), theme.bg);
         let cap_style = ui::caption(theme.text2);
-        let state_style = ui::styled(16.0, 400, theme.text_on_accent);
 
         for elem in &layout.elems {
             let ey = elem_y(elem) - top_idx;
@@ -424,16 +583,30 @@ impl SmsApp {
             }
             match elem {
                 Elem::Day { label, .. } => {
+                    // Centered tonal pill chip — the M3 date separator.
                     if let Some(px) = label_px(label, cap_style, None, 1) {
-                        messages.blit(&px, Point::new((w - px.size.w) / 2, ey + 4));
+                        let pw = px.size.w + 32;
+                        let pill = Rect::new((w - pw) / 2, ey, pw, DAY_SEP_H - 6);
+                        messages.fill_rounded_rect(pill, (DAY_SEP_H - 6) as f32 / 2.0, theme.surface2);
+                        messages.blit(&px, Point::new((w - px.size.w) / 2, ey + 3));
                     }
                 }
-                Elem::Time { right, label, .. } => {
-                    if let Some(px) = label_px(label, cap_style, None, 1) {
+                Elem::Caption {
+                    right,
+                    label,
+                    failed,
+                    ..
+                } => {
+                    let st = if *failed {
+                        ui::caption(theme.danger)
+                    } else {
+                        cap_style
+                    };
+                    if let Some(px) = label_px(label, st, None, 1) {
                         let ex = if *right {
-                            w - GUTTER - px.size.w
+                            w - GUTTER - px.size.w - 6
                         } else {
-                            GUTTER
+                            GUTTER + 6
                         };
                         messages.blit(&px, Point::new(ex, ey));
                     }
@@ -443,13 +616,29 @@ impl SmsApp {
                     right,
                     w: bw,
                     h: bh,
+                    first_in_run,
                     ..
                 } => {
                     let m = &self.msgs[*msg];
                     let bx = if *right { w - GUTTER - bw } else { GUTTER };
                     let br = Rect::new(bx, ey, *bw, *bh);
                     let bg = if *right { theme.accent } else { theme.surface1 };
-                    messages.fill_rounded_rect(br, 20.0, bg);
+                    messages.fill_rounded_rect(br, BUBBLE_R, bg);
+                    // M3 run shaping: the tail corner (bottom on the
+                    // outgoing/incoming side) stays sharp on every bubble;
+                    // consecutive bubbles in a run also flatten where they
+                    // meet, so a run reads as one connected shape.
+                    if *right {
+                        square_corner(&mut messages, br, bg, true, true);
+                        if !first_in_run {
+                            square_corner(&mut messages, br, bg, true, false);
+                        }
+                    } else {
+                        square_corner(&mut messages, br, bg, false, true);
+                        if !first_in_run {
+                            square_corner(&mut messages, br, bg, false, false);
+                        }
+                    }
                     let fg = if *right {
                         theme.text_on_accent
                     } else {
@@ -459,18 +648,6 @@ impl SmsApp {
                     let style = ui::styled(23.0, 400, fg);
                     if let Some(px) = label_px(&m.body, style, Some(max_tw), usize::MAX) {
                         messages.blit(&px, Point::new(bx + BUBBLE_PAD_X, ey + BUBBLE_PAD_Y));
-                    }
-                    if m.outgoing {
-                        let sl = state_label(m.state);
-                        if let Some(px) = label_px(sl, state_style, None, 1) {
-                            messages.blit(
-                                &px,
-                                Point::new(
-                                    bx + bw - BUBBLE_PAD_X - px.size.w,
-                                    ey + bh - BUBBLE_PAD_Y - 18,
-                                ),
-                            );
-                        }
                     }
                 }
             }
@@ -490,13 +667,19 @@ impl SmsApp {
             let focused = self.focus == Focus::To;
             canvas.fill_rounded_rect(
                 to_r,
-                16.0,
+                28.0,
                 if focused {
                     theme.surface2
                 } else {
                     theme.surface1
                 },
             );
+            if focused {
+                // Accent focus ring — the M3 text-field cue.
+                let fill = theme.surface2;
+                canvas.fill_rounded_rect(to_r, 28.0, theme.accent);
+                canvas.fill_rounded_rect(to_r.inset(2), 26.0, fill);
+            }
             let (shown, col) = if self.to_draft.is_empty() {
                 ("To: phone number", theme.text2)
             } else {
@@ -506,30 +689,35 @@ impl SmsApp {
                 canvas,
                 shown,
                 ui::styled(22.0, 400, col),
-                to_r.x + 18,
-                to_r.y + 14,
-                Some(to_r.w - 36),
+                to_r.x + 22,
+                to_r.y + 15,
+                Some(to_r.w - 44),
                 1,
             );
         }
 
         let focused = self.focus == Focus::Body;
+        let radius = (body_r.h as f32 / 2.0).min(28.0);
         canvas.fill_rounded_rect(
             body_r,
-            24.0,
+            radius,
             if focused {
                 theme.surface2
             } else {
                 theme.surface1
             },
         );
-        let max_tw = body_r.w - 40;
+        if focused {
+            canvas.fill_rounded_rect(body_r, radius, theme.accent);
+            canvas.fill_rounded_rect(body_r.inset(2), (radius - 2.0).max(0.0), theme.surface2);
+        }
+        let max_tw = body_r.w - 44;
         if self.body_draft.trim().is_empty() {
             blit_label(
                 canvas,
                 "Message",
                 ui::styled(22.0, 400, theme.text3),
-                body_r.x + 18,
+                body_r.x + 22,
                 body_r.y + (body_r.h - 28) / 2,
                 Some(max_tw),
                 1,
@@ -539,22 +727,40 @@ impl SmsApp {
                 canvas,
                 &self.body_draft,
                 ui::styled(22.0, 400, theme.text),
-                body_r.x + 18,
+                body_r.x + 22,
                 body_r.y + 12,
                 Some(max_tw),
                 3,
             );
         }
 
+        // Circular send button — accent when armed, dimmed surface when
+        // there is nothing to send (the button stays visible either way,
+        // like the Messages composer).
         let can_send = !self.body_draft.trim().is_empty()
             && (!self.is_new || !self.to_draft.trim().is_empty());
-        ui::draw_pill_button(
+        let pressed_send = self.pressed == Some(Hit::Send);
+        let bg = if !can_send {
+            theme.surface2
+        } else if pressed_send {
+            ui::mix(theme.accent, [0, 0, 0, 255], 0.15)
+        } else {
+            theme.accent
+        };
+        canvas.fill_rounded_rect(send_r, send_r.h as f32 / 2.0, bg);
+        draw_icon_centered(
             canvas,
-            theme,
-            send_r,
-            "Send",
-            can_send,
-            self.pressed == Some(Hit::Send),
+            icons::SEND,
+            26.0,
+            if can_send {
+                theme.text_on_accent
+            } else {
+                theme.text3
+            },
+            // Optical nudge: the send glyph points up-right, so it sits
+            // slightly left-low of the geometric center.
+            send_r.x + send_r.w / 2 - 1,
+            send_r.y + send_r.h / 2 + 1,
         );
     }
 }

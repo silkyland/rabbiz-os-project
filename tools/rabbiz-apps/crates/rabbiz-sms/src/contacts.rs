@@ -58,6 +58,19 @@ impl Contacts {
             .map(|(_, name)| name.as_str())
     }
 
+    /// Deterministic entries for render tests — the shared store is host
+    /// state, and harness shots must not depend on it (or on env mutated
+    /// by sibling tests running in parallel).
+    #[cfg(test)]
+    pub(crate) fn demo_entries() -> Self {
+        Self {
+            entries: vec![
+                (norm_key("0812345678"), "Alex".to_string()),
+                (norm_key("0865551234"), "Mom".to_string()),
+            ],
+        }
+    }
+
     /// Load from an explicit file; missing/corrupt/unknown-version → empty.
     #[must_use]
     pub fn load_from(path: &Path) -> Self {
